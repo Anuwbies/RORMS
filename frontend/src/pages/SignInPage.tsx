@@ -1,58 +1,25 @@
 import { useState } from 'react'
+import type { SyntheticEvent } from 'react'
 
 type TabKey = 'home' | 'about' | 'contact'
 
-const tabContent: Record<
-  TabKey,
-  {
-    eyebrow: string
-    title: string
-    description: string
-    blocks: string[]
-  }
-> = {
-  home: {
-    eyebrow: 'Home',
-    title: 'Landing page placeholder',
-    description:
-      'This area can hold the welcome banner, key announcements, and a quick overview of the room management system.',
-    blocks: ['Hero banner placeholder', 'Highlights placeholder', 'Announcement placeholder'],
-  },
-  about: {
-    eyebrow: 'About',
-    title: 'About page placeholder',
-    description:
-      'This area can introduce the Registrar Office Room Management system, its purpose, and the main user roles it supports.',
-    blocks: ['Mission placeholder', 'System overview placeholder', 'Role summary placeholder'],
-  },
-  contact: {
-    eyebrow: 'Contact',
-    title: 'Contact page placeholder',
-    description:
-      'This area can show registrar office contact details, office hours, support channels, and response expectations.',
-    blocks: ['Contact details placeholder', 'Office hours placeholder', 'Support form placeholder'],
-  },
+interface SignInPageProps {
+  onSignIn: () => void
 }
 
-const homeImages = {
-  hero:
-    'https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=1200&q=80',
-  campus:
-    'https://images.unsplash.com/photo-1523050854058-8df90110c9f1?auto=format&fit=crop&w=900&q=80',
-  workspace:
-    'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80',
-}
-
-function SignInPage() {
+function SignInPage({ onSignIn }: SignInPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>('home')
 
-  const currentTab = tabContent[activeTab]
+  const handleSubmit = (e: SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    onSignIn()
+  }
 
   return (
     <main className="min-h-screen bg-white lg:grid lg:grid-cols-[3fr_2fr]">
-      <section className="flex min-h-[36vh] flex-col gap-8 bg-zinc-300 px-6 py-6 text-zinc-700 lg:min-h-screen lg:p-10">
-        <nav className="flex w-full flex-wrap items-center justify-between gap-5 rounded-xl border border-white/55 bg-white/30 px-4 py-2 backdrop-blur-sm">
+      <section className="flex min-h-[36vh] flex-col gap-8 bg-[#3a4f24] px-6 py-6 text-[var(--brand-olive-deep)] lg:min-h-screen lg:p-10">
+        <nav className="flex w-full flex-wrap items-center justify-between gap-5 rounded-xl border border-[color:rgba(58,79,36,0.12)] bg-[#fafafa] px-4 py-2 shadow-[0_16px_40px_rgba(36,49,22,0.08)]">
           <div className="flex min-w-0 items-center gap-4">
             <img
               src="/logo.png"
@@ -60,16 +27,16 @@ function SignInPage() {
               className="h-14 w-14 shrink-0 object-contain"
             />
             <div className="min-w-0 space-y-0.5">
-              <p className="text-xs font-semibold uppercase leading-none tracking-[0.3em] text-[#f3a91f] sm:text-sm">
+              <p className="text-xs font-semibold uppercase leading-none tracking-[0.3em] text-[var(--brand-gold)] sm:text-sm">
                 PHINMA UPANG
               </p>
-              <h1 className="text-sm font-semibold leading-none text-zinc-800 sm:text-base">
-                Registrar Office Room Management
+              <h1 className="text-sm font-semibold leading-none text-[var(--brand-olive-deep)] sm:text-base">
+                Registrar Office Room Management System
               </h1>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-4 text-sm font-medium text-zinc-700">
+          <div className="flex flex-wrap items-center justify-end gap-4 text-sm font-medium text-[var(--brand-olive-deep)]">
             {(['home', 'about', 'contact'] as const).map((tab) => {
               const isActive = activeTab === tab
               const label = tab.charAt(0).toUpperCase() + tab.slice(1)
@@ -79,10 +46,10 @@ function SignInPage() {
                   key={tab}
                   type="button"
                   onClick={() => setActiveTab(tab)}
-                  className={`relative px-2 py-1.5 transition after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-[#f3a91f] after:transition-transform after:content-[''] ${
+                  className={`relative px-2 py-1.5 transition after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-[var(--brand-gold)] after:transition-transform after:content-[''] ${
                     isActive
-                      ? 'text-[#f3a91f] after:scale-x-100'
-                      : 'text-black after:origin-center after:scale-x-0 hover:text-[#f3a91f] hover:after:scale-x-100'
+                      ? 'text-[var(--brand-gold)] after:scale-x-100'
+                      : 'text-[var(--brand-olive-deep)] after:origin-center after:scale-x-0 hover:text-[var(--brand-gold)] hover:after:scale-x-100'
                   }`}
                 >
                   {label}
@@ -93,146 +60,9 @@ function SignInPage() {
         </nav>
 
         <div className="flex w-full min-h-0 flex-1 items-stretch">
-          {activeTab === 'home' ? (
-            <div className="h-full w-full rounded-2xl border border-white/50 bg-[linear-gradient(145deg,rgba(255,255,255,0.44),rgba(255,255,255,0.2))] p-6 backdrop-blur-sm lg:p-7">
-              <div className="grid h-full gap-5 xl:grid-cols-[1.05fr_0.95fr]">
-                <div className="flex flex-col justify-between">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.45em] text-zinc-600">
-                      Home
-                    </p>
-                    <h2 className="mt-4 max-w-xl text-4xl font-semibold leading-tight text-zinc-900 xl:text-[2.75rem]">
-                      Manage campus room requests with a clearer front door.
-                    </h2>
-                    <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-700/90 sm:text-base">
-                      This is a placeholder home interface for the public side
-                      of the system. It can later introduce room scheduling,
-                      approval flow, policy reminders, and registrar updates
-                      before users sign in.
-                    </p>
-                  </div>
-
-                  <div className="mt-6 flex flex-wrap gap-3">
-                    <span className="rounded-full border border-white/55 bg-white/55 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-zinc-700">
-                      Room requests
-                    </span>
-                    <span className="rounded-full border border-white/55 bg-white/55 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-zinc-700">
-                      Schedules
-                    </span>
-                    <span className="rounded-full border border-white/55 bg-white/55 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-zinc-700">
-                      Approvals
-                    </span>
-                  </div>
-
-                  <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-white/50 bg-white/35 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
-                        Welcome section
-                      </p>
-                      <p className="mt-3 text-sm leading-6 text-zinc-700">
-                        Placeholder for a short introduction, announcements, or
-                        a quick guide before users sign in.
-                      </p>
-                    </div>
-                    <div className="rounded-xl border border-white/50 bg-white/35 p-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
-                        Featured note
-                      </p>
-                      <p className="mt-3 text-sm leading-6 text-zinc-700">
-                        Placeholder for reservation reminders, office notices,
-                        or highlighted room policies.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-4">
-                  <div className="relative overflow-hidden rounded-2xl border border-white/45 bg-white/25">
-                    <img
-                      src={homeImages.hero}
-                      alt="Modern meeting room placeholder"
-                      className="h-56 w-full object-cover lg:h-60"
-                      loading="lazy"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/15 to-transparent" />
-                    <div className="absolute inset-x-0 bottom-0 p-5 text-white">
-                      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-white/70">
-                        Featured space
-                      </p>
-                      <h3 className="mt-2 text-2xl font-semibold">
-                        Home tab visual placeholder
-                      </h3>
-                      <p className="mt-2 max-w-md text-sm text-white/85">
-                        Internet-hosted image placeholder for a future hero
-                        section.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="overflow-hidden rounded-2xl border border-white/45 bg-white/30">
-                      <img
-                        src={homeImages.campus}
-                        alt="Campus placeholder"
-                        className="h-28 w-full object-cover lg:h-32"
-                        loading="lazy"
-                      />
-                      <div className="p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
-                          Campus
-                        </p>
-                        <p className="mt-2 text-sm font-medium text-zinc-800">
-                          Public overview placeholder for featured buildings and
-                          locations.
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="overflow-hidden rounded-2xl border border-white/45 bg-white/30">
-                      <img
-                        src={homeImages.workspace}
-                        alt="Workspace placeholder"
-                        className="h-28 w-full object-cover lg:h-32"
-                        loading="lazy"
-                      />
-                      <div className="p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-zinc-500">
-                          Workspace
-                        </p>
-                        <p className="mt-2 text-sm font-medium text-zinc-800">
-                          Placeholder image for schedules, room cards, or queue
-                          previews.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="h-full w-full rounded-2xl border border-white/50 bg-white/20 p-8 backdrop-blur-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.45em] text-zinc-600">
-                {currentTab.eyebrow}
-              </p>
-              <h2 className="mt-4 text-3xl font-semibold text-zinc-800 sm:text-4xl">
-                {currentTab.title}
-              </h2>
-              <p className="mt-4 max-w-lg text-sm leading-6 text-zinc-700/85 sm:text-base">
-                {currentTab.description}
-              </p>
-
-              <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                {currentTab.blocks.map((block) => (
-                  <div
-                    key={block}
-                    className="rounded-xl border border-white/50 bg-white/30 p-5 text-sm font-medium text-zinc-700"
-                  >
-                    {block}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <div className="h-full w-full rounded-2xl border border-[color:rgba(58,79,36,0.14)] bg-[#fafafa] p-8 shadow-[0_24px_50px_rgba(36,49,22,0.08)]">
+            {/* Content area left empty for all tabs as requested */}
+          </div>
         </div>
       </section>
 
@@ -248,7 +78,7 @@ function SignInPage() {
             Access the room reservation system with your account.
           </p>
 
-          <form className="mt-8 space-y-5">
+          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-zinc-700">
                 Email <span className="text-red-500">*</span>
@@ -330,7 +160,7 @@ function SignInPage() {
 
             <button
               type="submit"
-              className="w-full rounded-lg bg-[var(--brand-olive)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[var(--brand-olive-deep)]"
+              className="w-full rounded-lg bg-[var(--brand-olive)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4b6330]"
             >
               Sign in
             </button>
@@ -347,6 +177,7 @@ function SignInPage() {
           <button
             type="button"
             className="flex w-full items-center justify-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
+            onClick={onSignIn}
           >
             <svg
               aria-hidden="true"
