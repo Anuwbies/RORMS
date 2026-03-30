@@ -32,7 +32,7 @@ export function DashboardLayout({
 
       <div
         className={joinClasses(
-          'min-h-screen transition-[padding] duration-300',
+          'min-h-screen transition-[padding] duration-200',
           isSidebarExpanded ? 'lg:pl-80' : 'lg:pl-24',
         )}
       >

@@ -18,11 +18,11 @@ function SignInPage({ onSignIn }: SignInPageProps) {
 
   return (
     <main className="min-h-screen bg-white lg:grid lg:grid-cols-[3fr_2fr]">
-      <section className="flex min-h-[36vh] flex-col gap-8 bg-[#3a4f24] px-6 py-6 text-[var(--brand-olive-deep)] lg:min-h-screen lg:p-10">
-        <nav className="flex w-full flex-wrap items-center justify-between gap-5 rounded-xl border border-[color:rgba(58,79,36,0.12)] bg-[#fafafa] px-4 py-2 shadow-[0_16px_40px_rgba(36,49,22,0.08)]">
+      <section className="flex min-h-[36vh] flex-col gap-8 bg-[#62853e] px-6 py-6 text-[var(--brand-olive-deep)] lg:min-h-screen lg:p-10">
+        <nav className="flex w-full flex-wrap items-center justify-between gap-5 rounded-lg border border-[color:rgba(58,79,36,0.12)] bg-[#fafafa] px-4 py-2 shadow-[0_16px_40px_rgba(36,49,22,0.08)]">
           <div className="flex min-w-0 items-center gap-4">
             <img
-              src="/logo.png"
+              src="/logo2.png"
               alt="PHINMA UPang seal"
               className="h-14 w-14 shrink-0 object-contain"
             />
@@ -60,21 +60,21 @@ function SignInPage({ onSignIn }: SignInPageProps) {
         </nav>
 
         <div className="flex w-full min-h-0 flex-1 items-stretch">
-          <div className="h-full w-full rounded-2xl border border-[color:rgba(58,79,36,0.14)] bg-[#fafafa] p-8 shadow-[0_24px_50px_rgba(36,49,22,0.08)]">
+          <div className="h-full w-full rounded-lg border border-[color:rgba(58,79,36,0.14)] bg-[#fafafa] p-8 shadow-[0_24px_50px_rgba(36,49,22,0.08)]">
             {/* Content area left empty for all tabs as requested */}
           </div>
         </div>
       </section>
 
       <section className="flex min-h-screen items-center justify-center px-6 py-10 sm:px-10 lg:px-12">
-        <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 shadow-[0_24px_60px_rgba(0,0,0,0.08)] sm:p-10">
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-gold)]">
+        <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-8 shadow-[0_24px_60px_rgba(0,0,0,0.08)] sm:p-10">
+          <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-gold)]">
             Sign In
           </p>
-          <h2 className="mt-3 text-3xl font-semibold text-[var(--brand-olive-deep)]">
+          <h2 className="mt-3 text-center text-3xl font-semibold text-[var(--brand-olive-deep)]">
             Welcome back
           </h2>
-          <p className="mt-3 text-sm leading-6 text-zinc-600">
+          <p className="mt-1 text-center text-sm leading-6 text-zinc-600">
             Access the room reservation system with your account.
           </p>
 
@@ -102,7 +102,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
                 <input
                   type="email"
                   placeholder="name@company.com"
-                  className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 pr-12 text-sm text-zinc-900 outline-none transition focus:border-[var(--brand-gold)] focus:bg-white"
+                  className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 pr-12 text-sm text-zinc-900 outline-none transition focus:border-[var(--brand-gold)] focus:bg-white"
                 />
               </div>
             </label>
@@ -115,7 +115,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
-                  className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 pr-12 text-sm text-zinc-900 outline-none transition focus:border-[var(--brand-gold)] focus:bg-white"
+                  className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 pr-12 text-sm text-zinc-900 outline-none transition focus:border-[var(--brand-gold)] focus:bg-white"
                 />
                 <button
                   type="button"
@@ -158,9 +158,18 @@ function SignInPage({ onSignIn }: SignInPageProps) {
               </div>
             </label>
 
+            <div className="flex justify-end">
+              <button
+                type="button"
+                className="text-sm font-medium text-[#62853e] transition hover:text-[#749b4a]"
+              >
+                Forgot password?
+              </button>
+            </div>
+
             <button
               type="submit"
-              className="w-full rounded-lg bg-[var(--brand-olive)] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#4b6330]"
+              className="w-full rounded-md bg-[#62853e] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#749b4a]"
             >
               Sign in
             </button>
@@ -176,7 +185,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
 
           <button
             type="button"
-            className="flex w-full items-center justify-center gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
+            className="flex w-full items-center justify-center gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
             onClick={onSignIn}
           >
             <svg

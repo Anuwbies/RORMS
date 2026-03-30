@@ -1,9 +1,8 @@
 import { type ComponentType } from 'react'
 import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
   CloseIcon,
   type IconProps,
+  MenuIcon,
 } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
 
@@ -49,17 +48,17 @@ export function Sidebar({
 
       <aside
         className={joinClasses(
-          'fixed inset-y-0 left-0 z-40 flex overflow-y-auto border-r border-[color:rgba(18,26,10,0.22)] bg-[#3a4f24] transition-all duration-300 ease-out lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex overflow-y-auto border-r border-[color:rgba(18,26,10,0.22)] bg-[#62853e] transition-all duration-200 ease-out lg:translate-x-0',
           isSidebarOpen
             ? 'translate-x-0 shadow-[0_24px_60px_rgba(36,49,22,0.18)]'
             : '-translate-x-full lg:shadow-none',
-          isSidebarExpanded ? 'w-80' : 'w-24',
+          isSidebarExpanded ? 'w-80' : 'w-20',
         )}
       >
         <div className="flex min-h-full w-full flex-col">
           <div
             className={joinClasses(
-              'relative border-b border-[color:rgba(36,49,22,0.12)] bg-[#f3a91f] transition-all duration-300',
+              'relative border-b border-[color:rgba(36,49,22,0.12)] bg-[#f3a91f] transition-all duration-200',
               isSidebarExpanded ? 'px-5 py-3' : 'px-2.5 py-2.5',
             )}
           >
@@ -67,10 +66,10 @@ export function Sidebar({
               <div className="mb-4 flex justify-center">
                 <IconButton
                   label="Expand sidebar"
-                  className="text-[var(--brand-olive-deep)] hover:bg-[rgba(36,49,22,0.08)] hover:text-[var(--brand-olive-deep)]"
+                  className="h-8 w-8 rounded-md border-2 border-[rgba(255,255,255,0.7)] text-white hover:bg-[rgba(255,255,255,0.14)] hover:text-white"
                   onClick={() => setIsSidebarExpanded(true)}
                 >
-                  <ChevronRightIcon className="h-7 w-7" />
+                  <MenuIcon className="h-5 w-5" />
                 </IconButton>
               </div>
             )}
@@ -81,17 +80,28 @@ export function Sidebar({
                 isSidebarExpanded ? 'justify-between' : 'justify-center',
               )}
             >
-              <div className="flex min-w-0 items-center gap-3">
-                <img
-                  src="/logo.png"
-                  alt="RORMS Logo"
-                  className="h-14 w-14 shrink-0 rounded-full object-cover"
-                />
+              <div className="flex min-w-0 items-center gap-2">
+                <div
+                  className={joinClasses(
+                    'flex shrink-0 items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(36,49,22,0.16)]',
+                    isSidebarExpanded ? 'h-12 w-12' : 'h-10 w-10',
+                  )}
+                >
+                  <img
+                    src="/logo2.png"
+                    alt="RORMS Logo"
+                    className={joinClasses(
+                      'rounded-full object-cover',
+                      isSidebarExpanded ? 'h-12 w-12' : 'h-10 w-10',
+                    )}
+                  />
+                </div>
 
                 {isSidebarExpanded && (
-                  <div className="min-w-0">
-                    <h1 className="text-xl font-bold tracking-tight text-[var(--brand-olive-deep)]">
-                      RORMS
+                  <div className="w-[170px] shrink-0 overflow-hidden">
+                    <h1 className="text-[15px] font-medium leading-tight tracking-tight text-white">
+                      <span className="block whitespace-nowrap">Registrar Office Room</span>
+                      <span className="block whitespace-nowrap">Management System</span>
                     </h1>
                   </div>
                 )}
@@ -100,10 +110,10 @@ export function Sidebar({
               {isSidebarExpanded && (
                 <IconButton
                   label="Collapse sidebar"
-                  className="text-[var(--brand-olive-deep)] hover:bg-[rgba(36,49,22,0.08)] hover:text-[var(--brand-olive-deep)]"
+                  className="h-8 w-8 rounded-md border-2 border-[rgba(255,255,255,0.7)] text-white hover:bg-[rgba(255,255,255,0.14)] hover:text-white"
                   onClick={() => setIsSidebarExpanded(false)}
                 >
-                  <ChevronLeftIcon className="h-7 w-7" />
+                  <MenuIcon className="h-5 w-5" />
                 </IconButton>
               )}
             </div>
@@ -111,7 +121,7 @@ export function Sidebar({
             <button
               type="button"
               aria-label="Close navigation"
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-2xl text-[var(--brand-olive-deep)] transition hover:bg-[rgba(36,49,22,0.08)] hover:text-[var(--brand-olive-deep)] lg:hidden"
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-white transition hover:bg-[rgba(255,255,255,0.14)] hover:text-white lg:hidden"
               onClick={() => setIsSidebarOpen(false)}
             >
               <CloseIcon className="h-5 w-5" />
@@ -120,7 +130,7 @@ export function Sidebar({
 
           <nav
             className={joinClasses(
-              'flex-1 space-y-1 bg-[#3a4f24] py-4 transition-all duration-300',
+              'flex-1 space-y-1 bg-transparent py-4 transition-all duration-200',
               isSidebarExpanded ? 'px-3' : 'px-2',
             )}
           >
@@ -137,16 +147,16 @@ export function Sidebar({
                     setIsSidebarOpen(false)
                   }}
                   className={joinClasses(
-                    'group flex w-full items-center gap-3 text-left text-sm font-semibold transition-all duration-200',
-                    isSidebarExpanded ? 'px-3 py-2.5' : 'justify-center p-2.5',
+                    'group flex w-full items-center gap-3 text-left text-base font-semibold transition-all duration-200',
+                    isSidebarExpanded ? 'px-3.5 py-3' : 'justify-center p-3',
                     isActive
-                      ? 'text-[var(--brand-gold)]'
+                      ? 'rounded-md bg-[rgba(243,169,31,0.10)] text-[var(--brand-gold)]'
                       : 'text-[#f6f1e6] hover:text-[var(--brand-gold)]',
                   )}
                 >
                   <item.icon
                     className={joinClasses(
-                      'h-5 w-5 shrink-0 transition-transform duration-200 group-hover:scale-110',
+                      'h-6 w-6 shrink-0 transition-transform duration-200 group-hover:scale-110 group-hover:text-[var(--brand-gold)]',
                       isActive ? 'text-[var(--brand-gold)]' : 'text-[#f6f1e6]',
                     )}
                   />
