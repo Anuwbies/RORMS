@@ -40,6 +40,29 @@ export function DoorIcon(props: IconProps) {
   )
 }
 
+export function BuildingIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M4.5 20V6.25A1.75 1.75 0 0 1 6.25 4.5h6A1.75 1.75 0 0 1 14 6.25V20" />
+      <path d="M14 20V9.25A1.75 1.75 0 0 1 15.75 7.5h2A1.75 1.75 0 0 1 19.5 9.25V20" />
+      <path d="M8 8.5h2" />
+      <path d="M8 12h2" />
+      <path d="M8 15.5h2" />
+      <path d="M16.25 11.5h1" />
+      <path d="M16.25 15h1" />
+      <path d="M3 20h18" />
+    </svg>
+  )
+}
+
 export function ClipboardIcon(props: IconProps) {
   return (
     <svg
@@ -102,6 +125,25 @@ export function SettingsIcon(props: IconProps) {
       <circle cx="12" cy="6.5" r="2" />
       <circle cx="9" cy="12" r="2" />
       <circle cx="15.5" cy="17.5" r="2" />
+    </svg>
+  )
+}
+
+export function UsersIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <circle cx="9" cy="8.5" r="2.5" />
+      <circle cx="16.5" cy="9.5" r="2" />
+      <path d="M4.75 18a4.75 4.75 0 0 1 8.5 0" />
+      <path d="M14.25 18a3.5 3.5 0 0 1 5 0" />
     </svg>
   )
 }
@@ -169,6 +211,118 @@ export function ChevronRightIcon(props: IconProps) {
       {...props}
     >
       <path d="m9 6 6 6-6 6" />
+    </svg>
+  )
+}
+
+export function BellIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M6.75 9.5a5.25 5.25 0 1 1 10.5 0c0 4.8 2 5.9 2 5.9H4.75s2-1.1 2-5.9" />
+      <path d="M10 18.25a2 2 0 0 0 4 0" />
+    </svg>
+  )
+}
+
+export function SunIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="M12 2.75v2.5" />
+      <path d="M12 18.75v2.5" />
+      <path d="m4.93 4.93 1.77 1.77" />
+      <path d="m17.3 17.3 1.77 1.77" />
+      <path d="M2.75 12h2.5" />
+      <path d="M18.75 12h2.5" />
+      <path d="m4.93 19.07 1.77-1.77" />
+      <path d="m17.3 6.7 1.77-1.77" />
+    </svg>
+  )
+}
+
+export function MoonIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M20 14.25A7.75 7.75 0 1 1 9.75 4 6.25 6.25 0 1 0 20 14.25Z" />
+    </svg>
+  )
+}
+
+export function LogOutIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M14.5 7.5V5.75A1.75 1.75 0 0 0 12.75 4H6.75A1.75 1.75 0 0 0 5 5.75v12.5A1.75 1.75 0 0 0 6.75 20h6A1.75 1.75 0 0 0 14.5 18.25V16.5" />
+      <path d="M10.5 12h9" />
+      <path d="m16 7.5 4.5 4.5-4.5 4.5" />
+    </svg>
+  )
+}
+
+export function CameraIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M4.75 8.25h2.4l1.15-1.75h7.4l1.15 1.75h2.4A1.75 1.75 0 0 1 21 10v8.25A1.75 1.75 0 0 1 19.25 20H4.75A1.75 1.75 0 0 1 3 18.25V10a1.75 1.75 0 0 1 1.75-1.75Z" />
+      <circle cx="12" cy="14" r="3.25" />
+    </svg>
+  )
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M4.75 7.25h14.5" />
+      <path d="M9.25 4.5h5.5" />
+      <path d="M7 7.25 7.8 18A1.75 1.75 0 0 0 9.55 19.6h4.9A1.75 1.75 0 0 0 16.2 18L17 7.25" />
+      <path d="M10 10.5v5" />
+      <path d="M14 10.5v5" />
     </svg>
   )
 }

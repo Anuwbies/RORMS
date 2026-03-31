@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import SignInPage from './pages/SignInPage'
-import DashboardPage from './pages/DashboardPage'
+import LeftSidebarController from './pages/LeftSidebarController'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -9,8 +9,12 @@ function App() {
     setIsAuthenticated(true)
   }
 
+  const handleSignOut = () => {
+    setIsAuthenticated(false)
+  }
+
   if (isAuthenticated) {
-    return <DashboardPage />
+    return <LeftSidebarController onSignOut={handleSignOut} />
   }
 
   return <SignInPage onSignIn={handleSignIn} />

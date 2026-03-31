@@ -1,12 +1,13 @@
 import { type ComponentType } from 'react'
 import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
   CloseIcon,
   type IconProps,
-  MenuIcon,
 } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
 
-export type DashboardSection = 'overview' | 'rooms' | 'requests' | 'schedule' | 'settings'
+export type DashboardSection = 'dashboard' | 'buildingsRooms' | 'users'
 
 export interface NavItem {
   id: DashboardSection
@@ -16,7 +17,7 @@ export interface NavItem {
   icon: ComponentType<IconProps>
 }
 
-interface SidebarProps {
+interface LeftSidebarProps {
   navItems: NavItem[]
   activeSection: DashboardSection
   onSectionChange: (section: DashboardSection) => void
@@ -26,7 +27,7 @@ interface SidebarProps {
   setIsSidebarExpanded: (isExpanded: boolean) => void
 }
 
-export function Sidebar({
+export function LeftSidebar({
   navItems,
   activeSection,
   onSectionChange,
@@ -34,23 +35,23 @@ export function Sidebar({
   setIsSidebarOpen,
   isSidebarExpanded,
   setIsSidebarExpanded,
-}: SidebarProps) {
+}: LeftSidebarProps) {
   return (
     <>
       {isSidebarOpen && (
         <button
           type="button"
           aria-label="Close navigation"
-          className="fixed inset-0 z-30 bg-[rgba(36,49,22,0.42)] lg:hidden"
+          className="fixed inset-0 z-30 bg-[rgba(0,0,0,0.2)] lg:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
 
       <aside
         className={joinClasses(
-          'fixed inset-y-0 left-0 z-40 flex overflow-y-auto border-r border-[color:rgba(18,26,10,0.22)] bg-[#62853e] transition-all duration-200 ease-out lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex overflow-y-auto border-r border-gray-200 bg-[var(--brand-surface)] transition-all duration-200 ease-out lg:translate-x-0',
           isSidebarOpen
-            ? 'translate-x-0 shadow-[0_24px_60px_rgba(36,49,22,0.18)]'
+            ? 'translate-x-0 shadow-[0_24px_60px_rgba(0,0,0,0.08)]'
             : '-translate-x-full lg:shadow-none',
           isSidebarExpanded ? 'w-80' : 'w-20',
         )}
@@ -58,48 +59,34 @@ export function Sidebar({
         <div className="flex min-h-full w-full flex-col">
           <div
             className={joinClasses(
-              'relative border-b border-[color:rgba(36,49,22,0.12)] bg-[#f3a91f] transition-all duration-200',
+              'relative border-b border-gray-200 bg-[var(--card-surface)] transition-all duration-200',
               isSidebarExpanded ? 'px-5 py-3' : 'px-2.5 py-2.5',
             )}
           >
-            {!isSidebarExpanded && (
-              <div className="mb-4 flex justify-center">
-                <IconButton
-                  label="Expand sidebar"
-                  className="h-8 w-8 rounded-md border-2 border-[rgba(255,255,255,0.7)] text-white hover:bg-[rgba(255,255,255,0.14)] hover:text-white"
-                  onClick={() => setIsSidebarExpanded(true)}
-                >
-                  <MenuIcon className="h-5 w-5" />
-                </IconButton>
-              </div>
-            )}
-
             <div
               className={joinClasses(
                 'flex items-center gap-3',
-                isSidebarExpanded ? 'justify-between' : 'justify-center',
+                isSidebarExpanded ? 'justify-between' : 'flex-col justify-center gap-4',
               )}
             >
-              <div className="flex min-w-0 items-center gap-2">
-                <div
+              <div
+                className={joinClasses(
+                  'flex min-w-0 items-center gap-2',
+                  !isSidebarExpanded && 'order-2',
+                )}
+              >
+                <img
+                  src="/logo2.png"
+                  alt="RORMS Logo"
                   className={joinClasses(
-                    'flex shrink-0 items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(36,49,22,0.16)]',
+                    'shrink-0 object-cover',
                     isSidebarExpanded ? 'h-12 w-12' : 'h-10 w-10',
                   )}
-                >
-                  <img
-                    src="/logo2.png"
-                    alt="RORMS Logo"
-                    className={joinClasses(
-                      'rounded-full object-cover',
-                      isSidebarExpanded ? 'h-12 w-12' : 'h-10 w-10',
-                    )}
-                  />
-                </div>
+                />
 
                 {isSidebarExpanded && (
                   <div className="w-[170px] shrink-0 overflow-hidden">
-                    <h1 className="text-[15px] font-medium leading-tight tracking-tight text-white">
+                    <h1 className="text-[15px] font-medium leading-tight tracking-tight text-black">
                       <span className="block whitespace-nowrap">Registrar Office Room</span>
                       <span className="block whitespace-nowrap">Management System</span>
                     </h1>
@@ -107,13 +94,21 @@ export function Sidebar({
                 )}
               </div>
 
-              {isSidebarExpanded && (
+              {isSidebarExpanded ? (
                 <IconButton
                   label="Collapse sidebar"
-                  className="h-8 w-8 rounded-md border-2 border-[rgba(255,255,255,0.7)] text-white hover:bg-[rgba(255,255,255,0.14)] hover:text-white"
+                  className="h-8 w-8 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
                   onClick={() => setIsSidebarExpanded(false)}
                 >
-                  <MenuIcon className="h-5 w-5" />
+                  <ChevronLeftIcon className="h-5 w-5" />
+                </IconButton>
+              ) : (
+                <IconButton
+                  label="Expand sidebar"
+                  className="order-1 h-8 w-8 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100"
+                  onClick={() => setIsSidebarExpanded(true)}
+                >
+                  <ChevronRightIcon className="h-5 w-5" />
                 </IconButton>
               )}
             </div>
@@ -121,7 +116,7 @@ export function Sidebar({
             <button
               type="button"
               aria-label="Close navigation"
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-white transition hover:bg-[rgba(255,255,255,0.14)] hover:text-white lg:hidden"
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 lg:hidden"
               onClick={() => setIsSidebarOpen(false)}
             >
               <CloseIcon className="h-5 w-5" />
@@ -130,7 +125,7 @@ export function Sidebar({
 
           <nav
             className={joinClasses(
-              'flex-1 space-y-1 bg-transparent py-4 transition-all duration-200',
+              'flex-1 space-y-1 bg-[var(--card-surface)] py-4 transition-all duration-200',
               isSidebarExpanded ? 'px-3' : 'px-2',
             )}
           >
@@ -148,19 +143,23 @@ export function Sidebar({
                   }}
                   className={joinClasses(
                     'group flex w-full items-center gap-3 text-left text-base font-semibold transition-all duration-200',
-                    isSidebarExpanded ? 'px-3.5 py-3' : 'justify-center p-3',
+                    isSidebarExpanded ? 'h-12 px-3.5' : 'h-12 justify-center',
                     isActive
-                      ? 'rounded-md bg-[rgba(243,169,31,0.10)] text-[var(--brand-gold)]'
-                      : 'text-[#f6f1e6] hover:text-[var(--brand-gold)]',
+                      ? 'rounded-md bg-[var(--brand-color)]/20 text-[var(--brand-color)]'
+                      : 'text-gray-700 hover:text-black',
                   )}
                 >
                   <item.icon
                     className={joinClasses(
-                      'h-6 w-6 shrink-0 transition-transform duration-200 group-hover:scale-110 group-hover:text-[var(--brand-gold)]',
-                      isActive ? 'text-[var(--brand-gold)]' : 'text-[#f6f1e6]',
+                      'h-6 w-6 shrink-0 transition-transform duration-200 group-hover:scale-110',
+                      isActive ? 'text-[var(--brand-color)]' : 'text-gray-500 group-hover:text-black',
                     )}
                   />
-                  {isSidebarExpanded && <span className="flex-1">{item.label}</span>}
+                  {isSidebarExpanded && (
+                    <span className="flex-1 transition-all duration-200 origin-left group-hover:scale-105">
+                      {item.label}
+                    </span>
+                  )}
                 </button>
               )
             })}

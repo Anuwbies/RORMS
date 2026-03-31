@@ -17,7 +17,7 @@ export function IconButton({ label, onClick, className, children }: IconButtonPr
       type="button"
       aria-label={label}
       className={joinClasses(
-        'inline-flex items-center justify-center rounded-2xl text-[var(--brand-olive)] transition hover:bg-[rgba(58,79,36,0.08)] hover:text-[var(--brand-olive-deep)]',
+        'inline-flex items-center justify-center rounded-2xl text-[var(--brand-color)] transition hover:bg-[rgba(98,133,62,0.08)] hover:text-[var(--brand-color)]',
         className,
       )}
       onClick={onClick}

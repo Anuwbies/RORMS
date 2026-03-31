@@ -17,9 +17,9 @@ function SignInPage({ onSignIn }: SignInPageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-white lg:grid lg:grid-cols-[3fr_2fr]">
-      <section className="flex min-h-[36vh] flex-col gap-8 bg-[#62853e] px-6 py-6 text-[var(--brand-olive-deep)] lg:min-h-screen lg:p-10">
-        <nav className="flex w-full flex-wrap items-center justify-between gap-5 rounded-lg border border-[color:rgba(58,79,36,0.12)] bg-[#fafafa] px-4 py-2 shadow-[0_16px_40px_rgba(36,49,22,0.08)]">
+    <main className="min-h-screen bg-[var(--brand-surface)] lg:grid lg:grid-cols-[3fr_2fr]">
+      <section className="flex min-h-[36vh] flex-col gap-8 bg-[var(--brand-color)] px-6 py-6 text-[var(--brand-color)] lg:min-h-screen lg:p-10">
+        <nav className="flex w-full flex-wrap items-center justify-between gap-5 rounded-lg border border-gray-200/20 bg-[var(--card-surface)] px-4 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.12)]">
           <div className="flex min-w-0 items-center gap-4">
             <img
               src="/logo2.png"
@@ -27,16 +27,16 @@ function SignInPage({ onSignIn }: SignInPageProps) {
               className="h-14 w-14 shrink-0 object-contain"
             />
             <div className="min-w-0 space-y-0.5">
-              <p className="text-xs font-semibold uppercase leading-none tracking-[0.3em] text-[var(--brand-gold)] sm:text-sm">
+              <p className="text-xs font-semibold uppercase leading-none tracking-[0.3em] text-[var(--brand-color)] sm:text-sm">
                 PHINMA UPANG
               </p>
-              <h1 className="text-sm font-semibold leading-none text-[var(--brand-olive-deep)] sm:text-base">
+              <h1 className="text-sm font-semibold leading-none text-black sm:text-base">
                 Registrar Office Room Management System
               </h1>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-4 text-sm font-medium text-[var(--brand-olive-deep)]">
+          <div className="flex flex-wrap items-center justify-end gap-4 text-sm font-medium text-black">
             {(['home', 'about', 'contact'] as const).map((tab) => {
               const isActive = activeTab === tab
               const label = tab.charAt(0).toUpperCase() + tab.slice(1)
@@ -46,10 +46,10 @@ function SignInPage({ onSignIn }: SignInPageProps) {
                   key={tab}
                   type="button"
                   onClick={() => setActiveTab(tab)}
-                  className={`relative px-2 py-1.5 transition after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-[var(--brand-gold)] after:transition-transform after:content-[''] ${
+                  className={`relative px-2 py-1.5 transition after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-[var(--brand-color)] after:transition-transform after:content-[''] ${
                     isActive
-                      ? 'text-[var(--brand-gold)] after:scale-x-100'
-                      : 'text-[var(--brand-olive-deep)] after:origin-center after:scale-x-0 hover:text-[var(--brand-gold)] hover:after:scale-x-100'
+                      ? 'text-[var(--brand-color)] after:scale-x-100'
+                      : 'text-black after:origin-center after:scale-x-0 hover:text-[var(--brand-color)] hover:after:scale-x-100'
                   }`}
                 >
                   {label}
@@ -60,31 +60,31 @@ function SignInPage({ onSignIn }: SignInPageProps) {
         </nav>
 
         <div className="flex w-full min-h-0 flex-1 items-stretch">
-          <div className="h-full w-full rounded-lg border border-[color:rgba(58,79,36,0.14)] bg-[#fafafa] p-8 shadow-[0_24px_50px_rgba(36,49,22,0.08)]">
+          <div className="h-full w-full rounded-lg border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
             {/* Content area left empty for all tabs as requested */}
           </div>
         </div>
       </section>
 
       <section className="flex min-h-screen items-center justify-center px-6 py-10 sm:px-10 lg:px-12">
-        <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-8 shadow-[0_24px_60px_rgba(0,0,0,0.08)] sm:p-10">
-          <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-gold)]">
+        <div className="w-full max-w-md rounded-lg border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
+          <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-color)]">
             Sign In
           </p>
-          <h2 className="mt-3 text-center text-3xl font-semibold text-[var(--brand-olive-deep)]">
+          <h2 className="mt-3 text-center text-3xl font-semibold text-black">
             Welcome back
           </h2>
-          <p className="mt-1 text-center text-sm leading-6 text-zinc-600">
-            Access the room reservation system with your account.
+          <p className="mt-1 text-center text-sm leading-6 text-[var(--hint-color)]">
+            Access the system with your account.
           </p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-zinc-700">
+              <span className="mb-2 block text-sm font-normal text-black">
                 Email <span className="text-red-500">*</span>
               </span>
-              <div className="relative">
-                <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-zinc-500">
+              <div className="group relative">
+                <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-[var(--hint-color)] transition group-focus-within:text-[var(--brand-color)]">
                   <svg
                     aria-hidden="true"
                     viewBox="0 0 24 24"
@@ -101,27 +101,27 @@ function SignInPage({ onSignIn }: SignInPageProps) {
                 </span>
                 <input
                   type="email"
-                  placeholder="name@company.com"
-                  className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 pr-12 text-sm text-zinc-900 outline-none transition focus:border-[var(--brand-gold)] focus:bg-white"
+                  placeholder="example.up@phinmaed.com"
+                  className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
                 />
               </div>
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-sm font-medium text-zinc-700">
+              <span className="mb-2 block text-sm font-normal text-black">
                 Password <span className="text-red-500">*</span>
               </span>
-              <div className="relative">
+              <div className="group relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   placeholder="Enter your password"
-                  className="w-full rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 pr-12 text-sm text-zinc-900 outline-none transition focus:border-[var(--brand-gold)] focus:bg-white"
+                  className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
                 />
                 <button
                   type="button"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                   onClick={() => setShowPassword((current) => !current)}
-                  className="absolute inset-y-0 right-0 flex items-center px-4 text-zinc-500 transition hover:text-zinc-700"
+                  className="absolute inset-y-0 right-0 flex items-center px-4 text-[var(--hint-color)] transition group-focus-within:text-[var(--brand-color)] hover:text-black"
                 >
                   {showPassword ? (
                     <svg
@@ -161,7 +161,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
             <div className="flex justify-end">
               <button
                 type="button"
-                className="text-sm font-medium text-[#62853e] transition hover:text-[#749b4a]"
+                className="text-sm font-medium text-[var(--brand-color)] transition hover:text-blue-600"
               >
                 Forgot password?
               </button>
@@ -169,23 +169,23 @@ function SignInPage({ onSignIn }: SignInPageProps) {
 
             <button
               type="submit"
-              className="w-full rounded-md bg-[#62853e] px-4 py-3 text-sm font-semibold text-white transition hover:bg-[#749b4a]"
+              className="w-full rounded-md bg-[var(--brand-color)] px-4 py-3 text-sm font-semibold text-[var(--brand-surface)] transition hover:opacity-90"
             >
               Sign in
             </button>
           </form>
 
           <div className="my-6 flex items-center gap-3">
-            <div className="h-px flex-1 bg-zinc-200" />
-            <span className="text-xs font-medium uppercase tracking-[0.22em] text-zinc-400">
+            <div className="h-px flex-1 bg-[rgba(0,0,0,0.12)]" />
+            <span className="text-xs font-medium uppercase tracking-[0.22em] text-[var(--hint-color)]">
               Or continue with
             </span>
-            <div className="h-px flex-1 bg-zinc-200" />
+            <div className="h-px flex-1 bg-[rgba(0,0,0,0.12)]" />
           </div>
 
           <button
             type="button"
-            className="flex w-full items-center justify-center gap-3 rounded-md border border-zinc-200 bg-white px-4 py-3 text-sm font-semibold text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50"
+            className="flex w-full items-center justify-center gap-3 rounded-md border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 text-sm font-semibold text-[#1f1f1f] transition hover:bg-[#f8f8f8]"
             onClick={onSignIn}
           >
             <svg

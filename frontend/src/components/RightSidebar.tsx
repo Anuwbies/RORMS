@@ -1,0 +1,485 @@
+import { useRef, useState, type ChangeEvent } from 'react'
+import { BellIcon, CameraIcon, ChevronLeftIcon, ChevronRightIcon, LogOutIcon, MoonIcon, SunIcon, TrashIcon } from './Icons'
+import { IconButton, joinClasses } from './IconButton'
+
+type ThemeMode = 'light' | 'dark'
+
+type NotificationType =
+  | 'booking_created'
+  | 'booking_approved'
+  | 'booking_rejected'
+  | 'booking_cancelled'
+  | 'system'
+
+interface NotificationItem {
+  id: string
+  title: string
+  message: string
+  createdAt: string
+  isRead: boolean
+  type: NotificationType
+}
+
+interface RightSidebarProps {
+  isExpanded: boolean
+  onExpandChange: (isExpanded: boolean) => void
+  onSignOut: () => void
+}
+
+const initialNotifications: NotificationItem[] = [
+  {
+    id: 'notif-1',
+    title: 'Room request received',
+    message: 'A new registrar room request for Meeting Room A needs review before 3:00 PM.',
+    createdAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+    isRead: false,
+    type: 'booking_created',
+  },
+  {
+    id: 'notif-2',
+    title: 'Assignment approved',
+    message: 'The revised allocation for Computer Lab 2 was approved and published to staff.',
+    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+    isRead: false,
+    type: 'booking_approved',
+  },
+  {
+    id: 'notif-3',
+    title: 'Schedule conflict flagged',
+    message: 'Two overlapping reservations were detected for the registrar interview room.',
+    createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
+    isRead: true,
+    type: 'booking_rejected',
+  },
+  {
+    id: 'notif-4',
+    title: 'System summary ready',
+    message: 'The weekly room utilization digest is ready for the registrar office to review.',
+    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    isRead: true,
+    type: 'system',
+  },
+]
+
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0] ?? '')
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+}
+
+function formatRelativeTime(timestamp: string) {
+  const elapsedMs = Math.max(Date.now() - new Date(timestamp).getTime(), 0)
+  const minutes = Math.max(1, Math.floor(elapsedMs / (60 * 1000)))
+
+  if (minutes < 60) {
+    return `${minutes}min ago`
+  }
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    return `${hours}h ago`
+  }
+
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
+}
+
+function getNotificationConfig(type: NotificationType) {
+  switch (type) {
+    case 'booking_created':
+      return {
+        color: 'text-blue-600 dark:text-blue-300',
+        bg: 'bg-blue-50 dark:bg-blue-500/10',
+        border: 'bg-blue-500',
+      }
+    case 'booking_approved':
+      return {
+        color: 'text-emerald-600 dark:text-emerald-300',
+        bg: 'bg-emerald-50 dark:bg-emerald-500/10',
+        border: 'bg-emerald-500',
+      }
+    case 'booking_rejected':
+      return {
+        color: 'text-red-600 dark:text-red-300',
+        bg: 'bg-red-50 dark:bg-red-500/10',
+        border: 'bg-red-500',
+      }
+    case 'booking_cancelled':
+      return {
+        color: 'text-amber-600 dark:text-amber-300',
+        bg: 'bg-amber-50 dark:bg-amber-500/10',
+        border: 'bg-amber-500',
+      }
+    case 'system':
+    default:
+      return {
+        color: 'text-purple-600 dark:text-purple-300',
+        bg: 'bg-purple-50 dark:bg-purple-500/10',
+        border: 'bg-purple-500',
+      }
+  }
+}
+
+export function RightSidebar({
+  isExpanded,
+  onExpandChange,
+  onSignOut,
+}: RightSidebarProps) {
+  const [theme, setTheme] = useState<ThemeMode>('light')
+  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications)
+  const [profileImage, setProfileImage] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const user = {
+    fullName: 'Registrar Office Admin',
+    email: 'registrar.office@phinmaed.com',
+  }
+
+  const unreadCount = notifications.filter((notification) => !notification.isRead).length
+
+  const toggleTheme = () => {
+    setTheme((currentTheme) => (currentTheme === 'light' ? 'dark' : 'light'))
+  }
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setProfileImage(typeof reader.result === 'string' ? reader.result : null)
+    }
+    reader.readAsDataURL(file)
+    event.target.value = ''
+  }
+
+  const markAsRead = (notificationId: string) => {
+    setNotifications((currentNotifications) =>
+      currentNotifications.map((notification) =>
+        notification.id === notificationId
+          ? { ...notification, isRead: true }
+          : notification,
+      ),
+    )
+  }
+
+  const deleteNotification = (notificationId: string) => {
+    setNotifications((currentNotifications) =>
+      currentNotifications.filter((notification) => notification.id !== notificationId),
+    )
+  }
+
+  const markAllAsRead = () => {
+    setNotifications((currentNotifications) =>
+      currentNotifications.map((notification) => ({
+        ...notification,
+        isRead: true,
+      })),
+    )
+  }
+
+  const clearNotifications = () => {
+    setNotifications([])
+  }
+
+  const avatar = profileImage ? (
+    <img
+      src={profileImage}
+      alt={user.fullName}
+      className="h-full w-full rounded-full object-cover"
+    />
+  ) : (
+    <div
+      className={joinClasses(
+        'flex h-full w-full items-center justify-center rounded-full bg-primary-600 font-black uppercase text-white',
+        isExpanded ? 'text-2xl' : 'text-[10px] tracking-tight',
+      )}
+    >
+      {getInitials(user.fullName)}
+    </div>
+  )
+
+  return (
+    <aside
+      className={joinClasses(
+        'fixed top-0 right-0 z-50 hidden h-full flex-col border-l border-gray-200 bg-[var(--brand-surface)] transition-all duration-200 ease-out xl:flex',
+        isExpanded ? 'w-80' : 'w-20',
+      )}
+    >
+      <div
+        className={joinClasses(
+          'border-b border-gray-200 bg-[var(--card-surface)] transition-all duration-200',
+          isExpanded ? 'p-6' : 'px-2.5 py-2.5',
+        )}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileChange}
+        />
+
+        {isExpanded ? (
+          <div className="relative flex flex-col items-center text-center">
+            <div className="absolute top-0 left-0">
+              <IconButton
+                label="Collapse right sidebar"
+                className="h-8 w-8 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
+                onClick={() => onExpandChange(false)}
+              >
+                <ChevronRightIcon className="h-5 w-5" />
+              </IconButton>
+            </div>
+
+            <div className="group relative mb-4">
+              <div className="relative h-24 w-24">
+                <div className="h-24 w-24 overflow-hidden rounded-full ring-4 ring-primary-50 ring-offset-2 ring-offset-white dark:ring-primary-500/20 dark:ring-offset-secondary-900">
+                  {avatar}
+                </div>
+                <div className="absolute right-0 bottom-0 z-10 h-6 w-6 rounded-full border-4 border-white bg-green-500 dark:border-secondary-900" />
+                <button
+                  type="button"
+                  aria-label="Change profile picture"
+                  title="Change profile picture"
+                  className="absolute right-[-4px] bottom-[-4px] z-20 flex h-8 w-8 items-center justify-center rounded-full border border-secondary-200 bg-white text-secondary-600 shadow-sm transition-all hover:border-primary-100 hover:text-primary-600 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-300 dark:hover:border-primary-500/30 dark:hover:text-primary-300"
+                  onClick={triggerFileInput}
+                >
+                  <CameraIcon className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <h2 className="mb-1 text-lg font-bold tracking-tight text-secondary-900 dark:text-secondary-100">
+              {user.fullName}
+            </h2>
+            <p className="mb-4 text-sm text-secondary-500 dark:text-secondary-400">
+              {user.email}
+            </p>
+
+            <div className="flex w-full gap-2">
+              <button
+                type="button"
+                className="flex h-9 flex-1 items-center justify-center rounded-md border border-secondary-200 bg-white px-2 text-secondary-900 transition-colors hover:bg-secondary-50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100 dark:hover:bg-secondary-800"
+                onClick={toggleTheme}
+              >
+                <div className="flex items-center gap-1.5 scale-[1] origin-center">
+                  {theme === 'light' ? (
+                    <MoonIcon className="h-4 w-4" />
+                  ) : (
+                    <SunIcon className="h-4 w-4" />
+                  )}
+                  <span className="font-bold leading-none tracking-tight text-[13px]">
+                    {theme === 'light' ? 'Dark' : 'Light'}
+                  </span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                className="group flex h-9 flex-1 items-center justify-center rounded-md border border-secondary-200 bg-white px-2 text-secondary-900 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100 dark:hover:border-red-500/20 dark:hover:bg-red-500/10 dark:hover:text-red-200"
+                onClick={onSignOut}
+              >
+                <div className="flex items-center gap-1.5 scale-[1] origin-center">
+                  <LogOutIcon className="h-4 w-4 text-red-500 transition-colors group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200" />
+                  <span className="font-bold leading-none tracking-tight text-[13px]">
+                    Sign Out
+                  </span>
+                </div>
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-4">
+            <IconButton
+              label="Expand right sidebar"
+              className="order-1 h-8 w-8 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100"
+              onClick={() => onExpandChange(true)}
+            >
+              <ChevronLeftIcon className="h-5 w-5" />
+            </IconButton>
+
+            <button
+              type="button"
+              aria-label="Expand right sidebar"
+              className="order-2 flex h-10 w-10 items-center justify-center rounded-full bg-white transition-transform hover:scale-105"
+              onClick={() => onExpandChange(true)}
+            >
+              <div className="h-8 w-8 overflow-hidden rounded-full">
+                {avatar}
+              </div>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {!isExpanded && (
+        <div className="flex flex-1 flex-col bg-[var(--card-surface)] px-2 py-4 transition-all duration-200">
+          <div className="flex flex-col space-y-1">
+            <button
+              type="button"
+              aria-label="Open notifications"
+              className="group relative flex h-12 w-full items-center justify-center rounded-md transition-all duration-200 hover:bg-[var(--brand-color)]/20"
+              onClick={() => onExpandChange(true)}
+            >
+              <BellIcon className="h-6 w-6 text-gray-500 transition-all duration-200 group-hover:scale-110 group-hover:text-[var(--brand-color)]" />
+              {unreadCount > 0 && (
+                <span className="absolute top-3 right-3 h-2 w-2 rounded-full bg-red-500" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              aria-label="Toggle theme"
+              className="group flex h-12 w-full items-center justify-center rounded-md transition-all duration-200 hover:bg-[var(--brand-color)]/20"
+              onClick={toggleTheme}
+            >
+              {theme === 'light' ? (
+                <MoonIcon className="h-6 w-6 text-gray-500 transition-all duration-200 group-hover:scale-110 group-hover:text-[var(--brand-color)]" />
+              ) : (
+                <SunIcon className="h-6 w-6 text-gray-500 transition-all duration-200 group-hover:scale-110 group-hover:text-[var(--brand-color)]" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              aria-label="Sign out"
+              className="group flex h-12 w-full items-center justify-center rounded-md transition-all duration-200 hover:bg-red-500/10"
+              onClick={onSignOut}
+            >
+              <LogOutIcon className="h-6 w-6 text-red-500 transition-all duration-200 group-hover:scale-110 group-hover:text-red-600" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isExpanded && (
+        <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 bg-[var(--card-surface)] transition-all duration-200">
+          <div className="flex items-center justify-between p-6 pb-2">
+            <h3 className="text-sm font-black uppercase tracking-widest text-secondary-900 dark:text-secondary-100">
+              Notifications
+            </h3>
+            {unreadCount > 0 && (
+              <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-bold text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
+                {unreadCount} New
+              </span>
+            )}
+          </div>
+
+          <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
+            {notifications.map((notification) => {
+              const config = getNotificationConfig(notification.type)
+
+              return (
+                <button
+                  key={notification.id}
+                  type="button"
+                  className={joinClasses(
+                    'group relative flex w-full flex-col overflow-hidden rounded-2xl border text-left transition-all duration-300 hover:shadow-md',
+                    config.bg,
+                    config.color,
+                    'border-secondary-100 dark:border-secondary-800',
+                    !notification.isRead && 'ring-1 ring-primary-500/20 shadow-sm',
+                  )}
+                  onClick={() => markAsRead(notification.id)}
+                >
+                  <div className={joinClasses('absolute top-0 bottom-0 left-0 w-1.5', config.border)} />
+
+                  <div className="p-4 pl-6">
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <p
+                            className={joinClasses(
+                              'truncate text-sm font-black tracking-tight',
+                              notification.isRead
+                                ? 'text-secondary-900 dark:text-secondary-100'
+                                : 'text-primary-600 dark:text-primary-400',
+                            )}
+                          >
+                            {notification.title}
+                          </p>
+                          {!notification.isRead && (
+                            <span className="h-3.5 shrink-0 rounded-full bg-primary-500 px-1 text-[8px] leading-[14px] font-black uppercase tracking-widest text-white">
+                              New
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] font-bold text-secondary-400 dark:text-secondary-500">
+                          {formatRelativeTime(notification.createdAt)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-end justify-between gap-4">
+                        <p className="line-clamp-2 flex-1 text-[11px] font-semibold leading-relaxed text-secondary-500 dark:text-secondary-400">
+                          {notification.message}
+                        </p>
+
+                        <button
+                          type="button"
+                          aria-label={`Delete ${notification.title}`}
+                          className="mb-[-4px] mr-[-4px] shrink-0 rounded-lg p-1.5 text-secondary-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            deleteNotification(notification.id)
+                          }}
+                        >
+                          <TrashIcon className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+
+            {notifications.length === 0 && (
+              <div className="py-12 text-center">
+                <BellIcon className="mx-auto mb-3 h-10 w-10 text-secondary-200 dark:text-secondary-600" />
+                <p className="text-sm font-medium text-secondary-500 dark:text-secondary-400">
+                  No new notifications
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-2 p-4 pt-2">
+            <button
+              type="button"
+              className="w-full rounded-xl px-3 py-2 font-bold text-[var(--brand-color)] transition-colors hover:bg-[var(--brand-color)]/8 disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={markAllAsRead}
+              disabled={unreadCount === 0}
+            >
+              <span className="inline-block scale-[1] origin-center text-[13px] font-bold tracking-tight">
+                Mark all as read
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className="w-full rounded-xl px-3 py-2 font-bold text-secondary-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+              onClick={clearNotifications}
+              disabled={notifications.length === 0}
+            >
+              <span className="inline-block scale-[1] origin-center text-[13px] font-bold tracking-tight">
+                Clear all notifications
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+    </aside>
+  )
+}
+
+export default RightSidebar
