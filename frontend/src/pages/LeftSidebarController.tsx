@@ -6,9 +6,9 @@ import {
   UsersIcon,
 } from '../components/Icons'
 import type { NavItem, DashboardSection } from '../components/LeftSidebar'
-import DashboardPage from './dashboard/DashboardPage'
-import BuildingsRoomsPage from './dashboard/BuildingsRoomsPage'
-import UsersPage from './dashboard/UsersPage'
+import DashboardPage from './tabs/DashboardPage'
+import BuildingsRoomsPage from './tabs/BuildingsRoomsPage'
+import UsersPage from './tabs/UsersPage'
 
 const navItems: NavItem[] = [
   {
