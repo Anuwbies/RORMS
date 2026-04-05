@@ -6,6 +6,7 @@ import {
   type IconProps,
 } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
+import { leftSidebarOutlineClass, sidebarDividerClass } from './sidebarStyles'
 
 export type DashboardSection = 'dashboard' | 'buildingsRooms' | 'users'
 
@@ -49,17 +50,19 @@ export function LeftSidebar({
 
       <aside
         className={joinClasses(
-          'fixed inset-y-0 left-0 z-40 flex overflow-y-auto border-r border-gray-200 bg-[var(--brand-surface)] transition-all duration-200 ease-out lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex overflow-y-auto bg-[var(--brand-surface)] transition-all duration-200 ease-out lg:translate-x-0',
+          leftSidebarOutlineClass,
           isSidebarOpen
-            ? 'translate-x-0 shadow-[0_24px_60px_rgba(0,0,0,0.08)]'
-            : '-translate-x-full lg:shadow-none',
+            ? 'translate-x-0'
+            : '-translate-x-full',
           isSidebarExpanded ? 'w-80' : 'w-20',
         )}
       >
         <div className="flex min-h-full w-full flex-col">
           <div
             className={joinClasses(
-              'relative border-b border-gray-200 bg-[var(--card-surface)] transition-all duration-200',
+              'relative bg-[var(--card-surface)] transition-all duration-200',
+              sidebarDividerClass,
               isSidebarExpanded ? 'px-5 py-3' : 'px-2.5 py-2.5',
             )}
           >

@@ -1,8 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react'
-import { BellIcon, CameraIcon, ChevronLeftIcon, ChevronRightIcon, LogOutIcon, MoonIcon, SunIcon, TrashIcon } from './Icons'
+import { BellIcon, CameraIcon, ChevronLeftIcon, ChevronRightIcon, LogOutIcon, TrashIcon } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
-
-type ThemeMode = 'light' | 'dark'
+import { rightSidebarOutlineClass, sidebarDividerClass } from './sidebarStyles'
 
 type NotificationType =
   | 'booking_created'
@@ -128,8 +127,8 @@ export function RightSidebar({
   onExpandChange,
   onSignOut,
 }: RightSidebarProps) {
-  const [theme, setTheme] = useState<ThemeMode>('light')
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications)
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [profileImage, setProfileImage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -140,8 +139,8 @@ export function RightSidebar({
 
   const unreadCount = notifications.filter((notification) => !notification.isRead).length
 
-  const toggleTheme = () => {
-    setTheme((currentTheme) => (currentTheme === 'light' ? 'dark' : 'light'))
+  const toggleNotificationsEnabled = () => {
+    setNotificationsEnabled((current) => !current)
   }
 
   const triggerFileInput = () => {
@@ -211,13 +210,15 @@ export function RightSidebar({
   return (
     <aside
       className={joinClasses(
-        'fixed top-0 right-0 z-50 hidden h-full flex-col border-l border-gray-200 bg-[var(--brand-surface)] transition-all duration-200 ease-out xl:flex',
+        'fixed top-0 right-0 z-50 hidden h-full flex-col bg-[var(--brand-surface)] transition-all duration-200 ease-out xl:flex',
+        rightSidebarOutlineClass,
         isExpanded ? 'w-80' : 'w-20',
       )}
     >
       <div
         className={joinClasses(
-          'border-b border-gray-200 bg-[var(--card-surface)] transition-all duration-200',
+          'bg-[var(--card-surface)] shadow-none transition-all duration-200',
+          sidebarDividerClass,
           isExpanded ? 'p-6' : 'px-2.5 py-2.5',
         )}
       >
@@ -269,17 +270,26 @@ export function RightSidebar({
             <div className="flex w-full gap-2">
               <button
                 type="button"
-                className="flex h-9 flex-1 items-center justify-center rounded-md border border-secondary-200 bg-white px-2 text-secondary-900 transition-colors hover:bg-secondary-50 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100 dark:hover:bg-secondary-800"
-                onClick={toggleTheme}
+                aria-pressed={notificationsEnabled}
+                className={joinClasses(
+                  'group flex h-9 flex-1 items-center justify-center rounded-md border px-2 text-secondary-900 transition-colors',
+                  notificationsEnabled
+                    ? 'border-[var(--brand-color)]/30 bg-[var(--brand-color)]/10 text-[var(--brand-color)] hover:bg-[var(--brand-color)]/15'
+                    : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/15',
+                )}
+                onClick={toggleNotificationsEnabled}
               >
                 <div className="flex items-center gap-1.5 scale-[1] origin-center">
-                  {theme === 'light' ? (
-                    <MoonIcon className="h-4 w-4" />
-                  ) : (
-                    <SunIcon className="h-4 w-4" />
-                  )}
+                  <BellIcon
+                    className={joinClasses(
+                      'h-4 w-4 transition-colors',
+                      notificationsEnabled
+                        ? 'text-[var(--brand-color)]'
+                        : 'text-red-500 group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200',
+                    )}
+                  />
                   <span className="font-bold leading-none tracking-tight text-[13px]">
-                    {theme === 'light' ? 'Dark' : 'Light'}
+                    Notifications
                   </span>
                 </div>
               </button>
@@ -328,25 +338,20 @@ export function RightSidebar({
             <button
               type="button"
               aria-label="Open notifications"
-              className="group relative flex h-12 w-full items-center justify-center rounded-md transition-all duration-200 hover:bg-[var(--brand-color)]/20"
+              className={joinClasses(
+                'group relative flex h-12 w-full items-center justify-center rounded-md transition-all duration-200',
+                'text-gray-500 hover:bg-[var(--brand-color)]/20 hover:text-[var(--brand-color)]',
+              )}
               onClick={() => onExpandChange(true)}
             >
-              <BellIcon className="h-6 w-6 text-gray-500 transition-all duration-200 group-hover:scale-110 group-hover:text-[var(--brand-color)]" />
-              {unreadCount > 0 && (
-                <span className="absolute top-3 right-3 h-2 w-2 rounded-full bg-red-500" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              aria-label="Toggle theme"
-              className="group flex h-12 w-full items-center justify-center rounded-md transition-all duration-200 hover:bg-[var(--brand-color)]/20"
-              onClick={toggleTheme}
-            >
-              {theme === 'light' ? (
-                <MoonIcon className="h-6 w-6 text-gray-500 transition-all duration-200 group-hover:scale-110 group-hover:text-[var(--brand-color)]" />
-              ) : (
-                <SunIcon className="h-6 w-6 text-gray-500 transition-all duration-200 group-hover:scale-110 group-hover:text-[var(--brand-color)]" />
+              <BellIcon
+                className={joinClasses(
+                  'h-6 w-6 transition-all duration-200 group-hover:scale-110',
+                  'text-gray-500 group-hover:text-[var(--brand-color)]',
+                )}
+              />
+              {notificationsEnabled && unreadCount > 0 && (
+                <span className="absolute top-2.5 right-3 h-2.5 w-2.5 rounded-full bg-red-500" />
               )}
             </button>
 
@@ -363,16 +368,29 @@ export function RightSidebar({
       )}
 
       {isExpanded && (
-        <div className="flex min-h-0 flex-1 flex-col border-t border-gray-200 bg-[var(--card-surface)] transition-all duration-200">
+        <div className="flex min-h-0 flex-1 flex-col bg-[var(--card-surface)] transition-all duration-200">
           <div className="flex items-center justify-between p-6 pb-2">
             <h3 className="text-sm font-black uppercase tracking-widest text-secondary-900 dark:text-secondary-100">
               Notifications
             </h3>
-            {unreadCount > 0 && (
-              <span className="rounded-full bg-primary-50 px-2 py-0.5 text-[11px] font-bold text-primary-600 dark:bg-primary-500/10 dark:text-primary-300">
-                {unreadCount} New
-              </span>
-            )}
+            <span
+              className={joinClasses(
+                'min-w-[32px] rounded-full px-2 py-0.5 text-center text-[11px] font-bold transition-colors',
+                notificationsEnabled
+                  ? unreadCount > 0
+                    ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300'
+                    : 'bg-secondary-50 text-secondary-600 dark:bg-secondary-800 dark:text-secondary-200'
+                  : 'bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-200',
+              )}
+              aria-label={
+                notificationsEnabled
+                  ? `${unreadCount} unread notifications`
+                  : 'Notifications off'
+              }
+              role="status"
+            >
+              {notificationsEnabled ? unreadCount : 'Off'}
+            </span>
           </div>
 
           <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
