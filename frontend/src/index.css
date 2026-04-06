@@ -133,23 +133,23 @@ a {
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-secondary-100);
+  background: #f5f5f5;
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-secondary-400);
+  background: #d4d4d4;
   border-radius: 10px;
-  border: 2px solid var(--color-secondary-100);
+  border: 2px solid #f5f5f5;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--color-secondary-500);
+  background: #a3a3a3;
 }
 
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-secondary-400) var(--color-secondary-100);
+  scrollbar-color: #d4d4d4 #f5f5f5;
 }
 
 .dark .custom-scrollbar::-webkit-scrollbar-track {
