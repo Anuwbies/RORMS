@@ -463,7 +463,9 @@ const roomStatusClasses: Record<RoomStatus, string> = {
 function BuildingsRoomsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>([])
+  const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(
+    buildings.map((b) => b.id)
+  )
 
   const toggleBuilding = (id: string) => {
     setExpandedBuildingIds((prev) =>
@@ -520,16 +522,62 @@ function BuildingsRoomsPage() {
       onClick={() => setOpenMenuId(null)}
     >
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-md border border-[color:var(--brand-color)] bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 shadow-[0_24px_60px_rgba(98,133,62,0.18)] text-white">
-          <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            Buildings & Rooms
-          </h2>
-          <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-            Comprehensive directory of campus infrastructure and centralized room inventory management.
-          </p>
+        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
+          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
+            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              Buildings & Rooms
+            </h2>
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
+              Comprehensive directory of campus infrastructure and centralized room inventory management.
+            </p>
+          </div>
+
+          <div className="p-6 bg-gray-50/50">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
+                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
+                  <BuildingIcon className="h-9 w-9 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total buildings</p>
+                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{buildings.length}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
+                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50 border border-emerald-100 shrink-0">
+                  <DoorIcon className="h-9 w-9 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Tracked rooms</p>
+                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{allRooms.length}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
+                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
+                  <LayersIcon className="h-9 w-9 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total floors</p>
+                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{totalFloors}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
+                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-rose-50 border border-rose-100 shrink-0">
+                  <UsersIcon className="h-9 w-9 text-rose-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total room capacity</p>
+                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{totalCapacity}</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="rounded-md border border-gray-200 bg-white p-5 shadow-md">
+        <div className="rounded-md border border-gray-200 bg-gray-50/50 p-5 shadow-md">
           <div className="flex flex-col gap-4 sm:flex-row">
             <div className="relative flex-1">
               <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
@@ -564,48 +612,6 @@ function BuildingsRoomsPage() {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-md border border-gray-200 bg-white p-5 shadow-md flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-md bg-white border border-gray-100 shrink-0">
-              <BuildingIcon className="h-9 w-9 text-gray-400" />
-            </div>
-            <div>
-              <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total buildings</p>
-              <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{buildings.length}</p>
-            </div>
-          </div>
-
-          <div className="rounded-md border border-gray-200 bg-white p-5 shadow-md flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-md bg-white border border-gray-100 shrink-0">
-              <DoorIcon className="h-9 w-9 text-gray-400" />
-            </div>
-            <div>
-              <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Tracked rooms</p>
-              <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{allRooms.length}</p>
-            </div>
-          </div>
-
-          <div className="rounded-md border border-gray-200 bg-white p-5 shadow-md flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-md bg-white border border-gray-100 shrink-0">
-              <LayersIcon className="h-9 w-9 text-gray-400" />
-            </div>
-            <div>
-              <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total floors</p>
-              <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{totalFloors}</p>
-            </div>
-          </div>
-
-          <div className="rounded-md border border-gray-200 bg-white p-5 shadow-md flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-md bg-white border border-gray-100 shrink-0">
-              <UsersIcon className="h-9 w-9 text-gray-400" />
-            </div>
-            <div>
-              <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total room capacity</p>
-              <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{totalCapacity}</p>
-            </div>
-          </div>
-        </div>
-
         <div className="space-y-6">
           {filteredBuildings.length === 0 ? (
             <div className="rounded-md border border-dashed border-[color:rgba(98,133,62,0.2)] bg-[var(--card-surface)] p-8 text-center shadow-[0_18px_45px_rgba(98,133,62,0.06)]">
@@ -634,7 +640,7 @@ function BuildingsRoomsPage() {
             return (
               <article
                 key={building.id}
-                className="rounded-lg border border-gray-200 bg-white p-6 shadow-md sm:p-8"
+                className="rounded-lg border border-gray-200 bg-gray-50/50 p-6 shadow-md sm:p-8"
               >
                 <div className="flex flex-col gap-6">
                   <div className="flex items-center justify-between">
@@ -643,7 +649,7 @@ function BuildingsRoomsPage() {
                         <h3 className="text-2xl font-bold tracking-tight text-gray-900">
                           {building.name}
                         </h3>
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-bold uppercase tracking-widest text-gray-600">
+                        <span className="inline-flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[10px] font-bold uppercase tracking-widest text-gray-600 shadow-sm leading-none">
                           {building.code}
                         </span>
                       </div>
@@ -670,9 +676,9 @@ function BuildingsRoomsPage() {
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    <div className="rounded-md bg-[color:color-mix(in_srgb,var(--brand-color),transparent_80%)] p-4 flex items-center gap-4">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-white border border-gray-100 shrink-0">
-                        <LayersIcon className="h-9 w-9 text-gray-400" />
+                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
+                        <LayersIcon className="h-9 w-9 text-amber-600" />
                       </div>
                       <div>
                         <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
@@ -684,9 +690,9 @@ function BuildingsRoomsPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-md bg-[color:color-mix(in_srgb,var(--brand-color),transparent_80%)] p-4 flex items-center gap-4">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-white border border-gray-100 shrink-0">
-                        <DoorIcon className="h-9 w-9 text-gray-400" />
+                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50 border border-emerald-100 shrink-0">
+                        <DoorIcon className="h-9 w-9 text-emerald-600" />
                       </div>
                       <div>
                         <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
@@ -698,9 +704,9 @@ function BuildingsRoomsPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-md bg-[color:color-mix(in_srgb,var(--brand-color),transparent_80%)] p-4 flex items-center gap-4">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-white border border-gray-100 shrink-0">
-                        <UsersIcon className="h-9 w-9 text-gray-400" />
+                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-rose-50 border border-rose-100 shrink-0">
+                        <UsersIcon className="h-9 w-9 text-rose-600" />
                       </div>
                       <div>
                         <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
@@ -729,19 +735,19 @@ function BuildingsRoomsPage() {
                             <div className="h-1 flex-1 bg-gray-200" />
                           </div>
 
-                          <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,480px),1fr))]">
+                          <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,500px),1fr))]">
                             {roomsByFloor[floor].map((room) => (
                               <div
                                 key={room.id}
-                                className="flex overflow-hidden rounded-md border border-gray-100 bg-white shadow-md"
+                                className="flex overflow-hidden rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02]"
                               >
                                 <img
                                   src={room.image}
                                   alt={room.name}
-                                  className="aspect-square w-32 object-cover grayscale-[0.2] sm:w-40"
+                                  className="aspect-square w-32 h-32 shrink-0 object-cover grayscale-[0.2] sm:w-40 sm:h-40"
                                 />
 
-                                <div className="flex flex-1 flex-col justify-between p-5">
+                                <div className="flex flex-1 flex-col justify-between p-4">
                                   <div>
                                     <div className="flex items-start justify-between gap-2">
                                       <h5 className="text-lg font-bold leading-tight text-gray-900">
@@ -790,15 +796,15 @@ function BuildingsRoomsPage() {
                                         )}
                                       </div>
                                     </div>
-                                    <p className="mt-1 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                    <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-gray-400">
                                       {room.type}
                                     </p>
                                   </div>
 
-                                  <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
+                                  <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
                                     <div className="flex items-center gap-3">
-                                      <div className="flex h-11 w-11 items-center justify-center rounded-md bg-white border border-gray-100 shrink-0">
-                                        <UserIcon className="h-6 w-6 text-gray-400" />
+                                      <div className="flex h-11 w-11 items-center justify-center rounded-md bg-white border border-gray-200 shrink-0">
+                                        <UserIcon className="h-6 w-6 text-gray-500" />
                                       </div>
                                       <div className="flex flex-col">
                                         <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 leading-tight">

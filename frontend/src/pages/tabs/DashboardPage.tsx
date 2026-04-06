@@ -1,17 +1,33 @@
+import { UsersIcon } from '../../components/Icons'
+
 function DashboardPage() {
   return (
-    <section className="min-h-screen bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      <div className="rounded-2xl border border-[color:rgba(98,133,62,0.14)] bg-[var(--card-surface)] p-6 shadow-[0_20px_50px_rgba(98,133,62,0.08)] sm:p-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[var(--brand-color)]">
-          Dashboard
-        </p>
-        <h2 className="mt-3 text-3xl font-semibold text-[var(--brand-color)]">
-          Dashboard page placeholder
-        </h2>
-        <p className="mt-4 max-w-2xl text-sm leading-7 text-[rgba(98,133,62,0.78)] sm:text-base">
-          This page can later show high-level registrar metrics, room activity,
-          and system summaries.
-        </p>
+    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      <div className="space-y-6">
+        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
+          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
+            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+              Dashboard
+            </h2>
+            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
+              High-level registrar metrics, room activity, and system summaries.
+            </p>
+          </div>
+
+          <div className="p-6 bg-gray-50/50">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
+                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
+                  <UsersIcon className="h-9 w-9 text-blue-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Active Sessions</p>
+                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">24</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
   )

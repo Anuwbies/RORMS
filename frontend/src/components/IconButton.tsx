@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { MouseEventHandler, ReactNode } from 'react'
 
 export function joinClasses(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
@@ -6,7 +6,7 @@ export function joinClasses(...classes: Array<string | false | null | undefined>
 
 interface IconButtonProps {
   label: string
-  onClick: () => void
+  onClick: MouseEventHandler<HTMLButtonElement>
   className?: string
   children: ReactNode
 }
