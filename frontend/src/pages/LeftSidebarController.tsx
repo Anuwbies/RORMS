@@ -3,12 +3,14 @@ import { LeftSidebarLayout } from '../layouts/LeftSidebarLayout'
 import {
   BuildingIcon,
   DashboardIcon,
+  LayersIcon,
   UsersIcon,
 } from '../components/Icons'
 import type { NavItem, DashboardSection } from '../components/LeftSidebar'
 import DashboardPage from './tabs/DashboardPage'
 import BuildingsRoomsPage from './tabs/BuildingsRoomsPage'
-import UsersPage from './tabs/UsersPage'
+import MembersPage from './tabs/MembersPage'
+import MyDepartmentPage from './tabs/MyDepartmentPage'
 
 const navItems: NavItem[] = [
   {
@@ -26,11 +28,18 @@ const navItems: NavItem[] = [
     icon: BuildingIcon,
   },
   {
-    id: 'users',
-    label: 'Users',
-    eyebrow: 'Users',
-    description: 'Manage account roles and user records.',
+    id: 'members',
+    label: 'Members',
+    eyebrow: 'Members',
+    description: 'Manage account roles and member records.',
     icon: UsersIcon,
+  },
+  {
+    id: 'myDepartment',
+    label: 'My Department',
+    eyebrow: 'My Department',
+    description: 'View department leads, workstreams, and operating coverage.',
+    icon: LayersIcon,
   },
 ]
 
@@ -47,8 +56,10 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
         return <DashboardPage />
       case 'buildingsRooms':
         return <BuildingsRoomsPage />
-      case 'users':
-        return <UsersPage />
+      case 'members':
+        return <MembersPage />
+      case 'myDepartment':
+        return <MyDepartmentPage />
       default:
         return <DashboardPage />
     }

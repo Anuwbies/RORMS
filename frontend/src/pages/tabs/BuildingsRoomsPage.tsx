@@ -721,7 +721,7 @@ function BuildingsRoomsPage() {
                 </div>
 
                 <div className={`grid transition-all duration-500 ease-in-out ${isExpanded ? 'grid-rows-[1fr] mt-10 opacity-100' : 'grid-rows-[0fr] mt-0 opacity-0'}`}>
-                  <div className="overflow-hidden">
+                  <div className="overflow-hidden px-4 -mx-4">
                     <div className="space-y-12 pb-4">
                       {sortedFloors.map((floor) => (
                         <div key={floor} className="space-y-6">

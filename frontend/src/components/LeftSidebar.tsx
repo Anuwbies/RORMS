@@ -8,7 +8,7 @@ import {
 import { IconButton, joinClasses } from './IconButton'
 import { leftSidebarOutlineClass, sidebarDividerClass } from './sidebarStyles'
 
-export type DashboardSection = 'dashboard' | 'buildingsRooms' | 'users'
+export type DashboardSection = 'dashboard' | 'buildingsRooms' | 'members' | 'myDepartment'
 
 export interface NavItem {
   id: DashboardSection
