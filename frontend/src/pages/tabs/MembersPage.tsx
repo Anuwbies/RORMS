@@ -11,6 +11,7 @@ interface Member {
   email: string
   role: MemberRole
   status: MemberStatus
+  department?: string
   joinedDate: string
   avatar: string
 }
@@ -40,6 +41,7 @@ const members: Member[] = [
     email: 'm.chen@example.com',
     role: 'Dean',
     status: 'Inactive',
+    department: 'CITE',
     joinedDate: 'Jan 20, 2024',
     avatar: 'https://i.pravatar.cc/150?u=3',
   },
@@ -49,6 +51,7 @@ const members: Member[] = [
     email: 'elena.r@example.com',
     role: 'Instructor',
     status: 'Active',
+    department: 'CITE',
     joinedDate: 'Feb 15, 2024',
     avatar: 'https://i.pravatar.cc/150?u=4',
   },
@@ -519,19 +522,22 @@ function MembersPage() {
             <table className="min-w-full divide-y divide-gray-200 text-left">
               <thead className="bg-gray-50/80">
                 <tr>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500">
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[30%]">
                     Member
                   </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500">
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
                     Role
                   </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500">
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
+                    Department
+                  </th>
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
                     Status
                   </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500">
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
                     Joined Date
                   </th>
-                  <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-500">
+                  <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
                     Actions
                   </th>
                 </tr>
@@ -539,7 +545,7 @@ function MembersPage() {
               <tbody className="divide-y divide-gray-100 bg-white">
                 {filteredMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                       No members found matching your filters.
                     </td>
                   </tr>
@@ -562,6 +568,11 @@ function MembersPage() {
                       <td className="whitespace-nowrap px-6 py-4">
                         <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${roleClasses[member.role]}`}>
                           {member.role}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <span className="text-sm font-semibold text-gray-700">
+                          {member.department || '—'}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">

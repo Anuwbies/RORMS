@@ -1,4 +1,4 @@
-import { BuildingIcon } from '../../components/Icons'
+import { BuildingIcon, PlusIcon } from '../../components/Icons'
 
 function MyDepartmentPage() {
   return (
@@ -26,6 +26,54 @@ function MyDepartmentPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* Department Setup Card for Dean */}
+        <div className="rounded-lg border border-gray-200 bg-white shadow-md overflow-hidden">
+          <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4">
+            <h3 className="text-lg font-bold text-gray-900">Setup Department</h3>
+            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mt-0.5">Dean's Configuration</p>
+          </div>
+          
+          <div className="p-6">
+            <form className="space-y-6 max-w-2xl">
+              <div className="grid gap-6 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <label htmlFor="dept-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                    Department Name
+                  </label>
+                  <input
+                    id="dept-name"
+                    type="text"
+                    placeholder="e.g. College of Information Technology"
+                    className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="dept-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                    Department Code
+                  </label>
+                  <input
+                    id="dept-code"
+                    type="text"
+                    placeholder="e.g. CITE"
+                    className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  className="flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  Save Department Settings
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       </div>

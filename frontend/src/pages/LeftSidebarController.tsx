@@ -3,6 +3,7 @@ import { LeftSidebarLayout } from '../layouts/LeftSidebarLayout'
 import {
   BuildingIcon,
   DashboardIcon,
+  DepartmentIcon,
   LayersIcon,
   UsersIcon,
 } from '../components/Icons'
@@ -11,6 +12,7 @@ import DashboardPage from './tabs/DashboardPage'
 import BuildingsRoomsPage from './tabs/BuildingsRoomsPage'
 import MembersPage from './tabs/MembersPage'
 import MyDepartmentPage from './tabs/MyDepartmentPage'
+import DepartmentsPage from './tabs/DepartmentsPage'
 
 const navItems: NavItem[] = [
   {
@@ -26,6 +28,13 @@ const navItems: NavItem[] = [
     eyebrow: 'Buildings & Rooms',
     description: 'Manage buildings, rooms, and available spaces.',
     icon: BuildingIcon,
+  },
+  {
+    id: 'departments',
+    label: 'Departments',
+    eyebrow: 'Departments',
+    description: 'Manage university departments and resource allocation.',
+    icon: DepartmentIcon,
   },
   {
     id: 'members',
@@ -56,6 +65,8 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
         return <DashboardPage />
       case 'buildingsRooms':
         return <BuildingsRoomsPage />
+      case 'departments':
+        return <DepartmentsPage />
       case 'members':
         return <MembersPage />
       case 'myDepartment':
