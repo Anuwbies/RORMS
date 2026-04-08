@@ -6,6 +6,10 @@ import {
   DepartmentIcon,
   LayersIcon,
   UsersIcon,
+  ClipboardIcon,
+  CalendarIcon,
+  BookIcon,
+  DoorIcon,
 } from '../components/Icons'
 import type { NavItem, DashboardSection } from '../components/LeftSidebar'
 import DashboardPage from './tabs/DashboardPage'
@@ -13,6 +17,11 @@ import BuildingsRoomsPage from './tabs/BuildingsRoomsPage'
 import MembersPage from './tabs/MembersPage'
 import MyDepartmentPage from './tabs/MyDepartmentPage'
 import DepartmentsPage from './tabs/DepartmentsPage'
+import ReportsPage from './tabs/ReportsPage'
+import MySchedulePage from './tabs/MySchedulePage'
+import ManageReservationsPage from './tabs/ManageReservationsPage'
+import ReserveRoomPage from './tabs/ReserveRoomPage'
+import MyReservationsPage from './tabs/MyReservationsPage'
 
 const navItems: NavItem[] = [
   {
@@ -21,6 +30,34 @@ const navItems: NavItem[] = [
     eyebrow: 'Dashboard',
     description: 'Overview of room management activity and registrar highlights.',
     icon: DashboardIcon,
+  },
+  {
+    id: 'mySchedule',
+    label: 'My Schedule',
+    eyebrow: 'My Schedule',
+    description: 'View and manage your upcoming room bookings.',
+    icon: CalendarIcon,
+  },
+  {
+    id: 'reserveRoom',
+    label: 'Reserve a Room',
+    eyebrow: 'Reserve a Room',
+    description: 'Find and book available rooms.',
+    icon: BookIcon,
+  },
+  {
+    id: 'myReservations',
+    label: 'My Reservations',
+    eyebrow: 'My Reservations',
+    description: 'View and track your own room bookings.',
+    icon: DoorIcon,
+  },
+  {
+    id: 'manageReservations',
+    label: 'Manage Reservations',
+    eyebrow: 'Manage Reservations',
+    description: 'Track and approve room reservation requests.',
+    icon: ClipboardIcon,
   },
   {
     id: 'buildingsRooms',
@@ -44,6 +81,13 @@ const navItems: NavItem[] = [
     icon: UsersIcon,
   },
   {
+    id: 'reports',
+    label: 'Reports',
+    eyebrow: 'Reports',
+    description: 'Generate and view university-wide utilization reports.',
+    icon: ClipboardIcon,
+  },
+  {
     id: 'myDepartment',
     label: 'My Department',
     eyebrow: 'My Department',
@@ -63,12 +107,22 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
     switch (activeSection) {
       case 'dashboard':
         return <DashboardPage />
+      case 'mySchedule':
+        return <MySchedulePage />
+      case 'reserveRoom':
+        return <ReserveRoomPage />
+      case 'myReservations':
+        return <MyReservationsPage />
+      case 'manageReservations':
+        return <ManageReservationsPage />
       case 'buildingsRooms':
         return <BuildingsRoomsPage />
       case 'departments':
         return <DepartmentsPage />
       case 'members':
         return <MembersPage />
+      case 'reports':
+        return <ReportsPage />
       case 'myDepartment':
         return <MyDepartmentPage />
       default:

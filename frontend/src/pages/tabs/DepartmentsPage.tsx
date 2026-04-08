@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon } from '../../components/Icons'
+import { useState, useRef } from 'react'
+import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, CameraIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 
 interface Member {
@@ -91,6 +91,7 @@ interface Department {
   memberCount: number
   roomCount: number
   createdDate: string
+  logo: string
 }
 
 const departments: Department[] = [
@@ -102,6 +103,7 @@ const departments: Department[] = [
     memberCount: 2,
     roomCount: 12,
     createdDate: 'Oct 12, 2023',
+    logo: 'https://ui-avatars.com/api/?name=CITE&background=0D8ABC&color=fff',
   },
   {
     id: '2',
@@ -111,6 +113,7 @@ const departments: Department[] = [
     memberCount: 1,
     roomCount: 18,
     createdDate: 'Nov 05, 2023',
+    logo: 'https://ui-avatars.com/api/?name=CEA&background=E53E3E&color=fff',
   },
   {
     id: '3',
@@ -120,6 +123,7 @@ const departments: Department[] = [
     memberCount: 1,
     roomCount: 22,
     createdDate: 'Jan 20, 2024',
+    logo: 'https://ui-avatars.com/api/?name=CAS&background=38A169&color=fff',
   },
   {
     id: '4',
@@ -129,6 +133,7 @@ const departments: Department[] = [
     memberCount: 0,
     roomCount: 15,
     createdDate: 'Feb 15, 2024',
+    logo: 'https://ui-avatars.com/api/?name=CMA&background=805AD5&color=fff',
   },
 ]
 
@@ -145,9 +150,11 @@ function DepartmentsPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingDept, setEditingDept] = useState<Department | null>(null)
   
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [newDeptName, setNewDeptName] = useState('')
   const [newDeptCode, setNewDeptCode] = useState('')
   const [newDeptDean, setNewDeptDean] = useState('')
+  const [newDeptLogo, setNewDeptLogo] = useState('')
   const [errors, setErrors] = useState({ name: false, code: false })
 
   const filteredDepartments = departments.filter((dept) =>
@@ -165,6 +172,7 @@ function DepartmentsPage() {
     setNewDeptName(dept.name)
     setNewDeptCode(dept.code)
     setNewDeptDean(dept.dean)
+    setNewDeptLogo(dept.logo)
     setErrors({ name: false, code: false })
   }
 
@@ -174,7 +182,19 @@ function DepartmentsPage() {
     setNewDeptName('')
     setNewDeptCode('')
     setNewDeptDean('')
+    setNewDeptLogo('')
     setErrors({ name: false, code: false })
+  }
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setNewDeptLogo(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
   }
 
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -190,10 +210,12 @@ function DepartmentsPage() {
       return
     }
 
+    const finalLogo = newDeptLogo || `https://ui-avatars.com/api/?name=${newDeptCode || 'DEPT'}&background=random`
+
     if (editingDept) {
-      console.log('Updating Department:', { id: editingDept.id, name: newDeptName, code: newDeptCode, dean: newDeptDean })
+      console.log('Updating Department:', { id: editingDept.id, name: newDeptName, code: newDeptCode, dean: newDeptDean, logo: finalLogo })
     } else {
-      console.log('Creating Department:', { name: newDeptName, code: newDeptCode, dean: newDeptDean })
+      console.log('Creating Department:', { name: newDeptName, code: newDeptCode, dean: newDeptDean, logo: finalLogo })
     }
     
     handleCloseFormModal()
@@ -216,6 +238,87 @@ function DepartmentsPage() {
             </div>
             
             <form onSubmit={handleFormSubmit} className="p-6 space-y-5">
+              <div className="flex gap-6 items-start">
+                <div className="shrink-0">
+                  <label className="block text-center text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                    Logo
+                  </label>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleLogoUpload}
+                    accept="image/*"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`h-32 w-32 rounded-full border-2 bg-gray-50 flex items-center justify-center overflow-hidden transition-all duration-200 hover:border-[var(--brand-color)] hover:bg-gray-50 group relative shadow-md ${
+                      newDeptLogo || newDeptCode ? 'border-solid border-gray-300' : 'border-dashed border-gray-400'
+                    }`}
+                  >
+                    {newDeptLogo ? (
+                      <img 
+                        src={newDeptLogo} 
+                        alt="Logo preview"
+                        className="h-full w-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${newDeptCode || 'DEPT'}&background=random`
+                        }}
+                      />
+                    ) : newDeptCode ? (
+                      <img 
+                        src={`https://ui-avatars.com/api/?name=${newDeptCode}&background=random`} 
+                        alt="New Department"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <CameraIcon className="h-10 w-10 text-gray-500 group-hover:text-gray-600 transition-colors" />
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <UploadIcon className="h-8 w-8 text-white" strokeWidth={3.5} />
+                    </div>
+                  </button>
+                </div>
+
+                <div className="flex-1 space-y-4">
+                  <div>
+                    <label htmlFor="dept-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                      Code <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="dept-code"
+                      type="text"
+                      value={newDeptCode}
+                      onChange={(e) => {
+                        setNewDeptCode(e.target.value)
+                        if (errors.code) setErrors(prev => ({ ...prev, code: false }))
+                      }}
+                      placeholder="e.g. CITE"
+                      className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                        errors.code 
+                          ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                          : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                      }`}
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="dept-dean" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                      Assigned Dean
+                    </label>
+                    <input
+                      id="dept-dean"
+                      type="text"
+                      value={newDeptDean}
+                      onChange={(e) => setNewDeptDean(e.target.value)}
+                      placeholder="e.g. Michael Chen"
+                      className="w-full rounded-md border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label htmlFor="dept-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                   Department Name <span className="text-rose-500">*</span>
@@ -235,41 +338,6 @@ function DepartmentsPage() {
                       : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
                   }`}
                   autoFocus
-                />
-              </div>
-
-              <div>
-                <label htmlFor="dept-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                  Department Code <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  id="dept-code"
-                  type="text"
-                  value={newDeptCode}
-                  onChange={(e) => {
-                    setNewDeptCode(e.target.value)
-                    if (errors.code) setErrors(prev => ({ ...prev, code: false }))
-                  }}
-                  placeholder="e.g. CITE"
-                  className={`w-full rounded-md border px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                    errors.code 
-                      ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                      : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                  }`}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="dept-dean" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                  Assigned Dean
-                </label>
-                <input
-                  id="dept-dean"
-                  type="text"
-                  value={newDeptDean}
-                  onChange={(e) => setNewDeptDean(e.target.value)}
-                  placeholder="e.g. Michael Chen"
-                  className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
                 />
               </div>
 
@@ -302,9 +370,16 @@ function DepartmentsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white flex justify-between items-start">
-              <div>
-                <h3 className="text-xl font-bold">{selectedDept.name}</h3>
-                <p className="mt-1 text-sm text-white/80">{selectedDept.code} • {selectedDept.memberCount} Members</p>
+              <div className="flex items-center gap-4">
+                <img
+                  src={selectedDept.logo}
+                  alt={selectedDept.name}
+                  className="h-14 w-14 rounded-full border-2 border-white/20 object-cover bg-white/10"
+                />
+                <div>
+                  <h3 className="text-xl font-bold leading-tight">{selectedDept.name}</h3>
+                  <p className="mt-1 text-sm text-white/80">{selectedDept.code} • {selectedDept.memberCount} Members</p>
+                </div>
               </div>
               <IconButton 
                 label="Close modal" 
@@ -439,8 +514,17 @@ function DepartmentsPage() {
                       className="transition hover:bg-gray-50/50 cursor-pointer group"
                       onClick={() => setSelectedDept(dept)}
                     >
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-bold text-gray-900 group-hover:text-[var(--brand-color)] transition-colors">
-                        {dept.name}
+                      <td className="whitespace-nowrap px-6 py-4">
+                        <div className="flex items-center gap-4">
+                          <img
+                            src={dept.logo}
+                            alt={dept.name}
+                            className="h-10 w-10 rounded-full border border-gray-100 object-cover"
+                          />
+                          <span className="text-sm font-bold text-gray-900 group-hover:text-[var(--brand-color)] transition-colors">
+                            {dept.name}
+                          </span>
+                        </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-500">
                         {dept.code}
