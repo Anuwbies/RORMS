@@ -676,7 +676,7 @@ function BuildingsRoomsPage() {
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm">
+                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
                       <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
                         <LayersIcon className="h-9 w-9 text-amber-600" />
                       </div>
@@ -690,7 +690,7 @@ function BuildingsRoomsPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm">
+                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
                       <div className="flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50 border border-emerald-100 shrink-0">
                         <DoorIcon className="h-9 w-9 text-emerald-600" />
                       </div>
@@ -704,7 +704,7 @@ function BuildingsRoomsPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm">
+                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
                       <div className="flex h-14 w-14 items-center justify-center rounded-md bg-rose-50 border border-rose-100 shrink-0">
                         <UsersIcon className="h-9 w-9 text-rose-600" />
                       </div>
