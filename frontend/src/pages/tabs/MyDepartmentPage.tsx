@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BuildingIcon, PlusIcon, SearchIcon, UsersIcon, UserIcon, EditIcon, TrashIcon, CheckIcon } from '../../components/Icons'
+import { BuildingIcon, PlusIcon, SearchIcon, UsersIcon, EditIcon, TrashIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 
 interface Member {
@@ -107,6 +107,8 @@ const statusClasses: Record<string, string> = {
 function MyDepartmentPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
+  const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [selectedInstructorIds, setSelectedInstructorIds] = useState<string[]>([])
 
   const filteredMembers = members.filter((member) =>
@@ -128,8 +130,49 @@ function MyDepartmentPage() {
     setSelectedInstructorIds([])
   }
 
+  const handleRowClick = (member: Member) => {
+    setSelectedMember(member)
+    setIsScheduleModalOpen(true)
+  }
+
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      {/* Schedule Modal */}
+      {isScheduleModalOpen && selectedMember && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-2xl rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md relative">
+              <button 
+                onClick={() => setIsScheduleModalOpen(false)}
+                className="absolute right-4 top-4 text-white/70 hover:text-white transition-colors"
+              >
+                <PlusIcon className="h-6 w-6 rotate-45" />
+              </button>
+              <h3 className="text-xl font-bold">{selectedMember.name}'s Schedule</h3>
+              <p className="mt-1 text-sm text-white/80">Instructor schedule overview and availability.</p>
+            </div>
+            
+            <div className="p-6">
+              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                <div className="h-16 w-16 rounded-full bg-gray-50 flex items-center justify-center border border-gray-100">
+                  <SearchIcon className="h-8 w-8 text-gray-300" />
+                </div>
+                <div>
+                  <h4 className="text-lg font-bold text-gray-900">No Schedule Data</h4>
+                  <p className="text-sm text-gray-500 max-w-xs mx-auto">
+                    The schedule for this instructor is currently empty or has not been set yet.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onClick={() => setIsScheduleModalOpen(false)} />
+        </div>
+      )}
+
       {/* Add Member Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
@@ -195,7 +238,7 @@ function MyDepartmentPage() {
                 )}
               </div>
 
-              <div className="flex items-center gap-3 pt-4 border-t border-gray-100">
+              <div className="flex items-center gap-3 pt-4">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
@@ -288,13 +331,13 @@ function MyDepartmentPage() {
             <table className="min-w-full divide-y divide-gray-200 text-left">
               <thead className="bg-gray-50/80">
                 <tr>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[40%]">
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[30%]">
                     Member
                   </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[15%]">
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[20%]">
                     Role
                   </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[15%]">
+                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[20%]">
                     Status
                   </th>
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[15%]">
@@ -314,7 +357,11 @@ function MyDepartmentPage() {
                   </tr>
                 ) : (
                   filteredMembers.map((member) => (
-                    <tr key={member.id} className="transition hover:bg-gray-50/50">
+                    <tr 
+                      key={member.id} 
+                      onClick={() => handleRowClick(member)}
+                      className="transition hover:bg-gray-50/50 cursor-pointer"
+                    >
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="flex items-center gap-4">
                           <img
@@ -346,14 +393,20 @@ function MyDepartmentPage() {
                           <IconButton
                             label="Edit member"
                             className="h-8 w-8 rounded-md bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all border border-gray-100"
-                            onClick={() => console.log('Edit member:', member.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              console.log('Edit member:', member.id)
+                            }}
                           >
                             <EditIcon className="h-4.5 w-4.5" />
                           </IconButton>
                           <IconButton
                             label="Remove member"
                             className="h-8 w-8 rounded-md bg-white text-rose-400 shadow-sm hover:bg-rose-50 hover:text-rose-600 transition-all border border-gray-100"
-                            onClick={() => console.log('Remove member:', member.id)}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              console.log('Remove member:', member.id)
+                            }}
                           >
                             <TrashIcon className="h-4.5 w-4.5" />
                           </IconButton>

@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, CameraIcon } from '../../components/Icons'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, CameraIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 
 interface Member {
@@ -81,7 +81,145 @@ const members: Member[] = [
     joinedDate: 'May 22, 2024',
     avatar: 'https://i.pravatar.cc/150?u=7',
   },
+  {
+    id: '8',
+    name: 'Robert Fox',
+    email: 'robert.fox@example.com',
+    role: 'Dean',
+    status: 'Active',
+    department: 'CEA',
+    joinedDate: 'Apr 10, 2024',
+    avatar: 'https://i.pravatar.cc/150?u=8',
+  },
+  {
+    id: '9',
+    name: 'Eleanor Paguirigan',
+    email: 'e.paguirigan@example.com',
+    role: 'Dean',
+    status: 'Active',
+    joinedDate: 'Jun 15, 2024',
+    avatar: 'https://i.pravatar.cc/150?u=9',
+  },
+  {
+    id: '10',
+    name: 'Dominic Sison',
+    email: 'd.sison@example.com',
+    role: 'Dean',
+    status: 'Active',
+    joinedDate: 'Jul 20, 2024',
+    avatar: 'https://i.pravatar.cc/150?u=10',
+  },
+  {
+    id: '11',
+    name: 'Maria Clara',
+    email: 'm.clara@example.com',
+    role: 'Dean',
+    status: 'Active',
+    joinedDate: 'Aug 05, 2024',
+    avatar: 'https://i.pravatar.cc/150?u=11',
+  },
 ]
+
+interface SingleSelectDropdownProps<T extends string> {
+  options: T[]
+  value: T
+  onChange: (value: T) => void
+  onOpenChange?: (open: boolean) => void
+  className?: string
+}
+
+function SingleSelectDropdown<T extends string>({ 
+  options, 
+  value, 
+  onChange, 
+  onOpenChange,
+  className = '' 
+}: SingleSelectDropdownProps<T>) {
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const menuWidthRef = useRef<HTMLDivElement>(null)
+  const [menuMinWidth, setMenuMinWidth] = useState<number | null>(null)
+
+  useEffect(() => {
+    onOpenChange?.(isOpen)
+  }, [isOpen, onOpenChange])
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleSelect = (option: T) => {
+    onChange(option)
+    setIsOpen(false)
+  }
+
+  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), '')
+
+  useLayoutEffect(() => {
+    if (!menuWidthRef.current) {
+      return
+    }
+    setMenuMinWidth(menuWidthRef.current.offsetWidth)
+  }, [longestOption])
+
+  return (
+    <div
+      className={`relative ${className}`}
+      ref={dropdownRef}
+      style={menuMinWidth ? { minWidth: `${menuMinWidth}px` } : undefined}
+    >
+      <div
+        ref={menuWidthRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute left-0 top-0 invisible w-max rounded-md border border-transparent p-1.5"
+      >
+        <div className="flex items-center gap-3 rounded-md px-3 py-2.5 text-xs">
+          <span className="whitespace-nowrap">{longestOption}</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setIsOpen(!isOpen)}
+        className="relative flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-3 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+      >
+        <span className="whitespace-nowrap">{value || 'None'}</span>
+        <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute left-0 z-20 mt-2 min-w-full overflow-hidden rounded-md border border-gray-200 bg-white p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
+            {options.map((option) => {
+              const isSelected = value === option
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => handleSelect(option)}
+                  className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-xs transition-colors ${
+                    isSelected 
+                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-semibold' 
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <span className="whitespace-nowrap">{option}</span>
+                  {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)]" strokeWidth={3} />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface Department {
   id: string
@@ -154,6 +292,7 @@ function DepartmentsPage() {
   const [newDeptName, setNewDeptName] = useState('')
   const [newDeptCode, setNewDeptCode] = useState('')
   const [newDeptDean, setNewDeptDean] = useState('')
+  const [isDeanDropdownOpen, setIsDeanDropdownOpen] = useState(false)
   const [newDeptLogo, setNewDeptLogo] = useState('')
   const [errors, setErrors] = useState({ name: false, code: false })
 
@@ -227,10 +366,10 @@ function DepartmentsPage() {
       {(isCreateModalOpen || editingDept) && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
               <h3 className="text-xl font-bold">{editingDept ? 'Edit Department' : 'Create Department'}</h3>
               <p className="mt-1 text-sm text-white/80">
                 {editingDept ? 'Update the details of this university department.' : 'Add a new university department to the system.'}
@@ -238,6 +377,28 @@ function DepartmentsPage() {
             </div>
             
             <form onSubmit={handleFormSubmit} className="p-6 space-y-5">
+              <div>
+                <label htmlFor="dept-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                  Department Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  id="dept-name"
+                  type="text"
+                  value={newDeptName}
+                  onChange={(e) => {
+                    setNewDeptName(e.target.value)
+                    if (errors.name) setErrors(prev => ({ ...prev, name: false }))
+                  }}
+                  placeholder="e.g. College of Information Technology"
+                  className={`w-full rounded-md border px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                    errors.name 
+                      ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                      : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                  }`}
+                  autoFocus
+                />
+              </div>
+
               <div className="flex gap-6 items-start">
                 <div className="shrink-0">
                   <label className="block text-center text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
@@ -307,38 +468,15 @@ function DepartmentsPage() {
                     <label htmlFor="dept-dean" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                       Assigned Dean
                     </label>
-                    <input
-                      id="dept-dean"
-                      type="text"
-                      value={newDeptDean}
-                      onChange={(e) => setNewDeptDean(e.target.value)}
-                      placeholder="e.g. Michael Chen"
-                      className="w-full rounded-md border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+                    <SingleSelectDropdown
+                      options={['None', ...members.filter(m => m.role === 'Dean').map(m => m.name)]}
+                      value={newDeptDean || 'None'}
+                      onChange={(val) => setNewDeptDean(val === 'None' ? '' : val)}
+                      onOpenChange={setIsDeanDropdownOpen}
+                      className="w-full"
                     />
                   </div>
                 </div>
-              </div>
-
-              <div>
-                <label htmlFor="dept-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                  Department Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  id="dept-name"
-                  type="text"
-                  value={newDeptName}
-                  onChange={(e) => {
-                    setNewDeptName(e.target.value)
-                    if (errors.name) setErrors(prev => ({ ...prev, name: false }))
-                  }}
-                  placeholder="e.g. College of Information Technology"
-                  className={`w-full rounded-md border px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                    errors.name 
-                      ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                      : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                  }`}
-                  autoFocus
-                />
               </div>
 
               <div className="flex items-center gap-3 pt-2">
@@ -358,7 +496,14 @@ function DepartmentsPage() {
               </div>
             </form>
           </div>
-          <div className="absolute inset-0 -z-10" onClick={handleCloseFormModal} />
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (!isDeanDropdownOpen) {
+                handleCloseFormModal()
+              }
+            }} 
+          />
         </div>
       )}
 

@@ -1,19 +1,57 @@
 import { useState } from 'react'
 import type { SyntheticEvent } from 'react'
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
+import { auth } from '../firebase'
 
 type TabKey = 'home' | 'about' | 'contact'
 
 interface SignupPageProps {
   onSignup: () => void
+  onSignInClick?: () => void
 }
 
-function SignupPage({ onSignup }: SignupPageProps) {
+function SignupPage({ onSignup, onSignInClick }: SignupPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>('home')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e: SyntheticEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    onSignup()
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+      
+      // Update profile with names
+      await updateProfile(userCredential.user, {
+        displayName: `${firstName} ${lastName}`
+      })
+      
+      onSignup()
+    } catch (err: any) {
+      console.error('Sign up error:', err)
+      switch (err.code) {
+        case 'auth/email-already-in-use':
+          setError('Email is already in use.')
+          break
+        case 'auth/invalid-email':
+          setError('Invalid email address.')
+          break
+        case 'auth/weak-password':
+          setError('Password should be at least 6 characters.')
+          break
+        default:
+          setError('Failed to create account. Please try again.')
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -56,6 +94,13 @@ function SignupPage({ onSignup }: SignupPageProps) {
                 </button>
               )
             })}
+            <button
+              type="button"
+              onClick={onSignInClick}
+              className="ml-4 rounded-md bg-[var(--brand-color)] px-4 py-2 text-xs font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
+            >
+              Go to Sign In
+            </button>
           </div>
         </nav>
 
@@ -79,6 +124,11 @@ function SignupPage({ onSignup }: SignupPageProps) {
           </p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+            {error && (
+              <div className="rounded-md bg-red-50 p-3 text-xs text-red-600 border border-red-100">
+                {error}
+              </div>
+            )}
             <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
               <label className="block">
                 <span className="mb-2 block text-sm font-normal text-black">
@@ -87,6 +137,8 @@ function SignupPage({ onSignup }: SignupPageProps) {
                 <div className="group relative">
                   <input
                     type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
                     placeholder="John"
                     className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
                     required
@@ -100,6 +152,8 @@ function SignupPage({ onSignup }: SignupPageProps) {
                 <div className="group relative">
                   <input
                     type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
                     placeholder="Doe"
                     className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
                     required
@@ -130,6 +184,8 @@ function SignupPage({ onSignup }: SignupPageProps) {
                 </span>
                 <input
                   type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="example.up@phinmaed.com"
                   className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
                   required
@@ -144,6 +200,8 @@ function SignupPage({ onSignup }: SignupPageProps) {
               <div className="group relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Create a password"
                   className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
                   required
@@ -191,9 +249,10 @@ function SignupPage({ onSignup }: SignupPageProps) {
 
             <button
               type="submit"
-              className="w-full rounded-md bg-[var(--brand-color)] px-4 py-3 text-sm font-semibold text-[var(--brand-surface)] transition hover:opacity-90"
+              disabled={loading}
+              className="w-full rounded-md bg-[var(--brand-color)] px-4 py-3 text-sm font-semibold text-[var(--brand-surface)] transition hover:opacity-90 disabled:opacity-50"
             >
-              Create Account
+              {loading ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
         </div>

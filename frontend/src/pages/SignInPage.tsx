@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import type { SyntheticEvent } from 'react'
+import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { auth, db } from '../firebase'
 
 type TabKey = 'home' | 'about' | 'contact'
 
@@ -11,10 +14,82 @@ interface SignInPageProps {
 function SignInPage({ onSignIn, onSignUpClick }: SignInPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>('home')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
 
-  const handleSubmit = (e: SyntheticEvent<HTMLFormElement>) => {
+  const checkAndCreateUserDoc = async (user: any) => {
+    try {
+      const userDocRef = doc(db, 'users', user.uid)
+      const userDocSnap = await getDoc(userDocRef)
+      const userData = userDocSnap.data() || {}
+
+      const updates: any = {
+        updatedAt: serverTimestamp(),
+        isVerify: user.emailVerified
+      }
+
+      // Fill in missing fields with defaults
+      if (userData.email === undefined) updates.email = user.email
+      if (userData.fullName === undefined) updates.fullName = user.displayName || ''
+      if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
+      if (userData.department === undefined) updates.department = ''
+      if (userData.role === undefined) updates.role = 'member'
+      if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
+      if (userData.isActive === undefined) updates.isActive = true
+
+      await setDoc(userDocRef, updates, { merge: true })
+    } catch (err) {
+      console.error('Error checking user doc during sign in:', err)
+    }
+  }
+
+  const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    onSignIn()
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const userCredential = await signInWithEmailAndPassword(auth, email, password)
+      await checkAndCreateUserDoc(userCredential.user)
+      onSignIn()
+    } catch (err: any) {
+      console.error('Sign in error:', err)
+      switch (err.code) {
+        case 'auth/invalid-email':
+          setError('Invalid email address.')
+          break
+        case 'auth/user-not-found':
+        case 'auth/wrong-password':
+        case 'auth/invalid-credential':
+          setError('Incorrect email or password.')
+          break
+        case 'auth/too-many-requests':
+          setError('Too many failed attempts. Please try again later.')
+          break
+        default:
+          setError('Failed to sign in. Please try again.')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const provider = new GoogleAuthProvider()
+      const userCredential = await signInWithPopup(auth, provider)
+      await checkAndCreateUserDoc(userCredential.user)
+      onSignIn()
+    } catch (err: any) {
+      console.error('Google sign in error:', err)
+      setError('Google sign in failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -87,6 +162,11 @@ function SignInPage({ onSignIn, onSignUpClick }: SignInPageProps) {
           </p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+            {error && (
+              <div className="rounded-md bg-red-50 p-3 text-xs text-red-600 border border-red-100">
+                {error}
+              </div>
+            )}
             <label className="block">
               <span className="mb-2 block text-sm font-normal text-black">
                 Email <span className="text-red-500">*</span>
@@ -109,7 +189,10 @@ function SignInPage({ onSignIn, onSignUpClick }: SignInPageProps) {
                 </span>
                 <input
                   type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="example.up@phinmaed.com"
+                  required
                   className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
                 />
               </div>
@@ -122,7 +205,10 @@ function SignInPage({ onSignIn, onSignUpClick }: SignInPageProps) {
               <div className="group relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="Enter your password"
+                  required
                   className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
                 />
                 <button
@@ -177,9 +263,10 @@ function SignInPage({ onSignIn, onSignUpClick }: SignInPageProps) {
 
             <button
               type="submit"
-              className="w-full rounded-md bg-[var(--brand-color)] px-4 py-3 text-sm font-semibold text-[var(--brand-surface)] transition hover:opacity-90"
+              disabled={loading}
+              className="w-full rounded-md bg-[var(--brand-color)] px-4 py-3 text-sm font-semibold text-[var(--brand-surface)] transition hover:opacity-90 disabled:opacity-50"
             >
-              Sign in
+              {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
 
@@ -193,8 +280,9 @@ function SignInPage({ onSignIn, onSignUpClick }: SignInPageProps) {
 
           <button
             type="button"
-            className="flex w-full items-center justify-center gap-3 rounded-md border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 text-sm font-semibold text-[#1f1f1f] transition hover:bg-[#f8f8f8]"
-            onClick={onSignIn}
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-3 rounded-md border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 text-sm font-semibold text-[#1f1f1f] transition hover:bg-[#f8f8f8] disabled:opacity-50"
           >
             <svg
               aria-hidden="true"

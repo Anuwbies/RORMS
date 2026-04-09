@@ -1,5 +1,8 @@
-import { useRef, useState, type ChangeEvent } from 'react'
-import { BellIcon, CameraIcon, ChevronLeftIcon, ChevronRightIcon, LogOutIcon, TrashIcon } from './Icons'
+import { useRef, useState, useEffect, type ChangeEvent } from 'react'
+import { onAuthStateChanged } from 'firebase/auth'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { auth, db } from '../firebase'
+import { BellIcon, CameraIcon, ChevronLeftIcon, ChevronRightIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
 import { rightSidebarOutlineClass, sidebarDividerClass } from './sidebarStyles'
 
@@ -59,15 +62,6 @@ const initialNotifications: NotificationItem[] = [
     type: 'system',
   },
 ]
-
-function getInitials(name: string) {
-  return name
-    .split(' ')
-    .map((part) => part[0] ?? '')
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-}
 
 function formatRelativeTime(timestamp: string) {
   const elapsedMs = Math.max(Date.now() - new Date(timestamp).getTime(), 0)
@@ -130,12 +124,44 @@ export function RightSidebar({
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [profileImage, setProfileImage] = useState<string | null>(null)
+  const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false)
+  const [isClearNotificationsModalOpen, setIsClearNotificationsModalOpen] = useState(false)
+  const [userData, setUserData] = useState({
+    fullName: 'No Name',
+    email: 'example.up@phinmaed.com',
+    profilePicture: ''
+  })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const user = {
-    fullName: 'Registrar Office Admin',
-    email: 'registrar.office@phinmaed.com',
-  }
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const unsubscribeDoc = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data()
+            setUserData({
+              fullName: data.fullName || 'No Name',
+              email: data.email || 'example.up@phinmaed.com',
+              profilePicture: data.profilePicture || ''
+            })
+            if (data.profilePicture) {
+              setProfileImage(data.profilePicture)
+            }
+          }
+        })
+        return () => unsubscribeDoc()
+      } else {
+        setUserData({
+          fullName: 'No Name',
+          email: 'example.up@phinmaed.com',
+          profilePicture: ''
+        })
+        setProfileImage(null)
+      }
+    })
+
+    return () => unsubscribeAuth()
+  }, [])
 
   const unreadCount = notifications.filter((notification) => !notification.isRead).length
 
@@ -193,7 +219,7 @@ export function RightSidebar({
   const avatar = profileImage ? (
     <img
       src={profileImage}
-      alt={user.fullName}
+      alt={userData.fullName}
       className="h-full w-full rounded-full object-cover"
     />
   ) : (
@@ -203,18 +229,95 @@ export function RightSidebar({
         isExpanded ? 'text-2xl' : 'text-[10px] tracking-tight',
       )}
     >
-      {getInitials(user.fullName)}
+      <UserIcon className={isExpanded ? "h-12 w-12" : "h-5 w-5"} />
     </div>
   )
 
   return (
-    <aside
-      className={joinClasses(
-        'fixed top-0 right-0 z-50 hidden h-full flex-col bg-[var(--brand-surface)] transition-all duration-200 ease-out xl:flex',
-        rightSidebarOutlineClass,
-        isExpanded ? 'w-80' : 'w-20',
+    <>
+      {/* Sign Out Confirmation Modal */}
+      {isSignOutModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-rose-600 p-6 text-white rounded-t-md relative">
+              <h3 className="text-xl font-bold">Sign Out</h3>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to sign out?</p>
+            </div>
+            
+            <div className="p-6">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsSignOutModalOpen(false)}
+                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSignOutModalOpen(false)
+                    onSignOut()
+                  }}
+                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg"
+                >
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onClick={() => setIsSignOutModalOpen(false)} />
+        </div>
       )}
-    >
+
+      {/* Clear Notifications Confirmation Modal */}
+      {isClearNotificationsModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-rose-600 p-6 text-white rounded-t-md relative">
+              <h3 className="text-xl font-bold">Clear All</h3>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to clear all notifications?</p>
+            </div>
+            
+            <div className="p-6">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsClearNotificationsModalOpen(false)}
+                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearNotifications()
+                    setIsClearNotificationsModalOpen(false)
+                  }}
+                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg"
+                >
+                  Clear All
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onClick={() => setIsClearNotificationsModalOpen(false)} />
+        </div>
+      )}
+
+      <aside
+        className={joinClasses(
+          'fixed top-0 right-0 z-50 hidden h-full flex-col bg-[var(--brand-surface)] transition-all duration-200 ease-out xl:flex',
+          rightSidebarOutlineClass,
+          isExpanded ? 'w-80' : 'w-20',
+        )}
+      >
       <div
         className={joinClasses(
           'bg-[var(--card-surface)] shadow-none transition-all duration-200',
@@ -261,10 +364,10 @@ export function RightSidebar({
             </div>
 
             <h2 className="mb-1 text-lg font-bold tracking-tight text-secondary-900 dark:text-secondary-100">
-              {user.fullName}
+              {userData.fullName}
             </h2>
             <p className="mb-4 text-sm text-secondary-500 dark:text-secondary-400">
-              {user.email}
+              {userData.email}
             </p>
 
             <div className="flex w-full gap-2">
@@ -297,7 +400,7 @@ export function RightSidebar({
               <button
                 type="button"
                 className="group flex h-9 flex-1 items-center justify-center rounded-md border border-secondary-200 bg-white px-2 text-secondary-900 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100 dark:hover:border-red-500/20 dark:hover:bg-red-500/10 dark:hover:text-red-200"
-                onClick={onSignOut}
+                onClick={() => setIsSignOutModalOpen(true)}
               >
                 <div className="flex items-center gap-1.5 scale-[1] origin-center">
                   <LogOutIcon className="h-4 w-4 text-red-500 transition-colors group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200" />
@@ -321,7 +424,7 @@ export function RightSidebar({
             <button
               type="button"
               aria-label="Expand right sidebar"
-              className="order-2 flex h-10 w-10 items-center justify-center rounded-full bg-white transition-transform hover:scale-105"
+              className="order-2 flex h-10 w-10 scale-110 items-center justify-center rounded-full bg-white transition-transform hover:scale-115"
               onClick={() => onExpandChange(true)}
             >
               <div className="h-8 w-8 overflow-hidden rounded-full">
@@ -359,7 +462,7 @@ export function RightSidebar({
               type="button"
               aria-label="Sign out"
               className="group flex h-12 w-full items-center justify-center rounded-md transition-all duration-200 hover:bg-red-500/10"
-              onClick={onSignOut}
+              onClick={() => setIsSignOutModalOpen(true)}
             >
               <LogOutIcon className="h-6 w-6 text-red-500 transition-all duration-200 group-hover:scale-110 group-hover:text-red-600" />
             </button>
@@ -398,17 +501,24 @@ export function RightSidebar({
               const config = getNotificationConfig(notification.type)
 
               return (
-                <button
+                <div
                   key={notification.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   className={joinClasses(
-                    'group relative flex w-full flex-col overflow-hidden rounded-2xl border text-left transition-all duration-300 hover:shadow-md',
+                    'group relative flex w-full flex-col overflow-hidden rounded-2xl border text-left transition-all duration-300 hover:shadow-md cursor-pointer',
                     config.bg,
                     config.color,
                     'border-secondary-100 dark:border-secondary-800',
                     !notification.isRead && 'ring-1 ring-primary-500/20 shadow-sm',
                   )}
                   onClick={() => markAsRead(notification.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      markAsRead(notification.id)
+                    }
+                  }}
                 >
                   <div className={joinClasses('absolute top-0 bottom-0 left-0 w-1.5', config.border)} />
 
@@ -457,7 +567,7 @@ export function RightSidebar({
                       </div>
                     </div>
                   </div>
-                </button>
+                </div>
               )
             })}
 
@@ -486,7 +596,7 @@ export function RightSidebar({
             <button
               type="button"
               className="w-full rounded-xl px-3 py-2 font-bold text-secondary-500 transition-colors hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-400 dark:hover:bg-red-500/10 dark:hover:text-red-300"
-              onClick={clearNotifications}
+              onClick={() => setIsClearNotificationsModalOpen(true)}
               disabled={notifications.length === 0}
             >
               <span className="inline-block scale-[1] origin-center text-[13px] font-bold tracking-tight">
@@ -497,6 +607,7 @@ export function RightSidebar({
         </div>
       )}
     </aside>
+    </>
   )
 }
 

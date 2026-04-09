@@ -53,17 +53,17 @@ const navItems: NavItem[] = [
     icon: DoorIcon,
   },
   {
-    id: 'manageReservations',
-    label: 'Manage Reservations',
-    eyebrow: 'Manage Reservations',
-    description: 'Track and approve room reservation requests.',
-    icon: ClipboardIcon,
-  },
-  {
     id: 'reports',
     label: 'Reports',
     eyebrow: 'Reports',
     description: 'Generate and view university-wide utilization reports.',
+    icon: ClipboardIcon,
+  },
+  {
+    id: 'manageReservations',
+    label: 'Manage Reservations',
+    eyebrow: 'Manage Reservations',
+    description: 'Track and approve room reservation requests.',
     icon: ClipboardIcon,
   },
   {
