@@ -12,6 +12,17 @@ function App() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Check if we should be in signup mode based on URL
+    const params = new URLSearchParams(window.location.search)
+    const hasToken = params.has('token')
+    const isSignupPath = window.location.pathname === '/signup'
+    
+    if (hasToken || isSignupPath) {
+      setIsSignupMode(true)
+    }
+  }, [])
+
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
@@ -81,7 +92,6 @@ function App() {
     return (
       <SignupPage 
         onSignup={handleSignup} 
-        onSignInClick={() => setIsSignupMode(false)} 
       />
     )
   }
@@ -89,7 +99,6 @@ function App() {
   return (
     <SignInPage 
       onSignIn={handleSignIn} 
-      onSignUpClick={() => setIsSignupMode(true)} 
     />
   )
 }

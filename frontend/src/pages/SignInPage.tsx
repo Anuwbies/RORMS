@@ -8,10 +8,9 @@ type TabKey = 'home' | 'about' | 'contact'
 
 interface SignInPageProps {
   onSignIn: () => void
-  onSignUpClick?: () => void
 }
 
-function SignInPage({ onSignIn, onSignUpClick }: SignInPageProps) {
+function SignInPage({ onSignIn }: SignInPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>('home')
   const [email, setEmail] = useState('')
@@ -132,13 +131,6 @@ function SignInPage({ onSignIn, onSignUpClick }: SignInPageProps) {
                 </button>
               )
             })}
-            <button
-              type="button"
-              onClick={onSignUpClick}
-              className="ml-4 rounded-md bg-[var(--brand-color)] px-4 py-2 text-xs font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
-            >
-              Go to Sign Up
-            </button>
           </div>
         </nav>
 

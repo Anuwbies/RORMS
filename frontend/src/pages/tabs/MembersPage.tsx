@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
+import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs } from 'firebase/firestore'
+import { auth, db } from '../../firebase'
 import { UsersIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 
@@ -309,6 +311,7 @@ function MembersPage() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<MemberRole>('Instructor')
   const [inviteError, setInviteError] = useState('')
+  const [isInviting, setIsInviting] = useState(false)
 
   const filteredMembers = members
     .filter((member) => {
@@ -322,7 +325,7 @@ function MembersPage() {
     })
     .sort((a, b) => rolePriority[a.role] - rolePriority[b.role])
 
-  const handleInvite = (e: React.FormEvent) => {
+  const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
     
     if (!inviteEmail.trim()) {
@@ -335,12 +338,108 @@ function MembersPage() {
       return
     }
 
-    console.log('Inviting:', inviteEmail, 'as', inviteRole)
-    // Add logic to invite member
-    setIsInviteModalOpen(false)
-    setInviteEmail('')
-    setInviteRole('Instructor')
+    const normalizedEmail = inviteEmail.trim().toLowerCase()
+    setIsInviting(true)
     setInviteError('')
+
+    try {
+      console.log('Checking for existing user with email:', normalizedEmail)
+      // 1. Check if user already exists in 'users' collection
+      const userQuery = query(collection(db, 'users'), where('email', '==', normalizedEmail))
+      const userSnapshot = await getDocs(userQuery)
+      console.log('User search result size:', userSnapshot.size)
+      
+      if (!userSnapshot.empty) {
+        setInviteError('This user is already a member.')
+        setIsInviting(false)
+        return
+      }
+
+      // 2. Check for existing active invitations
+      console.log('Checking for existing invitations for email:', normalizedEmail)
+      const inviteQuery = query(
+        collection(db, 'invitations'), 
+        where('email', '==', normalizedEmail),
+        where('status', '==', 'pending')
+      )
+      const inviteSnapshot = await getDocs(inviteQuery)
+      console.log('Invitation search result size:', inviteSnapshot.size)
+      
+      const now = new Date()
+      const activeInvite = inviteSnapshot.docs.find(doc => {
+        const data = doc.data()
+        const isNotExpired = data.expiresAt.toDate() > now
+        console.log('Checking invitation', doc.id, '- Status:', data.status, '- Not Expired:', isNotExpired)
+        return isNotExpired
+      })
+
+      if (activeInvite) {
+        setInviteError('An active invitation already exists.')
+        setIsInviting(false)
+        return
+      }
+
+      console.log('Validation passed. Starting invitation process for:', normalizedEmail)
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + 7)
+
+      // 3. Create the invitation tracking document
+      const inviteRef = await addDoc(collection(db, 'invitations'), {
+        email: normalizedEmail,
+        role: inviteRole,
+        status: 'pending',
+        invitedBy: auth.currentUser?.uid || 'system',
+        createdAt: serverTimestamp(),
+        expiresAt: Timestamp.fromDate(expiresAt),
+      })
+      console.log('Invitation document created with ID:', inviteRef.id)
+
+      // 4. Create the mail document to trigger the extension
+      const signupLink = `https://rorms-dd983.web.app/signup?token=${inviteRef.id}`
+      console.log('Attempting to create mail document...')
+      
+      const mailRef = await addDoc(collection(db, 'mail'), {
+        to: normalizedEmail,
+        message: {
+          subject: 'Invitation to join RORMS',
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+              <div style="text-align: center; margin-bottom: 20px;">
+                <h2 style="color: #62853e; margin: 0;">Welcome to RORMS</h2>
+                <p style="color: #666;">University Room & Resource Management System</p>
+              </div>
+              <p>Hello,</p>
+              <p>You have been invited to join the <strong>RORMS</strong> system as a <strong>${inviteRole}</strong>.</p>
+              <p>Please click the button below to complete your account registration:</p>
+              <div style="text-align: center; margin: 35px 0;">
+                <a href="${signupLink}" style="background-color: #62853e; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                  Accept Invitation & Sign Up
+                </a>
+              </div>
+              <p style="font-size: 13px; color: #888; line-height: 1.5;">
+                <strong>Note:</strong> This invitation link is unique to your email and will expire in 7 days. If you did not expect this invitation, you can safely ignore this email.
+              </p>
+              <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
+              <p style="font-size: 12px; color: #b9b9b9; text-align: center;">
+                If the button doesn't work, copy and paste this link into your browser:<br />
+                <span style="color: #62853e;">${signupLink}</span>
+              </p>
+            </div>
+          `,
+        },
+      })
+      console.log('Mail document created with ID:', mailRef.id)
+
+      setIsInviteModalOpen(false)
+      setInviteEmail('')
+      setInviteRole('Instructor')
+      setInviteError('')
+    } catch (error) {
+      console.error('Error sending invitation:', error)
+      setInviteError('Failed to send invitation. Please try again.')
+    } finally {
+      setIsInviting(false)
+    }
   }
 
   const openInviteModal = () => {
@@ -416,9 +515,10 @@ function MembersPage() {
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
+                  disabled={isInviting}
+                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Send Invitation
+                  {isInviting ? 'Sending...' : 'Send Invitation'}
                 </button>
               </div>
             </form>

@@ -1,36 +1,112 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
 import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
-import { auth } from '../firebase'
+import { doc, getDoc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { auth, db } from '../firebase'
 
 type TabKey = 'home' | 'about' | 'contact'
 
 interface SignupPageProps {
   onSignup: () => void
-  onSignInClick?: () => void
 }
 
-function SignupPage({ onSignup, onSignInClick }: SignupPageProps) {
+function SignupPage({ onSignup }: SignupPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>('home')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [role, setRole] = useState<string | null>(null)
+  const [inviteId, setInviteId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [isValidating, setIsValidating] = useState(true)
+
+  useEffect(() => {
+    const validateInvitation = async () => {
+      const params = new URLSearchParams(window.location.search)
+      const token = params.get('token')
+
+      if (!token) {
+        setError('No invitation token found. You must be invited to sign up.')
+        setIsValidating(false)
+        return
+      }
+
+      setInviteId(token)
+      try {
+        const inviteDoc = await getDoc(doc(db, 'invitations', token))
+        
+        if (!inviteDoc.exists()) {
+          setError('This invitation link is invalid.')
+          setIsValidating(false)
+          return
+        }
+
+        const data = inviteDoc.data()
+        
+        if (data.status !== 'pending') {
+          setError('This invitation has already been used.')
+          setIsValidating(false)
+          return
+        }
+
+        if (data.expiresAt.toDate() < new Date()) {
+          setError('This invitation link has expired.')
+          setIsValidating(false)
+          return
+        }
+
+        setEmail(data.email)
+        setRole(data.role)
+      } catch (err) {
+        console.error('Error validating invitation:', err)
+        setError('Failed to validate invitation. Please try again later.')
+      } finally {
+        setIsValidating(false)
+      }
+    }
+
+    validateInvitation()
+  }, [])
 
   const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
+    if (!email || !role || !inviteId) {
+      setError('Invalid registration state.')
+      return
+    }
+
     setLoading(true)
     setError(null)
     
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+      const user = userCredential.user
+      const fullName = `${firstName} ${lastName}`
       
       // Update profile with names
-      await updateProfile(userCredential.user, {
-        displayName: `${firstName} ${lastName}`
+      await updateProfile(user, {
+        displayName: fullName
+      })
+
+      // Create user document in Firestore (Matching SignInPage fields)
+      await setDoc(doc(db, 'users', user.uid), {
+        email: email,
+        fullName: fullName,
+        isVerify: user.emailVerified,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        department: '',
+        role: role,
+        profilePicture: '',
+        isActive: true
+      })
+
+      // Mark invitation as accepted
+      await updateDoc(doc(db, 'invitations', inviteId), {
+        status: 'accepted'
       })
       
       onSignup()
@@ -52,6 +128,17 @@ function SignupPage({ onSignup, onSignInClick }: SignupPageProps) {
     } finally {
       setLoading(false)
     }
+  }
+
+  if (isValidating) {
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-[var(--brand-surface)]">
+        <div className="text-center">
+          <div className="h-12 w-12 border-4 border-[var(--brand-color)] border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-[var(--hint-color)]">Validating invitation...</p>
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -94,13 +181,6 @@ function SignupPage({ onSignup, onSignInClick }: SignupPageProps) {
                 </button>
               )
             })}
-            <button
-              type="button"
-              onClick={onSignInClick}
-              className="ml-4 rounded-md bg-[var(--brand-color)] px-4 py-2 text-xs font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
-            >
-              Go to Sign In
-            </button>
           </div>
         </nav>
 
@@ -119,6 +199,11 @@ function SignupPage({ onSignup, onSignInClick }: SignupPageProps) {
           <h2 className="mt-3 text-center text-3xl font-semibold text-black">
             Create Account
           </h2>
+          {role && (
+            <p className="mt-1 text-center text-sm font-bold text-[var(--brand-color)]">
+              Joining as {role}
+            </p>
+          )}
           <p className="mt-1 text-center text-sm leading-6 text-[var(--hint-color)]">
             Join the team and start managing rooms.
           </p>
@@ -129,131 +214,136 @@ function SignupPage({ onSignup, onSignInClick }: SignupPageProps) {
                 {error}
               </div>
             )}
-            <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
-              <label className="block">
-                <span className="mb-2 block text-sm font-normal text-black">
-                  First Name <span className="text-red-500">*</span>
-                </span>
-                <div className="group relative">
-                  <input
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="John"
-                    className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
-                    required
-                  />
+            
+            {!error && (
+              <>
+                <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-normal text-black">
+                      First Name <span className="text-red-500">*</span>
+                    </span>
+                    <div className="group relative">
+                      <input
+                        type="text"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="John"
+                        className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
+                        required
+                      />
+                    </div>
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-sm font-normal text-black">
+                      Last Name <span className="text-red-500">*</span>
+                    </span>
+                    <div className="group relative">
+                      <input
+                        type="text"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Doe"
+                        className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
+                        required
+                      />
+                    </div>
+                  </label>
                 </div>
-              </label>
-              <label className="block">
-                <span className="mb-2 block text-sm font-normal text-black">
-                  Last Name <span className="text-red-500">*</span>
-                </span>
-                <div className="group relative">
-                  <input
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Doe"
-                    className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
-                    required
-                  />
-                </div>
-              </label>
-            </div>
 
-            <label className="block">
-              <span className="mb-2 block text-sm font-normal text-black">
-                Email <span className="text-red-500">*</span>
-              </span>
-              <div className="group relative">
-                <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-[var(--hint-color)] transition group-focus-within:text-[var(--brand-color)]">
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M4 6.75h16A1.25 1.25 0 0 1 21.25 8v8A1.25 1.25 0 0 1 20 17.25H4A1.25 1.25 0 0 1 2.75 16V8A1.25 1.25 0 0 1 4 6.75Z" />
-                    <path d="m3.5 8 8.01 6.01a.83.83 0 0 0 .98 0L20.5 8" />
-                  </svg>
-                </span>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="example.up@phinmaed.com"
-                  className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
-                  required
-                />
-              </div>
-            </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-normal text-black">
+                    Email <span className="text-red-500">*</span>
+                  </span>
+                  <div className="group relative">
+                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-[var(--hint-color)] transition group-focus-within:text-[var(--brand-color)]">
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className="h-5 w-5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M4 6.75h16A1.25 1.25 0 0 1 21.25 8v8A1.25 1.25 0 0 1 20 17.25H4A1.25 1.25 0 0 1 2.75 16V8A1.25 1.25 0 0 1 4 6.75Z" />
+                        <path d="m3.5 8 8.01 6.01a.83.83 0 0 0 .98 0L20.5 8" />
+                      </svg>
+                    </span>
+                    <input
+                      type="email"
+                      value={email}
+                      readOnly
+                      placeholder="example.up@phinmaed.com"
+                      className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-gray-50 px-4 py-3 pr-12 text-sm text-gray-500 outline-none transition cursor-not-allowed"
+                      required
+                    />
+                  </div>
+                </label>
 
-            <label className="block">
-              <span className="mb-2 block text-sm font-normal text-black">
-                Password <span className="text-red-500">*</span>
-              </span>
-              <div className="group relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Create a password"
-                  className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
-                  required
-                />
+                <label className="block">
+                  <span className="mb-2 block text-sm font-normal text-black">
+                    Password <span className="text-red-500">*</span>
+                  </span>
+                  <div className="group relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Create a password"
+                      className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-[var(--brand-surface)] px-4 py-3 pr-12 text-sm text-black outline-none transition placeholder:text-[var(--hint-color)] focus:border-[var(--brand-color)] focus:bg-[var(--brand-surface)]"
+                      required
+                    />
+                    <button
+                      type="button"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowPassword((current) => !current)}
+                      className="absolute inset-y-0 right-0 flex items-center px-4 text-[var(--hint-color)] transition group-focus-within:text-[var(--brand-color)] hover:text-black"
+                    >
+                      {showPassword ? (
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3 3l18 18" />
+                          <path d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58" />
+                          <path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.91c5.05 0 9.27 3.11 10.5 7.09a11.8 11.8 0 0 1-2.41 3.97" />
+                          <path d="M6.61 6.61A11.84 11.84 0 0 0 1.5 12c1.23 3.98 5.45 7.09 10.5 7.09 1.8 0 3.51-.39 5.04-1.09" />
+                        </svg>
+                      ) : (
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M1.5 12S5.5 4.91 12 4.91 22.5 12 22.5 12 18.5 19.09 12 19.09 1.5 12 1.5 12Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </label>
+
                 <button
-                  type="button"
-                  aria-label={showPassword ? 'Hide password' : 'Show password'}
-                  onClick={() => setShowPassword((current) => !current)}
-                  className="absolute inset-y-0 right-0 flex items-center px-4 text-[var(--hint-color)] transition group-focus-within:text-[var(--brand-color)] hover:text-black"
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-md bg-[var(--brand-color)] px-4 py-3 text-sm font-semibold text-[var(--brand-surface)] transition hover:opacity-90 disabled:opacity-50"
                 >
-                  {showPassword ? (
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M3 3l18 18" />
-                      <path d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58" />
-                      <path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.91c5.05 0 9.27 3.11 10.5 7.09a11.8 11.8 0 0 1-2.41 3.97" />
-                      <path d="M6.61 6.61A11.84 11.84 0 0 0 1.5 12c1.23 3.98 5.45 7.09 10.5 7.09 1.8 0 3.51-.39 5.04-1.09" />
-                    </svg>
-                  ) : (
-                    <svg
-                      aria-hidden="true"
-                      viewBox="0 0 24 24"
-                      className="h-5 w-5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M1.5 12S5.5 4.91 12 4.91 22.5 12 22.5 12 18.5 19.09 12 19.09 1.5 12 1.5 12Z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
+                  {loading ? 'Creating account...' : 'Create Account'}
                 </button>
-              </div>
-            </label>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-md bg-[var(--brand-color)] px-4 py-3 text-sm font-semibold text-[var(--brand-surface)] transition hover:opacity-90 disabled:opacity-50"
-            >
-              {loading ? 'Creating account...' : 'Create Account'}
-            </button>
+              </>
+            )}
           </form>
         </div>
       </section>
