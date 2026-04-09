@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react'
-import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs } from 'firebase/firestore'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
+import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore'
 import { auth, db } from '../../firebase'
-import { UsersIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
+import { UsersIcon, UserIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 
 type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Instructor'
@@ -17,56 +17,6 @@ interface Member {
   joinedDate: string
   avatar: string
 }
-
-const members: Member[] = [
-  {
-    id: '1',
-    name: 'Adrian Smith',
-    email: 'adrian@example.com',
-    role: 'Admin',
-    status: 'Active',
-    joinedDate: 'Oct 12, 2023',
-    avatar: 'https://i.pravatar.cc/150?u=1',
-  },
-  {
-    id: '2',
-    name: 'Sarah Jenkins',
-    email: 'sarah.j@example.com',
-    role: 'Registrar',
-    status: 'Active',
-    joinedDate: 'Nov 05, 2023',
-    avatar: 'https://i.pravatar.cc/150?u=2',
-  },
-  {
-    id: '3',
-    name: 'Michael Chen',
-    email: 'm.chen@example.com',
-    role: 'Dean',
-    status: 'Inactive',
-    department: 'CITE',
-    joinedDate: 'Jan 20, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=3',
-  },
-  {
-    id: '4',
-    name: 'Elena Rodriguez',
-    email: 'elena.r@example.com',
-    role: 'Instructor',
-    status: 'Active',
-    department: 'CITE',
-    joinedDate: 'Feb 15, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=4',
-  },
-  {
-    id: '5',
-    name: 'David Wilson',
-    email: 'd.wilson@example.com',
-    role: 'Registrar',
-    status: 'Pending',
-    joinedDate: 'Mar 02, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=5',
-  },
-]
 
 const rolePriority: Record<MemberRole, number> = {
   Admin: 0,
@@ -304,6 +254,10 @@ function SingleSelectDropdown<T extends string>({
 }
 
 function MembersPage() {
+  const [users, setUsers] = useState<Member[]>([])
+  const [invites, setInvites] = useState<Member[]>([])
+  const [loadingUsers, setLoadingUsers] = useState(true)
+  const [loadingInvites, setLoadingInvites] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<MemberRole[]>([])
   const [selectedStatuses, setSelectedStatuses] = useState<MemberStatus[]>([])
@@ -312,6 +266,74 @@ function MembersPage() {
   const [inviteRole, setInviteRole] = useState<MemberRole>('Instructor')
   const [inviteError, setInviteError] = useState('')
   const [isInviting, setIsInviting] = useState(false)
+
+  useEffect(() => {
+    // 1. Listener for actual members (users collection)
+    const usersQuery = query(collection(db, 'users'), orderBy('role'))
+    const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
+      const usersData = snapshot.docs.map((doc) => {
+        const data = doc.data()
+        return {
+          id: doc.id,
+          name: data.fullName || '',
+          email: data.email || '',
+          role: (data.role as MemberRole) || 'Instructor',
+          status: (data.isActive !== false) ? 'Active' : 'Inactive',
+          department: data.department || '',
+          joinedDate: data.createdAt ? data.createdAt.toDate().toLocaleDateString('en-US', {
+            month: 'short',
+            day: '2-digit',
+            year: 'numeric'
+          }) : '—',
+          avatar: data.profilePicture || '',
+        }
+      }) as Member[]
+      setUsers(usersData)
+      setLoadingUsers(false)
+    }, (error) => {
+      console.error('Error fetching users:', error)
+      setLoadingUsers(false)
+    })
+
+    // 2. Listener for pending invitations
+    const invitesQuery = query(
+      collection(db, 'invitations'), 
+      where('status', '==', 'pending')
+    )
+    const unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
+      const invitesData = snapshot.docs.map((doc) => {
+        const data = doc.data()
+        // Check if invite is expired
+        const now = new Date()
+        const isExpired = data.expiresAt && data.expiresAt.toDate() < now
+        if (isExpired) return null
+
+        return {
+          id: doc.id,
+          name: '', // No name for pending invites
+          email: data.email || '',
+          role: (data.role as MemberRole) || 'Instructor',
+          status: 'Pending',
+          department: '',
+          joinedDate: '—', // No joined date for pending invites
+          avatar: '',
+        }
+      }).filter(Boolean) as Member[]
+      setInvites(invitesData)
+      setLoadingInvites(false)
+    }, (error) => {
+      console.error('Error fetching invitations:', error)
+      setLoadingInvites(false)
+    })
+
+    return () => {
+      unsubscribeUsers()
+      unsubscribeInvites()
+    }
+  }, [])
+
+  const members = useMemo(() => [...users, ...invites], [users, invites])
+  const loadingMembers = loadingUsers || loadingInvites
 
   const filteredMembers = members
     .filter((member) => {
@@ -654,14 +676,22 @@ function MembersPage() {
                     <tr key={member.id} className="transition hover:bg-gray-50/50">
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="flex items-center gap-4">
-                          <img
-                            src={member.avatar}
-                            alt={member.name}
-                            className="h-10 w-10 rounded-full border border-gray-100 object-cover"
-                          />
+                          {member.avatar ? (
+                            <img
+                              src={member.avatar}
+                              alt={member.name}
+                              className="h-10 w-10 rounded-full border border-gray-100 object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-100 bg-gray-50 text-gray-400">
+                              <UserIcon className="h-6 w-6" />
+                            </div>
+                          )}
                           <div>
-                            <p className="text-sm font-bold text-gray-900">{member.name}</p>
-                            <p className="text-xs font-medium text-gray-500">{member.email}</p>
+                            {member.name && <p className="text-sm font-bold text-gray-900">{member.name}</p>}
+                            <p className={member.name ? "text-xs font-medium text-gray-500" : "text-sm font-bold text-gray-900"}>
+                              {member.email}
+                            </p>
                           </div>
                         </div>
                       </td>
