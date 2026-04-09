@@ -60,6 +60,13 @@ const navItems: NavItem[] = [
     icon: ClipboardIcon,
   },
   {
+    id: 'reports',
+    label: 'Reports',
+    eyebrow: 'Reports',
+    description: 'Generate and view university-wide utilization reports.',
+    icon: ClipboardIcon,
+  },
+  {
     id: 'buildingsRooms',
     label: 'Buildings & Rooms',
     eyebrow: 'Buildings & Rooms',
@@ -79,13 +86,6 @@ const navItems: NavItem[] = [
     eyebrow: 'Members',
     description: 'Manage account roles and member records.',
     icon: UsersIcon,
-  },
-  {
-    id: 'reports',
-    label: 'Reports',
-    eyebrow: 'Reports',
-    description: 'Generate and view university-wide utilization reports.',
-    icon: ClipboardIcon,
   },
   {
     id: 'myDepartment',
