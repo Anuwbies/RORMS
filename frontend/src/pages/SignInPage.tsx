@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import type { SyntheticEvent } from 'react'
-import { signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
+import { 
+  signInWithEmailAndPassword, 
+  setPersistence, 
+  browserLocalPersistence, 
+  browserSessionPersistence 
+} from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 
@@ -15,6 +20,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
   const [activeTab, setActiveTab] = useState<TabKey>('home')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -29,13 +35,15 @@ function SignInPage({ onSignIn }: SignInPageProps) {
         isVerify: user.emailVerified
       }
 
-      // Fill in missing fields with defaults
-      if (userData.email === undefined) updates.email = user.email
+      // Ensure these fields exist, defaulting to empty strings if Auth doesn't have them
       if (userData.fullName === undefined) updates.fullName = user.displayName || ''
+      if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
+      if (userData.email === undefined) updates.email = user.email || ''
+      
+      // Set initial defaults if document is new
       if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
       if (userData.department === undefined) updates.department = ''
       if (userData.role === undefined) updates.role = 'member'
-      if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
       if (userData.isActive === undefined) updates.isActive = true
 
       await setDoc(userDocRef, updates, { merge: true })
@@ -50,6 +58,10 @@ function SignInPage({ onSignIn }: SignInPageProps) {
     setError(null)
     
     try {
+      // Set persistence based on "Remember me" checkbox
+      const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence
+      await setPersistence(auth, persistence)
+
       const userCredential = await signInWithEmailAndPassword(auth, email, password)
       await checkAndCreateUserDoc(userCredential.user)
       onSignIn()
@@ -70,22 +82,6 @@ function SignInPage({ onSignIn }: SignInPageProps) {
         default:
           setError('Failed to sign in. Please try again.')
       }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleGoogleSignIn = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const provider = new GoogleAuthProvider()
-      const userCredential = await signInWithPopup(auth, provider)
-      await checkAndCreateUserDoc(userCredential.user)
-      onSignIn()
-    } catch (err: any) {
-      console.error('Google sign in error:', err)
-      setError('Google sign in failed. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -160,7 +156,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
               </div>
             )}
             <label className="block">
-              <span className="mb-2 block text-sm font-normal text-black">
+              <span className="mb-2 block text-sm font-medium text-black">
                 Email <span className="text-red-500">*</span>
               </span>
               <div className="group relative">
@@ -191,7 +187,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
             </label>
 
             <label className="block">
-              <span className="mb-2 block text-sm font-normal text-black">
+              <span className="mb-2 block text-sm font-medium text-black">
                 Password <span className="text-red-500">*</span>
               </span>
               <div className="group relative">
@@ -244,13 +240,24 @@ function SignInPage({ onSignIn }: SignInPageProps) {
               </div>
             </label>
 
-            <div className="flex justify-end">
-              <button
-                type="button"
-                className="text-sm font-medium text-[var(--brand-color)] transition hover:text-blue-600"
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-[var(--brand-color)] focus:ring-[var(--brand-color)] transition cursor-pointer"
+                />
+                <span className="text-sm font-medium text-black group-hover:text-[var(--brand-color)] transition">
+                  Remember me
+                </span>
+              </label>
+              <span
+                role="button"
+                className="text-sm font-medium text-[var(--brand-color)] cursor-pointer transition hover:text-blue-600"
               >
                 Forgot password?
-              </button>
+              </span>
             </div>
 
             <button
@@ -261,46 +268,6 @@ function SignInPage({ onSignIn }: SignInPageProps) {
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
-
-          <div className="my-6 flex items-center gap-3">
-            <div className="h-px flex-1 bg-[rgba(0,0,0,0.12)]" />
-            <span className="text-xs font-medium uppercase tracking-[0.22em] text-[var(--hint-color)]">
-              Or continue with
-            </span>
-            <div className="h-px flex-1 bg-[rgba(0,0,0,0.12)]" />
-          </div>
-
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={loading}
-            className="flex w-full items-center justify-center gap-3 rounded-md border border-[rgba(0,0,0,0.12)] bg-white px-4 py-3 text-sm font-semibold text-[#1f1f1f] transition hover:bg-[#f8f8f8] disabled:opacity-50"
-          >
-            <svg
-              aria-hidden="true"
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-            >
-              <path
-                d="M21.805 12.23c0-.78-.07-1.53-.2-2.25H12v4.26h5.49a4.7 4.7 0 0 1-2.04 3.08v2.56h3.3c1.93-1.78 3.055-4.4 3.055-7.65Z"
-                fill="#4285F4"
-              />
-              <path
-                d="M12 22c2.76 0 5.08-.91 6.77-2.47l-3.3-2.56c-.91.61-2.08.97-3.47.97-2.66 0-4.91-1.8-5.72-4.21H2.87v2.64A10 10 0 0 0 12 22Z"
-                fill="#34A853"
-              />
-              <path
-                d="M6.28 13.73A6 6 0 0 1 5.96 12c0-.6.11-1.17.32-1.73V7.63H2.87A10 10 0 0 0 2 12c0 1.61.39 3.13.87 4.37l3.41-2.64Z"
-                fill="#FBBC05"
-              />
-              <path
-                d="M12 6.06c1.5 0 2.84.52 3.9 1.55l2.92-2.92C17.07 3.07 14.75 2 12 2A10 10 0 0 0 2.87 7.63l3.41 2.64C7.09 7.86 9.34 6.06 12 6.06Z"
-                fill="#EA4335"
-              />
-            </svg>
-            Sign in with Google
-          </button>
         </div>
       </section>
     </main>

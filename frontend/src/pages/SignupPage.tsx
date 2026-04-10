@@ -275,7 +275,7 @@ function SignupPage({ onSignup }: SignupPageProps) {
                       value={email}
                       readOnly
                       placeholder="example.up@phinmaed.com"
-                      className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-gray-50 px-4 py-3 pr-12 text-sm text-gray-500 outline-none transition cursor-not-allowed"
+                      className="w-full rounded-md border border-[rgba(0,0,0,0.12)] bg-gray-50 px-4 py-3 pr-12 text-sm text-black outline-none transition cursor-not-allowed"
                       required
                     />
                   </div>

@@ -256,8 +256,6 @@ function SingleSelectDropdown<T extends string>({
 function MembersPage() {
   const [users, setUsers] = useState<Member[]>([])
   const [invites, setInvites] = useState<Member[]>([])
-  const [loadingUsers, setLoadingUsers] = useState(true)
-  const [loadingInvites, setLoadingInvites] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<MemberRole[]>([])
   const [selectedStatuses, setSelectedStatuses] = useState<MemberStatus[]>([])
@@ -289,10 +287,8 @@ function MembersPage() {
         }
       }) as Member[]
       setUsers(usersData)
-      setLoadingUsers(false)
     }, (error) => {
       console.error('Error fetching users:', error)
-      setLoadingUsers(false)
     })
 
     // 2. Listener for pending invitations
@@ -320,10 +316,8 @@ function MembersPage() {
         }
       }).filter(Boolean) as Member[]
       setInvites(invitesData)
-      setLoadingInvites(false)
     }, (error) => {
       console.error('Error fetching invitations:', error)
-      setLoadingInvites(false)
     })
 
     return () => {
@@ -333,7 +327,6 @@ function MembersPage() {
   }, [])
 
   const members = useMemo(() => [...users, ...invites], [users, invites])
-  const loadingMembers = loadingUsers || loadingInvites
 
   const filteredMembers = members
     .filter((member) => {

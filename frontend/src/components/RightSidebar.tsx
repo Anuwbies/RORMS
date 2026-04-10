@@ -2,7 +2,7 @@ import { useRef, useState, useEffect, type ChangeEvent } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, onSnapshot } from 'firebase/firestore'
 import { auth, db } from '../firebase'
-import { BellIcon, CameraIcon, ChevronLeftIcon, ChevronRightIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
+import { BellIcon, CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DepartmentIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
 import { rightSidebarOutlineClass, sidebarDividerClass } from './sidebarStyles'
 
@@ -129,7 +129,10 @@ export function RightSidebar({
   const [userData, setUserData] = useState({
     fullName: 'No Name',
     email: 'example.up@phinmaed.com',
-    profilePicture: ''
+    profilePicture: '',
+    isVerify: false,
+    department: '',
+    role: 'member'
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -142,7 +145,10 @@ export function RightSidebar({
             setUserData({
               fullName: data.fullName || 'No Name',
               email: data.email || 'example.up@phinmaed.com',
-              profilePicture: data.profilePicture || ''
+              profilePicture: data.profilePicture || '',
+              isVerify: data.isVerify || false,
+              department: data.department || '',
+              role: data.role || 'member'
             })
             if (data.profilePicture) {
               setProfileImage(data.profilePicture)
@@ -154,7 +160,10 @@ export function RightSidebar({
         setUserData({
           fullName: 'No Name',
           email: 'example.up@phinmaed.com',
-          profilePicture: ''
+          profilePicture: '',
+          isVerify: false,
+          department: '',
+          role: 'member'
         })
         setProfileImage(null)
       }
@@ -216,20 +225,34 @@ export function RightSidebar({
     setNotifications([])
   }
 
-  const avatar = profileImage ? (
-    <img
-      src={profileImage}
-      alt={userData.fullName}
-      className="h-full w-full rounded-full object-cover"
-    />
-  ) : (
-    <div
-      className={joinClasses(
-        'flex h-full w-full items-center justify-center rounded-full bg-primary-600 font-black uppercase text-white',
-        isExpanded ? 'text-2xl' : 'text-[10px] tracking-tight',
-      )}
+  const verificationBadge = isExpanded && userData.isVerify && (
+    <div 
+      title="Verified Account"
+      className="absolute bottom-0 right-0 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-blue-500 text-white dark:border-secondary-900"
     >
-      <UserIcon className={isExpanded ? "h-12 w-12" : "h-5 w-5"} />
+      <CheckIcon className="h-3.5 w-3.5 stroke-[4px]" />
+    </div>
+  )
+
+  const avatar = (
+    <div className="relative h-full w-full">
+      {profileImage ? (
+        <img
+          src={profileImage}
+          alt={userData.fullName}
+          className="h-full w-full rounded-full object-cover"
+        />
+      ) : (
+        <div
+          className={joinClasses(
+            'flex h-full w-full items-center justify-center rounded-full bg-primary-600 font-black uppercase text-white',
+            isExpanded ? 'text-2xl' : 'text-[10px] tracking-tight',
+          )}
+        >
+          <UserIcon className={isExpanded ? "h-12 w-12" : "h-5 w-5"} />
+        </div>
+      )}
+      {verificationBadge}
     </div>
   )
 
@@ -350,7 +373,9 @@ export function RightSidebar({
                 <div className="h-24 w-24 overflow-hidden rounded-full ring-4 ring-primary-50 ring-offset-2 ring-offset-white dark:ring-primary-500/20 dark:ring-offset-secondary-900">
                   {avatar}
                 </div>
-                <div className="absolute right-0 bottom-0 z-10 h-6 w-6 rounded-full border-4 border-white bg-green-500 dark:border-secondary-900" />
+                {!userData.isVerify && (
+                  <div className="absolute right-0 bottom-0 z-10 h-6 w-6 rounded-full border-4 border-white bg-green-500 dark:border-secondary-900" />
+                )}
                 <button
                   type="button"
                   aria-label="Change profile picture"
@@ -363,12 +388,40 @@ export function RightSidebar({
               </div>
             </div>
 
-            <h2 className="mb-1 text-lg font-bold tracking-tight text-secondary-900 dark:text-secondary-100">
+            <h2 className="mb-0.5 text-lg font-bold tracking-tight text-secondary-900 dark:text-secondary-100">
               {userData.fullName}
             </h2>
-            <p className="mb-4 text-sm text-secondary-500 dark:text-secondary-400">
+            
+            <p className="mb-1.5 text-sm font-medium text-secondary-500 dark:text-secondary-400">
               {userData.email}
             </p>
+
+            <div className="mb-4 flex flex-col items-center gap-2">
+              <div className="flex items-center justify-center gap-1.5">
+                {userData.isVerify ? (
+                  <div className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                    <CheckIcon className="h-3 w-3" />
+                    <span>Verified Email</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    <span>Unverified Email</span>
+                  </div>
+                )}
+                
+                <div className="flex items-center gap-1 rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-700 dark:bg-primary-500/10 dark:text-primary-400">
+                  <span>{userData.role}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary-100/50 px-3 py-1 dark:bg-secondary-800/50">
+                <DepartmentIcon className="h-3.5 w-3.5 text-secondary-500 dark:text-secondary-400" />
+                <span className="text-[11px] font-bold uppercase tracking-wider text-secondary-600 dark:text-secondary-300">
+                  {userData.department || 'No Department Assigned'}
+                </span>
+              </div>
+            </div>
 
             <div className="flex w-full gap-2">
               <button

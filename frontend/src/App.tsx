@@ -29,15 +29,17 @@ function App() {
           const userDocRef = doc(db, 'users', user.uid)
           const userDocSnap = await getDoc(userDocRef)
           const userData = userDocSnap.data() || {}
-
           const updates: any = {
             updatedAt: serverTimestamp(),
             isVerify: user.emailVerified
           }
 
-          // Fill in missing fields with defaults
-          if (userData.email === undefined) updates.email = user.email
+          // Ensure these fields exist, defaulting to empty strings if Auth doesn't have them
           if (userData.fullName === undefined) updates.fullName = user.displayName || ''
+          if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
+          if (userData.email === undefined) updates.email = user.email || ''
+          
+          // Set initial defaults if document is new
           if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
           if (userData.department === undefined) updates.department = ''
           if (userData.role === undefined) updates.role = 'member'
