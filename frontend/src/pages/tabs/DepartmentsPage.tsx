@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, CameraIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
+import { db } from '../../firebase'
+import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, where, doc, updateDoc, writeBatch } from 'firebase/firestore'
 
 interface Member {
   id: string
@@ -13,128 +15,28 @@ interface Member {
   avatar: string
 }
 
-const members: Member[] = [
-  {
-    id: '1',
-    name: 'Adrian Smith',
-    email: 'adrian@example.com',
-    role: 'Admin',
-    status: 'Active',
-    joinedDate: 'Oct 12, 2023',
-    avatar: 'https://i.pravatar.cc/150?u=1',
-  },
-  {
-    id: '2',
-    name: 'Sarah Jenkins',
-    email: 'sarah.j@example.com',
-    role: 'Registrar',
-    status: 'Active',
-    joinedDate: 'Nov 05, 2023',
-    avatar: 'https://i.pravatar.cc/150?u=2',
-  },
-  {
-    id: '3',
-    name: 'Michael Chen',
-    email: 'm.chen@example.com',
-    role: 'Dean',
-    status: 'Inactive',
-    department: 'CITE',
-    joinedDate: 'Jan 20, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=3',
-  },
-  {
-    id: '4',
-    name: 'Elena Rodriguez',
-    email: 'elena.r@example.com',
-    role: 'Instructor',
-    status: 'Active',
-    department: 'CITE',
-    joinedDate: 'Feb 15, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=4',
-  },
-  {
-    id: '5',
-    name: 'David Wilson',
-    email: 'd.wilson@example.com',
-    role: 'Registrar',
-    status: 'Pending',
-    joinedDate: 'Mar 02, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=5',
-  },
-  {
-    id: '6',
-    name: 'Robert Fox',
-    email: 'robert.fox@example.com',
-    role: 'Instructor',
-    status: 'Active',
-    department: 'CEA',
-    joinedDate: 'Apr 10, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=6',
-  },
-  {
-    id: '7',
-    name: 'Jane Cooper',
-    email: 'jane.cooper@example.com',
-    role: 'Instructor',
-    status: 'Active',
-    department: 'CAS',
-    joinedDate: 'May 22, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=7',
-  },
-  {
-    id: '8',
-    name: 'Robert Fox',
-    email: 'robert.fox@example.com',
-    role: 'Dean',
-    status: 'Active',
-    department: 'CEA',
-    joinedDate: 'Apr 10, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=8',
-  },
-  {
-    id: '9',
-    name: 'Eleanor Paguirigan',
-    email: 'e.paguirigan@example.com',
-    role: 'Dean',
-    status: 'Active',
-    joinedDate: 'Jun 15, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=9',
-  },
-  {
-    id: '10',
-    name: 'Dominic Sison',
-    email: 'd.sison@example.com',
-    role: 'Dean',
-    status: 'Active',
-    joinedDate: 'Jul 20, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=10',
-  },
-  {
-    id: '11',
-    name: 'Maria Clara',
-    email: 'm.clara@example.com',
-    role: 'Dean',
-    status: 'Active',
-    joinedDate: 'Aug 05, 2024',
-    avatar: 'https://i.pravatar.cc/150?u=11',
-  },
-]
+interface DropdownOption {
+  label: string
+  value: string
+  isDisabled?: boolean
+  subLabel?: string
+}
 
-interface SingleSelectDropdownProps<T extends string> {
-  options: T[]
-  value: T
-  onChange: (value: T) => void
+interface SingleSelectDropdownProps {
+  options: DropdownOption[]
+  value: string
+  onChange: (value: string) => void
   onOpenChange?: (open: boolean) => void
   className?: string
 }
 
-function SingleSelectDropdown<T extends string>({ 
+function SingleSelectDropdown({ 
   options, 
   value, 
   onChange, 
   onOpenChange,
   className = '' 
-}: SingleSelectDropdownProps<T>) {
+}: SingleSelectDropdownProps) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const menuWidthRef = useRef<HTMLDivElement>(null)
@@ -154,12 +56,14 @@ function SingleSelectDropdown<T extends string>({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  const handleSelect = (option: T) => {
-    onChange(option)
+  const handleSelect = (option: DropdownOption) => {
+    if (option.isDisabled) return
+    onChange(option.value)
     setIsOpen(false)
   }
 
-  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), '')
+  const longestOption = options.reduce((a, b) => (a.label.length > b.label.length ? a : b), { label: '', value: '' }).label
+  const selectedOption = options.find(o => o.value === value)
 
   useLayoutEffect(() => {
     if (!menuWidthRef.current) {
@@ -189,7 +93,7 @@ function SingleSelectDropdown<T extends string>({
         onClick={() => setIsOpen(!isOpen)}
         className="relative flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-3 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
       >
-        <span className="whitespace-nowrap">{value || 'None'}</span>
+        <span className="whitespace-nowrap">{selectedOption?.label || 'None'}</span>
         <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
@@ -197,20 +101,24 @@ function SingleSelectDropdown<T extends string>({
         <div className="absolute left-0 z-20 mt-2 min-w-full overflow-hidden rounded-md border border-gray-200 bg-white p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
           <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
             {options.map((option) => {
-              const isSelected = value === option
+              const isSelected = value === option.value
               return (
                 <button
-                  key={option}
+                  key={option.value}
                   type="button"
+                  disabled={option.isDisabled}
                   onClick={() => handleSelect(option)}
                   className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-xs transition-colors ${
                     isSelected 
                       ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-semibold' 
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                      : option.isDisabled
+                        ? 'text-gray-500 cursor-not-allowed italic'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
-                  <span className="whitespace-nowrap">{option}</span>
+                  <span className="whitespace-nowrap">{option.label}</span>
                   {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)]" strokeWidth={3} />}
+                  {option.subLabel && <span className="ml-auto text-[10px] font-bold uppercase opacity-50">{option.subLabel}</span>}
                 </button>
               )
             })}
@@ -225,55 +133,13 @@ interface Department {
   id: string
   code: string
   name: string
-  dean: string
+  deanUID: string
+  deanName: string
   memberCount: number
   roomCount: number
   createdDate: string
   logo: string
 }
-
-const departments: Department[] = [
-  {
-    id: '1',
-    code: 'CITE',
-    name: 'College of Information Technology',
-    dean: 'Michael Chen',
-    memberCount: 2,
-    roomCount: 12,
-    createdDate: 'Oct 12, 2023',
-    logo: 'https://ui-avatars.com/api/?name=CITE&background=0D8ABC&color=fff',
-  },
-  {
-    id: '2',
-    code: 'CEA',
-    name: 'College of Engineering and Architecture',
-    dean: 'Sarah Jenkins',
-    memberCount: 1,
-    roomCount: 18,
-    createdDate: 'Nov 05, 2023',
-    logo: 'https://ui-avatars.com/api/?name=CEA&background=E53E3E&color=fff',
-  },
-  {
-    id: '3',
-    code: 'CAS',
-    name: 'College of Arts and Sciences',
-    dean: 'Elena Rodriguez',
-    memberCount: 1,
-    roomCount: 22,
-    createdDate: 'Jan 20, 2024',
-    logo: 'https://ui-avatars.com/api/?name=CAS&background=38A169&color=fff',
-  },
-  {
-    id: '4',
-    code: 'CMA',
-    name: 'College of Management and Accountancy',
-    dean: 'David Wilson',
-    memberCount: 0,
-    roomCount: 15,
-    createdDate: 'Feb 15, 2024',
-    logo: 'https://ui-avatars.com/api/?name=CMA&background=805AD5&color=fff',
-  },
-]
 
 const roleClasses: Record<string, string> = {
   Admin: 'bg-purple-100 text-purple-700',
@@ -287,32 +153,104 @@ function DepartmentsPage() {
   const [selectedDept, setSelectedDept] = useState<Department | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingDept, setEditingDept] = useState<Department | null>(null)
+  const [departments, setDepartments] = useState<Department[]>([])
+  const [allUsers, setAllUsers] = useState<Member[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
+  const [deptToDelete, setDeptToDelete] = useState<Department | null>(null)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
   
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [newDeptName, setNewDeptName] = useState('')
   const [newDeptCode, setNewDeptCode] = useState('')
-  const [newDeptDean, setNewDeptDean] = useState('')
+  const [newDeptDean, setNewDeptDean] = useState('') // Storing Dean UID
   const [isDeanDropdownOpen, setIsDeanDropdownOpen] = useState(false)
   const [newDeptLogo, setNewDeptLogo] = useState('')
-  const [errors, setErrors] = useState({ name: false, code: false })
+  const [errors, setErrors] = useState<{
+    name: 'required' | 'exists' | null;
+    code: 'required' | 'exists' | null;
+  }>({ name: null, code: null })
+
+  // Fetch All Users
+  useEffect(() => {
+    const q = query(collection(db, 'users'))
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const usersData = snapshot.docs.map((doc) => {
+        const data = doc.data()
+        return {
+          id: doc.id,
+          name: data.fullName || '',
+          email: data.email || '',
+          role: data.role || 'Instructor',
+          status: (data.isActive !== false) ? 'Active' : 'Inactive',
+          department: data.department || '',
+          joinedDate: data.createdAt ? data.createdAt.toDate().toLocaleDateString('en-US', {
+            month: 'short',
+            day: '2-digit',
+            year: 'numeric'
+          }) : '—',
+          avatar: data.profilePicture || '',
+        }
+      }) as Member[]
+      setAllUsers(usersData)
+    })
+    return () => unsubscribe()
+  }, [])
+
+  const availableDeans = allUsers.filter(u => u.role === 'Dean')
+
+  // Fetch Departments
+  useEffect(() => {
+    const q = query(collection(db, 'departments'), orderBy('createdAt', 'desc'))
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const depts = snapshot.docs.map(doc => {
+        const data = doc.data()
+        let createdDate = 'N/A'
+        if (data.createdAt) {
+          const date = data.createdAt.toDate()
+          createdDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        }
+
+        // Map dean UID to Name for display
+        const deanUID = data.dean || ''
+        const deanUser = availableDeans.find(d => d.id === deanUID)
+        const deanName = deanUser ? deanUser.name : (deanUID ? 'Unknown' : 'None')
+
+        return {
+          id: doc.id,
+          ...data,
+          deanUID,
+          deanName,
+          createdDate
+        } as Department
+      })
+      setDepartments(depts)
+      setIsLoading(false)
+    })
+
+    return () => unsubscribe()
+  }, [availableDeans])
 
   const filteredDepartments = departments.filter((dept) =>
-    [dept.name, dept.code, dept.dean].some((val) =>
+    [dept.name, dept.code, dept.deanName].some((val) =>
       val.toLowerCase().includes(searchTerm.toLowerCase())
     )
   )
 
   const deptMembers = selectedDept 
-    ? members.filter(m => m.department === selectedDept.code)
+    ? allUsers.filter(m => m.department === selectedDept.code)
     : []
 
   const handleOpenEdit = (dept: Department) => {
     setEditingDept(dept)
     setNewDeptName(dept.name)
     setNewDeptCode(dept.code)
-    setNewDeptDean(dept.dean)
+    setNewDeptDean(dept.deanUID)
     setNewDeptLogo(dept.logo)
-    setErrors({ name: false, code: false })
+    setErrors({ name: null, code: null })
   }
 
   const handleCloseFormModal = () => {
@@ -322,7 +260,7 @@ function DepartmentsPage() {
     setNewDeptCode('')
     setNewDeptDean('')
     setNewDeptLogo('')
-    setErrors({ name: false, code: false })
+    setErrors({ name: null, code: null })
   }
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -336,29 +274,181 @@ function DepartmentsPage() {
     }
   }
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    const newErrors = {
-      name: !newDeptName.trim(),
-      code: !newDeptCode.trim()
-    }
+    const trimmedName = newDeptName.trim()
+    const trimmedCode = newDeptCode.trim().toUpperCase()
 
-    if (newErrors.name || newErrors.code) {
-      setErrors(newErrors)
+    const nameRequired = !trimmedName
+    const codeRequired = !trimmedCode
+
+    if (nameRequired || codeRequired) {
+      setErrors({
+        name: nameRequired ? 'required' : null,
+        code: codeRequired ? 'required' : null
+      })
       return
     }
 
-    const finalLogo = newDeptLogo || `https://ui-avatars.com/api/?name=${newDeptCode || 'DEPT'}&background=random`
+    // Uniqueness check (Case-insensitive)
+    const nameExists = departments.some(dept => {
+      if (editingDept && dept.id === editingDept.id) return false
+      return dept.name.toLowerCase() === trimmedName.toLowerCase()
+    })
 
-    if (editingDept) {
-      console.log('Updating Department:', { id: editingDept.id, name: newDeptName, code: newDeptCode, dean: newDeptDean, logo: finalLogo })
-    } else {
-      console.log('Creating Department:', { name: newDeptName, code: newDeptCode, dean: newDeptDean, logo: finalLogo })
+    const codeExists = departments.some(dept => {
+      if (editingDept && dept.id === editingDept.id) return false
+      return dept.code.toLowerCase() === trimmedCode.toLowerCase()
+    })
+
+    if (nameExists || codeExists) {
+      setErrors({
+        name: nameExists ? 'exists' : null,
+        code: codeExists ? 'exists' : null
+      })
+      return
     }
-    
-    handleCloseFormModal()
+
+    setIsSubmitting(true)
+    const finalLogo = newDeptLogo || `https://ui-avatars.com/api/?name=${trimmedCode || 'DEPT'}&background=random`
+    const finalCode = trimmedCode
+
+    try {
+      const batch = writeBatch(db)
+
+      if (editingDept) {
+        // Handle changes for existing department
+        const oldDeanUID = editingDept.deanUID
+        const newDeanUID = newDeptDean
+        const oldCode = editingDept.code
+
+        // 1. Update department doc
+        const deptRef = doc(db, 'departments', editingDept.id)
+        batch.update(deptRef, {
+          name: trimmedName,
+          code: finalCode,
+          dean: newDeanUID,
+          logo: finalLogo,
+          updatedAt: serverTimestamp()
+        })
+
+        // 2. Handle Dean reassignment
+        if (oldDeanUID && oldDeanUID !== newDeanUID) {
+          // Clear old dean's department
+          batch.update(doc(db, 'users', oldDeanUID), {
+            department: '',
+            updatedAt: serverTimestamp()
+          })
+        }
+
+        if (newDeanUID) {
+          // Update new dean's department
+          batch.update(doc(db, 'users', newDeanUID), {
+            department: finalCode,
+            updatedAt: serverTimestamp()
+          })
+        } else if (oldDeanUID && oldCode !== finalCode) {
+           // If dean didn't change but code did, update their department field
+           batch.update(doc(db, 'users', oldDeanUID), {
+            department: finalCode,
+            updatedAt: serverTimestamp()
+          })
+        }
+      } else {
+        // Create new department
+        const newDeptRef = doc(collection(db, 'departments'))
+        batch.set(newDeptRef, {
+          name: trimmedName,
+          code: finalCode,
+          dean: newDeptDean,
+          logo: finalLogo,
+          memberCount: 0,
+          roomCount: 0,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        })
+
+        if (newDeptDean) {
+          batch.update(doc(db, 'users', newDeptDean), {
+            department: finalCode,
+            updatedAt: serverTimestamp()
+          })
+        }
+      }
+
+      await batch.commit()
+      handleCloseFormModal()
+    } catch (error) {
+      console.error('Error saving department:', error)
+      alert('Failed to save department.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
+
+  const handleOpenDelete = (dept: Department) => {
+    setDeptToDelete(dept)
+    setIsDeleteModalOpen(true)
+    setDeleteConfirmName('')
+  }
+
+  const handleCloseDeleteModal = () => {
+    setIsDeleteModalOpen(false)
+    setDeptToDelete(null)
+    setDeleteConfirmName('')
+  }
+
+  const handleDeleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!deptToDelete || deleteConfirmName !== deptToDelete.name) return
+
+    setIsDeleting(true)
+    try {
+      const batch = writeBatch(db)
+
+      // 1. Delete the department document
+      batch.delete(doc(db, 'departments', deptToDelete.id))
+
+      // 2. Clear dean's department field if assigned
+      if (deptToDelete.deanUID) {
+        batch.update(doc(db, 'users', deptToDelete.deanUID), {
+          department: '',
+          updatedAt: serverTimestamp()
+        })
+      }
+
+      await batch.commit()
+      handleCloseDeleteModal()
+    } catch (error) {
+      console.error('Error deleting department:', error)
+      alert('Failed to delete department.')
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const deanOptions: DropdownOption[] = [
+    { label: 'None', value: '', isDisabled: false },
+    ...availableDeans.map(dean => {
+      // Find which department this dean is assigned to
+      const assignedDept = departments.find(d => d.deanUID === dean.id)
+      // A dean is "taken" if they are assigned to any department OTHER than the one being edited
+      const isTaken = assignedDept && assignedDept.id !== editingDept?.id
+      
+      return {
+        label: dean.name,
+        value: dean.id,
+        isDisabled: isTaken,
+        subLabel: isTaken ? assignedDept.code : undefined
+      }
+    }).sort((a, b) => {
+      // Put disabled options at the end
+      if (a.isDisabled && !b.isDisabled) return 1
+      if (!a.isDisabled && b.isDisabled) return -1
+      return a.label.localeCompare(b.label)
+    })
+  ]
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -380,6 +470,11 @@ function DepartmentsPage() {
               <div>
                 <label htmlFor="dept-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                   Department Name <span className="text-rose-500">*</span>
+                  {errors.name === 'exists' && (
+                    <span className="ml-2 text-[12px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
+                      Name already exists
+                    </span>
+                  )}
                 </label>
                 <input
                   id="dept-name"
@@ -387,7 +482,7 @@ function DepartmentsPage() {
                   value={newDeptName}
                   onChange={(e) => {
                     setNewDeptName(e.target.value)
-                    if (errors.name) setErrors(prev => ({ ...prev, name: false }))
+                    if (errors.name) setErrors(prev => ({ ...prev, name: null }))
                   }}
                   placeholder="e.g. College of Information Technology"
                   className={`w-full rounded-md border px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
@@ -446,6 +541,11 @@ function DepartmentsPage() {
                   <div>
                     <label htmlFor="dept-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                       Code <span className="text-rose-500">*</span>
+                      {errors.code === 'exists' && (
+                        <span className="ml-2 text-[12px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
+                          Code already exists
+                        </span>
+                      )}
                     </label>
                     <input
                       id="dept-code"
@@ -453,7 +553,7 @@ function DepartmentsPage() {
                       value={newDeptCode}
                       onChange={(e) => {
                         setNewDeptCode(e.target.value)
-                        if (errors.code) setErrors(prev => ({ ...prev, code: false }))
+                        if (errors.code) setErrors(prev => ({ ...prev, code: null }))
                       }}
                       placeholder="e.g. CITE"
                       className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
@@ -469,9 +569,9 @@ function DepartmentsPage() {
                       Assigned Dean
                     </label>
                     <SingleSelectDropdown
-                      options={['None', ...members.filter(m => m.role === 'Dean').map(m => m.name)]}
-                      value={newDeptDean || 'None'}
-                      onChange={(val) => setNewDeptDean(val === 'None' ? '' : val)}
+                      options={deanOptions}
+                      value={newDeptDean}
+                      onChange={setNewDeptDean}
                       onOpenChange={setIsDeanDropdownOpen}
                       className="w-full"
                     />
@@ -483,15 +583,19 @@ function DepartmentsPage() {
                 <button
                   type="button"
                   onClick={handleCloseFormModal}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingDept ? 'Save Changes' : 'Create Department'}
+                  {isSubmitting 
+                    ? (editingDept ? 'Saving Changes...' : 'Creating Department...') 
+                    : (editingDept ? 'Save Changes' : 'Create Department')}
                 </button>
               </div>
             </form>
@@ -499,8 +603,67 @@ function DepartmentsPage() {
           <div 
             className="absolute inset-0 -z-10" 
             onMouseDown={() => {
-              if (!isDeanDropdownOpen) {
+              if (!isDeanDropdownOpen && !isSubmitting) {
                 handleCloseFormModal()
+              }
+            }} 
+          />
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && deptToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-rose-600 p-6 text-white rounded-t-md">
+              <h3 className="text-xl font-bold">Delete Department</h3>
+              <p className="mt-1 text-sm text-white/80">
+                This action cannot be undone. All data associated with this department will be permanently removed.
+              </p>
+            </div>
+            
+            <form onSubmit={handleDeleteSubmit} className="p-6 space-y-5">
+              <div>
+                <p className="mb-4 text-sm text-gray-600">
+                  To confirm deletion, please type <span className="font-bold text-gray-900">"{deptToDelete.name}"</span> below:
+                </p>
+                <input
+                  type="text"
+                  value={deleteConfirmName}
+                  onChange={(e) => setDeleteConfirmName(e.target.value)}
+                  placeholder="Enter department name"
+                  className="w-full rounded-md border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-rose-500 focus:ring-4 focus:ring-rose-50 shadow-sm"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleCloseDeleteModal}
+                  disabled={isDeleting}
+                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isDeleting || deleteConfirmName !== deptToDelete.name}
+                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete Department'}
+                </button>
+              </div>
+            </form>
+          </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (!isDeleting) {
+                handleCloseDeleteModal()
               }
             }} 
           />
@@ -546,7 +709,7 @@ function DepartmentsPage() {
                     <div key={member.id} className="flex items-center justify-between rounded-lg border border-gray-100 p-4 shadow-sm">
                       <div className="flex items-center gap-4">
                         <img
-                          src={member.avatar}
+                          src={member.avatar || `https://ui-avatars.com/api/?name=${member.name}&background=random`}
                           alt={member.name}
                           className="h-10 w-10 rounded-full border border-gray-100 object-cover"
                         />
@@ -646,7 +809,13 @@ function DepartmentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 bg-white">
-                {filteredDepartments.length === 0 ? (
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                      Loading departments...
+                    </td>
+                  </tr>
+                ) : filteredDepartments.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                       No departments found matching your search.
@@ -675,7 +844,7 @@ function DepartmentsPage() {
                         {dept.code}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-gray-600">
-                        {dept.dean}
+                        {dept.deanName}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="flex items-center gap-2 text-sm font-semibold text-gray-600">
@@ -698,7 +867,7 @@ function DepartmentsPage() {
                           <IconButton
                             label="Remove department"
                             className="h-8 w-8 rounded-md bg-white text-rose-400 shadow-sm hover:bg-rose-50 hover:text-rose-600 transition-all border border-gray-100"
-                            onClick={() => console.log('Remove department:', dept.id)}
+                            onClick={() => handleOpenDelete(dept)}
                           >
                             <TrashIcon className="h-4.5 w-4.5" />
                           </IconButton>

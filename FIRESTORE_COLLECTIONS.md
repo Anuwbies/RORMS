@@ -27,6 +27,20 @@ Tracks secure, role-based invites for new members.
   - `createdAt`: timestamp (Date the invite was created) | **Default: serverTimestamp()**
   - `expiresAt`: timestamp (Expiration date)
 
+## `departments`
+Manages university departments, assigned deans, and resource metadata.
+
+- **Document ID**: Auto-generated ID
+- **Fields**:
+  - `name`: string (Full name of the department, e.g., "College of Information Technology")
+  - `code`: string (Short department code, e.g., "CITE")
+  - `dean`: string (UID of the assigned Dean)
+  - `logo`: string (URL to the department logo)
+  - `memberCount`: number (Total number of members in the department) | **Default: 0**
+  - `roomCount`: number (Total number of rooms assigned to the department) | **Default: 0**
+  - `createdAt`: timestamp (Date the department was created) | **Default: serverTimestamp()**
+  - `updatedAt`: timestamp (Date the department was last updated) | **Default: serverTimestamp()**
+
 ## `mail`
 Trigger collection for the Firebase "Trigger Email" extension.
 
