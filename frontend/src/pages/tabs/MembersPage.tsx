@@ -1,11 +1,18 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
-import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy } from 'firebase/firestore'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
+import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy, writeBatch, doc } from 'firebase/firestore'
 import { auth, db } from '../../firebase'
-import { UsersIcon, UserIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
+import { UsersIcon, UserIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon, CloseIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 
 type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Instructor'
 type MemberStatus = 'Active' | 'Inactive' | 'Pending'
+
+interface Department {
+  id: string
+  name: string
+  code: string
+  dean: string
+}
 
 interface Member {
   id: string
@@ -44,6 +51,7 @@ interface MultiSelectDropdownProps<T extends string> {
   selectedValues: T[]
   onChange: (values: T[]) => void
   className?: string
+  onToggle?: (isOpen: boolean) => void
 }
 
 function MultiSelectDropdown<T extends string>({ 
@@ -51,12 +59,17 @@ function MultiSelectDropdown<T extends string>({
   options, 
   selectedValues, 
   onChange, 
-  className = '' 
+  className = '',
+  onToggle
 }: MultiSelectDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const menuWidthRef = useRef<HTMLDivElement>(null)
   const [menuMinWidth, setMenuMinWidth] = useState<number | null>(null)
+
+  useEffect(() => {
+    onToggle?.(isOpen)
+  }, [isOpen, onToggle])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -163,18 +176,26 @@ interface SingleSelectDropdownProps<T extends string> {
   value: T
   onChange: (value: T) => void
   className?: string
+  isDisabled?: boolean
+  onToggle?: (isOpen: boolean) => void
 }
 
 function SingleSelectDropdown<T extends string>({ 
   options, 
   value, 
   onChange, 
-  className = '' 
+  className = '',
+  isDisabled = false,
+  onToggle
 }: SingleSelectDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const menuWidthRef = useRef<HTMLDivElement>(null)
   const [menuMinWidth, setMenuMinWidth] = useState<number | null>(null)
+
+  useEffect(() => {
+    onToggle?.(isOpen)
+  }, [isOpen, onToggle])
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -218,14 +239,15 @@ function SingleSelectDropdown<T extends string>({
 
       <button
         type="button"
+        disabled={isDisabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-3 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+        className="relative flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-3 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
       >
-        <span className="whitespace-nowrap">{value}</span>
+        <span className="whitespace-nowrap">{value || 'None'}</span>
         <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
-      {isOpen && (
+      {isOpen && !isDisabled && (
         <div className="absolute left-0 z-20 mt-2 min-w-full overflow-hidden rounded-md border border-gray-200 bg-white p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
           <div className="space-y-1">
             {options.map((option) => {
@@ -241,7 +263,7 @@ function SingleSelectDropdown<T extends string>({
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   }`}
                 >
-                  <span className="whitespace-nowrap">{option}</span>
+                  <span className="whitespace-nowrap">{option || 'None'}</span>
                   {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)]" strokeWidth={3} />}
                 </button>
               )
@@ -256,14 +278,28 @@ function SingleSelectDropdown<T extends string>({
 function MembersPage() {
   const [users, setUsers] = useState<Member[]>([])
   const [invites, setInvites] = useState<Member[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<MemberRole[]>([])
   const [selectedStatuses, setSelectedStatuses] = useState<MemberStatus[]>([])
+  
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<MemberRole>('Instructor')
   const [inviteError, setInviteError] = useState('')
   const [isInviting, setIsInviting] = useState(false)
+
+  const [editingMember, setEditingMember] = useState<Member | null>(null)
+  const [editRole, setEditRole] = useState<MemberRole>('Instructor')
+  const [editDept, setEditDept] = useState('')
+  const [editError, setEditError] = useState('')
+  const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+  const [activeDropdowns, setActiveDropdowns] = useState(0)
+
+  const handleDropdownToggle = useCallback((isOpen: boolean) => {
+    setActiveDropdowns(prev => isOpen ? prev + 1 : Math.max(0, prev - 1))
+  }, [])
 
   useEffect(() => {
     // 1. Listener for actual members (users collection)
@@ -320,9 +356,25 @@ function MembersPage() {
       console.error('Error fetching invitations:', error)
     })
 
+    // 3. Listener for departments
+    const deptsQuery = query(collection(db, 'departments'), orderBy('code'))
+    const unsubscribeDepts = onSnapshot(deptsQuery, (snapshot) => {
+      const deptsData = snapshot.docs.map((doc) => {
+        const data = doc.data()
+        return {
+          id: doc.id,
+          name: data.name || '',
+          code: data.code || '',
+          dean: data.dean || ''
+        }
+      }) as Department[]
+      setDepartments(deptsData)
+    })
+
     return () => {
       unsubscribeUsers()
       unsubscribeInvites()
+      unsubscribeDepts()
     }
   }, [])
 
@@ -464,8 +516,170 @@ function MembersPage() {
     setInviteError('')
   }
 
+  const openEditModal = (member: Member) => {
+    if (member.status === 'Pending') return // Cannot edit pending invites here
+    setEditingMember(member)
+    setEditRole(member.role)
+    setEditDept(member.department || '')
+    setEditError('')
+  }
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingMember) return
+
+    setEditError('')
+    const wasDean = editingMember.role === 'Dean'
+    const isNowDean = editRole === 'Dean'
+    const oldDeptCode = editingMember.department || ''
+    const newDeptCode = editDept
+
+    // 1. Validation for Dean assignment
+    if (isNowDean && newDeptCode) {
+      const targetDept = departments.find(d => d.code === newDeptCode)
+      // Check if another user is already assigned as dean for this department
+      if (targetDept && targetDept.dean && targetDept.dean !== editingMember.id) {
+        setEditError(`Dean exists for ${newDeptCode}.`)
+        return
+      }
+    }
+
+    setIsSavingEdit(true)
+    try {
+      const batch = writeBatch(db)
+      const userRef = doc(db, 'users', editingMember.id)
+
+      const canHaveDept = editRole === 'Dean' || editRole === 'Instructor'
+      const finalDept = canHaveDept ? editDept : ''
+
+      if (wasDean && (!isNowDean || oldDeptCode !== finalDept)) {
+        // Clear old department's dean field
+        const oldDept = departments.find(d => d.code === oldDeptCode)
+        if (oldDept) {
+          batch.update(doc(db, 'departments', oldDept.id), {
+            dean: '',
+            updatedAt: serverTimestamp()
+          })
+        }
+      }
+
+      if (isNowDean && finalDept) {
+        const newDept = departments.find(d => d.code === finalDept)
+        if (newDept) {
+          // Set new department's dean field
+          batch.update(doc(db, 'departments', newDept.id), {
+            dean: editingMember.id,
+            updatedAt: serverTimestamp()
+          })
+        }
+      }
+
+      // 2. Update user document
+      batch.update(userRef, {
+        role: editRole,
+        department: finalDept,
+        updatedAt: serverTimestamp()
+      })
+
+      await batch.commit()
+      setEditingMember(null)
+    } catch (error) {
+      console.error('Error updating member:', error)
+      setEditError('Failed to update member.')
+    } finally {
+      setIsSavingEdit(false)
+    }
+  }
+
   return (
     <section className="relative h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+      {/* Edit Member Modal */}
+      {editingMember && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+              <h3 className="text-xl font-bold">Edit Member</h3>
+              <p className="mt-1 text-sm text-white/80">Update role and department for {editingMember.name || editingMember.email}.</p>
+            </div>
+            
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-4">
+                <div className="sm:w-[40%]">
+                  <label htmlFor="edit-role" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                    Role
+                  </label>
+                  <SingleSelectDropdown
+                    options={['Admin', 'Registrar', 'Dean', 'Instructor']}
+                    value={editRole}
+                    onChange={(val) => {
+                      setEditRole(val)
+                      setEditError('')
+                      if (val !== 'Dean' && val !== 'Instructor') {
+                        setEditDept('')
+                      }
+                    }}
+                    onToggle={handleDropdownToggle}
+                    className="w-full"
+                  />
+                </div>
+
+                <div className="sm:w-[60%]">
+                  <label htmlFor="edit-dept" className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-2 transition-colors ${
+                    (editRole === 'Dean' || editRole === 'Instructor') ? 'text-gray-500' : 'text-gray-300'
+                  }`}>
+                    <span>Department</span>
+                    {editError && (
+                      <span className="text-[10px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
+                        {editError}
+                      </span>
+                    )}
+                  </label>
+                  <SingleSelectDropdown
+                    options={['', ...departments.map(d => d.code)]}
+                    value={(editRole === 'Dean' || editRole === 'Instructor') ? editDept : ''}
+                    onChange={(val) => {
+                      setEditDept(val)
+                      setEditError('')
+                    }}
+                    onToggle={handleDropdownToggle}
+                    isDisabled={editRole !== 'Dean' && editRole !== 'Instructor'}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingMember(null)}
+                  disabled={isSavingEdit}
+                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingEdit}
+                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSavingEdit ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (activeDropdowns > 0) return
+              if (!isSavingEdit) setEditingMember(null)
+            }} 
+          />
+        </div>
+      )}
+
       {/* Invite Member Modal Overlay */}
       {isInviteModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
@@ -515,6 +729,7 @@ function MembersPage() {
                     options={['Admin', 'Registrar', 'Dean', 'Instructor']}
                     value={inviteRole}
                     onChange={setInviteRole}
+                    onToggle={handleDropdownToggle}
                     className="w-full"
                   />
                 </div>
@@ -539,7 +754,13 @@ function MembersPage() {
             </form>
           </div>
           {/* Click outside to close */}
-          <div className="absolute inset-0 -z-10" onClick={() => setIsInviteModalOpen(false)} />
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (activeDropdowns > 0) return
+              setIsInviteModalOpen(false)
+            }} 
+          />
         </div>
       )}
 
@@ -710,8 +931,13 @@ function MembersPage() {
                         <div className="flex justify-end gap-2">
                           <IconButton
                             label="Edit member"
-                            onClick={() => console.log('Edit member:', member.id)}
-                            className="h-8 w-8 rounded-md bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all border border-gray-100"
+                            onClick={() => openEditModal(member)}
+                            className={`h-8 w-8 rounded-md bg-white shadow-sm transition-all border border-gray-100 ${
+                              member.status === 'Pending' 
+                                ? 'text-gray-200 cursor-not-allowed' 
+                                : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
+                            }`}
+                            disabled={member.status === 'Pending'}
                           >
                             <EditIcon className="h-4.5 w-4.5" />
                           </IconButton>

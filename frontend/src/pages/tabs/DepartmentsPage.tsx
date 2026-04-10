@@ -471,7 +471,7 @@ function DepartmentsPage() {
                 <label htmlFor="dept-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                   Department Name <span className="text-rose-500">*</span>
                   {errors.name === 'exists' && (
-                    <span className="ml-2 text-[12px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
+                    <span className="ml-2 text-[10px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
                       Name already exists
                     </span>
                   )}
@@ -542,7 +542,7 @@ function DepartmentsPage() {
                     <label htmlFor="dept-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                       Code <span className="text-rose-500">*</span>
                       {errors.code === 'exists' && (
-                        <span className="ml-2 text-[12px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
+                        <span className="ml-2 text-[10px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
                           Code already exists
                         </span>
                       )}
