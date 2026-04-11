@@ -151,6 +151,7 @@ export function CropModal({
             >
               {isLoading ? (
                 <div className="flex items-center justify-center gap-2">
+                  <SpinnerIcon className="h-4 w-4" />
                   <span>Applying...</span>
                 </div>
               ) : (

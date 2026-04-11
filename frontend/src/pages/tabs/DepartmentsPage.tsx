@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
-import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, CameraIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
+import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { db, storage } from '../../firebase'
-import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, where, doc, updateDoc, writeBatch } from 'firebase/firestore'
+import { collection, serverTimestamp, onSnapshot, query, orderBy, doc, writeBatch } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { CropModal } from '../../components/CropModal'
 
@@ -159,7 +159,6 @@ function DepartmentsPage() {
   const [allUsers, setAllUsers] = useState<Member[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isUploading, _setIsUploading] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -347,7 +346,6 @@ function DepartmentsPage() {
 
         // If there's a new logo to upload
         if (pendingLogoBlob) {
-          const oldLogoUrl = editingDept.logo
           const newFileName = `logo_${Date.now()}.png`
           const storageRef = ref(storage, `departments/${editingDept.id}/${newFileName}`)
           await uploadBytes(storageRef, pendingLogoBlob)
