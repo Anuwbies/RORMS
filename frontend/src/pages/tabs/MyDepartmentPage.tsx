@@ -157,7 +157,7 @@ function MyDepartmentPage() {
             
             <div className="p-6">
               <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                <div className="h-16 w-16 rounded-full bg-gray-50 flex items-center justify-center border border-gray-100">
+                <div className="h-16 w-16 rounded-full bg-gray-50 flex items-center justify-center border border-gray-300">
                   <SearchIcon className="h-8 w-8 text-gray-300" />
                 </div>
                 <div>
@@ -209,7 +209,7 @@ function MyDepartmentPage() {
                           <img
                             src={instructor.avatar}
                             alt={instructor.name}
-                            className="h-10 w-10 rounded-full border border-gray-100 object-cover"
+                            className="h-10 w-10 rounded-full border border-gray-300 object-cover"
                           />
                           {isSelected && (
                             <div className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-color)] text-white shadow-sm ring-2 ring-white">
@@ -367,7 +367,7 @@ function MyDepartmentPage() {
                           <img
                             src={member.avatar}
                             alt={member.name}
-                            className="h-10 w-10 rounded-full border border-gray-100 object-cover"
+                            className="h-10 w-10 rounded-full border border-gray-300 object-cover"
                           />
                           <div>
                             <p className="text-sm font-bold text-gray-900">{member.name}</p>

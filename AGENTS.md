@@ -1,33 +1,46 @@
-# Repository Guidelines
+# Repository Guidelines (AGENTS.md)
 
-## Project Structure & Modules
-- Root `frontend/` holds the React + Vite app; entry is `index.html`; source lives in `frontend/src/` and static assets in `frontend/public/`.
-- TypeScript config files (`tsconfig*.json`) and Vite config (`vite.config.ts`) sit in `frontend/`.
-- Dependency manifests: `frontend/package.json` and `frontend/package-lock.json`.
+This document provides essential guidelines and standards for developers and AI agents (like Gemini CLI) working on the **RORMS** repository.
 
-## Build, Test, and Development
-- `npm install` (run in `frontend/`): install dependencies.
-- `npm run dev -- --host`: start Vite dev server for local or LAN testing.
-- `npm run build`: type-check (tsc build mode) and emit production assets under `frontend/dist/`.
-- `npm run preview`: serve the built bundle for smoke checks.
+## 🤖 Agent-Specific Instructions
+- **Context First**: Always consult `FIRESTORE_COLLECTIONS.md` for database schema and `SYSTEM_ROLES.md` for business logic before implementing features.
+- **Surgical Edits**: When modifying React components, keep changes localized to the requested functionality.
+- **Verification**: After UI changes, ensure the project still builds using `npm run build` in the `frontend/` directory.
 
-## Coding Style & Naming
-- Language: TypeScript + React; keep components in `src/` with PascalCase filenames (e.g., `MyWidget.tsx`).
-- Use functional components and hooks; prefer prop interfaces over `any`.
-- Formatting: follow TypeScript/Vite defaults; 2-space indent; keep imports sorted by source (npm then local).
-- CSS: prefer Tailwind utility classes (tailwind v4); avoid inline styles unless necessary.
+## 📂 Project Structure & Modules
+- **Frontend**: Located in `frontend/`. 
+  - `src/components/`: Reusable UI components.
+  - `src/pages/`: Page-level components and layouts.
+  - `src/firebase.ts`: Firebase initialization and shared service logic.
+- **Configuration**: `tsconfig.json`, `vite.config.ts`, and `tailwind.config.ts` (if applicable) are in the `frontend/` root.
 
-## Testing Guidelines
-- No test harness is set up yet; add lightweight tests when introducing logic-heavy code (suggest Vitest + React Testing Library).
-- Co-locate tests next to components (`Component.test.tsx`) or under `src/__tests__/`.
-- For manual checks, run `npm run dev` and verify key flows before PRs.
+## 🛠 Build & Development
+- **Setup**: Run `npm install` inside the `frontend/` directory.
+- **Local Dev**: Use `npm run dev` for the Vite development server.
+- **Production Check**: Always run `npm run build` to verify type safety and build integrity before finalizing changes.
 
-## Commit & Pull Request Practices
-- Write clear, present-tense messages: `Add`, `Fix`, `Improve` (e.g., `Add reservation form validation`).
-- Scope commits to a single concern; include rationale in the body if behavior changes.
-- PRs: describe intent, link issues/tasks, list test steps (commands run), and include screenshots/GIFs for UI changes.
+## 🎨 Coding Style & Naming
+- **React**: Use functional components with TypeScript interfaces for props.
+- **Naming**:
+  - Components: `PascalCase.tsx` (e.g., `RoomList.tsx`).
+  - Hooks: `camelCase.ts` (e.g., `useAuth.ts`).
+  - Utils/Services: `camelCase.ts`.
+- **CSS**: Exclusively use **Tailwind CSS v4** utility classes. Avoid custom CSS files or inline styles unless absolutely necessary for dynamic calculations.
+- **Indentation**: 2-space indentation.
 
-## Security & Configuration Tips
-- Keep secrets out of the repo; use env variables or `.npmrc` for private registry tokens.
-- Lock dependencies with `package-lock.json`; avoid manual edits to `node_modules/`.
-- Run `npm audit` periodically and bump packages via `npm update` when safe.
+## 🧪 Testing & Validation
+- **Current State**: No automated test suite is currently configured.
+- **Manual Validation**: Verify all UI changes across responsive breakpoints (Mobile/Desktop) using the dev server.
+- **Future-Proofing**: When adding complex logic, consider co-locating tests as `ComponentName.test.tsx`.
+
+## 🔒 Security & Best Practices
+- **Environment Variables**: Never hardcode Firebase API keys or secrets. Use `.env` files (not tracked by Git).
+- **Type Safety**: Avoid the `any` type. Define strict interfaces for Firestore documents and API responses.
+- **Firebase**: Ensure all Firestore queries align with the security rules and indexed fields.
+
+## 📝 Commit Practices
+- **Style**: Use conventional, present-tense messages (e.g., `feat: add instructor dashboard`, `fix: resolve overlap in schedule logic`).
+- **Scope**: Keep commits atomic and focused on a single logical change.
+
+---
+*Refer to README.md for the high-level project overview.*

@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, CameraIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
-import { db } from '../../firebase'
+import { db, storage } from '../../firebase'
 import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, where, doc, updateDoc, writeBatch } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { CropModal } from '../../components/CropModal'
 
 interface Member {
   id: string
@@ -157,6 +159,7 @@ function DepartmentsPage() {
   const [allUsers, setAllUsers] = useState<Member[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isUploading, _setIsUploading] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
@@ -164,11 +167,17 @@ function DepartmentsPage() {
   const [deleteConfirmName, setDeleteConfirmName] = useState('')
   
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [cropModalData, setCropModalData] = useState<{ isOpen: boolean, imageSrc: string }>({
+    isOpen: false,
+    imageSrc: ''
+  })
+  const [pendingLogoBlob, setPendingLogoBlob] = useState<Blob | null>(null)
   const [newDeptName, setNewDeptName] = useState('')
   const [newDeptCode, setNewDeptCode] = useState('')
   const [newDeptDean, setNewDeptDean] = useState('') // Storing Dean UID
   const [isDeanDropdownOpen, setIsDeanDropdownOpen] = useState(false)
   const [newDeptLogo, setNewDeptLogo] = useState('')
+  const [logoErrors, setLogoErrors] = useState<Record<string, boolean>>({})
   const [errors, setErrors] = useState<{
     name: 'required' | 'exists' | null;
     code: 'required' | 'exists' | null;
@@ -260,6 +269,7 @@ function DepartmentsPage() {
     setNewDeptCode('')
     setNewDeptDean('')
     setNewDeptLogo('')
+    setPendingLogoBlob(null)
     setErrors({ name: null, code: null })
   }
 
@@ -267,11 +277,23 @@ function DepartmentsPage() {
     const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
-      reader.onloadend = () => {
-        setNewDeptLogo(reader.result as string)
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setCropModalData({ isOpen: true, imageSrc: reader.result })
+        }
       }
       reader.readAsDataURL(file)
+      e.target.value = ''
     }
+  }
+
+  const handleCropComplete = async (croppedImage: Blob) => {
+    // Just store the blob to be uploaded on form submit for both Create and Edit
+    setPendingLogoBlob(croppedImage)
+    const blobUrl = URL.createObjectURL(croppedImage)
+    setNewDeptLogo(blobUrl)
+    setLogoErrors(prev => ({ ...prev, [blobUrl]: false }))
+    setCropModalData({ isOpen: false, imageSrc: '' })
   }
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -311,7 +333,6 @@ function DepartmentsPage() {
     }
 
     setIsSubmitting(true)
-    const finalLogo = newDeptLogo || `https://ui-avatars.com/api/?name=${trimmedCode || 'DEPT'}&background=random`
     const finalCode = trimmedCode
 
     try {
@@ -322,6 +343,29 @@ function DepartmentsPage() {
         const oldDeanUID = editingDept.deanUID
         const newDeanUID = newDeptDean
         const oldCode = editingDept.code
+        let finalLogo = newDeptLogo || ''
+
+        // If there's a new logo to upload
+        if (pendingLogoBlob) {
+          const oldLogoUrl = editingDept.logo
+          const newFileName = `logo_${Date.now()}.png`
+          const storageRef = ref(storage, `departments/${editingDept.id}/${newFileName}`)
+          await uploadBytes(storageRef, pendingLogoBlob)
+          finalLogo = await getDownloadURL(storageRef)
+
+          // Delete old logo if it's a Firebase Storage URL
+          const oldLogoUrlToDelete = editingDept.logo
+          if (oldLogoUrlToDelete && oldLogoUrlToDelete.includes('firebasestorage.googleapis.com')) {
+            try {
+              const oldStorageRef = ref(storage, oldLogoUrlToDelete)
+              await deleteObject(oldStorageRef)
+            } catch (error: any) {
+              if (error.code !== 'storage/object-not-found') {
+                console.error('Error deleting old logo:', error)
+              }
+            }
+          }
+        }
 
         // 1. Update department doc
         const deptRef = doc(db, 'departments', editingDept.id)
@@ -358,11 +402,20 @@ function DepartmentsPage() {
       } else {
         // Create new department
         const newDeptRef = doc(collection(db, 'departments'))
+        let creationLogo = newDeptLogo || ''
+
+        if (pendingLogoBlob) {
+          const newFileName = `logo_${Date.now()}.png`
+          const storageRef = ref(storage, `departments/${newDeptRef.id}/${newFileName}`)
+          await uploadBytes(storageRef, pendingLogoBlob)
+          creationLogo = await getDownloadURL(storageRef)
+        }
+
         batch.set(newDeptRef, {
           name: trimmedName,
           code: finalCode,
           dean: newDeptDean,
-          logo: finalLogo,
+          logo: creationLogo,
           memberCount: 0,
           roomCount: 0,
           createdAt: serverTimestamp(),
@@ -510,26 +563,20 @@ function DepartmentsPage() {
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     className={`h-32 w-32 rounded-full border-2 bg-gray-50 flex items-center justify-center overflow-hidden transition-all duration-200 hover:border-[var(--brand-color)] hover:bg-gray-50 group relative shadow-md ${
-                      newDeptLogo || newDeptCode ? 'border-solid border-gray-300' : 'border-dashed border-gray-400'
+                      newDeptLogo && !logoErrors[newDeptLogo] ? 'border-solid border-gray-300' : 'border-dashed border-gray-400'
                     }`}
                   >
-                    {newDeptLogo ? (
+                    {newDeptLogo && !logoErrors[newDeptLogo] ? (
                       <img 
                         src={newDeptLogo} 
                         alt="Logo preview"
                         className="h-full w-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${newDeptCode || 'DEPT'}&background=random`
-                        }}
-                      />
-                    ) : newDeptCode ? (
-                      <img 
-                        src={`https://ui-avatars.com/api/?name=${newDeptCode}&background=random`} 
-                        alt="New Department"
-                        className="h-full w-full object-cover"
+                        onError={() => setLogoErrors(prev => ({ ...prev, [newDeptLogo]: true }))}
                       />
                     ) : (
-                      <CameraIcon className="h-10 w-10 text-gray-500 group-hover:text-gray-600 transition-colors" />
+                      <div className="flex h-full w-full items-center justify-center bg-gray-100 text-gray-400">
+                        <DepartmentIcon className="h-12 w-12" />
+                      </div>
                     )}
                     <div className="absolute inset-0 flex items-center justify-center bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity">
                       <UploadIcon className="h-8 w-8 text-white" strokeWidth={3.5} />
@@ -679,11 +726,18 @@ function DepartmentsPage() {
           >
             <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white flex justify-between items-start">
               <div className="flex items-center gap-4">
-                <img
-                  src={selectedDept.logo}
-                  alt={selectedDept.name}
-                  className="h-14 w-14 rounded-full border-2 border-white/20 object-cover bg-white/10"
-                />
+                {selectedDept.logo && !logoErrors[selectedDept.logo] ? (
+                  <img
+                    src={selectedDept.logo}
+                    alt={selectedDept.name}
+                    className="h-14 w-14 rounded-full border-2 border-white/20 object-cover bg-white/10"
+                    onError={() => setLogoErrors(prev => ({ ...prev, [selectedDept.logo]: true }))}
+                  />
+                ) : (
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white/20 bg-white/10 text-white/80">
+                    <DepartmentIcon className="h-8 w-8" />
+                  </div>
+                )}
                 <div>
                   <h3 className="text-xl font-bold leading-tight">{selectedDept.name}</h3>
                   <p className="mt-1 text-sm text-white/80">{selectedDept.code} • {selectedDept.memberCount} Members</p>
@@ -711,11 +765,16 @@ function DepartmentsPage() {
                         <img
                           src={member.avatar || `https://ui-avatars.com/api/?name=${member.name}&background=random`}
                           alt={member.name}
-                          className="h-10 w-10 rounded-full border border-gray-100 object-cover"
+                          className="h-10 w-10 rounded-full border border-gray-300 object-cover"
                         />
                         <div>
                           <p className="text-sm font-bold text-gray-900">{member.name}</p>
-                          <p className="text-xs font-medium text-gray-500">{member.email}</p>
+                          <p className="text-xs font-medium text-gray-500">
+                            {member.department || (
+                              member.role === 'Admin' ? 'Administrative Office' :
+                              member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
+                            )}
+                          </p>
                         </div>
                       </div>
                       <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
@@ -729,6 +788,18 @@ function DepartmentsPage() {
           </div>
           <div className="absolute inset-0 -z-10" onClick={() => setSelectedDept(null)} />
         </div>
+      )}
+
+      {/* Crop Modal */}
+      {cropModalData.isOpen && (
+        <CropModal
+          imageSrc={cropModalData.imageSrc}
+          onCropComplete={handleCropComplete}
+          onClose={() => setCropModalData({ isOpen: false, imageSrc: '' })}
+          isUploading={false}
+          title="Adjust Department Logo"
+          hideOverlay={true}
+        />
       )}
 
       <div className="space-y-6">
@@ -830,11 +901,18 @@ function DepartmentsPage() {
                     >
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="flex items-center gap-4">
-                          <img
-                            src={dept.logo}
-                            alt={dept.name}
-                            className="h-10 w-10 rounded-full border border-gray-100 object-cover"
-                          />
+                          {dept.logo && !logoErrors[dept.logo] ? (
+                            <img
+                              src={dept.logo}
+                              alt={dept.name}
+                              className="h-10 w-10 rounded-full border border-gray-300 object-cover"
+                              onError={() => setLogoErrors(prev => ({ ...prev, [dept.logo]: true }))}
+                            />
+                          ) : (
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-gray-50 text-gray-400">
+                              <DepartmentIcon className="h-6 w-6" />
+                            </div>
+                          )}
                           <span className="text-sm font-bold text-gray-900 group-hover:text-[var(--brand-color)] transition-colors">
                             {dept.name}
                           </span>

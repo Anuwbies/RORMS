@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './firebase'
@@ -65,13 +65,13 @@ function App() {
     // onAuthStateChanged will handle the state update
   }
 
-  const handleSignOut = async () => {
+  const handleSignOut = useCallback(async () => {
     try {
       await auth.signOut()
     } catch (error) {
       console.error('Error signing out:', error)
     }
-  }
+  }, [])
 
   const handleSignup = () => {
     setIsSignupMode(false)

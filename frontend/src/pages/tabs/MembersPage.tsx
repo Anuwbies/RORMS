@@ -282,6 +282,7 @@ function MembersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<MemberRole[]>([])
   const [selectedStatuses, setSelectedStatuses] = useState<MemberStatus[]>([])
+  const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
   
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -890,14 +891,15 @@ function MembersPage() {
                     <tr key={member.id} className="transition hover:bg-gray-50/50">
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="flex items-center gap-4">
-                          {member.avatar ? (
+                          {member.avatar && !avatarErrors[member.avatar] ? (
                             <img
                               src={member.avatar}
                               alt={member.name}
-                              className="h-10 w-10 rounded-full border border-gray-100 object-cover"
+                              className="h-10 w-10 rounded-full border border-gray-300 object-cover"
+                              onError={() => setAvatarErrors(prev => ({ ...prev, [member.avatar]: true }))}
                             />
                           ) : (
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-100 bg-gray-50 text-gray-400">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-gray-50 text-gray-400">
                               <UserIcon className="h-6 w-6" />
                             </div>
                           )}
@@ -916,7 +918,10 @@ function MembersPage() {
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
                         <span className="text-sm font-semibold text-gray-700">
-                          {member.department || '—'}
+                          {member.department || (
+                            member.role === 'Admin' ? 'Administrative Office' :
+                            member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
+                          )}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">

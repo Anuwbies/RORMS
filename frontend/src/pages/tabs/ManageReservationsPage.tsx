@@ -181,7 +181,7 @@ function ManageReservationsPage() {
                           <img
                             src={res.requester.avatar}
                             alt={res.requester.name}
-                            className="h-10 w-10 rounded-full border border-gray-100 object-cover"
+                            className="h-10 w-10 rounded-full border border-gray-300 object-cover"
                           />
                           <div>
                             <p className="text-sm font-bold text-gray-900">{res.requester.name}</p>

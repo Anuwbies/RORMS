@@ -59,8 +59,18 @@
     }
   }
 
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
   --animation-in: in 200ms ease-out;
   --animation-out: out 150ms ease-in;
+  --animate-spin: spin 1s linear infinite;
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -103,6 +113,10 @@ body {
 
 .animate-out {
   animation: var(--animation-out) forwards;
+}
+
+.animate-spin {
+  animation: var(--animate-spin);
 }
 
 [data-state='open'].animate-in {
