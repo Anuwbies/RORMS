@@ -1,13 +1,14 @@
-import { useState, useRef, useEffect, useLayoutEffect } from 'react'
-import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
+import { DepartmentIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, ChevronDownIcon, CheckIcon, UserIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { db, storage } from '../../firebase'
-import { collection, serverTimestamp, onSnapshot, query, orderBy, doc, writeBatch } from 'firebase/firestore'
+import { collection, serverTimestamp, onSnapshot, query, orderBy, doc, writeBatch, where, limit } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { CropModal } from '../../components/CropModal'
 
 interface Member {
   id: string
+  membershipId: string
   name: string
   email: string
   role: string
@@ -137,8 +138,7 @@ interface Department {
   name: string
   deanUID: string
   deanName: string
-  memberCount: number
-  roomCount: number
+  memberCount?: number
   createdDate: string
   logo: string
 }
@@ -177,35 +177,47 @@ function DepartmentsPage() {
   const [isDeanDropdownOpen, setIsDeanDropdownOpen] = useState(false)
   const [newDeptLogo, setNewDeptLogo] = useState('')
   const [logoErrors, setLogoErrors] = useState<Record<string, boolean>>({})
+  const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
   const [errors, setErrors] = useState<{
     name: 'required' | 'exists' | null;
     code: 'required' | 'exists' | null;
   }>({ name: null, code: null })
 
-  // Fetch All Users
+  // Fetch All Users joined with Memberships
   useEffect(() => {
-    const q = query(collection(db, 'users'))
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const usersData = snapshot.docs.map((doc) => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          name: data.fullName || '',
-          email: data.email || '',
-          role: data.role || 'Instructor',
-          status: (data.isActive !== false) ? 'Active' : 'Inactive',
-          department: data.department || '',
-          joinedDate: data.createdAt ? data.createdAt.toDate().toLocaleDateString('en-US', {
-            month: 'short',
-            day: '2-digit',
-            year: 'numeric'
-          }) : '—',
-          avatar: data.profilePicture || '',
-        }
-      }) as Member[]
-      setAllUsers(usersData)
+    let unsubscribeUsers: (() => void) | null = null
+    let unsubscribeMemberships: (() => void) | null = null
+
+    unsubscribeUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
+      const usersMap = new Map()
+      usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
+
+      unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
+        const joinedData = mSnap.docs.map((mDoc) => {
+          const mData = mDoc.data()
+          const userData = usersMap.get(mData.userId) || {}
+          return {
+            id: mData.userId,
+            membershipId: mDoc.id,
+            name: userData.fullName || '',
+            email: userData.email || '',
+            role: mData.role || 'Instructor',
+            status: (userData.isActive !== false) ? 'Active' : 'Inactive',
+            department: mData.departmentCode || '',
+            joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
+              month: 'short', day: '2-digit', year: 'numeric'
+            }) : '—',
+            avatar: userData.profilePicture || '',
+          }
+        }) as Member[]
+        setAllUsers(joinedData)
+      })
     })
-    return () => unsubscribe()
+
+    return () => {
+      if (unsubscribeUsers) unsubscribeUsers()
+      if (unsubscribeMemberships) unsubscribeMemberships()
+    }
   }, [])
 
   const availableDeans = allUsers.filter(u => u.role === 'Dean')
@@ -242,14 +254,27 @@ function DepartmentsPage() {
     return () => unsubscribe()
   }, [availableDeans])
 
-  const filteredDepartments = departments.filter((dept) =>
-    [dept.name, dept.code, dept.deanName].some((val) =>
-      val.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-  )
+  const filteredDepartments = useMemo(() => {
+    return departments
+      .map((dept) => ({
+        ...dept,
+        memberCount: allUsers.filter((u) => u.department === dept.code).length,
+      }))
+      .filter((dept) =>
+        [dept.name, dept.code, dept.deanName].some((val) =>
+          val.toLowerCase().includes(searchTerm.toLowerCase())
+        )
+      )
+  }, [departments, allUsers, searchTerm])
 
   const deptMembers = selectedDept 
-    ? allUsers.filter(m => m.department === selectedDept.code)
+    ? allUsers
+        .filter(m => m.department === selectedDept.code)
+        .sort((a, b) => {
+          if (a.role === 'Dean') return -1
+          if (b.role === 'Dean') return 1
+          return a.name.localeCompare(b.name)
+        })
     : []
 
   const handleOpenEdit = (dept: Department) => {
@@ -287,7 +312,6 @@ function DepartmentsPage() {
   }
 
   const handleCropComplete = async (croppedImage: Blob) => {
-    // Just store the blob to be uploaded on form submit for both Create and Edit
     setPendingLogoBlob(croppedImage)
     const blobUrl = URL.createObjectURL(croppedImage)
     setNewDeptLogo(blobUrl)
@@ -312,7 +336,6 @@ function DepartmentsPage() {
       return
     }
 
-    // Uniqueness check (Case-insensitive)
     const nameExists = departments.some(dept => {
       if (editingDept && dept.id === editingDept.id) return false
       return dept.name.toLowerCase() === trimmedName.toLowerCase()
@@ -338,20 +361,17 @@ function DepartmentsPage() {
       const batch = writeBatch(db)
 
       if (editingDept) {
-        // Handle changes for existing department
         const oldDeanUID = editingDept.deanUID
         const newDeanUID = newDeptDean
         const oldCode = editingDept.code
         let finalLogo = newDeptLogo || ''
 
-        // If there's a new logo to upload
         if (pendingLogoBlob) {
           const newFileName = `logo_${Date.now()}.png`
           const storageRef = ref(storage, `departments/${editingDept.id}/${newFileName}`)
           await uploadBytes(storageRef, pendingLogoBlob)
           finalLogo = await getDownloadURL(storageRef)
 
-          // Delete old logo if it's a Firebase Storage URL
           const oldLogoUrlToDelete = editingDept.logo
           if (oldLogoUrlToDelete && oldLogoUrlToDelete.includes('firebasestorage.googleapis.com')) {
             try {
@@ -365,7 +385,6 @@ function DepartmentsPage() {
           }
         }
 
-        // 1. Update department doc
         const deptRef = doc(db, 'departments', editingDept.id)
         batch.update(deptRef, {
           name: trimmedName,
@@ -375,30 +394,34 @@ function DepartmentsPage() {
           updatedAt: serverTimestamp()
         })
 
-        // 2. Handle Dean reassignment
         if (oldDeanUID && oldDeanUID !== newDeanUID) {
-          // Clear old dean's department
-          batch.update(doc(db, 'users', oldDeanUID), {
-            department: '',
-            updatedAt: serverTimestamp()
-          })
+          const oldDeanMember = allUsers.find(u => u.id === oldDeanUID)
+          if (oldDeanMember?.membershipId) {
+            batch.update(doc(db, 'memberships', oldDeanMember.membershipId), {
+              departmentCode: '',
+              joinedAt: serverTimestamp()
+            })
+          }
         }
 
         if (newDeanUID) {
-          // Update new dean's department
-          batch.update(doc(db, 'users', newDeanUID), {
-            department: finalCode,
-            updatedAt: serverTimestamp()
-          })
+          const newDeanMember = allUsers.find(u => u.id === newDeanUID)
+          if (newDeanMember?.membershipId) {
+            batch.update(doc(db, 'memberships', newDeanMember.membershipId), {
+              departmentCode: finalCode,
+              joinedAt: serverTimestamp()
+            })
+          }
         } else if (oldDeanUID && oldCode !== finalCode) {
-           // If dean didn't change but code did, update their department field
-           batch.update(doc(db, 'users', oldDeanUID), {
-            department: finalCode,
-            updatedAt: serverTimestamp()
-          })
+           const currentDeanMember = allUsers.find(u => u.id === oldDeanUID)
+           if (currentDeanMember?.membershipId) {
+             batch.update(doc(db, 'memberships', currentDeanMember.membershipId), {
+              departmentCode: finalCode,
+              joinedAt: serverTimestamp()
+            })
+           }
         }
       } else {
-        // Create new department
         const newDeptRef = doc(collection(db, 'departments'))
         let creationLogo = newDeptLogo || ''
 
@@ -414,17 +437,18 @@ function DepartmentsPage() {
           code: finalCode,
           dean: newDeptDean,
           logo: creationLogo,
-          memberCount: 0,
-          roomCount: 0,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         })
 
         if (newDeptDean) {
-          batch.update(doc(db, 'users', newDeptDean), {
-            department: finalCode,
-            updatedAt: serverTimestamp()
-          })
+          const newDeanMember = allUsers.find(u => u.id === newDeptDean)
+          if (newDeanMember?.membershipId) {
+            batch.update(doc(db, 'memberships', newDeanMember.membershipId), {
+              departmentCode: finalCode,
+              joinedAt: serverTimestamp()
+            })
+          }
         }
       }
 
@@ -457,17 +481,18 @@ function DepartmentsPage() {
     setIsDeleting(true)
     try {
       const batch = writeBatch(db)
-
-      // 1. Delete the department document
       batch.delete(doc(db, 'departments', deptToDelete.id))
 
-      // 2. Clear dean's department field if assigned
-      if (deptToDelete.deanUID) {
-        batch.update(doc(db, 'users', deptToDelete.deanUID), {
-          department: '',
-          updatedAt: serverTimestamp()
-        })
-      }
+      // Clear departmentCode for all members of this department
+      const membersToUpdate = allUsers.filter(u => u.department === deptToDelete.code)
+      membersToUpdate.forEach(member => {
+        if (member.membershipId) {
+          batch.update(doc(db, 'memberships', member.membershipId), {
+            departmentCode: '',
+            joinedAt: serverTimestamp()
+          })
+        }
+      })
 
       await batch.commit()
       handleCloseDeleteModal()
@@ -482,11 +507,8 @@ function DepartmentsPage() {
   const deanOptions: DropdownOption[] = [
     { label: 'None', value: '', isDisabled: false },
     ...availableDeans.map(dean => {
-      // Find which department this dean is assigned to
       const assignedDept = departments.find(d => d.deanUID === dean.id)
-      // A dean is "taken" if they are assigned to any department OTHER than the one being edited
       const isTaken = assignedDept && assignedDept.id !== editingDept?.id
-      
       return {
         label: dean.name,
         value: dean.id,
@@ -494,7 +516,6 @@ function DepartmentsPage() {
         subLabel: isTaken ? assignedDept.code : undefined
       }
     }).sort((a, b) => {
-      // Put disabled options at the end
       if (a.isDisabled && !b.isDisabled) return 1
       if (!a.isDisabled && b.isDisabled) return -1
       return a.label.localeCompare(b.label)
@@ -760,11 +781,18 @@ function DepartmentsPage() {
                   {deptMembers.map((member) => (
                     <div key={member.id} className="flex items-center justify-between rounded-lg border border-gray-100 p-4 shadow-sm">
                       <div className="flex items-center gap-4">
-                        <img
-                          src={member.avatar || `https://ui-avatars.com/api/?name=${member.name}&background=random`}
-                          alt={member.name}
-                          className="h-10 w-10 rounded-full border border-gray-300 object-cover"
-                        />
+                        {member.avatar && !avatarErrors[member.avatar] ? (
+                          <img
+                            src={member.avatar}
+                            alt={member.name}
+                            className="h-10 w-10 rounded-full border border-gray-300 object-cover"
+                            onError={() => setAvatarErrors(prev => ({ ...prev, [member.avatar]: true }))}
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-gray-50 text-gray-400">
+                            <UserIcon className="h-6 w-6" />
+                          </div>
+                        )}
                         <div>
                           <p className="text-sm font-bold text-gray-900">{member.name}</p>
                           <p className="text-xs font-medium text-gray-500">

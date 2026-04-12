@@ -10,8 +10,6 @@ Stores user profile information and system roles.
   - `isVerify`: boolean (Whether the user's email is verified) | **Default: from Auth**
   - `createdAt`: timestamp (Date the profile was created) | **Default: serverTimestamp()**
   - `updatedAt`: timestamp (Date the profile was last updated) | **Default: serverTimestamp()**
-  - `department`: string (User's assigned department) | **Default: ""**
-  - `role`: string (User's system role) | **Default: "member"**
   - `profilePicture`: string (URL to the user's profile picture) | **Default: from Auth (or empty string)**
   - `isActive`: boolean (Whether the account is active) | **Default: true**
 
@@ -36,8 +34,6 @@ Manages university departments, assigned deans, and resource metadata.
   - `code`: string (Short department code, e.g., "CITE")
   - `dean`: string (UID of the assigned Dean)
   - `logo`: string (URL to the department logo)
-  - `memberCount`: number (Total number of members in the department) | **Default: 0**
-  - `roomCount`: number (Total number of rooms assigned to the department) | **Default: 0**
   - `createdAt`: timestamp (Date the department was created) | **Default: serverTimestamp()**
   - `updatedAt`: timestamp (Date the department was last updated) | **Default: serverTimestamp()**
 
@@ -56,5 +52,41 @@ Trigger collection for the Firebase "Trigger Email" extension.
     - `startTime`: timestamp
     - `endTime`: timestamp
     - `error`: string (if state is `"ERROR"`)
+
+## `buildings`
+Manages campus buildings and infrastructure metadata.
+
+- **Document ID**: Auto-generated ID
+- **Fields**:
+  - `name`: string (Full name of the building, e.g., "Administration Building")
+  - `code`: string (Short building code, e.g., "ADM")
+  - `createdAt`: timestamp | **Default: serverTimestamp()**
+  - `updatedAt`: timestamp | **Default: serverTimestamp()**
+
+## `rooms`
+Centralized inventory of all campus rooms and their real-time status.
+
+- **Document ID**: Auto-generated ID
+- **Fields**:
+  - `buildingId`: string (Reference to the parent building document ID)
+  - `name`: string (Room name, e.g., "Registrar Receiving")
+  - `code`: string (Full room code, e.g., "ADM-101")
+  - `type`: string (Lecture Room, Laboratory, Office, Meeting Room, or Studio)
+  - `floor`: number (The specific floor where the room is located)
+  - `capacity`: number (Room seating/standing capacity)
+  - `status`: string (`"Available"`, `"Occupied"`, `"Reserved"`, or `"Maintenance"`)
+  - `image`: string (URL to the room's photo)
+  - `createdAt`: timestamp | **Default: serverTimestamp()**
+  - `updatedAt`: timestamp | **Default: serverTimestamp()**
+
+## `memberships`
+Tracks the association between users and departments.
+
+- **Document ID**: Auto-generated ID (or a composite like `userId_departmentCode`)
+- **Fields**:
+  - `userId`: string (Reference to the user's UID)
+  - `departmentCode`: string (Reference to the department's unique code)
+  - `role`: string (User's role within this department: Admin, Registrar, Dean, or Instructor)
+  - `joinedAt`: timestamp | **Default: serverTimestamp()**
 
 

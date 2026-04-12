@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, type ChangeEvent, memo } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore'
+import { doc, onSnapshot, updateDoc, collection, query, where, limit } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { auth, db, storage } from '../firebase'
 import { BellIcon, CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DepartmentIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
@@ -146,32 +146,25 @@ export const RightSidebar = memo(function RightSidebar({
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    let unsubscribeDoc: (() => void) | null = null
+    let unsubscribeUser: (() => void) | null = null
+    let unsubscribeMembership: (() => void) | null = null
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (unsubscribeDoc) {
-        unsubscribeDoc()
-        unsubscribeDoc = null
-      }
+      if (unsubscribeUser) unsubscribeUser()
+      if (unsubscribeMembership) unsubscribeMembership()
 
       if (user) {
-        unsubscribeDoc = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+        unsubscribeUser = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data()
             
-            setUserData((prev) => {
-              const newData = {
-                fullName: data.fullName || 'No Name',
-                email: data.email || 'example.up@phinmaed.com',
-                profilePicture: data.profilePicture || '',
-                isVerify: data.isVerify || false,
-                department: data.department || '',
-                role: data.role || 'member'
-              }
-              // Only update if data actually changed to prevent re-renders
-              if (JSON.stringify(prev) === JSON.stringify(newData)) return prev
-              return newData
-            })
+            setUserData((prev) => ({
+              ...prev,
+              fullName: data.fullName || 'No Name',
+              email: data.email || 'example.up@phinmaed.com',
+              profilePicture: data.profilePicture || '',
+              isVerify: data.isVerify || false
+            }))
             
             const newPic = data.profilePicture || null
             setProfileImage((prev) => {
@@ -181,6 +174,23 @@ export const RightSidebar = memo(function RightSidebar({
               }
               return newPic
             })
+          }
+        })
+
+        // Membership listener
+        const membershipQuery = query(
+          collection(db, 'memberships'),
+          where('userId', '==', user.uid),
+          limit(1)
+        )
+        unsubscribeMembership = onSnapshot(membershipQuery, (snapshot) => {
+          if (!snapshot.empty) {
+            const data = snapshot.docs[0].data()
+            setUserData((prev) => ({
+              ...prev,
+              department: data.departmentCode || '',
+              role: data.role || 'member'
+            }))
           }
         })
       } else {
@@ -200,7 +210,8 @@ export const RightSidebar = memo(function RightSidebar({
 
     return () => {
       unsubscribeAuth()
-      if (unsubscribeDoc) unsubscribeDoc()
+      if (unsubscribeUser) unsubscribeUser()
+      if (unsubscribeMembership) unsubscribeMembership()
     }
   }, [])
 

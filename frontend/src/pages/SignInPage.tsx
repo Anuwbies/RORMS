@@ -42,8 +42,6 @@ function SignInPage({ onSignIn }: SignInPageProps) {
       
       // Set initial defaults if document is new
       if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
-      if (userData.department === undefined) updates.department = ''
-      if (userData.role === undefined) updates.role = 'member'
       if (userData.isActive === undefined) updates.isActive = true
 
       await setDoc(userDocRef, updates, { merge: true })

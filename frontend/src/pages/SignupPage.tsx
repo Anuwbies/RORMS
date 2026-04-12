@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
-import { doc, getDoc, updateDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth'
+import { doc, getDoc, updateDoc, setDoc, serverTimestamp, collection, writeBatch } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 
 type TabKey = 'home' | 'about' | 'contact'
@@ -86,28 +86,42 @@ function SignupPage({ onSignup }: SignupPageProps) {
       const user = userCredential.user
       const fullName = `${firstName} ${lastName}`
       
+      // Send verification email
+      await sendEmailVerification(user)
+
       // Update profile with names
       await updateProfile(user, {
         displayName: fullName
       })
 
-      // Create user document in Firestore (Matching SignInPage fields)
-      await setDoc(doc(db, 'users', user.uid), {
+      // Use a batch to create both documents atomically and update invitation
+      const batch = writeBatch(db)
+      const userRef = doc(db, 'users', user.uid)
+      const membershipRef = doc(collection(db, 'memberships'))
+
+      batch.set(userRef, {
         email: email,
         fullName: fullName,
         isVerify: user.emailVerified,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        department: '',
-        role: role,
         profilePicture: '',
         isActive: true
       })
 
+      batch.set(membershipRef, {
+        userId: user.uid,
+        departmentCode: '', // Currently invitations don't store departmentCode
+        role: role,
+        joinedAt: serverTimestamp()
+      })
+
       // Mark invitation as accepted
-      await updateDoc(doc(db, 'invitations', inviteId), {
+      batch.update(doc(db, 'invitations', inviteId), {
         status: 'accepted'
       })
+
+      await batch.commit()
       
       onSignup()
     } catch (err: any) {

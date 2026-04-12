@@ -23,6 +23,7 @@ interface Member {
   department?: string
   joinedDate: string
   avatar: string
+  membershipId?: string
 }
 
 const rolePriority: Record<MemberRole, number> = {
@@ -296,6 +297,11 @@ function MembersPage() {
   const [editError, setEditError] = useState('')
   const [isSavingEdit, setIsSavingEdit] = useState(false)
 
+  const [memberToRemove, setMemberToRemove] = useState<Member | null>(null)
+  const [isRemovingMember, setIsRemovingMember] = useState(false)
+  const [removeError, setRemoveError] = useState('')
+  const [removeConfirmText, setRemoveConfirmText] = useState('')
+
   const [activeDropdowns, setActiveDropdowns] = useState(0)
 
   const handleDropdownToggle = useCallback((isOpen: boolean) => {
@@ -303,37 +309,48 @@ function MembersPage() {
   }, [])
 
   useEffect(() => {
-    // 1. Listener for actual members (users collection)
-    const usersQuery = query(collection(db, 'users'), orderBy('role'))
-    const unsubscribeUsers = onSnapshot(usersQuery, (snapshot) => {
-      const usersData = snapshot.docs.map((doc) => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          name: data.fullName || '',
-          email: data.email || '',
-          role: (data.role as MemberRole) || 'Instructor',
-          status: (data.isActive !== false) ? 'Active' : 'Inactive',
-          department: data.department || '',
-          joinedDate: data.createdAt ? data.createdAt.toDate().toLocaleDateString('en-US', {
-            month: 'short',
-            day: '2-digit',
-            year: 'numeric'
-          }) : '—',
-          avatar: data.profilePicture || '',
-        }
-      }) as Member[]
-      setUsers(usersData)
-    }, (error) => {
-      console.error('Error fetching users:', error)
+    // 1. Fetch all users to have a local map for joining
+    let unsubscribeUsers: (() => void) | null = null
+    let unsubscribeMemberships: (() => void) | null = null
+    let unsubscribeInvites: (() => void) | null = null
+    let unsubscribeDepts: (() => void) | null = null
+
+    unsubscribeUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
+      const usersMap = new Map()
+      usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
+
+      // 2. Fetch memberships and join with users
+      unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
+        const membersData = mSnap.docs.map(mDoc => {
+          const mData = mDoc.data()
+          const userData = usersMap.get(mData.userId) || {}
+          
+          return {
+            id: mData.userId,
+            membershipId: mDoc.id,
+            name: userData.fullName || 'No Name',
+            email: userData.email || '',
+            role: (mData.role as MemberRole) || 'Instructor',
+            status: (userData.isActive !== false) ? 'Active' : 'Inactive',
+            department: mData.departmentCode || '',
+            joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
+              month: 'short',
+              day: '2-digit',
+              year: 'numeric'
+            }) : '—',
+            avatar: userData.profilePicture || '',
+          }
+        }) as Member[]
+        setUsers(membersData)
+      })
     })
 
-    // 2. Listener for pending invitations
+    // 3. Listener for pending invitations
     const invitesQuery = query(
       collection(db, 'invitations'), 
       where('status', '==', 'pending')
     )
-    const unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
+    unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
       const invitesData = snapshot.docs.map((doc) => {
         const data = doc.data()
         // Check if invite is expired
@@ -353,13 +370,11 @@ function MembersPage() {
         }
       }).filter(Boolean) as Member[]
       setInvites(invitesData)
-    }, (error) => {
-      console.error('Error fetching invitations:', error)
     })
 
-    // 3. Listener for departments
+    // 4. Listener for departments
     const deptsQuery = query(collection(db, 'departments'), orderBy('code'))
-    const unsubscribeDepts = onSnapshot(deptsQuery, (snapshot) => {
+    unsubscribeDepts = onSnapshot(deptsQuery, (snapshot) => {
       const deptsData = snapshot.docs.map((doc) => {
         const data = doc.data()
         return {
@@ -373,9 +388,10 @@ function MembersPage() {
     })
 
     return () => {
-      unsubscribeUsers()
-      unsubscribeInvites()
-      unsubscribeDepts()
+      if (unsubscribeUsers) unsubscribeUsers()
+      if (unsubscribeMemberships) unsubscribeMemberships()
+      if (unsubscribeInvites) unsubscribeInvites()
+      if (unsubscribeDepts) unsubscribeDepts()
     }
   }, [])
 
@@ -463,7 +479,7 @@ function MembersPage() {
       console.log('Invitation document created with ID:', inviteRef.id)
 
       // 4. Create the mail document to trigger the extension
-      const signupLink = `https://rorms-dd983.web.app/signup?token=${inviteRef.id}`
+      const signupLink = `http://localhost:5173/signup?token=${inviteRef.id}`
       console.log('Attempting to create mail document...')
       
       const mailRef = await addDoc(collection(db, 'mail'), {
@@ -548,7 +564,6 @@ function MembersPage() {
     setIsSavingEdit(true)
     try {
       const batch = writeBatch(db)
-      const userRef = doc(db, 'users', editingMember.id)
 
       const canHaveDept = editRole === 'Dean' || editRole === 'Instructor'
       const finalDept = canHaveDept ? editDept : ''
@@ -575,12 +590,14 @@ function MembersPage() {
         }
       }
 
-      // 2. Update user document
-      batch.update(userRef, {
-        role: editRole,
-        department: finalDept,
-        updatedAt: serverTimestamp()
-      })
+      // 2. Update membership document
+      if (editingMember.membershipId) {
+        batch.update(doc(db, 'memberships', editingMember.membershipId), {
+          role: editRole,
+          departmentCode: finalDept,
+          // We don't update joinedAt as they already joined
+        })
+      }
 
       await batch.commit()
       setEditingMember(null)
@@ -589,6 +606,51 @@ function MembersPage() {
       setEditError('Failed to update member.')
     } finally {
       setIsSavingEdit(false)
+    }
+  }
+
+  const handleRemoveSubmit = async () => {
+    if (!memberToRemove) return
+
+    setIsRemovingMember(true)
+    setRemoveError('')
+    try {
+      const batch = writeBatch(db)
+
+      // 1. If member is a dean, clear the department's dean field
+      if (memberToRemove.role === 'Dean' && memberToRemove.department) {
+        const dept = departments.find(d => d.code === memberToRemove.department)
+        if (dept && dept.dean === memberToRemove.id) {
+          batch.update(doc(db, 'departments', dept.id), {
+            dean: '',
+            updatedAt: serverTimestamp()
+          })
+        }
+      }
+
+      // 2. Delete the user document
+      batch.delete(doc(db, 'users', memberToRemove.id))
+
+      // 3. Delete all membership documents for this user
+      const membershipsQuery = query(collection(db, 'memberships'), where('userId', '==', memberToRemove.id))
+      const membershipsSnapshot = await getDocs(membershipsQuery)
+      membershipsSnapshot.forEach((mDoc) => {
+        batch.delete(doc(db, 'memberships', mDoc.id))
+      })
+
+      // Note: Deleting the user's Auth account requires Firebase Admin SDK (Cloud Functions).
+      // Since this is a client-side implementation, we are performing the Firestore clean-up.
+      // If a Cloud Function is configured to trigger on 'users' document deletion, 
+      // it can handle the Auth account removal.
+
+      await batch.commit()
+      setMemberToRemove(null)
+      setRemoveConfirmText('')
+    } catch (error) {
+      console.error('Error removing member:', error)
+      setRemoveError('Failed to remove member.')
+    } finally {
+      setIsRemovingMember(false)
     }
   }
 
@@ -676,6 +738,99 @@ function MembersPage() {
             onMouseDown={() => {
               if (activeDropdowns > 0) return
               if (!isSavingEdit) setEditingMember(null)
+            }} 
+          />
+        </div>
+      )}
+
+      {/* Remove Member Modal */}
+      {memberToRemove && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-rose-600 p-6 text-white rounded-t-md">
+              <h3 className="text-xl font-bold">Remove Member</h3>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to remove this member from the system?</p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden">
+                  {memberToRemove.avatar && !avatarErrors[memberToRemove.avatar] ? (
+                    <img 
+                      src={memberToRemove.avatar} 
+                      alt="" 
+                      className="h-full w-full object-cover"
+                      onError={() => setAvatarErrors(prev => ({ ...prev, [memberToRemove.avatar]: true }))}
+                    />
+                  ) : (
+                    <UserIcon className="h-7 w-7" />
+                  )}
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-900">{memberToRemove.name || 'No Name'}</p>
+                  <p className="text-xs font-medium text-gray-500">{memberToRemove.email}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+                <p className="text-xs leading-relaxed text-rose-700">
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete their account, all membership records, and access to the system.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                  To confirm, please type <span className="text-rose-600">"confirm"</span>
+                </label>
+                <input
+                  type="text"
+                  value={removeConfirmText}
+                  onChange={(e) => setRemoveConfirmText(e.target.value)}
+                  placeholder="Type confirm here..."
+                  className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-sm"
+                  autoFocus
+                />
+              </div>
+
+              {removeError && (
+                <p className="text-xs font-bold text-rose-600 text-center animate-in fade-in slide-in-from-top-1">
+                  {removeError}
+                </p>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMemberToRemove(null)
+                    setRemoveConfirmText('')
+                  }}
+                  disabled={isRemovingMember}
+                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRemoveSubmit}
+                  disabled={isRemovingMember || removeConfirmText.toLowerCase() !== 'confirm'}
+                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isRemovingMember ? 'Removing...' : 'Confirm Remove'}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (!isRemovingMember) {
+                setMemberToRemove(null)
+                setRemoveConfirmText('')
+              }
             }} 
           />
         </div>
@@ -948,7 +1103,7 @@ function MembersPage() {
                           </IconButton>
                           <IconButton
                             label="Remove member"
-                            onClick={() => console.log('Remove member:', member.id)}
+                            onClick={() => setMemberToRemove(member)}
                             className="h-8 w-8 rounded-md bg-white text-rose-400 shadow-sm hover:bg-rose-50 hover:text-rose-600 transition-all border border-gray-100"
                           >
                             <TrashIcon className="h-4.5 w-4.5" />

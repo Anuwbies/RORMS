@@ -5,9 +5,11 @@ import { auth, db } from './firebase'
 import SignInPage from './pages/SignInPage'
 import SignupPage from './pages/SignupPage'
 import LeftSidebarController from './pages/LeftSidebarController'
+import EmailVerificationPage from './pages/EmailVerificationPage'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [isEmailVerified, setIsEmailVerified] = useState(false)
   const [isSignupMode, setIsSignupMode] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -26,6 +28,9 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
+          // Check if email is verified
+          setIsEmailVerified(user.emailVerified)
+
           const userDocRef = doc(db, 'users', user.uid)
           const userDocSnap = await getDoc(userDocRef)
           const userData = userDocSnap.data() || {}
@@ -41,8 +46,6 @@ function App() {
           
           // Set initial defaults if document is new
           if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
-          if (userData.department === undefined) updates.department = ''
-          if (userData.role === undefined) updates.role = 'member'
           if (userData.isActive === undefined) updates.isActive = true
 
           console.log(userDocSnap.exists() ? 'Updating existing user profile' : 'Creating new user profile')
@@ -87,6 +90,9 @@ function App() {
   }
 
   if (isAuthenticated) {
+    if (!isEmailVerified) {
+      return <EmailVerificationPage onSignOut={() => setIsAuthenticated(false)} />
+    }
     return <LeftSidebarController onSignOut={handleSignOut} />
   }
 

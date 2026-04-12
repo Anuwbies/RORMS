@@ -37,8 +37,11 @@ function MyDepartmentPage() {
   const [memberToRemove, setMemberToRemove] = useState<Member | null>(null)
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [selectedInstructorIds, setSelectedInstructorIds] = useState<string[]>([])
+  const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
+  const [removeError, setRemoveError] = useState('')
   
   const [currentUserData, setCurrentUserData] = useState<any>(null)
+  const [currentUserRole, setCurrentUserRole] = useState<string>('')
   const [departmentInfo, setDepartmentInfo] = useState<{ name: string; code: string; logo: string } | null>(null)
   const [logoError, setLogoError] = useState(false)
   const [members, setMembers] = useState<Member[]>([])
@@ -50,19 +53,31 @@ function MyDepartmentPage() {
   // Fetch current user and their department info
   useEffect(() => {
     let unsubscribeUser: (() => void) | null = null
-    let unsubscribeMembers: (() => void) | null = null
+    let unsubscribeMemberships: (() => void) | null = null
     let unsubscribeDept: (() => void) | null = null
+    let unsubscribeAllUsers: (() => void) | null = null
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
+        // 1. Get current user profile
         unsubscribeUser = onSnapshot(doc(db, 'users', user.uid), (userSnap) => {
           if (userSnap.exists()) {
-            const userData = userSnap.data()
-            setCurrentUserData({ id: userSnap.id, ...userData })
-            
-            if (userData.department) {
-              // Fetch department details
-              const deptQuery = query(collection(db, 'departments'), where('code', '==', userData.department), limit(1))
+            setCurrentUserData({ id: userSnap.id, ...userSnap.data() })
+          }
+        })
+
+        // 2. Get current user's membership
+        const membershipQuery = query(collection(db, 'memberships'), where('userId', '==', user.uid), limit(1))
+        unsubscribeMemberships = onSnapshot(membershipQuery, (mSnap) => {
+          if (!mSnap.empty) {
+            const mData = mSnap.docs[0].data()
+            const deptCode = mData.departmentCode
+            const role = mData.role
+            setCurrentUserRole(role || '')
+
+            if (deptCode) {
+              // 3. Fetch department details
+              const deptQuery = query(collection(db, 'departments'), where('code', '==', deptCode), limit(1))
               unsubscribeDept = onSnapshot(deptQuery, (deptSnap) => {
                 if (!deptSnap.empty) {
                   const deptData = deptSnap.docs[0].data()
@@ -75,36 +90,50 @@ function MyDepartmentPage() {
                 }
               })
 
-              // Fetch department members
-              const membersQuery = query(collection(db, 'users'), where('department', '==', userData.department))
-              unsubscribeMembers = onSnapshot(membersQuery, (membersSnap) => {
-                const fetchedMembers = membersSnap.docs.map(doc => {
-                  const data = doc.data()
-                  return {
-                    id: doc.id,
-                    name: data.fullName || 'No Name',
-                    email: data.email || '',
-                    role: data.role || 'Instructor',
-                    status: data.isActive === false ? 'Inactive' : 'Active',
-                    department: data.department || '',
-                    joinedDate: data.createdAt?.toDate ? 
-                      new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(data.createdAt.toDate()) : 
-                      'N/A',
-                    avatar: data.profilePicture || ''
-                  }
+              // 4. Fetch all memberships for this department
+              const deptMembershipsQuery = query(collection(db, 'memberships'), where('departmentCode', '==', deptCode))
+              
+              // 5. Fetch all users to join data
+              unsubscribeAllUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
+                const usersMap = new Map()
+                usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
+
+                onSnapshot(deptMembershipsQuery, (deptMSnap) => {
+                  const fetchedMembers = deptMSnap.docs.map(mDoc => {
+                    const memData = mDoc.data()
+                    const userData = usersMap.get(memData.userId) || {}
+                    return {
+                      id: memData.userId,
+                      membershipId: mDoc.id,
+                      name: userData.fullName || 'No Name',
+                      email: userData.email || '',
+                      role: memData.role || 'Instructor',
+                      status: userData.isActive === false ? 'Inactive' : 'Active',
+                      department: memData.departmentCode || '',
+                      joinedDate: memData.joinedAt?.toDate ? 
+                        new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(memData.joinedAt.toDate()) : 
+                        'N/A',
+                      avatar: userData.profilePicture || ''
+                    }
+                  })
+                  setMembers(fetchedMembers)
+                  setLoading(false)
                 })
-                setMembers(fetchedMembers)
-                setLoading(false)
               })
             } else {
               setMembers([])
               setDepartmentInfo(null)
               setLoading(false)
             }
+          } else {
+            setMembers([])
+            setDepartmentInfo(null)
+            setLoading(false)
           }
         })
       } else {
         setCurrentUserData(null)
+        setCurrentUserRole('')
         setMembers([])
         setDepartmentInfo(null)
         setLoading(false)
@@ -114,8 +143,9 @@ function MyDepartmentPage() {
     return () => {
       unsubscribeAuth()
       if (unsubscribeUser) unsubscribeUser()
-      if (unsubscribeMembers) unsubscribeMembers()
+      if (unsubscribeMemberships) unsubscribeMemberships()
       if (unsubscribeDept) unsubscribeDept()
+      if (unsubscribeAllUsers) unsubscribeAllUsers()
     }
   }, [])
 
@@ -124,38 +154,51 @@ function MyDepartmentPage() {
     if (!isAddModalOpen) return
 
     const q = query(
-      collection(db, 'users'), 
+      collection(db, 'memberships'), 
       where('role', '==', 'Instructor'),
-      where('department', '==', '')
+      where('departmentCode', '==', '')
     )
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const instructors = snapshot.docs.map(doc => {
-        const data = doc.data()
-        return {
-          id: doc.id,
-          name: data.fullName || 'No Name',
-          email: data.email || '',
-          role: data.role || 'Instructor',
-          status: data.isActive === false ? 'Inactive' : 'Active',
-          department: data.department || '',
-          joinedDate: data.createdAt?.toDate ? 
-            new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(data.createdAt.toDate()) : 
-            'N/A',
-          avatar: data.profilePicture || ''
-        }
+    const unsubscribe = onSnapshot(collection(db, 'users'), (usersSnap) => {
+      const usersMap = new Map()
+      usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
+
+      onSnapshot(q, (snapshot) => {
+        const instructors = snapshot.docs.map(doc => {
+          const memData = doc.data()
+          const userData = usersMap.get(memData.userId) || {}
+          return {
+            id: memData.userId,
+            membershipId: doc.id,
+            name: userData.fullName || 'No Name',
+            email: userData.email || '',
+            role: memData.role || 'Instructor',
+            status: userData.isActive === false ? 'Inactive' : 'Active',
+            department: memData.departmentCode || '',
+            joinedDate: memData.joinedAt?.toDate ? 
+              new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(memData.joinedAt.toDate()) : 
+              'N/A',
+            avatar: userData.profilePicture || ''
+          }
+        })
+        setAvailableInstructors(instructors)
       })
-      setAvailableInstructors(instructors)
     })
 
     return () => unsubscribe()
   }, [isAddModalOpen])
 
-  const filteredMembers = members.filter((member) =>
-    [member.name, member.email, member.role, member.status].some((val) =>
-      val.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredMembers = members
+    .filter((member) =>
+      [member.name, member.email, member.role, member.status].some((val) =>
+        val.toLowerCase().includes(searchTerm.toLowerCase())
+      )
     )
-  )
+    .sort((a, b) => {
+      if (a.role === 'Dean') return -1
+      if (b.role === 'Dean') return 1
+      return a.name.localeCompare(b.name)
+    })
 
   const toggleInstructorSelection = (id: string) => {
     setSelectedInstructorIds((prev) =>
@@ -164,16 +207,23 @@ function MyDepartmentPage() {
   }
 
   const handleAddInstructors = async () => {
-    if (!currentUserData?.department) return
+    if (!departmentInfo?.code) return
 
     setIsAdding(true)
     try {
-      const promises = selectedInstructorIds.map(id => 
-        updateDoc(doc(db, 'users', id), {
-          department: currentUserData.department,
-          updatedAt: new Date()
+      const promises = availableInstructors
+        .filter(i => selectedInstructorIds.includes(i.id))
+        .map(i => {
+          // Since we added membershipId to the Member interface
+          const mId = (i as any).membershipId
+          if (mId) {
+            return updateDoc(doc(db, 'memberships', mId), {
+              departmentCode: departmentInfo.code,
+              joinedAt: new Date()
+            })
+          }
+          return Promise.resolve()
         })
-      )
       await Promise.all(promises)
       
       setIsAddModalOpen(false)
@@ -198,15 +248,20 @@ function MyDepartmentPage() {
     if (!memberToRemove) return
 
     setIsRemoving(true)
+    setRemoveError('')
     try {
-      await updateDoc(doc(db, 'users', memberToRemove.id), {
-        department: '',
-        updatedAt: new Date()
-      })
+      const mId = (memberToRemove as any).membershipId
+      if (mId) {
+        await updateDoc(doc(db, 'memberships', mId), {
+          departmentCode: '',
+          joinedAt: new Date()
+        })
+      }
       setIsRemoveModalOpen(false)
       setMemberToRemove(null)
     } catch (error) {
       console.error('Error removing member:', error)
+      setRemoveError('Failed to remove member.')
     } finally {
       setIsRemoving(false)
     }
@@ -227,72 +282,82 @@ function MyDepartmentPage() {
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-      {/* Remove Member Confirmation Modal */}
+      {/* Remove Member Modal */}
       {isRemoveModalOpen && memberToRemove && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-md relative">
-              <button 
-                onClick={() => !isRemoving && setIsRemoveModalOpen(false)}
-                disabled={isRemoving}
-                className={`absolute right-4 top-4 text-white/70 hover:text-white transition-colors ${isRemoving ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <PlusIcon className="h-6 w-6 rotate-45" />
-              </button>
+            <div className="bg-rose-600 p-6 text-white rounded-t-md">
               <h3 className="text-xl font-bold">Remove Member</h3>
-              <p className="mt-1 text-sm text-white/80">Confirm removal of member from {departmentInfo?.code || 'the'} department.</p>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to remove this member from the {departmentInfo?.code || 'the'} department?</p>
             </div>
             
-            <div className="p-6">
-              <div className="flex flex-col items-center text-center space-y-4">
-                <div className="relative">
-                  {memberToRemove.avatar ? (
-                    <img
-                      src={memberToRemove.avatar}
-                      alt={memberToRemove.name}
-                      className={`h-20 w-20 rounded-full border-4 border-gray-100 object-cover shadow-sm ${isRemoving ? 'opacity-50' : ''}`}
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden">
+                  {memberToRemove.avatar && !avatarErrors[memberToRemove.avatar] ? (
+                    <img 
+                      src={memberToRemove.avatar} 
+                      alt="" 
+                      className="h-full w-full object-cover"
+                      onError={() => setAvatarErrors(prev => ({ ...prev, [memberToRemove.avatar]: true }))}
                     />
                   ) : (
-                    <div className="flex h-20 w-20 items-center justify-center rounded-full bg-gray-100 text-gray-400 border-4 border-gray-50 shadow-sm">
-                      <UserIcon className="h-10 w-10" />
-                    </div>
+                    <UserIcon className="h-7 w-7" />
                   )}
                 </div>
                 <div>
-                  <h4 className="text-lg font-bold text-gray-900">{memberToRemove.name}</h4>
-                  <p className="text-sm text-gray-500 font-medium">{memberToRemove.email}</p>
-                </div>
-                <div className="w-full rounded-md bg-rose-50 p-4 border border-rose-100">
-                  <p className="text-sm text-rose-700 font-medium">
-                    Are you sure you want to remove this member from the <strong>{departmentInfo?.code}</strong> department? This action can be undone by adding them back later.
-                  </p>
+                  <p className="text-sm font-bold text-gray-900">{memberToRemove.name || 'No Name'}</p>
+                  <p className="text-xs font-medium text-gray-500">{memberToRemove.email}</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 pt-6">
+              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+                <p className="text-xs leading-relaxed text-rose-700">
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will remove them from the <strong>{departmentInfo?.code}</strong> department. This can be undone by adding them back later.
+                </p>
+              </div>
+
+              {removeError && (
+                <p className="text-xs font-bold text-rose-600 text-center animate-in fade-in slide-in-from-top-1">
+                  {removeError}
+                </p>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
                 <button
                   type="button"
+                  onClick={() => {
+                    setIsRemoveModalOpen(false)
+                    setMemberToRemove(null)
+                  }}
                   disabled={isRemoving}
-                  onClick={() => setIsRemoveModalOpen(false)}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  disabled={isRemoving}
                   onClick={confirmRemoveMember}
-                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-600 flex items-center justify-center gap-2"
+                  disabled={isRemoving}
+                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isRemoving ? 'Removing...' : 'Remove Member'}
+                  {isRemoving ? 'Removing...' : 'Confirm Remove'}
                 </button>
               </div>
             </div>
           </div>
-          <div className="absolute inset-0 -z-10" onClick={() => !isRemoving && setIsRemoveModalOpen(false)} />
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (!isRemoving) {
+                setIsRemoveModalOpen(false)
+                setMemberToRemove(null)
+              }
+            }} 
+          />
         </div>
       )}
 
@@ -504,7 +569,7 @@ function MyDepartmentPage() {
               />
             </div>
 
-            {currentUserData?.role === 'Dean' && (
+            {currentUserRole === 'Dean' && (
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(true)}
@@ -534,7 +599,7 @@ function MyDepartmentPage() {
                   <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[15%]">
                     Joined Date
                   </th>
-                  {currentUserData?.role === 'Dean' && (
+                  {currentUserRole === 'Dean' && (
                     <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-500 w-[15%]">
                       Actions
                     </th>
@@ -544,7 +609,7 @@ function MyDepartmentPage() {
               <tbody className="divide-y divide-gray-100 bg-white">
                 {filteredMembers.length === 0 ? (
                   <tr>
-                    <td colSpan={currentUserData?.role === 'Dean' ? 5 : 4} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={currentUserRole === 'Dean' ? 5 : 4} className="px-6 py-12 text-center text-gray-500">
                       No members found matching your search.
                     </td>
                   </tr>
@@ -587,7 +652,7 @@ function MyDepartmentPage() {
                       <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-gray-600">
                         {member.joinedDate}
                       </td>
-                      {currentUserData?.role === 'Dean' && (
+                      {currentUserRole === 'Dean' && (
                         <td className="whitespace-nowrap px-6 py-4 text-right">
                           <div className="flex justify-end gap-2">
                             <IconButton
