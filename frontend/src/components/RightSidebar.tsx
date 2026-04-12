@@ -306,15 +306,6 @@ export const RightSidebar = memo(function RightSidebar({
     setNotifications([])
   }, [])
 
-  const verificationBadge = isExpanded && userData.isVerify && (
-    <div 
-      title="Verified Account"
-      className="absolute bottom-0 right-0 z-10 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-blue-500 text-white dark:border-secondary-900"
-    >
-      <CheckIcon className="h-3.5 w-3.5 stroke-[4px]" />
-    </div>
-  )
-
   const avatar = (
     <div className="relative h-full w-full rounded-full bg-secondary-50 dark:bg-secondary-600">
       {profileImage && !hasImageError ? (
@@ -341,7 +332,6 @@ export const RightSidebar = memo(function RightSidebar({
           <UserIcon className={isExpanded ? "h-12 w-12" : "h-5 w-5"} />
         </div>
       )}
-      {verificationBadge}
     </div>
   )
 
@@ -515,18 +505,6 @@ export const RightSidebar = memo(function RightSidebar({
                     <span>{userData.role}</span>
                   </div>
                 </div>
-
-                {userData.isVerify ? (
-                  <div className="flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
-                    <CheckIcon className="h-3 w-3" />
-                    <span>Verified Email</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                    <span>Unverified Email</span>
-                  </div>
-                )}
               </div>
 
               <div className="flex w-full gap-2">

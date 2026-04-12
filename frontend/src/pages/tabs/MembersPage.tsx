@@ -416,108 +416,127 @@ function MembersPage() {
       setInviteError('Email address is required.')
       return
     }
-    
-    if (!inviteEmail.includes('@')) {
-      setInviteError('Please enter a valid email address.')
+
+    const emailList = inviteEmail
+      .split(/[\s,;]+/)
+      .map(e => e.trim().toLowerCase())
+      .filter(e => e.length > 0)
+
+    if (emailList.length === 0) {
+      setInviteError('Please enter at least one valid email address.')
       return
     }
 
-    const normalizedEmail = inviteEmail.trim().toLowerCase()
+    const invalidEmails = emailList.filter(e => !e.includes('@'))
+    if (invalidEmails.length > 0) {
+      setInviteError(`Invalid format: ${invalidEmails.slice(0, 2).join(', ')}${invalidEmails.length > 2 ? '...' : ''}`)
+      return
+    }
+
     setIsInviting(true)
     setInviteError('')
 
     try {
-      console.log('Checking for existing user with email:', normalizedEmail)
-      // 1. Check if user already exists in 'users' collection
-      const userQuery = query(collection(db, 'users'), where('email', '==', normalizedEmail))
-      const userSnapshot = await getDocs(userQuery)
-      console.log('User search result size:', userSnapshot.size)
-      
-      if (!userSnapshot.empty) {
-        setInviteError('This user is already a member.')
-        setIsInviting(false)
-        return
+      const results = {
+        sent: [] as string[],
+        exists: [] as string[],
+        pending: [] as string[],
       }
 
-      // 2. Check for existing active invitations
-      console.log('Checking for existing invitations for email:', normalizedEmail)
-      const inviteQuery = query(
-        collection(db, 'invitations'), 
-        where('email', '==', normalizedEmail),
-        where('status', '==', 'pending')
-      )
-      const inviteSnapshot = await getDocs(inviteQuery)
-      console.log('Invitation search result size:', inviteSnapshot.size)
-      
-      const now = new Date()
-      const activeInvite = inviteSnapshot.docs.find(doc => {
-        const data = doc.data()
-        const isNotExpired = data.expiresAt.toDate() > now
-        console.log('Checking invitation', doc.id, '- Status:', data.status, '- Not Expired:', isNotExpired)
-        return isNotExpired
-      })
+      for (const normalizedEmail of emailList) {
+        // 1. Check if user already exists in 'users' collection
+        const userQuery = query(collection(db, 'users'), where('email', '==', normalizedEmail))
+        const userSnapshot = await getDocs(userQuery)
+        
+        if (!userSnapshot.empty) {
+          results.exists.push(normalizedEmail)
+          continue
+        }
 
-      if (activeInvite) {
-        setInviteError('An active invitation already exists.')
-        setIsInviting(false)
-        return
+        // 2. Check for existing active invitations
+        const inviteQuery = query(
+          collection(db, 'invitations'), 
+          where('email', '==', normalizedEmail),
+          where('status', '==', 'pending')
+        )
+        const inviteSnapshot = await getDocs(inviteQuery)
+        
+        const now = new Date()
+        const activeInvite = inviteSnapshot.docs.find(doc => {
+          const data = doc.data()
+          return data.expiresAt.toDate() > now
+        })
+
+        if (activeInvite) {
+          results.pending.push(normalizedEmail)
+          continue
+        }
+
+        const expiresAt = new Date()
+        expiresAt.setDate(expiresAt.getDate() + 7)
+
+        // 3. Create the invitation tracking document
+        const inviteRef = await addDoc(collection(db, 'invitations'), {
+          email: normalizedEmail,
+          role: inviteRole,
+          status: 'pending',
+          invitedBy: auth.currentUser?.uid || 'system',
+          createdAt: serverTimestamp(),
+          expiresAt: Timestamp.fromDate(expiresAt),
+        })
+
+        // 4. Create the mail document to trigger the extension
+        const signupLink = `http://localhost:5173/signup?token=${inviteRef.id}`
+        
+        await addDoc(collection(db, 'mail'), {
+          to: normalizedEmail,
+          message: {
+            subject: 'Invitation to join RORMS',
+            html: `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                <div style="text-align: center; margin-bottom: 20px;">
+                  <h2 style="color: #62853e; margin: 0;">Welcome to RORMS</h2>
+                  <p style="color: #666;">University Room & Resource Management System</p>
+                </div>
+                <p>Hello,</p>
+                <p>You have been invited to join the <strong>RORMS</strong> system as a <strong>${inviteRole}</strong>.</p>
+                <p>Please click the button below to complete your account registration:</p>
+                <div style="text-align: center; margin: 35px 0;">
+                  <a href="${signupLink}" style="background-color: #62853e; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
+                    Accept Invitation & Sign Up
+                  </a>
+                </div>
+                <p style="font-size: 13px; color: #888; line-height: 1.5;">
+                  <strong>Note:</strong> This invitation link is unique to your email and will expire in 7 days. If you did not expect this invitation, you can safely ignore this email.
+                </p>
+                <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
+                <p style="font-size: 12px; color: #b9b9b9; text-align: center;">
+                  If the button doesn't work, copy and paste this link into your browser:<br />
+                  <span style="color: #62853e;">${signupLink}</span>
+                </p>
+              </div>
+            `,
+          },
+        })
+        results.sent.push(normalizedEmail)
       }
 
-      console.log('Validation passed. Starting invitation process for:', normalizedEmail)
-      const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + 7)
-
-      // 3. Create the invitation tracking document
-      const inviteRef = await addDoc(collection(db, 'invitations'), {
-        email: normalizedEmail,
-        role: inviteRole,
-        status: 'pending',
-        invitedBy: auth.currentUser?.uid || 'system',
-        createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAt),
-      })
-      console.log('Invitation document created with ID:', inviteRef.id)
-
-      // 4. Create the mail document to trigger the extension
-      const signupLink = `http://localhost:5173/signup?token=${inviteRef.id}`
-      console.log('Attempting to create mail document...')
-      
-      const mailRef = await addDoc(collection(db, 'mail'), {
-        to: normalizedEmail,
-        message: {
-          subject: 'Invitation to join RORMS',
-          html: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-              <div style="text-align: center; margin-bottom: 20px;">
-                <h2 style="color: #62853e; margin: 0;">Welcome to RORMS</h2>
-                <p style="color: #666;">University Room & Resource Management System</p>
-              </div>
-              <p>Hello,</p>
-              <p>You have been invited to join the <strong>RORMS</strong> system as a <strong>${inviteRole}</strong>.</p>
-              <p>Please click the button below to complete your account registration:</p>
-              <div style="text-align: center; margin: 35px 0;">
-                <a href="${signupLink}" style="background-color: #62853e; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-                  Accept Invitation & Sign Up
-                </a>
-              </div>
-              <p style="font-size: 13px; color: #888; line-height: 1.5;">
-                <strong>Note:</strong> This invitation link is unique to your email and will expire in 7 days. If you did not expect this invitation, you can safely ignore this email.
-              </p>
-              <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
-              <p style="font-size: 12px; color: #b9b9b9; text-align: center;">
-                If the button doesn't work, copy and paste this link into your browser:<br />
-                <span style="color: #62853e;">${signupLink}</span>
-              </p>
-            </div>
-          `,
-        },
-      })
-      console.log('Mail document created with ID:', mailRef.id)
-
-      setIsInviteModalOpen(false)
-      setInviteEmail('')
-      setInviteRole('Instructor')
-      setInviteError('')
+      if (results.sent.length === emailList.length) {
+        setIsInviteModalOpen(false)
+        setInviteEmail('')
+        setInviteRole('Instructor')
+        setInviteError('')
+      } else {
+        const parts = []
+        if (results.sent.length > 0) parts.push(`Sent ${results.sent.length}`)
+        if (results.exists.length > 0) parts.push(`${results.exists.length} already members`)
+        if (results.pending.length > 0) parts.push(`${results.pending.length} already invited`)
+        setInviteError(parts.join(', '))
+        
+        // Filter out successfully sent emails from the textarea
+        const remainingEmails = emailList.filter(e => !results.sent.includes(e))
+        setInviteEmail(remainingEmails.join(', '))
+      }
     } catch (error) {
       console.error('Error sending invitation:', error)
       setInviteError('Failed to send invitation. Please try again.')
@@ -592,11 +611,17 @@ function MembersPage() {
 
       // 2. Update membership document
       if (editingMember.membershipId) {
-        batch.update(doc(db, 'memberships', editingMember.membershipId), {
+        const updateData: any = {
           role: editRole,
           departmentCode: finalDept,
-          // We don't update joinedAt as they already joined
-        })
+        }
+
+        // Update joinedAt only if the department has changed (including unassigned to department or vice versa)
+        if (oldDeptCode !== finalDept) {
+          updateData.joinedAt = serverTimestamp()
+        }
+
+        batch.update(doc(db, 'memberships', editingMember.membershipId), updateData)
       }
 
       await batch.commit()
@@ -856,22 +881,24 @@ function MembersPage() {
                   </label>
                   <input
                     id="invite-email"
-                    type="email"
+                    type="text"
                     value={inviteEmail}
                     onChange={(e) => {
                       setInviteEmail(e.target.value)
                       if (inviteError) setInviteError('')
                     }}
-                    placeholder="name@example.com"
+                    placeholder="name@example.com, another"
                     className={`w-full rounded-md border bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                      inviteError 
+                      inviteError && !inviteError.startsWith('Sent')
                         ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
                         : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
                     }`}
                     autoFocus
                   />
                   {inviteError && (
-                    <p className="absolute left-0 top-[calc(100%+4px)] text-[11px] font-bold text-rose-600 animate-in fade-in slide-in-from-top-1">
+                    <p className={`absolute left-0 top-[calc(100%+4px)] text-[11px] font-bold animate-in fade-in slide-in-from-top-1 ${
+                      inviteError.startsWith('Sent') ? 'text-emerald-600' : 'text-rose-600'
+                    }`}>
                       {inviteError}
                     </p>
                   )}
@@ -901,10 +928,10 @@ function MembersPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isInviting}
+                  disabled={isInviting || !inviteEmail.trim()}
                   className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isInviting ? 'Sending...' : 'Send Invitation'}
+                  {isInviting ? 'Sending...' : 'Send Invitations'}
                 </button>
               </div>
             </form>

@@ -686,44 +686,74 @@ function DepartmentsPage() {
           >
             <div className="bg-rose-600 p-6 text-white rounded-t-md">
               <h3 className="text-xl font-bold">Delete Department</h3>
-              <p className="mt-1 text-sm text-white/80">
-                This action cannot be undone. All data associated with this department will be permanently removed.
-              </p>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this department from the system?</p>
             </div>
             
-            <form onSubmit={handleDeleteSubmit} className="p-6 space-y-5">
-              <div>
-                <p className="mb-4 text-sm text-gray-600">
-                  To confirm deletion, please type <span className="font-bold text-gray-900">"{deptToDelete.name}"</span> below:
-                </p>
-                <input
-                  type="text"
-                  value={deleteConfirmName}
-                  onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  placeholder="Enter department name"
-                  className="w-full rounded-md border border-gray-200 px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-rose-500 focus:ring-4 focus:ring-rose-50 shadow-sm"
-                  autoFocus
-                />
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden shrink-0">
+                  {deptToDelete.logo && !logoErrors[deptToDelete.logo] ? (
+                    <img 
+                      src={deptToDelete.logo} 
+                      alt="" 
+                      className="h-full w-full object-cover"
+                      onError={() => setLogoErrors(prev => ({ ...prev, [deptToDelete.logo]: true }))}
+                    />
+                  ) : (
+                    <DepartmentIcon className="h-7 w-7 text-gray-400" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{deptToDelete.name}</p>
+                  <p className="text-xs font-medium text-gray-500">{deptToDelete.code}</p>
+                </div>
               </div>
 
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleCloseDeleteModal}
-                  disabled={isDeleting}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isDeleting || deleteConfirmName !== deptToDelete.name}
-                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isDeleting ? 'Deleting...' : 'Delete Department'}
-                </button>
+              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+                <p className="text-xs leading-relaxed text-rose-700">
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this department and unassign all its members. This action cannot be undone.
+                </p>
               </div>
-            </form>
+
+              <form onSubmit={handleDeleteSubmit} className="space-y-4">
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                      To confirm, please type:
+                    </label>
+                    <p className="mt-0.5 text-sm font-bold text-rose-600">
+                      "{deptToDelete.name}"
+                    </p>
+                  </div>
+                  <input
+                    type="text"
+                    value={deleteConfirmName}
+                    onChange={(e) => setDeleteConfirmName(e.target.value)}
+                    placeholder="Enter department name..."
+                    className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-sm"
+                    autoFocus
+                  />
+                </div>
+
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={handleCloseDeleteModal}
+                    disabled={isDeleting}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeleting || deleteConfirmName !== deptToDelete.name}
+                    className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
           <div 
             className="absolute inset-0 -z-10" 
@@ -841,15 +871,49 @@ function DepartmentsPage() {
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
-                  <DepartmentIcon className="h-9 w-9 text-blue-600" />
+              {[
+                { 
+                  label: 'Total Departments', 
+                  count: departments.length, 
+                  color: 'blue', 
+                  icon: <DepartmentIcon className="h-9 w-9 text-blue-600" /> 
+                },
+                { 
+                  label: 'Without Dean', 
+                  count: departments.filter(d => !d.deanUID).length, 
+                  color: 'amber', 
+                  icon: <UserIcon className="h-9 w-9 text-amber-600" /> 
+                },
+                { 
+                  label: 'New (Last 7d)', 
+                  count: departments.filter(d => {
+                    if (!d.createdAt) return false
+                    const sevenDaysAgo = new Date()
+                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+                    return d.createdAt.toDate() > sevenDaysAgo
+                  }).length, 
+                  color: 'emerald', 
+                  icon: <PlusIcon className="h-9 w-9 text-emerald-600" /> 
+                },
+                { 
+                  label: 'Dept. Members', 
+                  count: allUsers.filter(u => u.department).length, 
+                  color: 'purple', 
+                  icon: <UsersIcon className="h-9 w-9 text-purple-600" /> 
+                },
+              ].map((item) => (
+                <div key={item.label} className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
+                  <div className={`flex h-14 w-14 items-center justify-center rounded-md bg-${item.color}-50 border border-${item.color}-100 shrink-0`}>
+                    {item.icon}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold uppercase tracking-widest text-gray-500">{item.label}</p>
+                    <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">
+                      {item.count}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total Departments</p>
-                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{departments.length}</p>
-                </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
