@@ -340,7 +340,7 @@ export const RightSidebar = memo(function RightSidebar({
       {isSignOutModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-rose-600 p-6 text-white rounded-t-md relative">
@@ -378,7 +378,7 @@ export const RightSidebar = memo(function RightSidebar({
       {isClearNotificationsModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-rose-600 p-6 text-white rounded-t-md relative">

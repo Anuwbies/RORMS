@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react'
 import Cropper, { type Area, type Point } from 'react-easy-crop'
-import { SpinnerIcon } from './Icons'
 import { joinClasses } from './IconButton'
 
 // Helper to create a cropped image
@@ -149,14 +148,7 @@ export function CropModal({
               disabled={isLoading}
               className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
             >
-              {isLoading ? (
-                <div className="flex items-center justify-center gap-2">
-                  <SpinnerIcon className="h-4 w-4" />
-                  <span>Applying...</span>
-                </div>
-              ) : (
-                'Apply Changes'
-              )}
+              {isLoading ? 'Applying...' : 'Apply Changes'}
             </button>
           </div>
         </div>
