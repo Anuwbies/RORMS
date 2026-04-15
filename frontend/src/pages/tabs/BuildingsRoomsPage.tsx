@@ -1,6 +1,7 @@
-import { useState, useRef } from 'react'
-import { DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon } from '../../components/Icons'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
+import { TimePicker } from '../../components/TimePicker'
 
 type RoomStatus = 'Available' | 'Occupied' | 'Reserved' | 'Maintenance'
 
@@ -23,6 +24,13 @@ interface Room {
   floor: number
   capacity: number
   status: RoomStatus
+  description: string
+  amenities: string[][]
+  availableDays: string[]
+  startTime: string
+  endTime: string
+  minBookingMins: number
+  maxBookingMins: number
 }
 
 interface Building {
@@ -51,403 +59,13 @@ const initialBuildings: Building[] = [
         floor: 1,
         capacity: 12,
         status: 'Available',
-      },
-      {
-        id: 'adm-102',
-        image: createRoomImage(),
-        code: 'ADM-102',
-        name: 'Admissions Inquiry',
-        type: 'Office',
-        floor: 1,
-        capacity: 10,
-        status: 'Available',
-      },
-      {
-        id: 'adm-103',
-        image: createRoomImage(),
-        code: 'ADM-103',
-        name: 'Student Records Window',
-        type: 'Service Counter',
-        floor: 1,
-        capacity: 4,
-        status: 'Occupied',
-      },
-      {
-        id: 'adm-104',
-        image: createRoomImage(),
-        code: 'ADM-104',
-        name: 'Public Relations Hub',
-        type: 'Office',
-        floor: 1,
-        capacity: 12,
-        status: 'Available',
-      },
-      {
-        id: 'adm-105',
-        image: createRoomImage(),
-        code: 'ADM-105',
-        name: 'Finance Office',
-        type: 'Office',
-        floor: 1,
-        capacity: 8,
-        status: 'Occupied',
-      },
-      {
-        id: 'adm-204',
-        image: createRoomImage(),
-        code: 'ADM-204',
-        name: 'Records Archive',
-        type: 'Storage',
-        floor: 2,
-        capacity: 6,
-        status: 'Occupied',
-      },
-      {
-        id: 'adm-210',
-        image: createRoomImage(),
-        code: 'ADM-210',
-        name: 'HR Interview Room',
-        type: 'Meeting Room',
-        floor: 2,
-        capacity: 4,
-        status: 'Available',
-      },
-      {
-        id: 'adm-305',
-        image: createRoomImage(),
-        code: 'ADM-305',
-        name: 'Curriculum Review Room',
-        type: 'Meeting Room',
-        floor: 3,
-        capacity: 18,
-        status: 'Reserved',
-      },
-      {
-        id: 'adm-312',
-        image: createRoomImage(),
-        code: 'ADM-312',
-        name: 'Executive Boardroom',
-        type: 'Boardroom',
-        floor: 3,
-        capacity: 38,
-        status: 'Available',
-      },
-    ],
-  },
-  {
-    id: 'science',
-    code: 'SCI',
-    name: 'Science and Innovation Center',
-    floor: 4,
-    capacity: 198,
-    rooms: [
-      {
-        id: 'sci-110',
-        image: createRoomImage(),
-        code: 'SCI-110',
-        name: 'Chemistry Laboratory',
-        type: 'Laboratory',
-        floor: 1,
-        capacity: 24,
-        status: 'Occupied',
-      },
-      {
-        id: 'sci-115',
-        image: createRoomImage(),
-        code: 'SCI-115',
-        name: 'Bio-Safety Level 2 Lab',
-        type: 'Laboratory',
-        floor: 1,
-        capacity: 12,
-        status: 'Maintenance',
-      },
-      {
-        id: 'sci-201',
-        image: createRoomImage(),
-        code: 'SCI-201',
-        name: 'Organic Chem Lab',
-        type: 'Laboratory',
-        floor: 2,
-        capacity: 20,
-        status: 'Available',
-      },
-      {
-        id: 'sci-202',
-        image: createRoomImage(),
-        code: 'SCI-202',
-        name: 'Analytical Lab',
-        type: 'Laboratory',
-        floor: 2,
-        capacity: 20,
-        status: 'Occupied',
-      },
-      {
-        id: 'sci-212',
-        image: createRoomImage(),
-        code: 'SCI-212',
-        name: 'Physics Demo Room',
-        type: 'Lecture Room',
-        floor: 2,
-        capacity: 32,
-        status: 'Available',
-      },
-      {
-        id: 'sci-220',
-        image: createRoomImage(),
-        code: 'SCI-220',
-        name: 'Optics Research Darkroom',
-        type: 'Specialized Lab',
-        floor: 2,
-        capacity: 6,
-        status: 'Occupied',
-      },
-      {
-        id: 'sci-318',
-        image: createRoomImage(),
-        code: 'SCI-318',
-        name: 'Research Collaboration Hub',
-        type: 'Collaboration Space',
-        floor: 3,
-        capacity: 20,
-        status: 'Reserved',
-      },
-      {
-        id: 'sci-325',
-        image: createRoomImage(),
-        code: 'SCI-325',
-        name: 'Postgrad Study Lounge',
-        type: 'Study Area',
-        floor: 3,
-        capacity: 30,
-        status: 'Available',
-      },
-      {
-        id: 'sci-402',
-        image: createRoomImage(),
-        code: 'SCI-402',
-        name: 'Microscopy Suite',
-        type: 'Laboratory',
-        floor: 4,
-        capacity: 10,
-        status: 'Maintenance',
-      },
-      {
-        id: 'sci-410',
-        image: createRoomImage(),
-        code: 'SCI-410',
-        name: 'Data Analysis Center',
-        type: 'Computer Lab',
-        floor: 4,
-        capacity: 24,
-        status: 'Available',
-      },
-    ],
-  },
-  {
-    id: 'learning',
-    code: 'LLC',
-    name: 'Learning Commons',
-    floor: 2,
-    capacity: 218,
-    rooms: [
-      {
-        id: 'llc-102',
-        image: createRoomImage(),
-        code: 'LLC-102',
-        name: 'Peer Tutoring Room',
-        type: 'Study Room',
-        floor: 1,
-        capacity: 14,
-        status: 'Available',
-      },
-      {
-        id: 'llc-110',
-        image: createRoomImage(),
-        code: 'LLC-110',
-        name: 'Group Media Pod 1',
-        type: 'Media Room',
-        floor: 1,
-        capacity: 6,
-        status: 'Reserved',
-      },
-      {
-        id: 'llc-115',
-        image: createRoomImage(),
-        code: 'LLC-115',
-        name: 'Digital Learning Lab',
-        type: 'Laboratory',
-        floor: 1,
-        capacity: 28,
-        status: 'Occupied',
-      },
-      {
-        id: 'llc-201',
-        image: createRoomImage(),
-        code: 'LLC-201',
-        name: 'Silent Thesis Zone',
-        type: 'Quiet Study',
-        floor: 2,
-        capacity: 20,
-        status: 'Available',
-      },
-      {
-        id: 'llc-202',
-        image: createRoomImage(),
-        code: 'llc-202',
-        name: 'Reference Library Room',
-        type: 'Library',
-        floor: 2,
-        capacity: 50,
-        status: 'Available',
-      },
-      {
-        id: 'llc-203',
-        image: createRoomImage(),
-        code: 'llc-203',
-        name: 'Creative Media Studio',
-        type: 'Studio',
-        floor: 2,
-        capacity: 30,
-        status: 'Available',
-      },
-      {
-        id: 'llc-210',
-        image: createRoomImage(),
-        code: 'LLC-210',
-        name: 'Quiet Reading Hall',
-        type: 'Study Hall',
-        floor: 2,
-        capacity: 40,
-        status: 'Available',
-      },
-      {
-        id: 'llc-225',
-        image: createRoomImage(),
-        code: 'LLC-225',
-        name: 'Tech Commons Lounge',
-        type: 'Lounge',
-        floor: 2,
-        capacity: 30,
-        status: 'Available',
-      },
-    ],
-  },
-  {
-    id: 'engineering',
-    code: 'ENG',
-    name: 'Engineering Building',
-    floor: 5,
-    capacity: 216,
-    rooms: [
-      {
-        id: 'eng-120',
-        image: createRoomImage(),
-        code: 'ENG-120',
-        name: 'CAD Drafting Studio',
-        type: 'Studio',
-        floor: 1,
-        capacity: 30,
-        status: 'Reserved',
-      },
-      {
-        id: 'eng-125',
-        image: createRoomImage(),
-        code: 'ENG-125',
-        name: 'Civil Models Workshop',
-        type: 'Workshop',
-        floor: 1,
-        capacity: 12,
-        status: 'Available',
-      },
-      {
-        id: 'eng-233',
-        image: createRoomImage(),
-        code: 'ENG-233',
-        name: 'Materials Testing Lab',
-        type: 'Laboratory',
-        floor: 2,
-        capacity: 16,
-        status: 'Occupied',
-      },
-      {
-        id: 'eng-240',
-        image: createRoomImage(),
-        code: 'ENG-240',
-        name: 'Hydrodynamics Tank Room',
-        type: 'Specialized Lab',
-        floor: 2,
-        capacity: 10,
-        status: 'Maintenance',
-      },
-      {
-        id: 'eng-301',
-        image: createRoomImage(),
-        code: 'eng-301',
-        name: 'Mechanical Systems Lab',
-        type: 'Laboratory',
-        floor: 3,
-        capacity: 25,
-        status: 'Available',
-      },
-      {
-        id: 'eng-302',
-        image: createRoomImage(),
-        code: 'eng-302',
-        name: 'Thermodynamics Lab',
-        type: 'Laboratory',
-        floor: 3,
-        capacity: 20,
-        status: 'Occupied',
-      },
-      {
-        id: 'eng-341',
-        image: createRoomImage(),
-        code: 'ENG-341',
-        name: 'Design Review Room',
-        type: 'Meeting Room',
-        floor: 3,
-        capacity: 12,
-        status: 'Available',
-      },
-      {
-        id: 'eng-345',
-        image: createRoomImage(),
-        code: 'eng-345',
-        name: 'Project Studio A',
-        type: 'Studio',
-        floor: 3,
-        capacity: 15,
-        status: 'Available',
-      },
-      {
-        id: 'eng-350',
-        image: createRoomImage(),
-        code: 'ENG-350',
-        name: 'Renewable Energy Lab',
-        type: 'Laboratory',
-        floor: 3,
-        capacity: 22,
-        status: 'Occupied',
-      },
-      {
-        id: 'eng-502',
-        image: createRoomImage(),
-        code: 'ENG-502',
-        name: 'Robotics Workshop',
-        type: 'Workshop',
-        floor: 5,
-        capacity: 34,
-        status: 'Available',
-      },
-      {
-        id: 'eng-515',
-        image: createRoomImage(),
-        code: 'ENG-515',
-        name: 'AI & Neural Systems Hub',
-        type: 'Computer Lab',
-        floor: 5,
-        capacity: 20,
-        status: 'Available',
+        description: 'Primary receiving area for student documents.',
+        amenities: [['WiFi'], ['Air Conditioning'], []],
+        availableDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
+        startTime: '07:30',
+        endTime: '18:00',
+        minBookingMins: 30,
+        maxBookingMins: 90,
       },
     ],
   },
@@ -458,6 +76,140 @@ const roomStatusClasses: Record<RoomStatus, string> = {
   Occupied: 'bg-amber-100 text-amber-700',
   Reserved: 'bg-sky-100 text-sky-700',
   Maintenance: 'bg-rose-100 text-rose-700',
+}
+
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const ROOM_AMENITIES = [
+  'WiFi', 'Computer', 'Television', 'Projector', 'Whiteboard', 
+  'Air Conditioning', 'Sound System', 'Printer', 'Webcam', 
+  'Microphone', 'Ethernet', 'Speakers', 'HDMI Cable', 
+  'Charging Station', 'Coffee Machine', 'Water Dispenser',
+  'Digital Signage', 'Video Conferencing'
+]
+
+const shortAmenities = ROOM_AMENITIES.filter(a => a.length <= 10)
+const longAmenities = ROOM_AMENITIES.filter(a => a.length > 10)
+
+const shortGroups: string[][] = []
+for (let i = 0; i < shortAmenities.length; i += 3) {
+  shortGroups.push(shortAmenities.slice(i, i + 3))
+}
+
+const longGroups: string[][] = []
+for (let i = 0; i < longAmenities.length; i += 2) {
+  longGroups.push(longAmenities.slice(i, i + 2))
+}
+
+const ROOM_AMENITIES_GROUPS: string[][] = []
+const maxGroups = Math.max(shortGroups.length, longGroups.length)
+
+for (let i = 0; i < maxGroups; i++) {
+  if (i < shortGroups.length) ROOM_AMENITIES_GROUPS.push(shortGroups[i])
+  if (i < longGroups.length) ROOM_AMENITIES_GROUPS.push(longGroups[i])
+}
+
+interface SingleSelectDropdownProps<T extends string> {
+  options: T[]
+  value: T
+  onChange: (value: T) => void
+  className?: string
+  isDisabled?: boolean
+  onToggle?: (isOpen: boolean) => void
+}
+
+function SingleSelectDropdown<T extends string>({ 
+  options, 
+  value, 
+  onChange, 
+  className = '',
+  isDisabled = false,
+  onToggle
+}: SingleSelectDropdownProps<T>) {
+  const [isOpen, setIsOpen] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const menuWidthRef = useRef<HTMLDivElement>(null)
+  const [menuMinWidth, setMenuMinWidth] = useState<number | null>(null)
+
+  useEffect(() => {
+    onToggle?.(isOpen)
+  }, [isOpen, onToggle])
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
+
+  const handleSelect = (option: T) => {
+    onChange(option)
+    setIsOpen(false)
+  }
+
+  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), '')
+
+  useLayoutEffect(() => {
+    if (!menuWidthRef.current) {
+      return
+    }
+    setMenuMinWidth(menuWidthRef.current.offsetWidth)
+  }, [longestOption])
+
+  return (
+    <div
+      className={`relative ${className}`}
+      ref={dropdownRef}
+      style={menuMinWidth ? { minWidth: `${menuMinWidth}px` } : undefined}
+    >
+      <div
+        ref={menuWidthRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute left-0 top-0 invisible w-max rounded-md border border-transparent p-1.5"
+      >
+        <div className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm">
+          <span className="whitespace-nowrap">{longestOption}</span>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        disabled={isDisabled}
+        onClick={() => setIsOpen(!isOpen)}
+        className="relative flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+      >
+        <span className="whitespace-nowrap">{value || 'None'}</span>
+        <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+
+      {isOpen && !isDisabled && (
+        <div className="absolute left-0 z-50 mt-2 min-w-full overflow-hidden rounded-md border border-gray-200 bg-white p-1.5 shadow-2xl">
+          <div className="space-y-1">
+            {options.map((option) => {
+              const isSelected = value === option
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => handleSelect(option)}
+                  className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm transition-colors ${
+                    isSelected 
+                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-semibold' 
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  <span className="whitespace-nowrap">{option || 'None'}</span>
+                  {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)]" strokeWidth={3} />}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 function BuildingsRoomsPage() {
@@ -477,7 +229,9 @@ function BuildingsRoomsPage() {
 
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false)
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
-  const [, setActiveBuildingId] = useState<string | null>(null)
+  const [activeBuildingId, setActiveBuildingId] = useState<string | null>(null)
+  const [roomModalStep, setRoomModalStep] = useState(1)
+  
   const [newRoomName, setNewRoomName] = useState('')
   const [newRoomCode, setNewRoomCode] = useState('')
   const [newRoomType, setNewRoomType] = useState('Lecture Room')
@@ -485,9 +239,21 @@ function BuildingsRoomsPage() {
   const [newRoomCapacity, setNewRoomCapacity] = useState<string>('20')
   const [newRoomStatus, setNewRoomStatus] = useState<RoomStatus>('Available')
   const [newRoomImage, setNewRoomImage] = useState(createRoomImage())
+  const [newRoomDescription, setNewRoomDescription] = useState('')
+  const [newRoomAmenities, setNewRoomAmenities] = useState<string[][]>(ROOM_AMENITIES_GROUPS.map(() => []))
+  const [newRoomAvailableDays, setNewRoomAvailableDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
+  const [newRoomStartTime, setNewRoomStartTime] = useState('07:30')
+  const [newRoomEndTime, setNewRoomEndTime] = useState('18:00')
+  const [newRoomMinBookingMins, setNewRoomMinBookingMins] = useState('30')
+  const [newRoomMaxBookingMins, setNewRoomMaxBookingMins] = useState('90')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [errors, setErrors] = useState({ name: false, code: false })
+  const [activeDropdowns, setActiveDropdowns] = useState(0)
+
+  const handleDropdownToggle = useCallback((isOpen: boolean) => {
+    setActiveDropdowns(prev => isOpen ? prev + 1 : Math.max(0, prev - 1))
+  }, [])
 
   const toggleBuilding = (id: string) => {
     setExpandedBuildingIds((prev) =>
@@ -515,6 +281,7 @@ function BuildingsRoomsPage() {
 
   const handleOpenRoomModal = (buildingId: string, room?: Room) => {
     setActiveBuildingId(buildingId)
+    setRoomModalStep(1)
     if (room) {
       setEditingRoom(room)
       setNewRoomName(room.name)
@@ -524,6 +291,16 @@ function BuildingsRoomsPage() {
       setNewRoomCapacity(String(room.capacity))
       setNewRoomStatus(room.status)
       setNewRoomImage(room.image)
+      setNewRoomDescription(room.description || '')
+      // Pad amenities to match groups length
+      const baseAmenities = room.amenities || []
+      const paddedAmenities = ROOM_AMENITIES_GROUPS.map((_, i) => baseAmenities[i] || [])
+      setNewRoomAmenities(paddedAmenities)
+      setNewRoomAvailableDays(room.availableDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
+      setNewRoomStartTime(room.startTime || '07:30')
+      setNewRoomEndTime(room.endTime || '18:00')
+      setNewRoomMinBookingMins(String(room.minBookingMins || '30'))
+      setNewRoomMaxBookingMins(String(room.maxBookingMins || '90'))
     } else {
       setEditingRoom(null)
       setNewRoomName('')
@@ -533,6 +310,13 @@ function BuildingsRoomsPage() {
       setNewRoomCapacity('20')
       setNewRoomStatus('Available')
       setNewRoomImage(createRoomImage())
+      setNewRoomDescription('')
+      setNewRoomAmenities(ROOM_AMENITIES_GROUPS.map(() => []))
+      setNewRoomAvailableDays(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
+      setNewRoomStartTime('07:30')
+      setNewRoomEndTime('18:00')
+      setNewRoomMinBookingMins('30')
+      setNewRoomMaxBookingMins('90')
     }
     setErrors({ name: false, code: false })
     setIsRoomModalOpen(true)
@@ -544,6 +328,7 @@ function BuildingsRoomsPage() {
     setEditingBuilding(null)
     setEditingRoom(null)
     setActiveBuildingId(null)
+    setRoomModalStep(1)
     setErrors({ name: false, code: false })
   }
 
@@ -577,13 +362,39 @@ function BuildingsRoomsPage() {
     e.preventDefault()
     if (!newRoomName.trim() || !newRoomCode.trim()) {
       setErrors({ name: !newRoomName.trim(), code: !newRoomCode.trim() })
+      setRoomModalStep(1)
       return
     }
+
+    if (roomModalStep < 3) {
+      setRoomModalStep(prev => prev + 1)
+      return
+    }
+
+    const min = parseInt(newRoomMinBookingMins) || 0
+    const max = parseInt(newRoomMaxBookingMins) || 0
+
+    if (min >= max && max !== 0) {
+      alert('Maximum booking minutes must be greater than minimum booking minutes.')
+      return
+    }
+
     console.log('Room Submit:', { 
+      buildingId: activeBuildingId,
       name: newRoomName, 
       code: newRoomCode,
+      type: newRoomType,
       floor: parseInt(newRoomFloor) || 0,
-      capacity: parseInt(newRoomCapacity) || 0
+      capacity: parseInt(newRoomCapacity) || 0,
+      status: newRoomStatus,
+      image: newRoomImage,
+      description: newRoomDescription,
+      amenities: newRoomAmenities,
+      availableDays: newRoomAvailableDays,
+      startTime: newRoomStartTime,
+      endTime: newRoomEndTime,
+      minBookingMins: min,
+      maxBookingMins: max
     })
     handleCloseModals()
   }
@@ -640,10 +451,10 @@ function BuildingsRoomsPage() {
       {isBuildingModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
               <h3 className="text-xl font-bold">{editingBuilding ? 'Edit Building' : 'Add Building'}</h3>
               <p className="mt-1 text-sm text-white/80">
                 {editingBuilding ? 'Update building information.' : 'Register a new building in the system.'}
@@ -651,30 +462,30 @@ function BuildingsRoomsPage() {
             </div>
             
             <form onSubmit={handleBuildingSubmit} className="p-6 space-y-5">
-              <div>
-                <label htmlFor="building-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                  Building Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  id="building-name"
-                  type="text"
-                  value={newBuildingName}
-                  onChange={(e) => {
-                    setNewBuildingName(e.target.value)
-                    if (errors.name) setErrors(prev => ({ ...prev, name: false }))
-                  }}
-                  placeholder="e.g. Administration Building"
-                  className={`w-full rounded-md border px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                    errors.name 
-                      ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                      : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                  }`}
-                  autoFocus
-                />
-              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2">
+                  <label htmlFor="building-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                    Building Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    id="building-name"
+                    type="text"
+                    value={newBuildingName}
+                    onChange={(e) => {
+                      setNewBuildingName(e.target.value)
+                      if (errors.name) setErrors(prev => ({ ...prev, name: false }))
+                    }}
+                    placeholder="e.g. Administration Building"
+                    className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                      errors.name 
+                        ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                        : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                    }`}
+                    autoFocus
+                  />
+                </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
+                <div className="col-span-1">
                   <label htmlFor="building-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                     Code <span className="text-rose-500">*</span>
                   </label>
@@ -692,19 +503,6 @@ function BuildingsRoomsPage() {
                         ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
                         : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
                     }`}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="building-floors" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    Floors
-                  </label>
-                  <input
-                    id="building-floors"
-                    type="number"
-                    min="1"
-                    value={newBuildingFloors}
-                    onChange={(e) => setNewBuildingFloors(e.target.value)}
-                    className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
                   />
                 </div>
               </div>
@@ -734,169 +532,344 @@ function BuildingsRoomsPage() {
       {isRoomModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
-              <h3 className="text-xl font-bold">{editingRoom ? 'Edit Room' : 'Add Room'}</h3>
-              <p className="mt-1 text-sm text-white/80">
-                {editingRoom ? 'Update room details.' : 'Add a new room to this building.'}
-              </p>
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold">{editingRoom ? 'Edit Room' : 'Add Room'}</h3>
+                  <p className="mt-1 text-xs text-white/80">
+                    Step {roomModalStep} of 3: {roomModalStep === 1 ? 'General Info' : roomModalStep === 2 ? 'Media & Description' : 'Availability & Limits'}
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3].map((s) => (
+                    <div 
+                      key={s} 
+                      className={`h-1.5 w-6 rounded-full transition-colors ${s <= roomModalStep ? 'bg-white' : 'bg-white/30'}`} 
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
             
-            <form onSubmit={handleRoomSubmit} className="p-6 space-y-5">
-              <div>
-                <label htmlFor="room-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                  Room Name <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  id="room-name"
-                  type="text"
-                  value={newRoomName}
-                  onChange={(e) => {
-                    setNewRoomName(e.target.value)
-                    if (errors.name) setErrors(prev => ({ ...prev, name: false }))
-                  }}
-                  placeholder="e.g. Registrar Receiving"
-                  className={`w-full rounded-md border px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                    errors.name 
-                      ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                      : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                  }`}
-                  autoFocus
-                />
-              </div>
-
-              <div className="flex gap-6 items-start">
-                <div className="shrink-0">
-                  <label className="block text-center text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    Photo
-                  </label>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleImageUpload}
-                    accept="image/*"
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="h-28 w-28 rounded-md border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden transition-all hover:border-[var(--brand-color)] group relative"
-                  >
-                    {newRoomImage ? (
-                      <img src={newRoomImage} alt="Preview" className="h-full w-full object-cover" />
-                    ) : (
-                      <CameraIcon className="h-8 w-8 text-gray-400" />
-                    )}
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <UploadIcon className="h-6 w-6 text-white" />
+            <form onSubmit={handleRoomSubmit} className="p-6 space-y-5 overflow-visible">
+              {roomModalStep === 1 && (
+                <div className="space-y-4 overflow-visible">
+                  <div className="grid grid-cols-5 gap-4 overflow-visible">
+                    <div className="col-span-3 overflow-visible">
+                      <label htmlFor="room-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Room Name <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="room-name"
+                        type="text"
+                        value={newRoomName}
+                        onChange={(e) => {
+                          setNewRoomName(e.target.value)
+                          if (errors.name) setErrors(prev => ({ ...prev, name: false }))
+                        }}
+                        placeholder="e.g. Registrar Receiving"
+                        className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                          errors.name 
+                            ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                            : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                        }`}
+                        autoFocus
+                      />
                     </div>
-                  </button>
-                </div>
-
-                <div className="flex-1 space-y-4">
-                  <div>
-                    <label htmlFor="room-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                      Code <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      id="room-code"
-                      type="text"
-                      value={newRoomCode}
-                      onChange={(e) => {
-                        setNewRoomCode(e.target.value)
-                        if (errors.code) setErrors(prev => ({ ...prev, code: false }))
-                      }}
-                      placeholder="e.g. ADM-101"
-                      className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                        errors.code 
-                          ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                          : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                      }`}
-                    />
+                    <div className="col-span-2 overflow-visible">
+                      <label htmlFor="room-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Code <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="room-code"
+                        type="text"
+                        value={newRoomCode}
+                        onChange={(e) => {
+                          setNewRoomCode(e.target.value)
+                          if (errors.code) setErrors(prev => ({ ...prev, code: false }))
+                        }}
+                        placeholder="e.g. ADM-101"
+                        className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                          errors.code 
+                            ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                            : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                        }`}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label htmlFor="room-type" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                      Type
-                    </label>
-                    <select
-                      id="room-type"
-                      value={newRoomType}
-                      onChange={(e) => setNewRoomType(e.target.value)}
-                      className="w-full rounded-md border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
-                    >
-                      <option>Lecture Room</option>
-                      <option>Laboratory</option>
-                      <option>Office</option>
-                      <option>Meeting Room</option>
-                      <option>Studio</option>
-                    </select>
+
+                  <div className="grid grid-cols-2 gap-4 overflow-visible">
+                    <div className="overflow-visible">
+                      <label htmlFor="room-floor" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Floor
+                      </label>
+                      <input
+                        id="room-floor"
+                        type="number"
+                        value={newRoomFloor}
+                        onChange={(e) => setNewRoomFloor(e.target.value)}
+                        className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none shadow-sm"
+                      />
+                    </div>
+                    <div className="overflow-visible">
+                      <label htmlFor="room-capacity" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Capacity
+                      </label>
+                      <input
+                        id="room-capacity"
+                        type="number"
+                        value={newRoomCapacity}
+                        onChange={(e) => setNewRoomCapacity(e.target.value)}
+                        className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none shadow-sm"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 overflow-visible">
+                    <div className="overflow-visible">
+                      <label htmlFor="room-type" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Type
+                      </label>
+                      <SingleSelectDropdown
+                        options={['Lecture Room', 'Laboratory', 'Office', 'Meeting Room', 'Studio', 'Administrative']}
+                        value={newRoomType}
+                        onChange={setNewRoomType}
+                        onToggle={handleDropdownToggle}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="overflow-visible">
+                      <label htmlFor="room-status" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Status
+                      </label>
+                      <SingleSelectDropdown
+                        options={['Available', 'Occupied', 'Reserved', 'Maintenance']}
+                        value={newRoomStatus}
+                        onChange={(val) => setNewRoomStatus(val as RoomStatus)}
+                        onToggle={handleDropdownToggle}
+                        className="w-full"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label htmlFor="room-floor" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    Floor
-                  </label>
-                  <input
-                    id="room-floor"
-                    type="number"
-                    value={newRoomFloor}
-                    onChange={(e) => setNewRoomFloor(e.target.value)}
-                    className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none shadow-sm"
-                  />
+              {roomModalStep === 2 && (
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="grid grid-cols-3 gap-6">
+                    <div className="col-span-1 flex flex-col">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Room Photo
+                      </label>
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleImageUpload}
+                        accept="image/*"
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full aspect-square rounded-md border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden transition-all hover:border-[var(--brand-color)] group relative shadow-sm"
+                      >
+                        {newRoomImage ? (
+                          <img src={newRoomImage} alt="Preview" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex flex-col items-center gap-2">
+                            <CameraIcon className="h-8 w-8 text-gray-400" />
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight text-center px-2">Upload Image</span>
+                          </div>
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <UploadIcon className="h-8 w-8 text-white" />
+                        </div>
+                      </button>
+                    </div>
+
+                    <div className="col-span-2 flex flex-col">
+                      <label htmlFor="room-description" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Description
+                      </label>
+                      <textarea
+                        id="room-description"
+                        value={newRoomDescription}
+                        onChange={(e) => setNewRoomDescription(e.target.value)}
+                        placeholder="Describe the room, equipment, and other details..."
+                        className="w-full flex-1 rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm resize-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
+                      Room Amenities
+                    </label>
+                    <div className="max-h-[145px] overflow-y-auto custom-scrollbar pr-1">
+                      <div className="grid grid-cols-6 gap-2 grid-flow-dense">
+                        {ROOM_AMENITIES_GROUPS.map((group, groupIndex) => {
+                          const span = group.length === 3 ? 'col-span-2' : 'col-span-3'
+                          
+                          return group.map((amenity) => {
+                            const isSelected = newRoomAmenities[groupIndex]?.includes(amenity)
+                            
+                            return (
+                              <button
+                                key={amenity}
+                                type="button"
+                                onClick={() => {
+                                  setNewRoomAmenities(prev => {
+                                    const next = [...prev]
+                                    const currentGroup = next[groupIndex] || []
+                                    if (currentGroup.includes(amenity)) {
+                                      next[groupIndex] = currentGroup.filter(a => a !== amenity)
+                                    } else {
+                                      next[groupIndex] = [...currentGroup, amenity]
+                                    }
+                                    return next
+                                  })
+                                }}
+                                className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-xs font-bold whitespace-nowrap transition ${span} ${
+                                  isSelected
+                                    ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/10 text-[var(--brand-color)] shadow-sm'
+                                    : 'border-gray-300 bg-white text-gray-500 hover:border-gray-400'
+                                }`}                              >
+                                {isSelected && <CheckIcon className="h-3 w-3 shrink-0" strokeWidth={4} />}
+                                {amenity}
+                              </button>
+                            )
+                          })
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="room-capacity" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    Capacity
-                  </label>
-                  <input
-                    id="room-capacity"
-                    type="number"
-                    value={newRoomCapacity}
-                    onChange={(e) => setNewRoomCapacity(e.target.value)}
-                    className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none shadow-sm"
-                  />
+              )}
+
+              {roomModalStep === 3 && (
+                <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
+                      Available Days
+                    </label>
+                    <div className="flex gap-1.5">
+                      {DAYS_OF_WEEK.map((day) => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => {
+                            setNewRoomAvailableDays(prev => 
+                              prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+                            )
+                          }}
+                          className={`flex-1 flex flex-col items-center justify-center rounded-md border py-2 text-[10px] font-bold uppercase transition ${
+                            newRoomAvailableDays.includes(day)
+                              ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white shadow-sm'
+                              : 'border-gray-300 bg-white text-gray-500 hover:border-gray-400'
+                          }`}
+                        >
+                          {day.slice(0, 3).split('').map((char, index) => (
+                            <span key={index} className="leading-tight">{char}</span>
+                          ))}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Start Time
+                      </label>
+                      <TimePicker
+                        value={newRoomStartTime}
+                        onChange={setNewRoomStartTime}
+                        onToggle={handleDropdownToggle}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        End Time
+                      </label>
+                      <TimePicker
+                        value={newRoomEndTime}
+                        onChange={setNewRoomEndTime}
+                        onToggle={handleDropdownToggle}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label htmlFor="room-min-mins" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Min Booking (Mins)
+                      </label>
+                      <input
+                        id="room-min-mins"
+                        type="number"
+                        min="0"
+                        step="15"
+                        value={newRoomMinBookingMins}
+                        onChange={(e) => setNewRoomMinBookingMins(e.target.value)}
+                        className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none shadow-sm"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="room-max-mins" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Max Booking (Mins)
+                      </label>
+                      <input
+                        id="room-max-mins"
+                        type="number"
+                        min="0"
+                        step="15"
+                        value={newRoomMaxBookingMins}
+                        onChange={(e) => setNewRoomMaxBookingMins(e.target.value)}
+                        className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none shadow-sm"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="room-status" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    Status
-                  </label>
-                  <select
-                    id="room-status"
-                    value={newRoomStatus}
-                    onChange={(e) => setNewRoomStatus(e.target.value as RoomStatus)}
-                    className="w-full rounded-md border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none shadow-sm"
-                  >
-                    <option value="Available">Available</option>
-                    <option value="Occupied">Occupied</option>
-                    <option value="Reserved">Reserved</option>
-                    <option value="Maintenance">Maintenance</option>
-                  </select>
-                </div>
-              </div>
+              )}
 
               <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={handleCloseModals}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
-                >
-                  Cancel
-                </button>
+                {roomModalStep > 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setRoomModalStep(prev => prev - 1)}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                  >
+                    Back
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleCloseModals}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                  >
+                    Cancel
+                  </button>
+                )}
+                
                 <button
                   type="submit"
                   className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
                 >
-                  {editingRoom ? 'Save Changes' : 'Add Room'}
+                  {roomModalStep < 3 ? 'Next Step' : (editingRoom ? 'Save Changes' : 'Add Room')}
                 </button>
               </div>
             </form>
           </div>
-          <div className="absolute inset-0 -z-10" onClick={handleCloseModals} />
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (activeDropdowns > 0) return
+              handleCloseModals()
+            }} 
+          />
         </div>
       )}
 
@@ -1115,7 +1088,7 @@ function BuildingsRoomsPage() {
                           </div>
 
                           <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,500px),1fr))]">
-                            {roomsByFloor[floor].map((room) => (
+                            {roomsByFloor[floor]?.map((room) => (
                               <div
                                 key={room.id}
                                 className="flex overflow-hidden rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02]"

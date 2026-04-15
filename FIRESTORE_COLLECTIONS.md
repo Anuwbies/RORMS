@@ -76,6 +76,13 @@ Centralized inventory of all campus rooms and their real-time status.
   - `capacity`: number (Room seating/standing capacity)
   - `status`: string (`"Available"`, `"Occupied"`, `"Reserved"`, or `"Maintenance"`)
   - `image`: string (URL to the room's photo)
+  - `description`: string (Detailed description of the room)
+  - `amenities`: array (Nested array for grouped amenities, e.g., `[["WiFi"], ["Projector"]]`)
+  - `availableDays`: array (Days of the week the room is available, e.g., `["Monday", "Tuesday"]`)
+  - `startTime`: string (Daily availability start time, e.g., "08:00")
+  - `endTime`: string (Daily availability end time, e.g., "17:00")
+  - `minBookingMins`: number (Minimum allowed booking duration in minutes)
+  - `maxBookingMins`: number (Maximum allowed booking duration in minutes)
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
 
