@@ -2,6 +2,19 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react
 import { DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
+import { db } from '../../firebase'
+import { 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc,
+  doc, 
+  writeBatch,
+  serverTimestamp, 
+  onSnapshot, 
+  query, 
+  orderBy 
+} from 'firebase/firestore'
 
 type RoomStatus = 'Available' | 'Occupied' | 'Reserved' | 'Maintenance'
 
@@ -25,7 +38,7 @@ interface Room {
   capacity: number
   status: RoomStatus
   description: string
-  amenities: string[][]
+  amenities: string[]
   availableDays: string[]
   startTime: string
   endTime: string
@@ -41,35 +54,6 @@ interface Building {
   capacity: number
   rooms: Room[]
 }
-
-const initialBuildings: Building[] = [
-  {
-    id: 'admin',
-    code: 'ADM',
-    name: 'Administration Building',
-    floor: 3,
-    capacity: 112,
-    rooms: [
-      {
-        id: 'adm-101',
-        image: createRoomImage(),
-        code: 'ADM-101',
-        name: 'Registrar Receiving',
-        type: 'Administrative',
-        floor: 1,
-        capacity: 12,
-        status: 'Available',
-        description: 'Primary receiving area for student documents.',
-        amenities: [['WiFi'], ['Air Conditioning'], []],
-        availableDays: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'],
-        startTime: '07:30',
-        endTime: '18:00',
-        minBookingMins: 30,
-        maxBookingMins: 90,
-      },
-    ],
-  },
-]
 
 const roomStatusClasses: Record<RoomStatus, string> = {
   Available: 'bg-emerald-100 text-emerald-700',
@@ -185,7 +169,10 @@ function SingleSelectDropdown<T extends string>({
       </button>
 
       {isOpen && !isDisabled && (
-        <div className="absolute left-0 z-50 mt-2 min-w-full overflow-hidden rounded-md border border-gray-200 bg-white p-1.5 shadow-2xl">
+        <div 
+          className="absolute left-0 z-50 mt-2 min-w-full overflow-y-scroll custom-scrollbar rounded-md border border-gray-200 bg-white p-1.5 shadow-2xl"
+          style={{ height: options.length > 4 ? '203px' : 'auto' }}
+        >
           <div className="space-y-1">
             {options.map((option) => {
               const isSelected = value === option
@@ -215,32 +202,86 @@ function SingleSelectDropdown<T extends string>({
 function BuildingsRoomsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
-  const [buildings] = useState<Building[]>(initialBuildings)
-  const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(
-    buildings.map((b) => b.id)
-  )
+  const [buildings, setBuildings] = useState<Building[]>([])
+  const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>([])
+
+  const [rooms, setRooms] = useState<Room[]>([])
+
+  useEffect(() => {
+    const buildingsQuery = query(collection(db, 'buildings'), orderBy('createdAt', 'desc'))
+    const roomsQuery = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'))
+
+    let buildingsList: any[] = []
+    let roomsList: any[] = []
+
+    const updateState = () => {
+      const mergedBuildings = buildingsList.map(building => {
+        const buildingRooms = roomsList.filter(room => room.buildingId === building.id)
+        const capacity = buildingRooms.reduce((sum, room) => sum + (room.capacity || 0), 0)
+        const floor = buildingRooms.length > 0 
+          ? Math.max(...buildingRooms.map(room => room.floor || 0)) 
+          : 0
+
+        return {
+          ...building,
+          rooms: buildingRooms,
+          floor,
+          capacity,
+        }
+      }) as Building[]
+      
+      setBuildings(mergedBuildings)
+      setRooms(roomsList)
+
+      // Auto-expand new buildings if they weren't already tracked
+      setExpandedBuildingIds(prev => {
+        const newIds = mergedBuildings.map(b => b.id).filter(id => !prev.includes(id))
+        return [...prev, ...newIds]
+      })
+    }
+
+    const unsubscribeBuildings = onSnapshot(buildingsQuery, (snapshot) => {
+      buildingsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      updateState()
+    })
+
+    const unsubscribeRooms = onSnapshot(roomsQuery, (snapshot) => {
+      roomsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+      updateState()
+    })
+
+    return () => {
+      unsubscribeBuildings()
+      unsubscribeRooms()
+    }
+  }, [])
 
   const [isBuildingModalOpen, setIsBuildingModalOpen] = useState(false)
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null)
   const [newBuildingName, setNewBuildingName] = useState('')
   const [newBuildingCode, setNewBuildingCode] = useState('')
-  const [newBuildingFloors, setNewBuildingFloors] = useState<string>('1')
-  const [newBuildingCapacity, setNewBuildingCapacity] = useState<string>('0')
 
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false)
+  const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
+  const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
+  const [isMultipleRooms, setIsMultipleRooms] = useState(false)
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [activeBuildingId, setActiveBuildingId] = useState<string | null>(null)
   const [roomModalStep, setRoomModalStep] = useState(1)
   
   const [newRoomName, setNewRoomName] = useState('')
   const [newRoomCode, setNewRoomCode] = useState('')
+  const [roomNamePrefix, setRoomNamePrefix] = useState('')
+  const [roomCodePrefix, setRoomCodePrefix] = useState('')
+  const [roomStartNumber, setRoomStartNumber] = useState('')
+  const [roomEndNumber, setRoomEndNumber] = useState('')
   const [newRoomType, setNewRoomType] = useState('Lecture Room')
   const [newRoomFloor, setNewRoomFloor] = useState<string>('1')
-  const [newRoomCapacity, setNewRoomCapacity] = useState<string>('20')
+  const [newRoomCapacity, setNewRoomCapacity] = useState<string>('50')
   const [newRoomStatus, setNewRoomStatus] = useState<RoomStatus>('Available')
   const [newRoomImage, setNewRoomImage] = useState(createRoomImage())
   const [newRoomDescription, setNewRoomDescription] = useState('')
-  const [newRoomAmenities, setNewRoomAmenities] = useState<string[][]>(ROOM_AMENITIES_GROUPS.map(() => []))
+  const [newRoomAmenities, setNewRoomAmenities] = useState<string[]>([])
   const [newRoomAvailableDays, setNewRoomAvailableDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
   const [newRoomStartTime, setNewRoomStartTime] = useState('07:30')
   const [newRoomEndTime, setNewRoomEndTime] = useState('18:00')
@@ -248,12 +289,33 @@ function BuildingsRoomsPage() {
   const [newRoomMaxBookingMins, setNewRoomMaxBookingMins] = useState('90')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [errors, setErrors] = useState({ name: false, code: false })
+  const [errors, setErrors] = useState({ name: false, code: false, start: false, end: false })
   const [activeDropdowns, setActiveDropdowns] = useState(0)
+
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isDeleteRoomModalOpen, setIsDeleteRoomModalOpen] = useState(false)
+  const [roomToDelete, setRoomToDelete] = useState<Room | null>(null)
+  const [isDeletingRoom, setIsDeletingRoom] = useState(false)
+
+  const [isDeleteBuildingModalOpen, setIsDeleteBuildingModalOpen] = useState(false)
+  const [buildingToDelete, setBuildingToDelete] = useState<Building | null>(null)
+  const [isDeletingBuilding, setIsDeletingBuilding] = useState(false)
+  const [confirmBuildingName, setConfirmBuildingName] = useState('')
 
   const handleDropdownToggle = useCallback((isOpen: boolean) => {
     setActiveDropdowns(prev => isOpen ? prev + 1 : Math.max(0, prev - 1))
   }, [])
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      setNewRoomImage(reader.result as string)
+    }
+    reader.readAsDataURL(file)
+  }
 
   const toggleBuilding = (id: string) => {
     setExpandedBuildingIds((prev) =>
@@ -261,21 +323,22 @@ function BuildingsRoomsPage() {
     )
   }
 
+  const handleOpenRoomInfoModal = (room: Room) => {
+    setSelectedRoomInfo(room)
+    setIsRoomInfoModalOpen(true)
+  }
+
   const handleOpenBuildingModal = (building?: Building) => {
     if (building) {
       setEditingBuilding(building)
       setNewBuildingName(building.name)
       setNewBuildingCode(building.code)
-      setNewBuildingFloors(String(building.floor))
-      setNewBuildingCapacity(String(building.capacity))
     } else {
       setEditingBuilding(null)
       setNewBuildingName('')
       setNewBuildingCode('')
-      setNewBuildingFloors('1')
-      setNewBuildingCapacity('0')
     }
-    setErrors({ name: false, code: false })
+    setErrors({ name: false, code: false, start: false, end: false })
     setIsBuildingModalOpen(true)
   }
 
@@ -284,6 +347,7 @@ function BuildingsRoomsPage() {
     setRoomModalStep(1)
     if (room) {
       setEditingRoom(room)
+      setIsMultipleRooms(false)
       setNewRoomName(room.name)
       setNewRoomCode(room.code)
       setNewRoomType(room.type)
@@ -292,10 +356,7 @@ function BuildingsRoomsPage() {
       setNewRoomStatus(room.status)
       setNewRoomImage(room.image)
       setNewRoomDescription(room.description || '')
-      // Pad amenities to match groups length
-      const baseAmenities = room.amenities || []
-      const paddedAmenities = ROOM_AMENITIES_GROUPS.map((_, i) => baseAmenities[i] || [])
-      setNewRoomAmenities(paddedAmenities)
+      setNewRoomAmenities(room.amenities || [])
       setNewRoomAvailableDays(room.availableDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
       setNewRoomStartTime(room.startTime || '07:30')
       setNewRoomEndTime(room.endTime || '18:00')
@@ -303,67 +364,166 @@ function BuildingsRoomsPage() {
       setNewRoomMaxBookingMins(String(room.maxBookingMins || '90'))
     } else {
       setEditingRoom(null)
+      setIsMultipleRooms(false)
       setNewRoomName('')
       setNewRoomCode('')
+      setRoomNamePrefix('')
+      setRoomCodePrefix('')
+      setRoomStartNumber('')
+      setRoomEndNumber('')
       setNewRoomType('Lecture Room')
       setNewRoomFloor('1')
-      setNewRoomCapacity('20')
+      setNewRoomCapacity('50')
       setNewRoomStatus('Available')
       setNewRoomImage(createRoomImage())
       setNewRoomDescription('')
-      setNewRoomAmenities(ROOM_AMENITIES_GROUPS.map(() => []))
+      setNewRoomAmenities([])
       setNewRoomAvailableDays(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
       setNewRoomStartTime('07:30')
       setNewRoomEndTime('18:00')
       setNewRoomMinBookingMins('30')
       setNewRoomMaxBookingMins('90')
     }
-    setErrors({ name: false, code: false })
+    setErrors({ name: false, code: false, start: false, end: false })
     setIsRoomModalOpen(true)
   }
 
   const handleCloseModals = () => {
     setIsBuildingModalOpen(false)
     setIsRoomModalOpen(false)
+    setIsRoomInfoModalOpen(false)
     setEditingBuilding(null)
     setEditingRoom(null)
+    setSelectedRoomInfo(null)
     setActiveBuildingId(null)
     setRoomModalStep(1)
-    setErrors({ name: false, code: false })
+    setErrors({ name: false, code: false, start: false, end: false })
   }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        setNewRoomImage(reader.result as string)
-      }
-      reader.readAsDataURL(file)
+  const handleOpenDeleteRoom = (room: Room) => {
+    setRoomToDelete(room)
+    setIsDeleteRoomModalOpen(true)
+  }
+
+  const handleCloseDeleteRoomModal = () => {
+    setIsDeleteRoomModalOpen(false)
+    setRoomToDelete(null)
+  }
+
+  const handleDeleteRoomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!roomToDelete) return
+
+    setIsDeletingRoom(true)
+    try {
+      await deleteDoc(doc(db, 'rooms', roomToDelete.id))
+      handleCloseDeleteRoomModal()
+    } catch (error) {
+      console.error('Error deleting room:', error)
+      alert('Failed to delete room. Please try again.')
+    } finally {
+      setIsDeletingRoom(false)
     }
   }
 
-  const handleBuildingSubmit = (e: React.FormEvent) => {
+  const handleOpenDeleteBuilding = (building: Building) => {
+    setBuildingToDelete(building)
+    setConfirmBuildingName('')
+    setIsDeleteBuildingModalOpen(true)
+  }
+
+  const handleCloseDeleteBuildingModal = () => {
+    setIsDeleteBuildingModalOpen(false)
+    setBuildingToDelete(null)
+    setConfirmBuildingName('')
+  }
+
+  const handleDeleteBuildingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!buildingToDelete) return
+
+    setIsDeletingBuilding(true)
+    try {
+      const batch = writeBatch(db)
+      
+      // Delete all rooms associated with the building
+      buildingToDelete.rooms.forEach(room => {
+        batch.delete(doc(db, 'rooms', room.id))
+      })
+      
+      // Delete the building itself
+      batch.delete(doc(db, 'buildings', buildingToDelete.id))
+      
+      await batch.commit()
+      handleCloseDeleteBuildingModal()
+    } catch (error) {
+      console.error('Error deleting building:', error)
+      alert('Failed to delete building. Please try again.')
+    } finally {
+      setIsDeletingBuilding(false)
+    }
+  }
+
+  const handleBuildingSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newBuildingName.trim() || !newBuildingCode.trim()) {
-      setErrors({ name: !newBuildingName.trim(), code: !newBuildingCode.trim() })
+      setErrors({ name: !newBuildingName.trim(), code: !newBuildingCode.trim(), start: false, end: false })
       return
     }
-    console.log('Building Submit:', { 
-      name: newBuildingName, 
-      code: newBuildingCode, 
-      floor: parseInt(newBuildingFloors) || 0,
-      capacity: parseInt(newBuildingCapacity) || 0
-    })
-    handleCloseModals()
+
+    setIsSubmitting(true)
+    try {
+      if (editingBuilding) {
+        const buildingRef = doc(db, 'buildings', editingBuilding.id)
+        await updateDoc(buildingRef, {
+          name: newBuildingName,
+          code: newBuildingCode,
+          updatedAt: serverTimestamp()
+        })
+        handleCloseModals()
+      } else {
+        const docRef = await addDoc(collection(db, 'buildings'), {
+          name: newBuildingName,
+          code: newBuildingCode,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        })
+        
+        // Close building modal first
+        setIsBuildingModalOpen(false)
+        setEditingBuilding(null)
+        
+        // Automatically open room modal for the new building
+        handleOpenRoomModal(docRef.id)
+      }
+    } catch (error) {
+      console.error("Error saving building: ", error)
+      alert("Error saving building. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
-  const handleRoomSubmit = (e: React.FormEvent) => {
+  const handleRoomSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newRoomName.trim() || !newRoomCode.trim()) {
-      setErrors({ name: !newRoomName.trim(), code: !newRoomCode.trim() })
-      setRoomModalStep(1)
-      return
+
+    if (roomModalStep === 1) {
+      if (isMultipleRooms) {
+        if (!roomNamePrefix.trim() || !roomCodePrefix.trim() || !roomStartNumber.trim() || !roomEndNumber.trim()) {
+          setErrors({ 
+            name: !roomNamePrefix.trim(), 
+            code: !roomCodePrefix.trim(),
+            start: !roomStartNumber.trim(),
+            end: !roomEndNumber.trim()
+          })
+          return
+        }
+      } else {
+        if (!newRoomName.trim() || !newRoomCode.trim()) {
+          setErrors({ name: !newRoomName.trim(), code: !newRoomCode.trim(), start: false, end: false })
+          return
+        }
+      }
     }
 
     if (roomModalStep < 3) {
@@ -379,24 +539,86 @@ function BuildingsRoomsPage() {
       return
     }
 
-    console.log('Room Submit:', { 
-      buildingId: activeBuildingId,
-      name: newRoomName, 
-      code: newRoomCode,
-      type: newRoomType,
-      floor: parseInt(newRoomFloor) || 0,
-      capacity: parseInt(newRoomCapacity) || 0,
-      status: newRoomStatus,
-      image: newRoomImage,
-      description: newRoomDescription,
-      amenities: newRoomAmenities,
-      availableDays: newRoomAvailableDays,
-      startTime: newRoomStartTime,
-      endTime: newRoomEndTime,
-      minBookingMins: min,
-      maxBookingMins: max
-    })
-    handleCloseModals()
+    setIsSubmitting(true)
+    try {
+      if (editingRoom) {
+        const roomRef = doc(db, 'rooms', editingRoom.id)
+        await updateDoc(roomRef, {
+          name: newRoomName,
+          code: newRoomCode,
+          type: newRoomType,
+          floor: parseInt(newRoomFloor) || 0,
+          capacity: parseInt(newRoomCapacity) || 0,
+          status: newRoomStatus,
+          image: newRoomImage,
+          description: newRoomDescription,
+          amenities: newRoomAmenities,
+          availableDays: newRoomAvailableDays,
+          startTime: newRoomStartTime,
+          endTime: newRoomEndTime,
+          minBookingMins: min,
+          maxBookingMins: max,
+          updatedAt: serverTimestamp()
+        })
+      } else if (isMultipleRooms) {
+        const startNum = parseInt(roomStartNumber) || 0
+        const endNum = parseInt(roomEndNumber) || 0
+        
+        const count = Math.abs(endNum - startNum) + 1
+        const step = startNum <= endNum ? 1 : -1
+
+        const roomPromises = []
+        for (let i = 0; i < count; i++) {
+          const currentNum = startNum + (i * step)
+          roomPromises.push(addDoc(collection(db, 'rooms'), {
+            buildingId: activeBuildingId,
+            name: `${roomNamePrefix}${currentNum}`,
+            code: `${roomCodePrefix}${currentNum}`,
+            type: newRoomType,
+            floor: parseInt(newRoomFloor) || 0,
+            capacity: parseInt(newRoomCapacity) || 0,
+            status: newRoomStatus,
+            image: newRoomImage,
+            description: newRoomDescription,
+            amenities: newRoomAmenities,
+            availableDays: newRoomAvailableDays,
+            startTime: newRoomStartTime,
+            endTime: newRoomEndTime,
+            minBookingMins: min,
+            maxBookingMins: max,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          }))
+        }
+        await Promise.all(roomPromises)
+      } else {
+        await addDoc(collection(db, 'rooms'), {
+          buildingId: activeBuildingId,
+          name: newRoomName, 
+          code: newRoomCode,
+          type: newRoomType,
+          floor: parseInt(newRoomFloor) || 0,
+          capacity: parseInt(newRoomCapacity) || 0,
+          status: newRoomStatus,
+          image: newRoomImage,
+          description: newRoomDescription,
+          amenities: newRoomAmenities,
+          availableDays: newRoomAvailableDays,
+          startTime: newRoomStartTime,
+          endTime: newRoomEndTime,
+          minBookingMins: min,
+          maxBookingMins: max,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        })
+      }
+      handleCloseModals()
+    } catch (error) {
+      console.error("Error saving room: ", error)
+      alert("Error saving room. Please try again.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const allRooms = buildings.flatMap((building) => building.rooms)
@@ -511,20 +733,29 @@ function BuildingsRoomsPage() {
                 <button
                   type="button"
                   onClick={handleCloseModals}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {editingBuilding ? 'Save Changes' : 'Add Building'}
+                  {isSubmitting 
+                    ? (editingBuilding ? 'Saving Changes...' : 'Adding Building...') 
+                    : (editingBuilding ? 'Save Changes' : 'Add Building')}
                 </button>
               </div>
             </form>
           </div>
-          <div className="absolute inset-0 -z-10" onClick={handleCloseModals} />
+          <div 
+            className="absolute inset-0 -z-10" 
+            onClick={() => {
+              if (!isSubmitting) handleCloseModals()
+            }} 
+          />
         </div>
       )}
 
@@ -557,49 +788,188 @@ function BuildingsRoomsPage() {
             <form onSubmit={handleRoomSubmit} className="p-6 space-y-5 overflow-visible">
               {roomModalStep === 1 && (
                 <div className="space-y-4 overflow-visible">
-                  <div className="grid grid-cols-5 gap-4 overflow-visible">
-                    <div className="col-span-3 overflow-visible">
-                      <label htmlFor="room-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                        Room Name <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        id="room-name"
-                        type="text"
-                        value={newRoomName}
-                        onChange={(e) => {
-                          setNewRoomName(e.target.value)
-                          if (errors.name) setErrors(prev => ({ ...prev, name: false }))
-                        }}
-                        placeholder="e.g. Registrar Receiving"
-                        className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                          errors.name 
-                            ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                            : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                        }`}
-                        autoFocus
-                      />
+                  {!editingRoom && (
+                    <div className="flex p-1 bg-gray-100 rounded-md mb-6">
+                      <button
+                        type="button"
+                        onClick={() => setIsMultipleRooms(false)}
+                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${!isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        Single Room
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsMultipleRooms(true)}
+                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      >
+                        Multiple Rooms
+                      </button>
                     </div>
-                    <div className="col-span-2 overflow-visible">
-                      <label htmlFor="room-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                        Code <span className="text-rose-500">*</span>
-                      </label>
-                      <input
-                        id="room-code"
-                        type="text"
-                        value={newRoomCode}
-                        onChange={(e) => {
-                          setNewRoomCode(e.target.value)
-                          if (errors.code) setErrors(prev => ({ ...prev, code: false }))
-                        }}
-                        placeholder="e.g. ADM-101"
-                        className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                          errors.code 
-                            ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                            : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                        }`}
-                      />
+                  )}
+
+                  {!isMultipleRooms ? (
+                    <div className="grid grid-cols-5 gap-4 overflow-visible">
+                      <div className="col-span-3 overflow-visible">
+                        <label htmlFor="room-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                          Room Name <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          id="room-name"
+                          type="text"
+                          value={newRoomName}
+                          onChange={(e) => {
+                            setNewRoomName(e.target.value)
+                            if (errors.name) setErrors(prev => ({ ...prev, name: false }))
+                          }}
+                          placeholder="e.g. Registrar Receiving"
+                          className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                            errors.name 
+                              ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                              : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                          }`}
+                          autoFocus
+                        />
+                      </div>
+                      <div className="col-span-2 overflow-visible">
+                        <label htmlFor="room-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                          Code <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          id="room-code"
+                          type="text"
+                          value={newRoomCode}
+                          onChange={(e) => {
+                            setNewRoomCode(e.target.value)
+                            if (errors.code) setErrors(prev => ({ ...prev, code: false }))
+                          }}
+                          placeholder="e.g. ADM-101"
+                          className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                            errors.code 
+                              ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                              : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                          }`}
+                        />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-5 gap-4 overflow-visible">
+                        <div className="col-span-3 overflow-visible">
+                          <label htmlFor="room-name-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                            Name Prefix <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="room-name-prefix"
+                            type="text"
+                            value={roomNamePrefix}
+                            onChange={(e) => {
+                              setRoomNamePrefix(e.target.value)
+                              if (errors.name) setErrors(prev => ({ ...prev, name: false }))
+                            }}
+                            placeholder="e.g. PTC "
+                            className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                              errors.name 
+                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                                : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                            }`}
+                            autoFocus
+                          />
+                        </div>
+                        <div className="col-span-2 overflow-visible">
+                          <label htmlFor="room-code-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                            Code Prefix <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="room-code-prefix"
+                            type="text"
+                            value={roomCodePrefix}
+                            onChange={(e) => {
+                              setRoomCodePrefix(e.target.value)
+                              if (errors.code) setErrors(prev => ({ ...prev, code: false }))
+                            }}
+                            placeholder="e.g. PTC-"
+                            className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                              errors.code 
+                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                                : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="room-start-number" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                            Start Number <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="room-start-number"
+                            type="number"
+                            value={roomStartNumber}
+                            onChange={(e) => {
+                              setRoomStartNumber(e.target.value)
+                              if (errors.start) setErrors(prev => ({ ...prev, start: false }))
+                            }}
+                            onKeyDown={(e) => {
+                              if (['e', 'E', '+', '-', '.'].includes(e.key)) {
+                                e.preventDefault()
+                              }
+                            }}
+                            placeholder="e.g. 101"
+                            className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                              errors.start 
+                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                                : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="room-end-number" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                            End Number <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="room-end-number"
+                            type="number"
+                            value={roomEndNumber}
+                            onChange={(e) => {
+                              setConfirmBuildingName(e.target.value)
+                              if (errors.end) setErrors(prev => ({ ...prev, end: false }))
+                            }}
+                            onKeyDown={(e) => {
+                              if (['e', 'E', '+', '-', '.'].includes(e.key)) {
+                                e.preventDefault()
+                              }
+                            }}
+                            placeholder="e.g. 105"
+                            className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                              errors.end 
+                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                                : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                      <div className="p-3 bg-gray-50 border border-gray-200 rounded-md flex items-center">
+                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest shrink-0 mr-1">Preview:</p>
+                        <p className="text-xs text-gray-700 truncate">
+                          {roomStartNumber && roomEndNumber ? (
+                            (() => {
+                              const s = parseInt(roomStartNumber)
+                              const e = parseInt(roomEndNumber)
+                              if (isNaN(s) || isNaN(e)) return "Enter range to see preview"
+                              if (s === e) return `${roomNamePrefix}${s}`
+                              const diff = Math.abs(e - s)
+                              const step = s < e ? 1 : -1
+                              const next = s + step
+                              if (diff === 1) return `${roomNamePrefix}${s}, ${roomNamePrefix}${e}`
+                              return <>{roomNamePrefix}{s}, {roomNamePrefix}{next}, ..., {roomNamePrefix}{e}</>
+                            })()
+                          ) : (
+                            "Enter range to see preview"
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  ) }
 
                   <div className="grid grid-cols-2 gap-4 overflow-visible">
                     <div className="overflow-visible">
@@ -714,7 +1084,7 @@ function BuildingsRoomsPage() {
                           const span = group.length === 3 ? 'col-span-2' : 'col-span-3'
                           
                           return group.map((amenity) => {
-                            const isSelected = newRoomAmenities[groupIndex]?.includes(amenity)
+                            const isSelected = newRoomAmenities.includes(amenity)
                             
                             return (
                               <button
@@ -722,14 +1092,11 @@ function BuildingsRoomsPage() {
                                 type="button"
                                 onClick={() => {
                                   setNewRoomAmenities(prev => {
-                                    const next = [...prev]
-                                    const currentGroup = next[groupIndex] || []
-                                    if (currentGroup.includes(amenity)) {
-                                      next[groupIndex] = currentGroup.filter(a => a !== amenity)
+                                    if (prev.includes(amenity)) {
+                                      return prev.filter(a => a !== amenity)
                                     } else {
-                                      next[groupIndex] = [...currentGroup, amenity]
+                                      return [...prev, amenity]
                                     }
-                                    return next
                                   })
                                 }}
                                 className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-xs font-bold whitespace-nowrap transition ${span} ${
@@ -840,7 +1207,8 @@ function BuildingsRoomsPage() {
                   <button
                     type="button"
                     onClick={() => setRoomModalStep(prev => prev - 1)}
-                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                    disabled={isSubmitting}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Back
                   </button>
@@ -848,7 +1216,8 @@ function BuildingsRoomsPage() {
                   <button
                     type="button"
                     onClick={handleCloseModals}
-                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                    disabled={isSubmitting}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Cancel
                   </button>
@@ -856,9 +1225,14 @@ function BuildingsRoomsPage() {
                 
                 <button
                   type="submit"
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg"
+                  disabled={isSubmitting}
+                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {roomModalStep < 3 ? 'Next Step' : (editingRoom ? 'Save Changes' : 'Add Room')}
+                  {roomModalStep < 3 
+                    ? 'Next Step' 
+                    : (isSubmitting 
+                        ? (editingRoom ? 'Saving Changes...' : 'Adding Room...') 
+                        : (editingRoom ? 'Save Changes' : 'Add Room'))}
                 </button>
               </div>
             </form>
@@ -866,8 +1240,291 @@ function BuildingsRoomsPage() {
           <div 
             className="absolute inset-0 -z-10" 
             onMouseDown={() => {
-              if (activeDropdowns > 0) return
+              if (activeDropdowns > 0 || isSubmitting) return
               handleCloseModals()
+            }} 
+          />
+        </div>
+      )}
+
+      {/* Room Information Modal */}
+      {isRoomInfoModalOpen && selectedRoomInfo && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+              <h3 className="text-xl font-bold leading-tight">Room Information</h3>
+              <p className="text-xs text-white/80 font-medium mt-0.5">Comprehensive details and availability schedule</p>
+            </div>
+
+            <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
+              <div className="p-6 space-y-5">
+                <div className="flex gap-5">
+                  <div className="w-32 h-32 shrink-0 rounded-md border border-gray-200 bg-gray-50 overflow-hidden shadow-sm">
+                    <img 
+                      src={selectedRoomInfo.image} 
+                      alt={selectedRoomInfo.name} 
+                      className="h-full w-full object-cover grayscale-[0.2]" 
+                    />
+                  </div>
+                  
+                  <div className="flex-1 flex flex-col justify-between py-0.5">
+                    <div>
+                      <div className="flex items-center justify-start gap-3">
+                        <h4 className="text-lg font-bold text-gray-900 leading-tight">{selectedRoomInfo.name}</h4>
+                        <span className="inline-flex items-center justify-center rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-600 border border-gray-200">
+                          {selectedRoomInfo.code}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${roomStatusClasses[selectedRoomInfo.status]}`}>
+                          {selectedRoomInfo.status}
+                        </span>
+                        <span className="text-xs text-gray-500 font-semibold">
+                          {selectedRoomInfo.type} • Floor {selectedRoomInfo.floor}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <div className="rounded-md border border-gray-100 bg-gray-50/50 p-2 flex items-center gap-2">
+                        <UserIcon className="h-4 w-4 text-gray-400 shrink-0" />
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 leading-none">Capacity</p>
+                          <p className="text-xs font-bold text-gray-700 mt-1">{selectedRoomInfo.capacity} pax</p>
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-gray-100 bg-gray-50/50 p-2 flex items-center gap-2">
+                        <ClockIcon className="h-4 w-4 text-gray-400 shrink-0" />
+                        <div>
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 leading-none">Booking Limits</p>
+                          <p className="text-xs font-bold text-gray-700 mt-1">
+                            {selectedRoomInfo.minBookingMins}m - {selectedRoomInfo.maxBookingMins}m
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-1.5">Description</h5>
+                    <p className="text-xs text-gray-600 leading-relaxed">
+                      {selectedRoomInfo.description || 'No description provided for this room.'}
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-2">Availability</h5>
+                      <div className="flex gap-1 h-[30px]">
+                        {DAYS_OF_WEEK.map((day) => {
+                          const isAvailable = selectedRoomInfo.availableDays.includes(day)
+                          return (
+                            <div
+                              key={day}
+                              title={day}
+                              className={`flex-1 flex items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${
+                                isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-100 text-gray-300'
+                              }`}
+                            >
+                              {day.slice(0, 1)}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-2">Schedule</h5>
+                      <div className="flex items-center justify-start px-3 gap-2 text-xs font-bold text-gray-700 bg-gray-50 h-[30px] rounded-md border border-gray-100">
+                        <ClockIcon className="h-3.5 w-3.5 text-[var(--brand-color)]" />
+                        <span>{selectedRoomInfo.startTime} - {selectedRoomInfo.endTime}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-2.5">Room Amenities</h5>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedRoomInfo.amenities.length > 0 ? (
+                        selectedRoomInfo.amenities.map((amenity, i) => (
+                          <span 
+                            key={i}
+                            className="inline-flex items-center gap-1 rounded-md border border-gray-100 bg-white px-2 py-1 text-[10px] font-bold text-gray-600 shadow-sm"
+                          >
+                            {amenity}
+                          </span>
+                        ))
+                      ) : (
+                        <p className="text-[10px] italic text-gray-400">No amenities listed.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={handleCloseModals}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-2.5 text-xs font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => {
+                      const buildingId = buildings.find(b => b.rooms.some(r => r.id === selectedRoomInfo.id))?.id
+                      if (buildingId) {
+                        handleOpenRoomModal(buildingId, selectedRoomInfo)
+                        setIsRoomInfoModalOpen(false)
+                      }
+                    }}
+                    className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-[#526f34]"
+                  >
+                    <EditIcon className="h-3.5 w-3.5" />
+                    Edit Details
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onClick={handleCloseModals} />
+        </div>
+      )}
+
+      {/* Delete Room Confirmation Modal */}
+      {isDeleteRoomModalOpen && roomToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-rose-600 p-6 text-white rounded-t-md">
+              <h3 className="text-xl font-bold">Delete Room</h3>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this room from the system?</p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 overflow-hidden shrink-0">
+                  <img 
+                    src={roomToDelete.image} 
+                    alt="" 
+                    className="h-full w-full object-cover grayscale-[0.2]"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{roomToDelete.name}</p>
+                  <p className="text-xs font-medium text-gray-500">{roomToDelete.code} • Floor {roomToDelete.floor}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+                <p className="text-xs leading-relaxed text-rose-700">
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this room and all its associated booking history. This action cannot be undone.
+                </p>
+              </div>
+
+              <form onSubmit={handleDeleteRoomSubmit} className="space-y-4 pt-2">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseDeleteRoomModal}
+                    disabled={isDeletingRoom}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeletingRoom}
+                    className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isDeletingRoom ? 'Deleting...' : 'Confirm Delete'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onClick={() => {
+              if (!isDeletingRoom) handleCloseDeleteRoomModal()
+            }} 
+          />
+        </div>
+      )}
+
+      {/* Delete Building Confirmation Modal */}
+      {isDeleteBuildingModalOpen && buildingToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-rose-600 p-6 text-white rounded-t-md">
+              <h3 className="text-xl font-bold">Delete Building</h3>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this building from the system?</p>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 shrink-0">
+                  <BuildingIcon className="h-7 w-7 text-gray-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{buildingToDelete.name}</p>
+                  <p className="text-xs font-medium text-gray-500">{buildingToDelete.code} • {buildingToDelete.rooms.length} Rooms</p>
+                </div>
+              </div>
+
+              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+                <p className="text-xs leading-relaxed text-rose-700">
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this building and all rooms associated with it. This action cannot be undone.
+                </p>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <label htmlFor="confirm-building-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                  To confirm, please type: <span className="text-rose-600">"{buildingToDelete.name}"</span>
+                </label>
+                <input
+                  id="confirm-building-name"
+                  type="text"
+                  value={confirmBuildingName}
+                  onChange={(e) => setConfirmBuildingName(e.target.value)}
+                  placeholder="Enter building name"
+                  className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-sm"
+                  autoFocus
+                />
+              </div>
+
+              <form onSubmit={handleDeleteBuildingSubmit} className="space-y-4 pt-2">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleCloseDeleteBuildingModal}
+                    disabled={isDeletingBuilding}
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isDeletingBuilding || confirmBuildingName !== buildingToDelete.name}
+                    className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isDeletingBuilding ? 'Deleting...' : 'Confirm Delete'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onClick={() => {
+              if (!isDeletingBuilding) handleCloseDeleteBuildingModal()
             }} 
           />
         </div>
@@ -1007,14 +1664,59 @@ function BuildingsRoomsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-4 h-10 text-xs font-bold text-white shadow-sm transition hover:bg-[#526f34] shrink-0"
-                        onClick={() => handleOpenRoomModal(building.id)}
-                      >
-                        <PlusIcon className="h-4 w-4" />
-                        Add Room
-                      </button>
+                      <div className="relative">
+                        <IconButton
+                          label="Building options"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setOpenMenuId(openMenuId === building.id ? null : building.id)
+                          }}
+                          className="h-10 w-10 shrink-0 rounded-md border border-gray-100 bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all duration-300"
+                        >
+                          <DotsVerticalIcon className="h-6 w-6" />
+                        </IconButton>
+
+                        {openMenuId === building.id && (
+                          <div
+                            className="absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-md border border-gray-100 bg-white shadow-2xl"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                              onClick={() => {
+                                handleOpenRoomModal(building.id)
+                                setOpenMenuId(null)
+                              }}
+                            >
+                              <PlusIcon className="h-4 w-4 text-gray-400" />
+                              Add Room
+                            </button>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                              onClick={() => {
+                                handleOpenBuildingModal(building)
+                                setOpenMenuId(null)
+                              }}
+                            >
+                              <EditIcon className="h-4 w-4 text-gray-400" />
+                              Edit Building
+                            </button>
+                            <button
+                              type="button"
+                              className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                              onClick={() => {
+                                handleOpenDeleteBuilding(building)
+                                setOpenMenuId(null)
+                              }}
+                            >
+                              <TrashIcon className="h-4 w-4 text-red-400" />
+                              Delete Building
+                            </button>
+                          </div>
+                        )}
+                      </div>
                       <IconButton
                         label={isExpanded ? 'Collapse building' : 'Expand building'}
                         onClick={() => toggleBuilding(building.id)}
@@ -1075,110 +1777,122 @@ function BuildingsRoomsPage() {
                 <div className={`grid transition-all duration-500 ease-in-out ${isExpanded ? 'grid-rows-[1fr] mt-10 opacity-100' : 'grid-rows-[0fr] mt-0 opacity-0'}`}>
                   <div className="overflow-hidden px-4 -mx-4">
                     <div className="space-y-12 pb-4">
-                      {sortedFloors.map((floor) => (
-                        <div key={floor} className="space-y-6">
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2.5">
-                              <span className="h-2 w-2 rounded-full bg-gray-400" />
-                              <h4 className="text-sm font-black uppercase tracking-[0.25em] text-gray-500">
-                                Floor {floor}
-                              </h4>
+                      {building.rooms.length === 0 ? (
+                        <div className="rounded-md border border-dashed border-gray-200 bg-gray-50/50 p-10 text-center">
+                          <DoorIcon className="mx-auto h-12 w-12 text-gray-300" />
+                          <p className="mt-4 text-sm font-bold uppercase tracking-widest text-gray-400">
+                            No rooms registered yet
+                          </p>
+                        </div>
+                      ) : (
+                        sortedFloors.map((floor) => (
+                          <div key={floor} className="space-y-6">
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2.5">
+                                <span className="h-2 w-2 rounded-full bg-gray-400" />
+                                <h4 className="text-sm font-black uppercase tracking-[0.25em] text-gray-500">
+                                  Floor {floor}
+                                </h4>
+                              </div>
+                              <div className="h-1 flex-1 bg-gray-200" />
                             </div>
-                            <div className="h-1 flex-1 bg-gray-200" />
-                          </div>
 
-                          <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,500px),1fr))]">
-                            {roomsByFloor[floor]?.map((room) => (
-                              <div
-                                key={room.id}
-                                className="flex overflow-hidden rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02]"
-                              >
-                                <img
-                                  src={room.image}
-                                  alt={room.name}
-                                  className="aspect-square w-32 h-32 shrink-0 object-cover grayscale-[0.2] sm:w-40 sm:h-40"
-                                />
+                            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,500px),1fr))]">
+                              {roomsByFloor[floor]
+                                ?.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+                                .map((room) => (
+                                <div
+                                  key={room.id}
+                                  onClick={() => handleOpenRoomInfoModal(room)}
+                                  className="flex overflow-hidden rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
+                                >
+                                  <img
+                                    src={room.image}
+                                    alt={room.name}
+                                    className="aspect-square w-32 h-32 shrink-0 object-cover grayscale-[0.2] sm:w-40 sm:h-40"
+                                  />
 
-                                <div className="flex flex-1 flex-col justify-between p-4">
-                                  <div>
-                                    <div className="flex items-start justify-between gap-2">
-                                      <h5 className="text-lg font-bold leading-tight text-gray-900">
-                                        {room.name}
-                                      </h5>
-                                      <div className="relative">
-                                        <IconButton
-                                          label="Room options"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            setOpenMenuId(openMenuId === room.id ? null : room.id)
-                                          }}
-                                          className="h-8 w-8 shrink-0 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                                        >
-                                          <DotsVerticalIcon className="h-5 w-5" />
-                                        </IconButton>
-
-                                        {openMenuId === room.id && (
-                                          <div
-                                            className="absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-md border border-gray-100 bg-white shadow-2xl"
-                                            onClick={(e) => e.stopPropagation()}
+                                  <div className="flex flex-1 flex-col justify-between p-4">
+                                    <div>
+                                      <div className="flex items-start justify-between gap-2">
+                                        <h5 className="text-lg font-bold leading-tight text-gray-900">
+                                          {room.name}
+                                        </h5>
+                                        <div className="relative">
+                                          <IconButton
+                                            label="Room options"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setOpenMenuId(openMenuId === room.id ? null : room.id)
+                                            }}
+                                            className="h-8 w-8 shrink-0 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
                                           >
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
-                                              onClick={() => {
-                                                handleOpenRoomModal(building.id, room)
-                                                setOpenMenuId(null)
-                                              }}
-                                            >
-                                              <EditIcon className="h-4 w-4 text-gray-400" />
-                                              Edit Room
-                                            </button>
-                                            <button
-                                              type="button"
-                                              className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50"
-                                              onClick={() => {
-                                                console.log('Delete room:', room.id)
-                                                setOpenMenuId(null)
-                                              }}
-                                            >
-                                              <TrashIcon className="h-4 w-4 text-red-400" />
-                                              Delete Room
-                                            </button>
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-gray-400">
-                                      {room.type}
-                                    </p>
-                                  </div>
+                                            <DotsVerticalIcon className="h-5 w-5" />
+                                          </IconButton>
 
-                                  <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
-                                    <div className="flex items-center gap-3">
-                                      <div className="flex h-11 w-11 items-center justify-center rounded-md bg-white border border-gray-200 shrink-0">
-                                        <UserIcon className="h-6 w-6 text-gray-500" />
+                                          {openMenuId === room.id && (
+                                            <div
+                                              className="absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-md border border-gray-100 bg-white shadow-2xl"
+                                              onClick={(e) => e.stopPropagation()}
+                                            >
+                                              <button
+                                                type="button"
+                                                className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                                                onClick={() => {
+                                                  handleOpenRoomModal(building.id, room)
+                                                  setOpenMenuId(null)
+                                                }}
+                                              >
+                                                <EditIcon className="h-4 w-4 text-gray-400" />
+                                                Edit Room
+                                              </button>
+                                              <button
+                                                type="button"
+                                                className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                                                onClick={() => {
+                                                  handleOpenDeleteRoom(room)
+                                                  setOpenMenuId(null)
+                                                }}
+                                              >
+                                                <TrashIcon className="h-4 w-4 text-red-400" />
+                                                Delete Room
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                      <div className="flex flex-col">
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 leading-tight">
-                                          Capacity
-                                        </span>
-                                        <span className="text-sm font-bold text-gray-700 leading-none mt-0.5">
-                                          {room.capacity} people
-                                        </span>
-                                      </div>
+                                      <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                        {room.type}
+                                      </p>
                                     </div>
-                                    <span
-                                      className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
-                                    >
-                                      {room.status}
-                                    </span>
+
+                                    <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-white border border-gray-200 shrink-0">
+                                          <UserIcon className="h-6 w-6 text-gray-500" />
+                                        </div>
+                                        <div className="flex flex-col">
+                                          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 leading-tight">
+                                            Capacity
+                                          </span>
+                                          <span className="text-sm font-bold text-gray-700 leading-none mt-0.5">
+                                            {room.capacity} people
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <span
+                                        className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
+                                      >
+                                        {room.status}
+                                      </span>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            ))}
+                              ))}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        ))
+                      )}
                     </div>
                   </div>
                 </div>
