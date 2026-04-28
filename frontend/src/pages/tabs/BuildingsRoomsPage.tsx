@@ -2,7 +2,9 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react
 import { DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
-import { db } from '../../firebase'
+import { SearchFilters } from '../../components/SearchFilters'
+import { db, storage } from '../../firebase'
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import { 
   collection, 
   addDoc, 
@@ -15,18 +17,27 @@ import {
   query, 
   orderBy 
 } from 'firebase/firestore'
+import { CropModal } from '../../components/CropModal'
 
 type RoomStatus = 'Available' | 'Occupied' | 'Reserved' | 'Maintenance'
 
 function createRoomImage() {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
-      <rect width="640" height="360" rx="28" fill="#62853e" />
+      <rect width="640" height="360" rx="28" fill="#f3f4f6" />
+      <g transform="translate(225, 88) scale(8)" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M6 20V5.8c0-.64.43-1.2 1.04-1.36l7-1.84a1.4 1.4 0 0 1 1.76 1.35V20" />
+        <path d="M6 20h11.5" />
+        <path d="M11.95 12.15h.1" />
+        <path d="M15.8 20V4.1" />
+      </g>
     </svg>
   `
 
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
 }
+
+const DEFAULT_ROOM_IMAGE = createRoomImage()
 
 interface Room {
   id: string
@@ -162,7 +173,7 @@ function SingleSelectDropdown<T extends string>({
         type="button"
         disabled={isDisabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+        className="relative flex h-[46px] w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
       >
         <span className="whitespace-nowrap">{value || 'None'}</span>
         <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -199,7 +210,7 @@ function SingleSelectDropdown<T extends string>({
   )
 }
 
-function BuildingsRoomsPage() {
+export function BuildingsRoomsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
@@ -279,7 +290,7 @@ function BuildingsRoomsPage() {
   const [newRoomFloor, setNewRoomFloor] = useState<string>('1')
   const [newRoomCapacity, setNewRoomCapacity] = useState<string>('50')
   const [newRoomStatus, setNewRoomStatus] = useState<RoomStatus>('Available')
-  const [newRoomImage, setNewRoomImage] = useState(createRoomImage())
+  const [newRoomImage, setNewRoomImage] = useState(DEFAULT_ROOM_IMAGE)
   const [newRoomDescription, setNewRoomDescription] = useState('')
   const [newRoomAmenities, setNewRoomAmenities] = useState<string[]>([])
   const [newRoomAvailableDays, setNewRoomAvailableDays] = useState<string[]>(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
@@ -289,6 +300,12 @@ function BuildingsRoomsPage() {
   const [newRoomMaxBookingMins, setNewRoomMaxBookingMins] = useState('90')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [cropModalData, setCropModalData] = useState<{ isOpen: boolean, imageSrc: string }>({
+    isOpen: false,
+    imageSrc: ''
+  })
+  const [isDraggingRoomImage, setIsDraggingRoomImage] = useState(false)
+  const [pendingRoomImageBlob, setPendingRoomImageBlob] = useState<Blob | null>(null)
   const [errors, setErrors] = useState({ name: false, code: false, start: false, end: false })
   const [activeDropdowns, setActiveDropdowns] = useState(0)
 
@@ -308,13 +325,60 @@ function BuildingsRoomsPage() {
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onloadend = () => {
-      setNewRoomImage(reader.result as string)
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setCropModalData({ isOpen: true, imageSrc: reader.result })
+        }
+      }
+      reader.readAsDataURL(file)
+      e.target.value = ''
     }
-    reader.readAsDataURL(file)
+  }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDraggingRoomImage(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDraggingRoomImage(false)
+  }
+
+  const handleRoomImageDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDraggingRoomImage(false)
+    
+    // Check for files
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setCropModalData({ isOpen: true, imageSrc: reader.result })
+        }
+      }
+      reader.readAsDataURL(file)
+      return
+    }
+
+    // Check for dragged URL (e.g. from Google Images)
+    const imageUrl = e.dataTransfer.getData('text/uri-list') || 
+                   e.dataTransfer.getData('text/plain') ||
+                   e.dataTransfer.getData('url')
+    
+    if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('data:'))) {
+      setCropModalData({ isOpen: true, imageSrc: imageUrl })
+    }
+  }
+
+  const handleCropComplete = async (croppedImage: Blob) => {
+    setPendingRoomImageBlob(croppedImage)
+    const blobUrl = URL.createObjectURL(croppedImage)
+    setNewRoomImage(blobUrl)
+    setCropModalData({ isOpen: false, imageSrc: '' })
   }
 
   const toggleBuilding = (id: string) => {
@@ -375,7 +439,7 @@ function BuildingsRoomsPage() {
       setNewRoomFloor('1')
       setNewRoomCapacity('50')
       setNewRoomStatus('Available')
-      setNewRoomImage(createRoomImage())
+      setNewRoomImage(DEFAULT_ROOM_IMAGE)
       setNewRoomDescription('')
       setNewRoomAmenities([])
       setNewRoomAvailableDays(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
@@ -397,6 +461,7 @@ function BuildingsRoomsPage() {
     setSelectedRoomInfo(null)
     setActiveBuildingId(null)
     setRoomModalStep(1)
+    setPendingRoomImageBlob(null)
     setErrors({ name: false, code: false, start: false, end: false })
   }
 
@@ -410,12 +475,25 @@ function BuildingsRoomsPage() {
     setRoomToDelete(null)
   }
 
+  const deleteImageFromStorage = async (imageUrl: string) => {
+    if (!imageUrl || !imageUrl.includes('firebasestorage.googleapis.com')) return
+    try {
+      const imageRef = ref(storage, imageUrl)
+      await deleteObject(imageRef)
+    } catch (error) {
+      console.error("Error deleting image from storage:", error)
+    }
+  }
+
   const handleDeleteRoomSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!roomToDelete) return
 
     setIsDeletingRoom(true)
     try {
+      // Delete image from storage first
+      await deleteImageFromStorage(roomToDelete.image)
+      
       await deleteDoc(doc(db, 'rooms', roomToDelete.id))
       handleCloseDeleteRoomModal()
     } catch (error) {
@@ -444,6 +522,9 @@ function BuildingsRoomsPage() {
 
     setIsDeletingBuilding(true)
     try {
+      // Delete all room images from storage
+      await Promise.all(buildingToDelete.rooms.map(room => deleteImageFromStorage(room.image)))
+
       const batch = writeBatch(db)
       
       // Delete all rooms associated with the building
@@ -541,8 +622,32 @@ function BuildingsRoomsPage() {
 
     setIsSubmitting(true)
     try {
+      let imageBlob: Blob | null = pendingRoomImageBlob;
+      const isNewUpload = !!pendingRoomImageBlob || (newRoomImage.startsWith('data:') && newRoomImage !== DEFAULT_ROOM_IMAGE);
+      
+      if (!imageBlob && isNewUpload) {
+        const response = await fetch(newRoomImage);
+        imageBlob = await response.blob();
+      }
+
+      const uploadImage = async (roomId: string) => {
+        if (!imageBlob) return newRoomImage;
+        const storageRef = ref(storage, `rooms/${roomId}/image_${Date.now()}`);
+        await uploadBytesResumable(storageRef, imageBlob);
+        return await getDownloadURL(storageRef);
+      };
+
       if (editingRoom) {
         const roomRef = doc(db, 'rooms', editingRoom.id)
+        const oldImageUrl = editingRoom.image
+        const imageUrl = await uploadImage(editingRoom.id)
+
+        // Delete old image if a new one was uploaded and the old one was in storage
+        if (isNewUpload && oldImageUrl && oldImageUrl.includes('firebasestorage.googleapis.com')) {
+          console.log("Deleting old image from storage:", oldImageUrl)
+          await deleteImageFromStorage(oldImageUrl)
+        }
+
         await updateDoc(roomRef, {
           name: newRoomName,
           code: newRoomCode,
@@ -550,7 +655,7 @@ function BuildingsRoomsPage() {
           floor: parseInt(newRoomFloor) || 0,
           capacity: parseInt(newRoomCapacity) || 0,
           status: newRoomStatus,
-          image: newRoomImage,
+          image: imageUrl,
           description: newRoomDescription,
           amenities: newRoomAmenities,
           availableDays: newRoomAvailableDays,
@@ -567,10 +672,9 @@ function BuildingsRoomsPage() {
         const count = Math.abs(endNum - startNum) + 1
         const step = startNum <= endNum ? 1 : -1
 
-        const roomPromises = []
         for (let i = 0; i < count; i++) {
           const currentNum = startNum + (i * step)
-          roomPromises.push(addDoc(collection(db, 'rooms'), {
+          const roomRef = await addDoc(collection(db, 'rooms'), {
             buildingId: activeBuildingId,
             name: `${roomNamePrefix}${currentNum}`,
             code: `${roomCodePrefix}${currentNum}`,
@@ -588,11 +692,15 @@ function BuildingsRoomsPage() {
             maxBookingMins: max,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
-          }))
+          })
+
+          if (isNewUpload) {
+            const imageUrl = await uploadImage(roomRef.id)
+            await updateDoc(roomRef, { image: imageUrl })
+          }
         }
-        await Promise.all(roomPromises)
       } else {
-        await addDoc(collection(db, 'rooms'), {
+        const roomRef = await addDoc(collection(db, 'rooms'), {
           buildingId: activeBuildingId,
           name: newRoomName, 
           code: newRoomCode,
@@ -611,6 +719,11 @@ function BuildingsRoomsPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         })
+
+        if (isNewUpload) {
+          const imageUrl = await uploadImage(roomRef.id)
+          await updateDoc(roomRef, { image: imageUrl })
+        }
       }
       handleCloseModals()
     } catch (error) {
@@ -931,7 +1044,7 @@ function BuildingsRoomsPage() {
                             type="number"
                             value={roomEndNumber}
                             onChange={(e) => {
-                              setConfirmBuildingName(e.target.value)
+                              setRoomEndNumber(e.target.value)
                               if (errors.end) setErrors(prev => ({ ...prev, end: false }))
                             }}
                             onKeyDown={(e) => {
@@ -1044,10 +1157,22 @@ function BuildingsRoomsPage() {
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="w-full aspect-square rounded-md border-2 border-dashed border-gray-300 bg-gray-50 flex items-center justify-center overflow-hidden transition-all hover:border-[var(--brand-color)] group relative shadow-sm"
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleRoomImageDrop}
+                        className={`w-full aspect-square rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group relative shadow-sm ${
+                          isDraggingRoomImage 
+                            ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/5 ring-4 ring-[var(--brand-color)]/10 scale-[0.98]' 
+                            : 'border-gray-200 bg-gray-50 hover:border-[var(--brand-color)]'
+                        }`}
                       >
                         {newRoomImage ? (
-                          <img src={newRoomImage} alt="Preview" className="h-full w-full object-cover" />
+                          <img 
+                            src={newRoomImage} 
+                            alt="Preview" 
+                            className="h-full w-full object-cover" 
+                            onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
+                          />
                         ) : (
                           <div className="flex flex-col items-center gap-2">
                             <CameraIcon className="h-8 w-8 text-gray-400" />
@@ -1267,6 +1392,7 @@ function BuildingsRoomsPage() {
                       src={selectedRoomInfo.image} 
                       alt={selectedRoomInfo.name} 
                       className="h-full w-full object-cover grayscale-[0.2]" 
+                      onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                     />
                   </div>
                   
@@ -1412,11 +1538,12 @@ function BuildingsRoomsPage() {
                     src={roomToDelete.image} 
                     alt="" 
                     className="h-full w-full object-cover grayscale-[0.2]"
+                    onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                   />
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-gray-900 truncate">{roomToDelete.name}</p>
-                  <p className="text-xs font-medium text-gray-500">{roomToDelete.code} • Floor {roomToDelete.floor}</p>
+                  <p className="text-xs font-medium text-gray-500">{roomToDelete.type}</p>
                 </div>
               </div>
 
@@ -1586,40 +1713,15 @@ function BuildingsRoomsPage() {
           </div>
         </div>
 
-        <div className="rounded-md border border-gray-200 bg-gray-50/50 p-5 shadow-md">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                <SearchIcon className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="building-room-search"
-                type="search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search by building name, room code, status, capacity..."
-                className="w-full rounded-md border border-gray-200 bg-white pl-11 pr-24 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute inset-y-1.5 right-1.5 rounded-md bg-gray-900 px-4 text-sm font-bold text-white transition hover:bg-gray-800"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-            <button
-              type="button"
-              className="flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#526f34] shrink-0"
-              onClick={() => handleOpenBuildingModal()}
-            >
-              <PlusIcon className="h-5 w-5" />
-              Add Building
-            </button>
-          </div>
-        </div>
+        <SearchFilters
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          placeholder="Search by building name, room code, status, capacity..."
+          primaryButton={{
+            label: "Add Building",
+            onClick: () => handleOpenBuildingModal()
+          }}
+        />
 
         <div className="space-y-6">
           {filteredBuildings.length === 0 ? (
@@ -1810,6 +1912,7 @@ function BuildingsRoomsPage() {
                                     src={room.image}
                                     alt={room.name}
                                     className="aspect-square w-32 h-32 shrink-0 object-cover grayscale-[0.2] sm:w-40 sm:h-40"
+                                    onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                                   />
 
                                   <div className="flex flex-1 flex-col justify-between p-4">
@@ -1901,8 +2004,20 @@ function BuildingsRoomsPage() {
           })}
         </div>
       </div>
+
+      {/* Crop Modal */}
+      {cropModalData.isOpen && (
+        <CropModal
+          imageSrc={cropModalData.imageSrc}
+          onCropComplete={handleCropComplete}
+          onClose={() => setCropModalData({ isOpen: false, imageSrc: '' })}
+          isUploading={false}
+          title="Adjust Room Image"
+          hideOverlay={true}
+          cropShape="rect"
+        />
+      )}
     </section>
   )
 }
 
-export default BuildingsRoomsPage

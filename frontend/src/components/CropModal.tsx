@@ -49,6 +49,7 @@ interface CropModalProps {
   title?: string
   description?: string
   hideOverlay?: boolean
+  cropShape?: 'rect' | 'round'
 }
 
 export function CropModal({ 
@@ -58,7 +59,8 @@ export function CropModal({
   isUploading,
   title = "Adjust Picture",
   description = "Drag to re-position and use the slider to zoom.",
-  hideOverlay = false
+  hideOverlay = false,
+  cropShape = "round"
 }: CropModalProps) {
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
@@ -109,7 +111,7 @@ export function CropModal({
             crop={crop}
             zoom={zoom}
             aspect={1}
-            cropShape="round"
+            cropShape={cropShape}
             showGrid={false}
             onCropChange={onCropChange}
             onCropComplete={onCropCompleteInternal}

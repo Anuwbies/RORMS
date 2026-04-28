@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
 import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy, writeBatch, doc } from 'firebase/firestore'
 import { auth, db } from '../../firebase'
-import { UsersIcon, UserIcon, SearchIcon, PlusIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
+import { UsersIcon, UserIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
+import { SearchFilters } from '../../components/SearchFilters'
 
 type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Instructor'
 type MemberStatus = 'Active' | 'Inactive' | 'Pending'
@@ -127,7 +128,7 @@ function MultiSelectDropdown<T extends string>({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white pl-4 pr-3 py-3 text-sm font-bold text-gray-600 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+        className="relative flex h-[46px] w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white pl-4 pr-3 text-sm font-bold text-gray-600 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
       >
         <div className="relative flex items-center">
           <span className="invisible h-0 overflow-hidden whitespace-nowrap font-bold" aria-hidden="true">
@@ -242,7 +243,7 @@ function SingleSelectDropdown<T extends string>({
         type="button"
         disabled={isDisabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-3 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+        className="relative flex h-[46px] w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
       >
         <span className="whitespace-nowrap">{value || 'None'}</span>
         <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -983,32 +984,12 @@ function MembersPage() {
           </div>
         </div>
 
-        <div className="rounded-md border border-gray-200 bg-gray-50/50 p-5 shadow-md">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                <SearchIcon className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                id="member-search"
-                type="search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search by name or email..."
-                className="w-full rounded-md border border-gray-200 bg-white pl-11 pr-24 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
-              />
-              {searchTerm && (
-                <button
-                  type="button"
-                  onClick={() => setSearchTerm('')}
-                  className="absolute inset-y-1.5 right-1.5 rounded-md bg-gray-900 px-4 text-sm font-bold text-white transition hover:bg-gray-800"
-                >
-                  Clear
-                </button>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <SearchFilters
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          placeholder="Search by name or email..."
+          dropdowns={
+            <>
               <MultiSelectDropdown
                 label="Roles"
                 options={['Admin', 'Registrar', 'Dean', 'Instructor']}
@@ -1023,18 +1004,13 @@ function MembersPage() {
                 onChange={setSelectedStatuses}
                 className="w-full sm:w-auto"
               />
-            </div>
-
-            <button
-              type="button"
-              className="flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg shrink-0"
-              onClick={openInviteModal}
-            >
-              <PlusIcon className="h-5 w-5" />
-              Invite Member
-            </button>
-          </div>
-        </div>
+            </>
+          }
+          primaryButton={{
+            label: "Invite Member",
+            onClick: openInviteModal
+          }}
+        />
 
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
           <div className="overflow-x-auto">

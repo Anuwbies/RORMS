@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, CheckIcon, UserIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
+import { SearchFilters } from '../../components/SearchFilters'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, query, where, onSnapshot, doc, updateDoc, limit } from 'firebase/firestore'
@@ -272,14 +273,6 @@ function MyDepartmentPage() {
     setIsScheduleModalOpen(true)
   }
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-[var(--brand-surface)]">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--brand-color)] border-t-transparent"></div>
-      </div>
-    )
-  }
-
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       {/* Remove Member Modal */}
@@ -531,7 +524,7 @@ function MyDepartmentPage() {
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                   <p className="text-3xl font-bold text-gray-900 leading-tight">
-                    {departmentInfo?.name || 'No Department Assigned'}
+                    {loading ? 'Loading...' : (departmentInfo?.name || 'No Department Assigned')}
                   </p>
                   {departmentInfo?.code && (
                     <span className="flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[16px] font-black uppercase tracking-widest text-gray-500 shadow-sm">
@@ -554,33 +547,15 @@ function MyDepartmentPage() {
           </div>
         </div>
 
-        <div className="rounded-md border border-gray-200 bg-gray-50/50 p-5 shadow-md">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                <SearchIcon className="h-5 w-5 text-gray-400" />
-              </div>
-              <input
-                type="search"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search members..."
-                className="w-full rounded-md border border-gray-200 bg-white pl-11 pr-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
-              />
-            </div>
-
-            {currentUserRole === 'Dean' && (
-              <button
-                type="button"
-                onClick={() => setIsAddModalOpen(true)}
-                className="flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg shrink-0"
-              >
-                <PlusIcon className="h-5 w-5" />
-                Add Instructor
-              </button>
-            )}
-          </div>
-        </div>
+        <SearchFilters
+          searchTerm={searchTerm}
+          onSearchChange={setSearchTerm}
+          placeholder="Search members..."
+          primaryButton={currentUserRole === 'Dean' ? {
+            label: "Add Instructor",
+            onClick: () => setIsAddModalOpen(true)
+          } : undefined}
+        />
 
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
           <div className="overflow-x-auto">
@@ -610,7 +585,7 @@ function MyDepartmentPage() {
                 {filteredMembers.length === 0 ? (
                   <tr>
                     <td colSpan={currentUserRole === 'Dean' ? 5 : 4} className="px-6 py-12 text-center text-gray-500">
-                      No members found matching your search.
+                      {loading ? 'Loading members...' : 'No members found matching your search.'}
                     </td>
                   </tr>
                 ) : (

@@ -27,3 +27,16 @@ Stores the logo for a specific department.
   - **Write/Delete**: Admins and the assigned Dean of the department.
 - **Naming Convention**: `logo_` followed by a timestamp to avoid caching issues.
 - **Linked Firestore Field**: `departments/{deptId}.logo` (Stores the download URL).
+
+## `rooms/`
+Storage for room-related assets.
+
+### `rooms/{roomId}/image`
+Stores the image for a specific room.
+
+- **Path**: `rooms/{roomId}/image_{timestamp}`
+- **Access Control**: 
+  - **Read**: Authenticated users.
+  - **Write/Delete**: Admins.
+- **Naming Convention**: `image_` followed by a timestamp to avoid caching issues.
+- **Linked Firestore Field**: `rooms/{roomId}.image` (Stores the download URL).

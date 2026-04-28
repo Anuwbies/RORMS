@@ -11,9 +11,9 @@ interface EmailVerificationPageProps {
 export default function EmailVerificationPage({ onSignOut }: EmailVerificationPageProps) {
   const [isResending, setIsResending] = useState(false)
   const [resendStatus, setResendStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const [hasSentEmail, setHasSentEmail] = useState(false)
+  const [hasSentEmail, setHasSentEmail] = useState(true) // Changed to true by default as SignupPage sends it
   const [lastSentWasResend, setLastSentWasResend] = useState(false)
-  const [countdown, setCountdown] = useState(0)
+  const [countdown, setCountdown] = useState(60) // Initial 60s cooldown after signup auto-send
   const [userEmail, setUserEmail] = useState<string | null>(null)
 
   useEffect(() => {
@@ -41,7 +41,7 @@ export default function EmailVerificationPage({ onSignOut }: EmailVerificationPa
     setIsResending(true)
     setResendStatus('idle')
     try {
-      setLastSentWasResend(hasSentEmail)
+      setLastSentWasResend(true) // If manually clicking, it's always a resend now
       await sendEmailVerification(auth.currentUser)
       setResendStatus('success')
       setHasSentEmail(true)

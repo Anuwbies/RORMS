@@ -13,7 +13,7 @@ import {
 } from '../components/Icons'
 import type { NavItem, DashboardSection } from '../components/LeftSidebar'
 import DashboardPage from './tabs/DashboardPage'
-import BuildingsRoomsPage from './tabs/BuildingsRoomsPage'
+import { BuildingsRoomsPage } from './tabs/BuildingsRoomsPage'
 import MembersPage from './tabs/MembersPage'
 import MyDepartmentPage from './tabs/MyDepartmentPage'
 import DepartmentsPage from './tabs/DepartmentsPage'
@@ -39,13 +39,6 @@ const navItems: NavItem[] = [
     icon: CalendarIcon,
   },
   {
-    id: 'reserveRoom',
-    label: 'Reserve a Room',
-    eyebrow: 'Reserve a Room',
-    description: 'Find and book available rooms.',
-    icon: BookIcon,
-  },
-  {
     id: 'myReservations',
     label: 'My Reservations',
     eyebrow: 'My Reservations',
@@ -65,6 +58,13 @@ const navItems: NavItem[] = [
     eyebrow: 'Manage Reservations',
     description: 'Track and approve room reservation requests.',
     icon: ClipboardIcon,
+  },
+  {
+    id: 'reserveRoom',
+    label: 'Reserve a Room',
+    eyebrow: 'Reserve a Room',
+    description: 'Find and book available rooms.',
+    icon: BookIcon,
   },
   {
     id: 'buildingsRooms',
