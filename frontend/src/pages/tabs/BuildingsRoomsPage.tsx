@@ -214,9 +214,18 @@ export function BuildingsRoomsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
-  const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>([])
+  const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('rorms_buildings_expanded')
+    return saved ? JSON.parse(saved) : []
+  })
+  const isInitialLoad = useRef(true)
+  const knownBuildingIds = useRef<Set<string>>(new Set())
 
   const [rooms, setRooms] = useState<Room[]>([])
+
+  useEffect(() => {
+    localStorage.setItem('rorms_buildings_expanded', JSON.stringify(expandedBuildingIds))
+  }, [expandedBuildingIds])
 
   useEffect(() => {
     const buildingsQuery = query(collection(db, 'buildings'), orderBy('createdAt', 'desc'))
@@ -244,11 +253,20 @@ export function BuildingsRoomsPage() {
       setBuildings(mergedBuildings)
       setRooms(roomsList)
 
-      // Auto-expand new buildings if they weren't already tracked
-      setExpandedBuildingIds(prev => {
-        const newIds = mergedBuildings.map(b => b.id).filter(id => !prev.includes(id))
-        return [...prev, ...newIds]
-      })
+      const currentIds = mergedBuildings.map(b => b.id)
+
+      // Auto-expand ONLY for buildings added after the initial data fetch
+      if (!isInitialLoad.current) {
+        const newIds = currentIds.filter(id => !knownBuildingIds.current.has(id))
+        if (newIds.length > 0) {
+          setExpandedBuildingIds(prev => [...prev, ...newIds])
+        }
+      } else if (mergedBuildings.length > 0) {
+        isInitialLoad.current = false
+      }
+
+      // Update known IDs for next time
+      knownBuildingIds.current = new Set(currentIds)
     }
 
     const unsubscribeBuildings = onSnapshot(buildingsQuery, (snapshot) => {
@@ -552,6 +570,24 @@ export function BuildingsRoomsPage() {
       return
     }
 
+    // Check for uniqueness
+    const normalizedName = newBuildingName.trim().toLowerCase()
+    const normalizedCode = newBuildingCode.trim().toLowerCase()
+
+    const isDuplicateName = buildings.some(b => 
+      b.name.trim().toLowerCase() === normalizedName && 
+      (!editingBuilding || b.id !== editingBuilding.id)
+    )
+    const isDuplicateCode = buildings.some(b => 
+      b.code.trim().toLowerCase() === normalizedCode && 
+      (!editingBuilding || b.id !== editingBuilding.id)
+    )
+
+    if (isDuplicateName || isDuplicateCode) {
+      setErrors({ name: isDuplicateName, code: isDuplicateCode, start: false, end: false })
+      return
+    }
+
     setIsSubmitting(true)
     try {
       if (editingBuilding) {
@@ -599,9 +635,53 @@ export function BuildingsRoomsPage() {
           })
           return
         }
+
+        // Check for uniqueness in range
+        const startNum = parseInt(roomStartNumber) || 0
+        const endNum = parseInt(roomEndNumber) || 0
+        const count = Math.abs(endNum - startNum) + 1
+        const step = startNum <= endNum ? 1 : -1
+
+        for (let i = 0; i < count; i++) {
+          const currentNum = startNum + (i * step)
+          const targetName = `${roomNamePrefix}${currentNum}`.trim().toLowerCase()
+          const targetCode = `${roomCodePrefix}${currentNum}`.trim().toLowerCase()
+
+          const isDuplicateName = rooms.some(r => 
+            r.name.trim().toLowerCase() === targetName && 
+            (!editingRoom || r.id !== editingRoom.id)
+          )
+          const isDuplicateCode = rooms.some(r => 
+            r.code.trim().toLowerCase() === targetCode && 
+            (!editingRoom || r.id !== editingRoom.id)
+          )
+
+          if (isDuplicateName || isDuplicateCode) {
+            setErrors({ name: isDuplicateName, code: isDuplicateCode, start: false, end: false })
+            return
+          }
+        }
       } else {
         if (!newRoomName.trim() || !newRoomCode.trim()) {
           setErrors({ name: !newRoomName.trim(), code: !newRoomCode.trim(), start: false, end: false })
+          return
+        }
+
+        // Check for uniqueness
+        const normalizedName = newRoomName.trim().toLowerCase()
+        const normalizedCode = newRoomCode.trim().toLowerCase()
+
+        const isDuplicateName = rooms.some(r => 
+          r.name.trim().toLowerCase() === normalizedName && 
+          (!editingRoom || r.id !== editingRoom.id)
+        )
+        const isDuplicateCode = rooms.some(r => 
+          r.code.trim().toLowerCase() === normalizedCode && 
+          (!editingRoom || r.id !== editingRoom.id)
+        )
+
+        if (isDuplicateName || isDuplicateCode) {
+          setErrors({ name: isDuplicateName, code: isDuplicateCode, start: false, end: false })
           return
         }
       }
@@ -1387,7 +1467,7 @@ export function BuildingsRoomsPage() {
             <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
               <div className="p-6 space-y-5">
                 <div className="flex gap-5">
-                  <div className="w-32 h-32 shrink-0 rounded-md border border-gray-200 bg-gray-50 overflow-hidden shadow-sm">
+                  <div className="w-[152px] h-[152px] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
                     <img 
                       src={selectedRoomInfo.image} 
                       alt={selectedRoomInfo.name} 
@@ -1399,34 +1479,34 @@ export function BuildingsRoomsPage() {
                   <div className="flex-1 flex flex-col justify-between py-0.5">
                     <div>
                       <div className="flex items-center justify-start gap-3">
-                        <h4 className="text-lg font-bold text-gray-900 leading-tight">{selectedRoomInfo.name}</h4>
-                        <span className="inline-flex items-center justify-center rounded-md bg-gray-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-gray-600 border border-gray-200">
+                        <h4 className="text-xl font-bold text-gray-900 leading-tight">{selectedRoomInfo.name}</h4>
+                        <span className="inline-flex items-center justify-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold uppercase tracking-widest text-gray-600 border border-gray-200">
                           {selectedRoomInfo.code}
                         </span>
                       </div>
                       <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${roomStatusClasses[selectedRoomInfo.status]}`}>
+                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-black uppercase tracking-widest ${roomStatusClasses[selectedRoomInfo.status]}`}>
                           {selectedRoomInfo.status}
                         </span>
-                        <span className="text-xs text-gray-500 font-semibold">
+                        <span className="text-sm text-gray-500 font-semibold">
                           {selectedRoomInfo.type} • Floor {selectedRoomInfo.floor}
                         </span>
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 mt-3">
-                      <div className="rounded-md border border-gray-100 bg-gray-50/50 p-2 flex items-center gap-2">
-                        <UserIcon className="h-4 w-4 text-gray-400 shrink-0" />
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 leading-none">Capacity</p>
-                          <p className="text-xs font-bold text-gray-700 mt-1">{selectedRoomInfo.capacity} pax</p>
+                    <div className="grid grid-cols-2 gap-3 mt-3">
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Capacity</p>
+                        <div className="rounded-md border border-gray-200 bg-gray-100 p-2.5 flex items-center gap-2">
+                          <UserIcon className="h-4 w-4 text-gray-500 shrink-0" />
+                          <p className="text-sm font-bold text-gray-700">{selectedRoomInfo.capacity} pax</p>
                         </div>
                       </div>
-                      <div className="rounded-md border border-gray-100 bg-gray-50/50 p-2 flex items-center gap-2">
-                        <ClockIcon className="h-4 w-4 text-gray-400 shrink-0" />
-                        <div>
-                          <p className="text-[9px] font-bold uppercase tracking-widest text-gray-400 leading-none">Booking Limits</p>
-                          <p className="text-xs font-bold text-gray-700 mt-1">
+                      <div className="space-y-1.5">
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Booking Limits</p>
+                        <div className="rounded-md border border-gray-200 bg-gray-100 p-2.5 flex items-center gap-2">
+                          <ClockIcon className="h-4 w-4 text-gray-500 shrink-0" />
+                          <p className="text-sm font-bold text-gray-700">
                             {selectedRoomInfo.minBookingMins}m - {selectedRoomInfo.maxBookingMins}m
                           </p>
                         </div>
@@ -1435,26 +1515,28 @@ export function BuildingsRoomsPage() {
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-5">
                   <div>
-                    <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-1.5">Description</h5>
-                    <p className="text-xs text-gray-600 leading-relaxed">
-                      {selectedRoomInfo.description || 'No description provided for this room.'}
-                    </p>
+                    <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Description</h5>
+                    <div className="rounded-md border border-gray-200 bg-gray-100 p-4">
+                      <p className="text-sm text-gray-600 leading-relaxed">
+                        {selectedRoomInfo.description || 'No description provided for this room.'}
+                      </p>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-2">Availability</h5>
-                      <div className="flex gap-1 h-[30px]">
+                      <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Availability</h5>
+                      <div className="flex gap-1 h-[34px]">
                         {DAYS_OF_WEEK.map((day) => {
                           const isAvailable = selectedRoomInfo.availableDays.includes(day)
                           return (
                             <div
                               key={day}
                               title={day}
-                              className={`flex-1 flex items-center justify-center rounded-sm text-[9px] font-bold transition-colors ${
-                                isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-100 text-gray-300'
+                              className={`flex-1 flex items-center justify-center rounded-sm text-[10px] font-bold transition-colors ${
+                                isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-200 text-gray-500'
                               }`}
                             >
                               {day.slice(0, 1)}
@@ -1464,37 +1546,37 @@ export function BuildingsRoomsPage() {
                       </div>
                     </div>
                     <div>
-                      <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-2">Schedule</h5>
-                      <div className="flex items-center justify-start px-3 gap-2 text-xs font-bold text-gray-700 bg-gray-50 h-[30px] rounded-md border border-gray-100">
-                        <ClockIcon className="h-3.5 w-3.5 text-[var(--brand-color)]" />
+                      <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
+                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[34px] rounded-md border border-gray-200">
+                        <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
                         <span>{selectedRoomInfo.startTime} - {selectedRoomInfo.endTime}</span>
                       </div>
                     </div>
                   </div>
 
                   <div>
-                    <h5 className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-400 mb-2.5">Room Amenities</h5>
+                    <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
                     <div className="flex flex-wrap gap-1.5">
                       {selectedRoomInfo.amenities.length > 0 ? (
                         selectedRoomInfo.amenities.map((amenity, i) => (
                           <span 
                             key={i}
-                            className="inline-flex items-center gap-1 rounded-md border border-gray-100 bg-white px-2 py-1 text-[10px] font-bold text-gray-600 shadow-sm"
+                            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-bold text-gray-600 shadow-sm whitespace-nowrap min-w-[fit-content]"
                           >
                             {amenity}
                           </span>
                         ))
                       ) : (
-                        <p className="text-[10px] italic text-gray-400">No amenities listed.</p>
+                        <p className="text-sm italic text-gray-400">No amenities listed.</p>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-1">
+                <div className="flex gap-3 pt-2">
                   <button
                     onClick={handleCloseModals}
-                    className="flex-1 rounded-md border border-gray-200 bg-white py-2.5 text-xs font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
                   >
                     Close
                   </button>
@@ -1506,9 +1588,9 @@ export function BuildingsRoomsPage() {
                         setIsRoomInfoModalOpen(false)
                       }
                     }}
-                    className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-2.5 text-xs font-bold text-white shadow-md transition hover:bg-[#526f34]"
+                    className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34]"
                   >
-                    <EditIcon className="h-3.5 w-3.5" />
+                    <EditIcon className="h-4 w-4" />
                     Edit Details
                   </button>
                 </div>
