@@ -524,7 +524,7 @@ function ManageReservationsPage() {
     const month = d.toLocaleDateString('en-US', { month: 'short' })
     const day = d.getDate()
     const year = d.getFullYear()
-    return `${month}. ${day}, ${year}`
+    return `${month} ${day}, ${year}`
   }
 
   return (

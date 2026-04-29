@@ -15,6 +15,7 @@ interface Member {
   department: string
   joinedDate: string
   avatar: string
+  joinedAt?: Date
 }
 
 const roleClasses: Record<string, string> = {
@@ -50,6 +51,14 @@ function MyDepartmentPage() {
   const [loading, setLoading] = useState(true)
   const [isAdding, setIsAdding] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
+
+  // Calculate new members (joined in last 7 days)
+  const newMembersCount = members.filter(m => {
+    if (!m.joinedAt) return false
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    return m.joinedAt > sevenDaysAgo
+  }).length
 
   // Fetch current user and their department info
   useEffect(() => {
@@ -114,7 +123,8 @@ function MyDepartmentPage() {
                       joinedDate: memData.joinedAt?.toDate ? 
                         new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(memData.joinedAt.toDate()) : 
                         'N/A',
-                      avatar: userData.profilePicture || ''
+                      avatar: userData.profilePicture || '',
+                      joinedAt: memData.joinedAt?.toDate ? memData.joinedAt.toDate() : null
                     }
                   })
                   setMembers(fetchedMembers)
@@ -179,7 +189,8 @@ function MyDepartmentPage() {
             joinedDate: memData.joinedAt?.toDate ? 
               new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(memData.joinedAt.toDate()) : 
               'N/A',
-            avatar: userData.profilePicture || ''
+            avatar: userData.profilePicture || '',
+            joinedAt: memData.joinedAt?.toDate ? memData.joinedAt.toDate() : null
           }
         })
         setAvailableInstructors(instructors)
@@ -535,12 +546,22 @@ function MyDepartmentPage() {
               </div>
 
               <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-green-50 border border-green-100 shrink-0">
-                  <UsersIcon className="h-9 w-9 text-green-600" />
+                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
+                  <UsersIcon className="h-9 w-9 text-blue-600" />
                 </div>
                 <div>
                   <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Department Members</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{members.length}</p>
+                </div>
+              </div>
+
+              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
+                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-green-50 border border-green-100 shrink-0">
+                  <PlusIcon className="h-9 w-9 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">New (Last 7D)</p>
+                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{newMembersCount}</p>
                 </div>
               </div>
             </div>
