@@ -1003,13 +1003,19 @@ export function BuildingsRoomsPage() {
                   {!isMultipleRooms ? (
                     <div className="grid grid-cols-5 gap-4 overflow-visible">
                       <div className="col-span-3 overflow-visible">
-                        <label htmlFor="room-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                          Room Name <span className="text-rose-500">*</span>
-                        </label>
+                        <div className="flex justify-between items-end mb-2">
+                          <label htmlFor="room-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                            Room Name <span className="text-rose-500">*</span>
+                          </label>
+                          <span className={`text-[10px] font-bold uppercase tracking-tight ${newRoomName.length >= 24 ? 'text-rose-500' : 'text-gray-400'}`}>
+                            {newRoomName.length} / 24
+                          </span>
+                        </div>
                         <input
                           id="room-name"
                           type="text"
                           value={newRoomName}
+                          maxLength={24}
                           onChange={(e) => {
                             setNewRoomName(e.target.value)
                             if (errors.name) setErrors(prev => ({ ...prev, name: false }))
@@ -1024,13 +1030,19 @@ export function BuildingsRoomsPage() {
                         />
                       </div>
                       <div className="col-span-2 overflow-visible">
-                        <label htmlFor="room-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                          Code <span className="text-rose-500">*</span>
-                        </label>
+                        <div className="flex justify-between items-end mb-2">
+                          <label htmlFor="room-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                            Code <span className="text-rose-500">*</span>
+                          </label>
+                          <span className={`text-[10px] font-bold uppercase tracking-tight ${newRoomCode.length >= 8 ? 'text-rose-500' : 'text-gray-400'}`}>
+                            {newRoomCode.length} / 8
+                          </span>
+                        </div>
                         <input
                           id="room-code"
                           type="text"
                           value={newRoomCode}
+                          maxLength={8}
                           onChange={(e) => {
                             setNewRoomCode(e.target.value)
                             if (errors.code) setErrors(prev => ({ ...prev, code: false }))
@@ -1048,13 +1060,19 @@ export function BuildingsRoomsPage() {
                     <div className="space-y-4">
                       <div className="grid grid-cols-5 gap-4 overflow-visible">
                         <div className="col-span-3 overflow-visible">
-                          <label htmlFor="room-name-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                            Name Prefix <span className="text-rose-500">*</span>
-                          </label>
+                          <div className="flex justify-between items-end mb-2">
+                            <label htmlFor="room-name-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                              Name Prefix <span className="text-rose-500">*</span>
+                            </label>
+                            <span className={`text-[10px] font-bold uppercase tracking-tight ${roomNamePrefix.length >= 24 ? 'text-rose-500' : 'text-gray-400'}`}>
+                              {roomNamePrefix.length} / 24
+                            </span>
+                          </div>
                           <input
                             id="room-name-prefix"
                             type="text"
                             value={roomNamePrefix}
+                            maxLength={24}
                             onChange={(e) => {
                               setRoomNamePrefix(e.target.value)
                               if (errors.name) setErrors(prev => ({ ...prev, name: false }))
@@ -1069,13 +1087,19 @@ export function BuildingsRoomsPage() {
                           />
                         </div>
                         <div className="col-span-2 overflow-visible">
-                          <label htmlFor="room-code-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                            Code Prefix <span className="text-rose-500">*</span>
-                          </label>
+                          <div className="flex justify-between items-end mb-2">
+                            <label htmlFor="room-code-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                              Code Prefix <span className="text-rose-500">*</span>
+                            </label>
+                            <span className={`text-[10px] font-bold uppercase tracking-tight ${roomCodePrefix.length >= 8 ? 'text-rose-500' : 'text-gray-400'}`}>
+                              {roomCodePrefix.length} / 8
+                            </span>
+                          </div>
                           <input
                             id="room-code-prefix"
                             type="text"
                             value={roomCodePrefix}
+                            maxLength={8}
                             onChange={(e) => {
                               setRoomCodePrefix(e.target.value)
                               if (errors.code) setErrors(prev => ({ ...prev, code: false }))
@@ -1266,12 +1290,18 @@ export function BuildingsRoomsPage() {
                     </div>
 
                     <div className="col-span-2 flex flex-col">
-                      <label htmlFor="room-description" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                        Description
-                      </label>
+                      <div className="flex justify-between items-end mb-2">
+                        <label htmlFor="room-description" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                          Description
+                        </label>
+                        <span className={`text-[10px] font-bold uppercase tracking-tight ${newRoomDescription.length >= 200 ? 'text-rose-500' : 'text-gray-400'}`}>
+                          {newRoomDescription.length} / 200
+                        </span>
+                      </div>
                       <textarea
                         id="room-description"
                         value={newRoomDescription}
+                        maxLength={200}
                         onChange={(e) => setNewRoomDescription(e.target.value)}
                         placeholder="Describe the room, equipment, and other details..."
                         className="w-full flex-1 rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm resize-none"
@@ -1556,12 +1586,12 @@ export function BuildingsRoomsPage() {
 
                   <div>
                     <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
                       {selectedRoomInfo.amenities.length > 0 ? (
                         selectedRoomInfo.amenities.map((amenity, i) => (
                           <span 
                             key={i}
-                            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-bold text-gray-600 shadow-sm whitespace-nowrap min-w-[fit-content]"
+                            className="flex-1 min-w-[fit-content] flex items-center justify-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-bold text-gray-600 shadow-sm whitespace-nowrap"
                           >
                             {amenity}
                           </span>

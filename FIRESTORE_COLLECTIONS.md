@@ -96,4 +96,21 @@ Tracks the association between users and departments.
   - `role`: string (User's role within this department: Admin, Registrar, Dean, or Instructor)
   - `joinedAt`: timestamp | **Default: serverTimestamp()**
 
+## `reservations`
+Manages room reservation requests and their approval status.
+
+- **Document ID**: Auto-generated ID
+- **Fields**:
+  - `roomId`: string (Reference to the room document ID)
+  - `buildingId`: string (Reference to the building document ID)
+  - `userId`: string (Reference to the user's UID)
+  - `date`: string (Date of reservation, e.g., "2024-05-20")
+  - `startTime`: string (e.g., "08:00")
+  - `endTime`: string (e.g., "09:00")
+  - `duration`: number (Duration in minutes)
+  - `purpose`: string (Reason for the reservation)
+  - `status`: string (`"Pending"`, `"Approved"`, `"Declined"`, or `"Cancelled"`) | **Default: "Pending"**
+  - `createdAt`: timestamp | **Default: serverTimestamp()**
+  - `updatedAt`: timestamp | **Default: serverTimestamp()**
+
 

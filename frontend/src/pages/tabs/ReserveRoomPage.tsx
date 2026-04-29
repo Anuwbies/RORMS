@@ -1,13 +1,17 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
-import { DoorIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, ClockIcon, BookIcon, CheckIcon } from '../../components/Icons'
+import { DoorIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, ClockIcon, BookIcon, CheckIcon, CalendarIcon, ClipboardIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
-import { db } from '../../firebase'
+import { TimePicker } from '../../components/TimePicker'
+import { DatePicker } from '../../components/DatePicker'
+import { db, auth } from '../../firebase'
 import { 
   collection, 
   onSnapshot, 
   query, 
-  orderBy 
+  orderBy,
+  addDoc,
+  serverTimestamp
 } from 'firebase/firestore'
 
 type RoomStatus = 'Available' | 'Occupied' | 'Reserved' | 'Maintenance'
@@ -65,6 +69,29 @@ const roomStatusClasses: Record<RoomStatus, string> = {
 }
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+function getLocalIsoDate(date: Date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function getEarliestAvailableDate(availableDays: string[]) {
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  for (let i = 0; i < 7; i++) {
+    const checkDate = new Date(today)
+    checkDate.setDate(today.getDate() + i)
+    const dayName = dayNames[checkDate.getDay()]
+    if (availableDays.includes(dayName)) {
+      return getLocalIsoDate(checkDate)
+    }
+  }
+  return getLocalIsoDate(today)
+}
 
 interface MultiSelectDropdownProps<T extends string> {
   label: string
@@ -215,10 +242,27 @@ function ReserveRoomPage() {
     setActiveDropdowns(prev => isOpen ? prev + 1 : Math.max(0, prev - 1))
   }, [])
 
-  const buildingOptions = useMemo(() => buildings.map(b => b.code).sort(), [buildings])
+  const buildingOptions = useMemo(() => buildings.map(b => b.name).sort(), [buildings])
 
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
+
+  const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [reservationData, setReservationData] = useState({
+    date: getLocalIsoDate(),
+    startTime: '07:30',
+    duration: 60,
+    purpose: ''
+  })
+  const [formErrors, setFormErrors] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (isReservationModalOpen) {
+      setFormErrors({})
+      setIsSubmitting(false)
+    }
+  }, [isReservationModalOpen])
 
   useEffect(() => {
     const buildingsQuery = query(collection(db, 'buildings'), orderBy('createdAt', 'desc'))
@@ -289,8 +333,21 @@ function ReserveRoomPage() {
     setIsRoomInfoModalOpen(true)
   }
 
+  const handleOpenReservationModal = (room: Room) => {
+    setSelectedRoomInfo(room)
+    setIsReservationModalOpen(true)
+    setIsRoomInfoModalOpen(false)
+    setReservationData({
+      date: getEarliestAvailableDate(room.availableDays),
+      startTime: '07:30',
+      duration: room.minBookingMins,
+      purpose: ''
+    })
+  }
+
   const handleCloseModals = () => {
     setIsRoomInfoModalOpen(false)
+    setIsReservationModalOpen(false)
     setSelectedRoomInfo(null)
   }
 
@@ -305,7 +362,7 @@ function ReserveRoomPage() {
     return buildings
       .map((building) => {
         // 1. Filter by building selection
-        if (selectedBuildings.length > 0 && !selectedBuildings.includes(building.code)) {
+        if (selectedBuildings.length > 0 && !selectedBuildings.includes(building.name)) {
           return null
         }
 
@@ -367,10 +424,10 @@ function ReserveRoomPage() {
       {isRoomInfoModalOpen && selectedRoomInfo && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl overflow-hidden"
+            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
               <h3 className="text-xl font-bold leading-tight">Room Information</h3>
               <p className="text-xs text-white/80 font-medium mt-0.5">Comprehensive details and availability schedule</p>
             </div>
@@ -467,12 +524,12 @@ function ReserveRoomPage() {
 
                   <div>
                     <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
-                    <div className="flex flex-wrap gap-1.5">
+                    <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
                       {selectedRoomInfo.amenities.length > 0 ? (
                         selectedRoomInfo.amenities.map((amenity, i) => (
                           <span 
                             key={i}
-                            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-bold text-gray-600 shadow-sm whitespace-nowrap min-w-[fit-content]"
+                            className="flex-1 min-w-[fit-content] flex items-center justify-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-bold text-gray-600 shadow-sm whitespace-nowrap"
                           >
                             {amenity}
                           </span>
@@ -493,10 +550,7 @@ function ReserveRoomPage() {
                   </button>
                   <button
                     className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34]"
-                    onClick={() => {
-                      // Placeholder for reservation action
-                      alert("Reservation flow would start here.")
-                    }}
+                    onClick={() => handleOpenReservationModal(selectedRoomInfo)}
                   >
                     <BookIcon className="h-4 w-4" />
                     Reserve Room
@@ -510,6 +564,233 @@ function ReserveRoomPage() {
             onMouseDown={() => {
               if (activeDropdowns > 0) return
               handleCloseModals()
+            }} 
+          />
+        </div>
+      )}
+
+      {/* Reservation Modal */}
+      {isReservationModalOpen && selectedRoomInfo && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+              <h3 className="text-xl font-bold leading-tight">Reserve {selectedRoomInfo.name}</h3>
+              <p className="text-xs text-white/80 font-medium mt-0.5">Fill in the details to book this room</p>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <div className="space-y-4">
+                {/* Date Selection */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Date <span className="text-rose-500">*</span></label>
+                  <DatePicker
+                    value={reservationData.date}
+                    onChange={(date) => {
+                      setReservationData({ ...reservationData, date })
+                      if (date) setFormErrors(prev => ({ ...prev, date: false }))
+                    }}
+                    minDate={getLocalIsoDate()}
+                    allowedDays={selectedRoomInfo.availableDays}
+                    hasError={formErrors.date}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Start Time */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Start Time <span className="text-rose-500">*</span></label>
+                    <TimePicker 
+                      value={reservationData.startTime}
+                      onChange={(time) => {
+                        setReservationData({ ...reservationData, startTime: time })
+                        if (time) setFormErrors(prev => ({ ...prev, startTime: false }))
+                      }}
+                      hasError={formErrors.startTime}
+                    />
+                  </div>
+
+                  {/* Duration */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Duration (minutes) <span className="text-rose-500">*</span></label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
+                        <ClockIcon className="h-4.5 w-4.5 text-gray-400" />
+                      </div>
+                      <input
+                        type="number"
+                        min={selectedRoomInfo.minBookingMins}
+                        max={selectedRoomInfo.maxBookingMins}
+                        step={15}
+                        value={reservationData.duration}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value)
+                          setReservationData({ ...reservationData, duration: val })
+                          if (!isNaN(val)) setFormErrors(prev => ({ ...prev, duration: false }))
+                        }}
+                        className={`h-[46px] w-full rounded-md border bg-white pl-11 pr-4 text-sm text-gray-900 outline-none transition focus:ring-4 focus:ring-gray-50 shadow-sm ${
+                          formErrors.duration ? 'border-rose-500 focus:border-rose-500 ring-rose-50' : 'border-gray-200 focus:border-gray-300'
+                        }`}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Purpose */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Purpose <span className="text-rose-500">*</span></label>
+                    <span className={`text-[10px] font-bold tabular-nums ${formErrors.purpose ? 'text-rose-500' : 'text-gray-400'}`}>
+                      {reservationData.purpose.length}/200
+                    </span>
+                  </div>
+                  <div className="relative">
+                    {!reservationData.purpose && (
+                      <div className="absolute top-3 left-4 flex items-center gap-2 pointer-events-none text-gray-400">
+                        <ClipboardIcon className="h-4 w-4" />
+                        <span className="text-sm">e.g., Team Meeting, Study Session...</span>
+                      </div>
+                    )}
+                    <textarea
+                      value={reservationData.purpose}
+                      onChange={(e) => {
+                        const val = e.target.value.slice(0, 200)
+                        setReservationData({ ...reservationData, purpose: val })
+                        if (val.trim()) setFormErrors(prev => ({ ...prev, purpose: false }))
+                      }}
+                      rows={3}
+                      className={`w-full rounded-md border bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:ring-4 focus:ring-gray-50 shadow-sm resize-none ${
+                        formErrors.purpose ? 'border-rose-500 focus:border-rose-500 ring-rose-50' : 'border-gray-200 focus:border-gray-300'
+                      }`}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    setIsReservationModalOpen(false)
+                    setIsRoomInfoModalOpen(true)
+                  }}
+                  disabled={isSubmitting}
+                  className={`flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm ${
+                    isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                >
+                  Back
+                </button>
+                <button
+                  disabled={isSubmitting}
+                  className={`flex-1 flex items-center justify-center gap-2 rounded-md py-3 text-sm font-bold text-white shadow-md transition ${
+                    isSubmitting ? 'bg-[var(--brand-color)]/70 cursor-not-allowed' : 'bg-[var(--brand-color)] hover:bg-[#526f34]'
+                  }`}
+                  onClick={async () => {
+                    const errors: Record<string, boolean> = {}
+                    if (!reservationData.date) errors.date = true
+                    if (!reservationData.startTime) errors.startTime = true
+                    if (!reservationData.duration || isNaN(reservationData.duration)) errors.duration = true
+                    if (!reservationData.purpose.trim()) errors.purpose = true
+
+                    if (Object.keys(errors).length > 0) {
+                      setFormErrors(errors)
+                      return
+                    }
+
+                    // 1. Duration Validation
+                    if (reservationData.duration < selectedRoomInfo.minBookingMins || 
+                        reservationData.duration > selectedRoomInfo.maxBookingMins) {
+                      alert(`Duration must be between ${selectedRoomInfo.minBookingMins} and ${selectedRoomInfo.maxBookingMins} minutes.`)
+                      setFormErrors(prev => ({ ...prev, duration: true }))
+                      return
+                    }
+
+                    // 2. Date Validation (Available Days)
+                    const [y, m, d] = reservationData.date.split('-').map(Number)
+                    const selectedDateObj = new Date(y, m - 1, d)
+                    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+                    const selectedDayName = dayNames[selectedDateObj.getDay()]
+                    
+                    if (!selectedRoomInfo.availableDays.includes(selectedDayName)) {
+                      alert(`The room is not available on ${selectedDayName}s.`)
+                      setFormErrors(prev => ({ ...prev, date: true }))
+                      return
+                    }
+
+                    // 3. Time Validation (Room Schedule)
+                    const timeToMinutes = (timeStr: string) => {
+                      const [h, m] = timeStr.split(':').map(Number)
+                      return h * 60 + m
+                    }
+
+                    const startMins = timeToMinutes(reservationData.startTime)
+                    const endMins = startMins + reservationData.duration
+                    const roomStartMins = timeToMinutes(selectedRoomInfo.startTime)
+                    const roomEndMins = timeToMinutes(selectedRoomInfo.endTime)
+
+                    if (startMins < roomStartMins || endMins > roomEndMins) {
+                      alert(`Reservation must be within the room's schedule: ${selectedRoomInfo.startTime} - ${selectedRoomInfo.endTime}.`)
+                      setFormErrors(prev => ({ ...prev, startTime: true }))
+                      return
+                    }
+
+                    // Calculate End Time String
+                    const endH = Math.floor(endMins / 60)
+                    const endM = endMins % 60
+                    const endTimeStr = `${endH.toString().padStart(2, '0')}:${endM.toString().padStart(2, '0')}`
+
+                    try {
+                      setIsSubmitting(true)
+                      const userId = auth.currentUser?.uid
+                      if (!userId) {
+                        alert("You must be logged in to make a reservation.")
+                        return
+                      }
+
+                      const building = buildings.find(b => b.rooms.some(r => r.id === selectedRoomInfo.id))
+
+                      await addDoc(collection(db, 'reservations'), {
+                        roomId: selectedRoomInfo.id,
+                        buildingId: building?.id || '',
+                        userId: userId,
+                        date: reservationData.date,
+                        startTime: reservationData.startTime,
+                        endTime: endTimeStr,
+                        duration: reservationData.duration,
+                        purpose: reservationData.purpose.trim(),
+                        status: 'Pending',
+                        createdAt: serverTimestamp(),
+                        updatedAt: serverTimestamp()
+                      })
+
+                      alert("Reservation request submitted successfully!")
+                      handleCloseModals()
+                    } catch (error) {
+                      console.error("Error creating reservation:", error)
+                      alert("Failed to submit reservation. Please try again.")
+                    } finally {
+                      setIsSubmitting(false)
+                    }
+                  }}
+                >
+                  {isSubmitting ? (
+                    'Confirming...'
+                  ) : (
+                    <>
+                      <CheckIcon className="h-4 w-4" strokeWidth={3} />
+                      Confirm Reservation
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (!isSubmitting) handleCloseModals()
             }} 
           />
         </div>

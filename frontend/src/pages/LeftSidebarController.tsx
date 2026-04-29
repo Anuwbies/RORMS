@@ -39,13 +39,6 @@ const navItems: NavItem[] = [
     icon: CalendarIcon,
   },
   {
-    id: 'myReservations',
-    label: 'My Reservations',
-    eyebrow: 'My Reservations',
-    description: 'View and track your own room bookings.',
-    icon: DoorIcon,
-  },
-  {
     id: 'reports',
     label: 'Reports',
     eyebrow: 'Reports',
@@ -58,6 +51,13 @@ const navItems: NavItem[] = [
     eyebrow: 'Manage Reservations',
     description: 'Track and approve room reservation requests.',
     icon: ClipboardIcon,
+  },
+  {
+    id: 'myReservations',
+    label: 'My Reservations',
+    eyebrow: 'My Reservations',
+    description: 'View and track your own room bookings.',
+    icon: DoorIcon,
   },
   {
     id: 'reserveRoom',

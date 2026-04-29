@@ -5,9 +5,10 @@ interface TimePickerProps {
   value: string // Format: "HH:mm" (24h)
   onChange: (value: string) => void
   onToggle?: (isOpen: boolean) => void
+  hasError?: boolean
 }
 
-export function TimePicker({ value, onChange, onToggle }: TimePickerProps) {
+export function TimePicker({ value, onChange, onToggle, hasError }: TimePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const hourScrollRef = useRef<HTMLDivElement>(null)
@@ -71,7 +72,9 @@ export function TimePicker({ value, onChange, onToggle }: TimePickerProps) {
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+        className={`flex h-[46px] w-full items-center justify-between gap-2 rounded-md border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm ${
+          hasError ? 'border-rose-500 ring-rose-50' : 'border-gray-200'
+        }`}
       >
         <span className="text-sm font-normal">{`${hourStr}:${minuteStr} ${period}`}</span>
         <ClockIcon className="h-4.5 w-4.5 text-gray-400" />
