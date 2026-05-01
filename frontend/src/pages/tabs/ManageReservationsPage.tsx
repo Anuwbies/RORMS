@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react'
-import { ClipboardIcon, SearchIcon, EditIcon, TrashIcon, CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, DoorIcon, CalendarIcon, UserIcon } from '../../components/Icons'
+import { ClipboardIcon, SearchIcon, EditIcon, TrashIcon, CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, DoorIcon, CalendarIcon, UserIcon, BookIcon, BuildingIcon, LayersIcon, UsersIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
 import { db } from '../../firebase'
@@ -15,6 +15,25 @@ import {
 } from 'firebase/firestore'
 
 type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+type RoomStatus = 'Available' | 'Occupied' | 'Reserved' | 'Maintenance'
+
+function createRoomImage() {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+      <rect width="640" height="360" rx="28" fill="#f3f4f6" />
+      <g transform="translate(225, 88) scale(8)" stroke="#9ca3af" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M6 20V5.8c0-.64.43-1.2 1.04-1.36l7-1.84a1.4 1.4 0 0 1 1.76 1.35V20" />
+        <path d="M6 20h11.5" />
+        <path d="M11.95 12.15h.1" />
+        <path d="M15.8 20V4.1" />
+      </g>
+    </svg>
+  `
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
+}
+
+const DEFAULT_ROOM_IMAGE = createRoomImage()
 
 interface Reservation {
   id: string
@@ -27,6 +46,7 @@ interface Reservation {
   status: ReservationStatus
   purpose?: string
   createdAt: any
+  updatedAt?: any
   // Joined data
   requester?: {
     name: string
@@ -41,11 +61,26 @@ interface Building {
   id: string
   name: string
   code: string
+  floor?: number
+  capacity?: number
 }
 
 interface Room {
   id: string
+  image: string
+  code: string
   name: string
+  type: string
+  floor: number
+  capacity: number
+  status: RoomStatus
+  description: string
+  amenities: string[]
+  availableDays: string[]
+  startTime: string
+  endTime: string
+  minBookingMins: number
+  maxBookingMins: number
   buildingId: string
 }
 
@@ -64,7 +99,15 @@ const statusClasses: Record<ReservationStatus, string> = {
   Completed: 'bg-blue-100 text-blue-700',
 }
 
+const roomStatusClasses: Record<RoomStatus, string> = {
+  Available: 'bg-emerald-100 text-emerald-700',
+  Occupied: 'bg-amber-100 text-amber-700',
+  Reserved: 'bg-sky-100 text-sky-700',
+  Maintenance: 'bg-rose-100 text-rose-700',
+}
+
 const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
+const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 interface MultiSelectDropdownProps<T extends string> {
   label: string
@@ -378,6 +421,294 @@ function ConfirmationModal({ reservation, type, onConfirm, onClose }: Confirmati
   )
 }
 
+interface ReservationDetailsModalProps {
+  reservation: Reservation
+  onClose: () => void
+  onViewRoom: () => void
+}
+
+function ReservationDetailsModal({ reservation, onClose, onViewRoom }: ReservationDetailsModalProps) {
+  const formatDateFull = (dateStr: string) => {
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-US', { 
+      weekday: 'long',
+      month: 'long', 
+      day: 'numeric', 
+      year: 'numeric' 
+    })
+  }
+
+  const formatTimestamp = (timestamp: any) => {
+    if (!timestamp) return 'N/A'
+    const d = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
+    return d.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+  }
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50">
+      <div 
+        className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+          <h3 className="text-xl font-bold leading-tight">Reservation Information</h3>
+          <p className="text-xs text-white/80 font-medium mt-0.5">Comprehensive details of the booking request</p>
+        </div>
+
+        <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
+          <div className="p-6 space-y-5">
+            <div className="flex gap-5">
+              <div className="w-[152px] h-[152px] shrink-0 rounded-full border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
+                <img 
+                  src={reservation.requester?.avatar} 
+                  alt={reservation.requester?.name} 
+                  className="h-full w-full object-cover" 
+                />
+              </div>
+              
+              <div className="flex-1 flex flex-col justify-between py-0.5">
+                <div>
+                  <h4 className="text-xl font-bold text-gray-900 leading-tight">{reservation.requester?.name}</h4>
+                  <p className="text-sm text-gray-500 font-medium mt-1">{reservation.requester?.email}</p>
+                  <div className="mt-3">
+                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${statusClasses[reservation.status]}`}>
+                      {reservation.status}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 mt-3">
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Reservation ID</p>
+                    <p className="text-sm font-mono text-gray-700">{reservation.id}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Location</h5>
+                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[46px] rounded-md border border-gray-200">
+                    <DoorIcon className="h-4 w-4 text-[var(--brand-color)]" />
+                    <div className="truncate">
+                      <span>{reservation.roomName} • {reservation.buildingName}</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
+                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[46px] rounded-md border border-gray-200">
+                    <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
+                    <span>{reservation.startTime} - {reservation.endTime}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Date</h5>
+                <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[46px] rounded-md border border-gray-200">
+                  <CalendarIcon className="h-4 w-4 text-[var(--brand-color)]" />
+                  <span>{formatDateFull(reservation.date)}</span>
+                </div>
+              </div>
+
+              <div>
+                <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Purpose</h5>
+                <div className="rounded-md border border-gray-200 bg-gray-100 p-4">
+                  <p className="text-sm text-gray-600 leading-relaxed italic">
+                    "{reservation.purpose || 'No purpose provided.'}"
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Metadata</h5>
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="font-bold text-gray-400 uppercase tracking-tight">Created At:</span>
+                    <span className="text-gray-600 font-medium">{formatTimestamp(reservation.createdAt)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="font-bold text-gray-400 uppercase tracking-tight">Updated At:</span>
+                    <span className="text-gray-600 font-medium">{formatTimestamp(reservation.updatedAt)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={onClose}
+                className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
+              >
+                Cancel
+              </button>
+              <button
+                className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34]"
+                onClick={onViewRoom}
+              >
+                <DoorIcon className="h-4 w-4" />
+                View Room Information
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="absolute inset-0 -z-10" onMouseDown={onClose} />
+    </div>
+  )
+}
+
+interface RoomDetailsModalProps {
+  room: Room
+  onClose: () => void
+}
+
+function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
+  return (
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/50">
+      <div 
+        className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+          <h3 className="text-xl font-bold leading-tight">Room Information</h3>
+          <p className="text-xs text-white/80 font-medium mt-0.5">Comprehensive details and availability schedule</p>
+        </div>
+
+        <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
+          <div className="p-6 space-y-5">
+            <div className="flex gap-5">
+              <div className="w-[152px] h-[152px] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
+                <img 
+                  src={room.image} 
+                  alt={room.name} 
+                  className="h-full w-full object-cover grayscale-[0.2]" 
+                  onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
+                />
+              </div>
+              
+              <div className="flex-1 flex flex-col justify-between py-0.5">
+                <div>
+                  <div className="flex items-center justify-start gap-3">
+                    <h4 className="text-xl font-bold text-gray-900 leading-tight">{room.name}</h4>
+                    <span className="inline-flex items-center justify-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold uppercase tracking-widest text-gray-600 border border-gray-200">
+                      {room.code}
+                    </span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}>
+                      {room.status}
+                    </span>
+                    <span className="text-sm text-gray-500 font-semibold">
+                      {room.type} • Floor {room.floor}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Capacity</p>
+                    <div className="rounded-md border border-gray-200 bg-gray-100 p-2.5 flex items-center gap-2">
+                      <UserIcon className="h-4 w-4 text-gray-500 shrink-0" />
+                      <p className="text-sm font-bold text-gray-700">{room.capacity} pax</p>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Booking Limits</p>
+                    <div className="rounded-md border border-gray-200 bg-gray-100 p-2.5 flex items-center gap-2">
+                      <ClockIcon className="h-4 w-4 text-gray-500 shrink-0" />
+                      <p className="text-sm font-bold text-gray-700">
+                        {room.minBookingMins}m - {room.maxBookingMins}m
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-5">
+              <div>
+                <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Description</h5>
+                <div className="rounded-md border border-gray-200 bg-gray-100 p-4">
+                  <p className="text-sm text-gray-600 leading-relaxed">
+                    {room.description || 'No description provided for this room.'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Availability</h5>
+                  <div className="flex gap-1 h-[34px]">
+                    {DAYS_OF_WEEK.map((day) => {
+                      const isAvailable = room.availableDays.includes(day)
+                      return (
+                        <div
+                          key={day}
+                          title={day}
+                          className={`flex-1 flex items-center justify-center rounded-sm text-[10px] font-bold transition-colors ${
+                            isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-200 text-gray-500'
+                          }`}
+                        >
+                          {day.slice(0, 1)}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
+                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[34px] rounded-md border border-gray-200">
+                    <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
+                    <span>{room.startTime} - {room.endTime}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
+                <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
+                  {room.amenities.length > 0 ? (
+                    room.amenities.map((amenity, i) => (
+                      <span 
+                        key={i}
+                        className="flex-1 min-w-[fit-content] flex items-center justify-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-bold text-gray-600 shadow-sm whitespace-nowrap"
+                      >
+                        {amenity}
+                      </span>
+                    ))
+                  ) : (
+                    <p className="text-sm italic text-gray-400">No amenities listed.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={onClose}
+                className="flex-1 rounded-md border border-gray-200 bg-[var(--brand-color)] py-3 text-sm font-bold text-white transition hover:bg-[#526f34] shadow-md"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="absolute inset-0 -z-10" onMouseDown={onClose} />
+    </div>
+  )
+}
+
 function ManageReservationsPage() {
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
@@ -388,6 +719,8 @@ function ManageReservationsPage() {
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([])
   const [activeDropdowns, setActiveDropdowns] = useState(0)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
+  const [viewingReservation, setViewingReservation] = useState<Reservation | null>(null)
+  const [viewingRoom, setViewingRoom] = useState<Room | null>(null)
   const [confirmingAction, setConfirmingAction] = useState<{
     reservation: Reservation;
     type: 'decline' | 'delete';
@@ -527,6 +860,13 @@ function ManageReservationsPage() {
     return `${month} ${day}, ${year}`
   }
 
+  const handleViewRoomInfo = (roomId: string) => {
+    const room = rooms.find(r => r.id === roomId)
+    if (room) {
+      setViewingRoom(room)
+    }
+  }
+
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="space-y-6">
@@ -654,7 +994,8 @@ function ManageReservationsPage() {
                   filteredReservations.map((res) => (
                     <tr 
                       key={res.id} 
-                      className="transition hover:bg-gray-50/50"
+                      className="cursor-pointer transition hover:bg-gray-50/50"
+                      onClick={() => setViewingReservation(res)}
                     >
                       <td className="whitespace-nowrap px-6 py-4">
                         <div className="flex items-center gap-4">
@@ -683,7 +1024,7 @@ function ManageReservationsPage() {
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2">
+                        <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                           <IconButton
                             label="Approve reservation"
                             disabled={res.status !== 'Pending'}
@@ -733,6 +1074,24 @@ function ManageReservationsPage() {
         </div>
       </div>
 
+      {viewingReservation && (
+        <ReservationDetailsModal
+          reservation={viewingReservation}
+          onClose={() => setViewingReservation(null)}
+          onViewRoom={() => {
+            handleViewRoomInfo(viewingReservation.roomId)
+            setViewingReservation(null)
+          }}
+        />
+      )}
+
+      {viewingRoom && (
+        <RoomDetailsModal
+          room={viewingRoom}
+          onClose={() => setViewingRoom(null)}
+        />
+      )}
+
       {editingReservation && (
         <StatusUpdateModal
           reservation={editingReservation}
@@ -752,5 +1111,6 @@ function ManageReservationsPage() {
     </section>
   )
 }
+
 
 export default ManageReservationsPage
