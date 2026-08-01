@@ -474,12 +474,12 @@ export const RightSidebar = memo(function RightSidebar({
                     aria-label="Change profile picture"
                     title="Change profile picture"
                     disabled={isUploading || isImageLoading}
-                    className="group absolute right-[-4px] bottom-[-4px] z-20 flex h-8 w-8 items-center justify-center rounded-full border border-secondary-200 bg-secondary-100 text-gray-700 shadow-sm transition-all enabled:hover:border-[var(--brand-color)]/30 enabled:hover:text-[var(--brand-color)] dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-300 dark:enabled:hover:border-[var(--brand-color)]/30 dark:enabled:hover:text-[var(--brand-color)] disabled:cursor-not-allowed"
+                    className="group absolute right-[-6px] bottom-[-6px] z-20 flex h-9 w-9 items-center justify-center rounded-full border border-gray-400 bg-gray-200 text-gray-700 shadow-sm transition-all enabled:hover:border-[var(--brand-color)]/30 enabled:hover:text-[var(--brand-color)] dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:enabled:hover:border-[var(--brand-color)]/30 dark:enabled:hover:text-[var(--brand-color)] disabled:cursor-not-allowed"
                     onClick={triggerFileInput}
                   >
                     <CameraIcon 
                       className={joinClasses(
-                        "h-5.5 w-5.5 transition-transform",
+                        "h-6 w-6 mb-1 text-gray-600 transition-transform",
                         !(isUploading || isImageLoading) && "group-hover:scale-110"
                       )} 
                     />
