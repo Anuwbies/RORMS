@@ -7,19 +7,23 @@ The **Room and Schedule Management System (RORMS)** is a centralized platform de
 - **Frontend**: React 18+ with TypeScript
 - **Build Tool**: Vite
 - **Styling**: Tailwind CSS (v4)
+- **Data Visualization**: Recharts
 - **Backend/Database**: Firebase (Authentication & Firestore)
 - **Deployment**: Firebase Hosting (Live at: [https://rorms-dd983.web.app](https://rorms-dd983.web.app))
 
 ## Project Structure
 - `frontend/`: React + TypeScript source code.
-- `AGENTS.md`: Repository guidelines and development standards.
+- `gemini.md`: Repository guidelines and development standards.
+- `PROJECT_GOALS.md`: High-level project objectives, milestones, and scope.
 - `FIRESTORE_COLLECTIONS.md`: Detailed schema of Firestore collections.
+- `FIREBASE_STORAGE.md`: Guidelines and structures for Firebase Cloud Storage.
 - `SYSTEM_ROLES.md`: Comprehensive breakdown of user roles and responsibilities.
 
 ## Core Features
 - **Dynamic Scheduling**: Map instructors and courses to specific rooms and time slots.
 - **Conflict Resolution**: Real-time identification of double-booked rooms or instructors.
 - **Role-Based Access Control**: Specialized dashboards for Admins, Registrars, Deans, and Instructors.
+- **Interactive Dashboards & Reporting**: High-level system summaries, metric scorecards, and interactive SVGs charts using Recharts for analyzing room utilization and department requests.
 - **Departmental Management**: Resource assignment and approval workflows for Department Heads.
 - **Ad-hoc Adjustments**: Manage mid-semester changes and emergency rescheduling.
 
