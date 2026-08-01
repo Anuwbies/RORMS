@@ -148,7 +148,7 @@ export function CropModal({
             <button
               onClick={handleSave}
               disabled={isLoading}
-              className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
+              className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isLoading ? 'Applying...' : 'Apply Changes'}
             </button>

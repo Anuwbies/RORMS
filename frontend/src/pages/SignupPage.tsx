@@ -3,14 +3,16 @@ import type { SyntheticEvent } from 'react'
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth'
 import { doc, getDoc, updateDoc, setDoc, serverTimestamp, collection, writeBatch } from 'firebase/firestore'
 import { auth, db } from '../firebase'
+import InfoTabContent from '../components/InfoTabContent'
+
 
 type TabKey = 'home' | 'about' | 'contact'
 
-interface SignupPageProps {
+interface SignUpPageProps {
   onSignup: () => void
 }
 
-function SignupPage({ onSignup }: SignupPageProps) {
+function SignUpPage({ onSignup }: SignUpPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>('home')
   const [firstName, setFirstName] = useState('')
@@ -200,7 +202,7 @@ function SignupPage({ onSignup }: SignupPageProps) {
 
         <div className="flex w-full min-h-0 flex-1 items-stretch">
           <div className="h-full w-full rounded-lg border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
-            {/* Content area left empty for all tabs as requested */}
+            <InfoTabContent activeTab={activeTab} />
           </div>
         </div>
       </section>
@@ -365,4 +367,4 @@ function SignupPage({ onSignup }: SignupPageProps) {
   )
 }
 
-export default SignupPage
+export default SignUpPage

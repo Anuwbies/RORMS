@@ -549,7 +549,7 @@ function ReserveRoomPage() {
                     Close
                   </button>
                   <button
-                    className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34]"
+                    className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)]"
                     onClick={() => handleOpenReservationModal(selectedRoomInfo)}
                   >
                     <BookIcon className="h-4 w-4" />
@@ -685,7 +685,7 @@ function ReserveRoomPage() {
                 <button
                   disabled={isSubmitting}
                   className={`flex-1 flex items-center justify-center gap-2 rounded-md py-3 text-sm font-bold text-white shadow-md transition ${
-                    isSubmitting ? 'bg-[var(--brand-color)]/70 cursor-not-allowed' : 'bg-[var(--brand-color)] hover:bg-[#526f34]'
+                    isSubmitting ? 'bg-[var(--brand-color)]/70 cursor-not-allowed' : 'bg-[var(--brand-color)] hover:bg-[var(--brand-color-hover)]'
                   }`}
                   onClick={async () => {
                     const errors: Record<string, boolean> = {}

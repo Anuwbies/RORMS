@@ -595,7 +595,7 @@ function MyReservationsPage() {
                 <div className="flex gap-3 pt-2">
                   <button
                     onClick={handleCloseModals}
-                    className="flex-1 rounded-md border border-gray-200 bg-[var(--brand-color)] py-3 text-sm font-bold text-white transition hover:bg-[#526f34] shadow-md"
+                    className="flex-1 rounded-md border border-gray-200 bg-[var(--brand-color)] py-3 text-sm font-bold text-white transition hover:bg-[var(--brand-color-hover)] shadow-md"
                   >
                     Close
                   </button>

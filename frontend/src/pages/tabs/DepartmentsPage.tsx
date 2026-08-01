@@ -658,7 +658,7 @@ function DepartmentsPage() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting 
                     ? (editingDept ? 'Saving Changes...' : 'Creating Department...') 

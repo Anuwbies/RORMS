@@ -315,7 +315,7 @@ function StatusUpdateModal({ reservation, onClose, onUpdate }: StatusUpdateModal
             <button
               onClick={handleUpdate}
               disabled={isUpdating || selectedStatus === reservation.status}
-              className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
+              className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:cursor-not-allowed disabled:opacity-70"
             >
               {isUpdating ? 'Updating...' : 'Update Status'}
             </button>
@@ -552,7 +552,7 @@ function ReservationDetailsModal({ reservation, onClose, onViewRoom }: Reservati
                 Cancel
               </button>
               <button
-                className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34]"
+                className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)]"
                 onClick={onViewRoom}
               >
                 <DoorIcon className="h-4 w-4" />
@@ -696,7 +696,7 @@ function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
             <div className="flex gap-3 pt-2">
               <button
                 onClick={onClose}
-                className="flex-1 rounded-md border border-gray-200 bg-[var(--brand-color)] py-3 text-sm font-bold text-white transition hover:bg-[#526f34] shadow-md"
+                className="flex-1 rounded-md border border-gray-200 bg-[var(--brand-color)] py-3 text-sm font-bold text-white transition hover:bg-[var(--brand-color-hover)] shadow-md"
               >
                 Close
               </button>

@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../firebase'
+import InfoTabContent from '../components/InfoTabContent'
 
 type TabKey = 'home' | 'about' | 'contact'
 
@@ -130,7 +131,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
 
         <div className="flex w-full min-h-0 flex-1 items-stretch">
           <div className="h-full w-full rounded-lg border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
-            {/* Content area left empty for all tabs as requested */}
+            <InfoTabContent activeTab={activeTab} />
           </div>
         </div>
       </section>

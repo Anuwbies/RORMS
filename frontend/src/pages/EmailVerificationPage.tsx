@@ -117,7 +117,7 @@ export default function EmailVerificationPage({ onSignOut }: EmailVerificationPa
           <div className="space-y-3">
             <button
               onClick={handleCheckStatus}
-              className="group flex w-full items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3.5 text-sm font-bold text-white shadow-md transition-all hover:bg-[#526f34] hover:shadow-lg active:scale-[0.98]"
+              className="group flex w-full items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3.5 text-sm font-bold text-white shadow-md transition-all hover:bg-[var(--brand-color-hover)] hover:shadow-lg active:scale-[0.98]"
             >
               <CheckIcon className="h-5 w-5 transition-transform group-hover:scale-110" />
               I've Verified My Email

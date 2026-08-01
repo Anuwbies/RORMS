@@ -3,7 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './firebase'
 import SignInPage from './pages/SignInPage'
-import SignupPage from './pages/SignupPage'
+import SignUpPage from './pages/SignUpPage'
 import LeftSidebarController from './pages/LeftSidebarController'
 import EmailVerificationPage from './pages/EmailVerificationPage'
 
@@ -98,7 +98,7 @@ function App() {
 
   if (isSignupMode) {
     return (
-      <SignupPage 
+      <SignUpPage 
         onSignup={handleSignup} 
       />
     )

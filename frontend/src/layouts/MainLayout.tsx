@@ -3,7 +3,7 @@ import { LeftSidebar, type NavItem, type DashboardSection } from '../components/
 import { RightSidebar } from '../components/RightSidebar'
 import { joinClasses } from '../components/IconButton'
 
-interface LeftSidebarLayoutProps {
+interface MainLayoutProps {
   navItems: NavItem[]
   activeSection: DashboardSection
   onSectionChange: (section: DashboardSection) => void
@@ -11,13 +11,13 @@ interface LeftSidebarLayoutProps {
   children: ReactNode
 }
 
-export function LeftSidebarLayout({
+export function MainLayout({
   navItems,
   activeSection,
   onSectionChange,
   onSignOut,
   children,
-}: LeftSidebarLayoutProps) {
+}: MainLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true)
   const [isRightSidebarExpanded, setIsRightSidebarExpanded] = useState(false)

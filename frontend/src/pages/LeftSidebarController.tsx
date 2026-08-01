@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { LeftSidebarLayout } from '../layouts/LeftSidebarLayout'
+import { MainLayout } from '../layouts/MainLayout'
 import {
   BuildingIcon,
   DashboardIcon,
@@ -13,7 +13,7 @@ import {
 } from '../components/Icons'
 import type { NavItem, DashboardSection } from '../components/LeftSidebar'
 import DashboardPage from './tabs/DashboardPage'
-import { BuildingsRoomsPage } from './tabs/BuildingsRoomsPage'
+import BuildingsRoomsPage from './tabs/BuildingsRoomsPage'
 import MembersPage from './tabs/MembersPage'
 import MyDepartmentPage from './tabs/MyDepartmentPage'
 import DepartmentsPage from './tabs/DepartmentsPage'
@@ -131,14 +131,14 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
   }
 
   return (
-    <LeftSidebarLayout
+    <MainLayout
       navItems={navItems}
       activeSection={activeSection}
       onSectionChange={setActiveSection}
       onSignOut={onSignOut}
     >
       {renderSection()}
-    </LeftSidebarLayout>
+    </MainLayout>
   )
 }
 

@@ -1,30 +1,6 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
-  --color-primary-950: #172554;
-
-  --color-secondary-50: #f8fafc;
-  --color-secondary-100: #f1f5f9;
-  --color-secondary-200: #e2e8f0;
-  --color-secondary-300: #cbd5e1;
-  --color-secondary-400: #94a3b8;
-  --color-secondary-500: #64748b;
-  --color-secondary-600: #475569;
-  --color-secondary-700: #334155;
-  --color-secondary-800: #1e293b;
-  --color-secondary-900: #0f172a;
-  --color-secondary-950: #020617;
-
   @keyframes in {
     from {
       opacity: 0;
@@ -77,10 +53,13 @@
 
 :root {
   font-family: "Inter", system-ui, -apple-system, sans-serif;
+  /* Brand Color Palette */
   --brand-color: #62853e;
+  --brand-color-hover: #526f34;
   --brand-surface: #fcfcfc;
   --card-surface: #ffffff;
   --hint-color: #7a7a7a;
+  
   color: var(--brand-color);
   background-color: var(--brand-surface);
 }
@@ -176,18 +155,18 @@ a {
 }
 
 .dark .custom-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-secondary-900);
+  background: #0f172a; /* secondary-900 */
 }
 
 .dark .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-secondary-700);
-  border-color: var(--color-secondary-900);
+  background: #334155; /* secondary-700 */
+  border-color: #0f172a; /* secondary-900 */
 }
 
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--color-secondary-600);
+  background: #475569; /* secondary-600 */
 }
 
 .dark .custom-scrollbar {
-  scrollbar-color: var(--color-secondary-700) var(--color-secondary-900);
+  scrollbar-color: #334155 #0f172a;
 }

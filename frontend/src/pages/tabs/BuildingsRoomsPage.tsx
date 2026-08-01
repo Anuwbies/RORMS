@@ -210,7 +210,7 @@ function SingleSelectDropdown<T extends string>({
   )
 }
 
-export function BuildingsRoomsPage() {
+function BuildingsRoomsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
@@ -934,7 +934,7 @@ export function BuildingsRoomsPage() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmitting 
                     ? (editingBuilding ? 'Saving Changes...' : 'Adding Building...') 
@@ -1461,7 +1461,7 @@ export function BuildingsRoomsPage() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {roomModalStep < 3 
                     ? 'Next Step' 
@@ -1618,7 +1618,7 @@ export function BuildingsRoomsPage() {
                         setIsRoomInfoModalOpen(false)
                       }
                     }}
-                    className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[#526f34]"
+                    className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)]"
                   >
                     <EditIcon className="h-4 w-4" />
                     Edit Details
@@ -2133,3 +2133,4 @@ export function BuildingsRoomsPage() {
   )
 }
 
+export default BuildingsRoomsPage

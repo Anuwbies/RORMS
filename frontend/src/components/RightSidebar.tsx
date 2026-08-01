@@ -5,7 +5,6 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { auth, db, storage } from '../firebase'
 import { BellIcon, CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DepartmentIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
-import { rightSidebarOutlineClass, sidebarDividerClass } from './sidebarStyles'
 import { CropModal } from './CropModal'
 
 type NotificationType =
@@ -116,6 +115,13 @@ function getNotificationConfig(type: NotificationType) {
         border: 'bg-purple-500',
       }
   }
+}
+
+const roleClasses: Record<string, string> = {
+  Admin: 'bg-purple-100 text-purple-700',
+  Registrar: 'bg-blue-100 text-blue-700',
+  Dean: 'bg-amber-100 text-amber-700',
+  Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
 export const RightSidebar = memo(function RightSidebar({
@@ -427,14 +433,14 @@ export const RightSidebar = memo(function RightSidebar({
       <aside
         className={joinClasses(
           'fixed top-0 right-0 z-50 hidden h-full flex-col bg-[var(--brand-surface)] transition-all duration-200 ease-out xl:flex',
-          rightSidebarOutlineClass,
+          'border-l-2 border-t-0 border-b-0 border-r-0 border-[var(--brand-color)]/55 backdrop-blur-[2px]',
           isExpanded ? 'w-80' : 'w-20',
         )}
       >
         <div
           className={joinClasses(
             'bg-[var(--card-surface)] shadow-none transition-all duration-200',
-            sidebarDividerClass,
+              'border-b-1 border-[var(--brand-color)]/30',
             isExpanded ? 'p-6' : 'px-2.5 py-2.5',
           )}
         >
@@ -468,7 +474,7 @@ export const RightSidebar = memo(function RightSidebar({
                     aria-label="Change profile picture"
                     title="Change profile picture"
                     disabled={isUploading || isImageLoading}
-                    className="group absolute right-[-4px] bottom-[-4px] z-20 flex h-8 w-8 items-center justify-center rounded-full border border-secondary-200 bg-secondary-100 text-secondary-600 shadow-sm transition-all enabled:hover:border-[var(--brand-color)]/30 enabled:hover:text-[var(--brand-color)] dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-300 dark:enabled:hover:border-[var(--brand-color)]/30 dark:enabled:hover:text-[var(--brand-color)] disabled:cursor-not-allowed"
+                    className="group absolute right-[-4px] bottom-[-4px] z-20 flex h-8 w-8 items-center justify-center rounded-full border border-secondary-200 bg-secondary-100 text-gray-700 shadow-sm transition-all enabled:hover:border-[var(--brand-color)]/30 enabled:hover:text-[var(--brand-color)] dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-300 dark:enabled:hover:border-[var(--brand-color)]/30 dark:enabled:hover:text-[var(--brand-color)] disabled:cursor-not-allowed"
                     onClick={triggerFileInput}
                   >
                     <CameraIcon 
@@ -481,19 +487,19 @@ export const RightSidebar = memo(function RightSidebar({
                 </div>
               </div>
 
-              <h2 className="mb-0.5 text-lg font-bold tracking-tight text-secondary-900 dark:text-secondary-100">
+              <h2 className="mb-0.5 text-lg font-bold tracking-tight text-black">
                 {userData.fullName}
               </h2>
               
-              <p className="mb-1.5 text-sm font-medium text-secondary-500 dark:text-secondary-400">
+              <p className="mb-1.5 text-sm font-medium text-gray-600">
                 {userData.email}
               </p>
 
               <div className="mb-4 flex flex-col items-center gap-2">
                 <div className="flex items-center justify-center gap-1.5">
                   <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary-100/50 px-2 py-0.5 dark:bg-secondary-800/50">
-                    <DepartmentIcon className="h-3 w-3 text-secondary-500 dark:text-secondary-400" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-secondary-600 dark:text-secondary-300">
+                    <DepartmentIcon className="h-3 w-3 text-gray-600" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">
                       {userData.department || (
                         userData.role === 'Admin' ? 'Administrative Office' :
                         userData.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
@@ -501,7 +507,7 @@ export const RightSidebar = memo(function RightSidebar({
                     </span>
                   </div>
                   
-                  <div className="flex items-center gap-1 rounded-full bg-primary-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary-700 dark:bg-primary-500/10 dark:text-primary-400">
+                  <div className={joinClasses("flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", roleClasses[userData.role] || 'bg-gray-100 text-gray-700')}>
                     <span>{userData.role}</span>
                   </div>
                 </div>
@@ -512,10 +518,10 @@ export const RightSidebar = memo(function RightSidebar({
                   type="button"
                   aria-pressed={notificationsEnabled}
                   className={joinClasses(
-                    'group flex h-9 flex-1 items-center justify-center rounded-md border px-2 text-secondary-900 transition-colors',
+                    'group flex h-9 flex-1 items-center justify-center rounded-md border px-2 transition-colors',
                     notificationsEnabled
-                      ? 'border-[var(--brand-color)]/30 bg-[var(--brand-color)]/10 text-[var(--brand-color)] hover:bg-[var(--brand-color)]/15'
-                      : 'border-red-200 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/15',
+                      ? 'border-gray-300 bg-[var(--brand-color)]/10 text-gray-600 hover:bg-[var(--brand-color)]/15'
+                      : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/15',
                   )}
                   onClick={toggleNotificationsEnabled}
                 >
@@ -524,11 +530,11 @@ export const RightSidebar = memo(function RightSidebar({
                       className={joinClasses(
                         'h-4 w-4 transition-colors',
                         notificationsEnabled
-                          ? 'text-[var(--brand-color)]'
+                          ? 'text-gray-600'
                           : 'text-red-500 group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200',
                       )}
                     />
-                    <span className="font-bold leading-none tracking-tight text-[13px]">
+                    <span className="font-bold leading-none tracking-tight text-[13px] text-gray-600">
                       Notifications
                     </span>
                   </div>
@@ -536,12 +542,12 @@ export const RightSidebar = memo(function RightSidebar({
 
                 <button
                   type="button"
-                  className="group flex h-9 flex-1 items-center justify-center rounded-md border border-secondary-200 bg-white px-2 text-secondary-900 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100 dark:hover:border-red-500/20 dark:hover:bg-red-500/10 dark:hover:text-red-200"
+                  className="group flex h-9 flex-1 items-center justify-center rounded-md border border-gray-300 bg-white px-2 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100 dark:hover:border-red-500/20 dark:hover:bg-red-500/10 dark:hover:text-red-200"
                   onClick={() => setIsSignOutModalOpen(true)}
                 >
                   <div className="flex items-center gap-1.5 scale-[1] origin-center">
                     <LogOutIcon className="h-4 w-4 text-red-500 transition-colors group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200" />
-                    <span className="font-bold leading-none tracking-tight text-[13px]">
+                    <span className="font-bold leading-none tracking-tight text-[13px] text-red-500">
                       Sign Out
                     </span>
                   </div>
@@ -610,16 +616,16 @@ export const RightSidebar = memo(function RightSidebar({
         {isExpanded && (
           <div className="flex min-h-0 flex-1 flex-col bg-[var(--card-surface)] transition-all duration-200">
             <div className="flex items-center justify-between p-6 pb-2">
-              <h3 className="text-sm font-black uppercase tracking-widest text-secondary-900 dark:text-secondary-100">
+              <h3 className="text-sm font-black uppercase tracking-widest text-black">
                 Notifications
               </h3>
               <span
                 className={joinClasses(
-                  'min-w-[32px] rounded-full px-2 py-0.5 text-center text-[11px] font-bold transition-colors',
+                  'min-w-[32px] rounded-full px-2 py-0.5 text-center text-[11px] font-bold transition-colors text-black',
                   notificationsEnabled
                     ? unreadCount > 0
-                      ? 'bg-primary-50 text-primary-600 dark:bg-primary-500/10 dark:text-primary-300'
-                      : 'bg-secondary-50 text-secondary-600 dark:bg-secondary-800 dark:text-secondary-200'
+                      ? 'bg-[var(--brand-color)]/20'
+                      : 'bg-gray-100'
                     : 'bg-red-50 text-red-600 dark:bg-red-500/15 dark:text-red-200',
                 )}
                 aria-label={
@@ -748,4 +754,4 @@ export const RightSidebar = memo(function RightSidebar({
   )
 })
 
-export default RightSidebar
+
