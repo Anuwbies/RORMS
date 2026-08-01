@@ -888,10 +888,10 @@ function DepartmentsPage() {
                 { 
                   label: 'New (Last 7d)', 
                   count: departments.filter(d => {
-                    if (!d.createdAt) return false
+                    if (!d.createdDate) return false
                     const sevenDaysAgo = new Date()
                     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-                    return d.createdAt.toDate() > sevenDaysAgo
+                    return new Date(d.createdDate) > sevenDaysAgo
                   }).length, 
                   color: 'emerald', 
                   icon: <PlusIcon className="h-9 w-9 text-emerald-600" /> 
