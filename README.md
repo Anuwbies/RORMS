@@ -8,7 +8,7 @@ The **Room and Schedule Management System (RORMS)** is a centralized platform de
 - **Build Tool**: Vite
 - **Styling**: Tailwind CSS (v4)
 - **Backend/Database**: Firebase (Authentication & Firestore)
-- **Deployment**: Firebase Hosting
+- **Deployment**: Firebase Hosting (Live at: [https://rorms-dd983.web.app](https://rorms-dd983.web.app))
 
 ## Project Structure
 - `frontend/`: React + TypeScript source code.
