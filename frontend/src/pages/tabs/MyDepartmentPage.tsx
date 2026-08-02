@@ -26,6 +26,70 @@ const roleClasses: Record<string, string> = {
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
+const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder = "Select" }: { value: string, onChange: (val: string) => void, options: {value: string, label: string}[], disabled?: boolean, placeholder?: string }) => {
+  return (
+    <details className="relative w-full group">
+      <summary 
+        onClick={(e) => {
+          if (disabled) e.preventDefault();
+          else {
+            const summary = e.currentTarget;
+            const rect = summary.getBoundingClientRect();
+            const dropdown = summary.nextElementSibling?.nextElementSibling as HTMLElement;
+            if (dropdown) {
+              if (window.innerHeight - rect.bottom < 200) {
+                dropdown.style.top = 'auto';
+                dropdown.style.bottom = '100%';
+                dropdown.style.marginTop = '0';
+                dropdown.style.marginBottom = '4px';
+              } else {
+                dropdown.style.top = '100%';
+                dropdown.style.bottom = 'auto';
+                dropdown.style.marginTop = '4px';
+                dropdown.style.marginBottom = '0';
+              }
+            }
+          }
+        }}
+        className={`w-full p-2 border border-gray-300 rounded text-sm focus:outline-none bg-white list-none [&::-webkit-details-marker]:hidden flex items-center justify-between ${disabled ? 'bg-gray-100 cursor-default text-gray-500' : 'focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] cursor-pointer'}`}>
+        <span className="truncate">{options.find(o => o.value === value)?.label || placeholder}</span>
+      </summary>
+      {!disabled && (
+        <>
+          <div className="fixed inset-0 z-[60]" onClick={(e) => { e.stopPropagation(); e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
+          <div className="absolute top-full mt-1 left-0 z-[70] bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded w-full max-h-[200px] overflow-y-auto">
+            <button
+              type="button"
+              onClick={(e) => {
+                onChange('');
+                e.stopPropagation();
+                e.currentTarget.closest('details')?.removeAttribute('open');
+              }}
+              className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate text-gray-500 italic shrink-0"
+            >
+              {placeholder}
+            </button>
+            {options.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={(e) => {
+                  onChange(opt.value);
+                  e.stopPropagation();
+                  e.currentTarget.closest('details')?.removeAttribute('open');
+                }}
+                className={`text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate shrink-0 ${value === opt.value ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-medium' : ''}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </details>
+  );
+};
+
 const statusClasses: Record<string, string> = {
   Active: 'bg-emerald-100 text-emerald-700',
   Inactive: 'bg-gray-100 text-gray-700',
@@ -55,22 +119,30 @@ function MyDepartmentPage() {
   const createDefaultSchedule = () => ({
     id: generateId(),
     instructorId: '',
+    instructorId2: '',
     type: 'normal',
     subjectCode: '',
     subjectTitle: '',
     classSection: '',
     faculty: 'Lec',
+    faculty2: '',
     startTime: '',
+    startTime2: '',
     endTime: '',
+    endTime2: '',
     days: [] as string[],
     buildingId: '',
+    buildingId2: '',
     roomId: '',
+    roomId2: '',
     parentId: undefined as string | undefined,
     orderIndex: 0
   })
   const [schedules, setSchedules] = useState([createDefaultSchedule()])
   const [isSubmittingSchedules, setIsSubmittingSchedules] = useState(false)
   const [deletedScheduleIds, setDeletedScheduleIds] = useState<string[]>([])
+  const [isRemoveMode, setIsRemoveMode] = useState(false)
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([])
 
   const [currentUserData, setCurrentUserData] = useState<any>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
@@ -237,11 +309,13 @@ function MyDepartmentPage() {
         const q = query(collection(db, 'schedule'), where('department', '==', departmentInfo.code))
         const snapshot = await getDocs(q)
         if (!snapshot.empty) {
-          const fetched = snapshot.docs.map(doc => {
+          const rawFetched = snapshot.docs.map(doc => {
             const data = doc.data()
             return {
               ...createDefaultSchedule(),
               ...data,
+              session: data.session || 'Combine',
+              isSplitSession: data.isSplitSession || false,
               days: data.days || [],
               classSection: data.classSection || '',
               type: data.type || 'normal',
@@ -253,12 +327,44 @@ function MyDepartmentPage() {
               buildingId: data.buildingId || '',
               roomId: data.roomId || '',
               instructorId: data.instructorId || '',
-              id: !data.parentId && data.groupId ? data.groupId : doc.id,
+              id: data.id || (!data.parentId && data.groupId ? data.groupId : doc.id),
               docId: doc.id,
               orderIndex: data.orderIndex !== undefined ? data.orderIndex : 0
             }
           })
           
+          const parentMap = new Map();
+          const children: any[] = [];
+          
+          rawFetched.forEach(item => {
+            if (item.isSplitSession && item.parentId) {
+              children.push(item);
+            } else {
+              parentMap.set(item.id, item);
+            }
+          });
+          
+          children.forEach(child => {
+            const parent = parentMap.get(child.parentId);
+            if (parent) {
+              parent.instructorId2 = child.instructorId === parent.instructorId ? '' : child.instructorId;
+              parent.faculty2 = child.faculty === parent.faculty ? '' : child.faculty;
+              parent.startTime2 = child.startTime === parent.startTime ? '' : child.startTime;
+              parent.endTime2 = child.endTime === parent.endTime ? '' : child.endTime;
+              
+              if (child.days && child.days.length > 0) {
+                const combinedDays = [...(parent.days || []), ...child.days];
+                const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+                parent.days = Array.from(new Set(combinedDays)).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
+              }
+
+              parent.buildingId2 = child.buildingId === parent.buildingId ? '' : child.buildingId;
+              parent.roomId2 = child.roomId === parent.roomId ? '' : child.roomId;
+              parent.childDocId = child.docId;
+            }
+          });
+          
+          const fetched = Array.from(parentMap.values());
           fetched.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
 
           setSchedules(fetched)
@@ -405,9 +511,10 @@ function MyDepartmentPage() {
     }
 
     setSchedules(prev => {
-      const updated = [...prev]
+      let updated = [...prev]
       const current = updated[index]
       updated[index] = { ...current, [field]: value }
+
 
       if (field === 'type') {
         if (value === 'open lab') {
@@ -444,15 +551,22 @@ function MyDepartmentPage() {
   const handleToggleDay = (index: number, day: string) => {
     setSchedules(prev => {
       const updated = [...prev]
-      const currentDays = updated[index].days
-      const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-      const newDays = currentDays.includes(day) 
-        ? currentDays.filter(d => d !== day) 
-        : [...currentDays, day].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
-      
-      updated[index] = { ...updated[index], days: newDays }
-
       const current = updated[index]
+      const currentDays = current.days
+      const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+      
+      let newDays;
+      if (currentDays.includes(day)) {
+        newDays = currentDays.filter((d: string) => d !== day)
+      } else {
+        if (currentDays.length >= 2) {
+          return updated;
+        }
+        newDays = [...currentDays, day].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
+      }
+      
+      updated[index] = { ...current, days: newDays }
+
       if (!current.parentId && current.type === 'parallel') {
         for (let i = 0; i < updated.length; i++) {
           if (updated[i].parentId === current.id) {
@@ -508,18 +622,21 @@ function MyDepartmentPage() {
     setPendingTypeChange(null);
   };
 
-  const handleRemoveSchedule = (index: number) => {
+  const executeBulkRemove = () => {
+    if (selectedScheduleIds.length === 0) {
+      setIsRemoveMode(false);
+      return;
+    }
     setSchedules(prev => {
-      const toRemove = prev[index];
-      const removedSchedules = prev.filter((s, i) => i === index || s.parentId === toRemove.id);
-      
-      const removedIds = removedSchedules.map(s => (s as any).docId).filter(Boolean);
-      if (removedIds.length > 0) {
-        setDeletedScheduleIds(current => [...current, ...removedIds]);
+      const removedSchedules = prev.filter(s => selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId)));
+      const removedDocIds = removedSchedules.map(s => (s as any).docId).filter(Boolean);
+      if (removedDocIds.length > 0) {
+        setDeletedScheduleIds(current => [...current, ...removedDocIds]);
       }
-      
-      return prev.filter((s, i) => i !== index && s.parentId !== toRemove.id);
+      return prev.filter(s => !selectedScheduleIds.includes(s.id) && (!s.parentId || !selectedScheduleIds.includes(s.parentId)));
     });
+    setSelectedScheduleIds([]);
+    setIsRemoveMode(false);
   }
 
   const handleDropdownPosition = (e: React.MouseEvent<HTMLElement>) => {
@@ -550,14 +667,25 @@ function MyDepartmentPage() {
 
     setIsSubmittingSchedules(true)
     try {
-      const savePromises = validSchedules.map((schedule, index) => {
-        if (!(schedule as any).docId && !schedule.subjectCode && !schedule.type) return Promise.resolve();
+      const savePromises = validSchedules.flatMap((schedule, index) => {
+        if (!(schedule as any).docId && !schedule.subjectCode && !schedule.type) return [];
 
         const isParallel = schedule.type === 'parallel';
         const groupId = isParallel ? (schedule.parentId || schedule.id) : null;
         
-        const data = {
+        const hasSecondDay = schedule.days.length === 2;
+        const hasExplicitSecondSessionFields = !!(schedule as any).startTime2 || 
+          !!(schedule as any).endTime2 || 
+          !!(schedule as any).faculty2 || 
+          !!(schedule as any).instructorId2 || 
+          !!(schedule as any).buildingId2 || 
+          !!(schedule as any).roomId2;
+        const isSplit = hasSecondDay || hasExplicitSecondSessionFields;
+
+        const data1 = {
           department: departmentInfo?.code || null,
+          session: null,
+          isSplitSession: isSplit,
           classSection: schedule.classSection || null,
           type: schedule.type || null,
           subjectCode: schedule.subjectCode || null,
@@ -565,7 +693,7 @@ function MyDepartmentPage() {
           faculty: schedule.faculty || null,
           startTime: schedule.startTime || null,
           endTime: schedule.endTime || null,
-          days: schedule.days.length > 0 ? schedule.days : null,
+          days: schedule.days.length > 0 ? (hasSecondDay ? [schedule.days[0]] : schedule.days) : null,
           buildingId: schedule.buildingId || null,
           roomId: schedule.roomId || null,
           instructorId: schedule.instructorId || null,
@@ -573,13 +701,53 @@ function MyDepartmentPage() {
           parentId: schedule.parentId || null,
           orderIndex: index,
           updatedAt: serverTimestamp()
+        };
+
+        const promises = [];
+        const parentDocId = (schedule as any).docId;
+
+        if (parentDocId) {
+          promises.push(updateDoc(doc(db, 'schedule', parentDocId), { ...data1, id: schedule.id }));
+        } else {
+          promises.push(addDoc(collection(db, 'schedule'), { ...data1, id: schedule.id, createdAt: serverTimestamp() }));
         }
 
-        if ((schedule as any).docId) {
-          return updateDoc(doc(db, 'schedule', (schedule as any).docId), data)
+        if (isSplit) {
+          const data2 = {
+            department: departmentInfo?.code || null,
+            session: null,
+            isSplitSession: true,
+            classSection: schedule.classSection || null,
+            type: schedule.type || null,
+            subjectCode: schedule.subjectCode || null,
+            subjectTitle: schedule.subjectTitle || null,
+            faculty: (schedule as any).faculty2 || schedule.faculty || null,
+            startTime: (schedule as any).startTime2 || schedule.startTime || null,
+            endTime: (schedule as any).endTime2 || schedule.endTime || null,
+            days: hasSecondDay ? [schedule.days[1]] : (schedule.days.length > 0 ? schedule.days : null),
+            buildingId: (schedule as any).buildingId2 || schedule.buildingId || null,
+            roomId: (schedule as any).roomId2 || schedule.roomId || null,
+            instructorId: (schedule as any).instructorId2 || schedule.instructorId || null,
+            groupId: groupId,
+            parentId: schedule.id,
+            orderIndex: index,
+            updatedAt: serverTimestamp()
+          };
+
+          const childDocId = (schedule as any).childDocId;
+          if (childDocId) {
+            promises.push(updateDoc(doc(db, 'schedule', childDocId), { ...data2, id: generateId() }));
+          } else {
+            promises.push(addDoc(collection(db, 'schedule'), { ...data2, id: generateId(), createdAt: serverTimestamp() }));
+          }
         } else {
-          return addDoc(collection(db, 'schedule'), { ...data, createdAt: serverTimestamp() })
+          const childDocId = (schedule as any).childDocId;
+          if (childDocId) {
+            promises.push(deleteDoc(doc(db, 'schedule', childDocId)));
+          }
         }
+
+        return promises;
       })
 
       const deletePromises = deletedScheduleIds.map(id => deleteDoc(doc(db, 'schedule', id)))
@@ -919,24 +1087,22 @@ function MyDepartmentPage() {
               <table className="w-full text-left text-sm whitespace-nowrap min-w-max border-separate border-spacing-0">
                 <thead className="bg-gray-50 sticky top-0 z-20 text-gray-700 font-bold text-base shadow-sm">
                   <tr>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50">Type</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-32 bg-gray-50">Subject Code</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-48 bg-gray-50">Subject Title</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-32 bg-gray-50">Section</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-32 bg-gray-50">Faculty</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50">Instructor</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-[110px] bg-gray-50">Start Time</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-[110px] bg-gray-50">End Time</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-40 bg-gray-50">Days</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50">Building</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-[140px] bg-gray-50">Room</th>
-                    <th className="p-2 border-b-2 text-center border-gray-300 w-18 bg-gray-50">Action</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[90px]">Type</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[90px]">Code</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[240px]">Title</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[100px]">Section</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[120px]">Faculty</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[260px]">Instructor</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[240px]">Time</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[140px]">Days</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[210px]">Building</th>
+                    <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[160px]">Room</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                 {schedules.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={11} className="px-6 py-12 text-center text-gray-500">
                       <div className="flex flex-col items-center gap-2">
                         <p className="text-sm font-medium">No schedules yet.</p>
                         <button type="button" onClick={() => setSchedules([createDefaultSchedule()])} className="text-[var(--brand-color)] hover:underline text-sm font-bold">
@@ -948,13 +1114,15 @@ function MyDepartmentPage() {
                 ) : (
                   schedules.map((schedule, index) => {
                     const isChild = !!schedule.parentId;
+                    const isSplitSessionChild = !!(schedule as any).isSplitSession;
+                    const isParallelChild = isChild && !isSplitSessionChild;
                     
                     let childAvailableRooms = rooms;
                     if (schedule.buildingId) {
                       childAvailableRooms = rooms.filter(r => r.buildingId === schedule.buildingId);
                     }
                     
-                    if (isChild) {
+                    if (isParallelChild) {
                       const groupRows = schedules.filter(s => s.id === schedule.parentId || s.parentId === schedule.parentId);
                       const selectedRoomCodes = groupRows
                         .filter(s => s.id !== schedule.id && s.roomId)
@@ -990,18 +1158,34 @@ function MyDepartmentPage() {
 
                     const availableRooms = childAvailableRooms.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true, sensitivity: 'base' }));
                     
+                    const isSelected = selectedScheduleIds.includes(schedule.id) || (!!schedule.parentId && selectedScheduleIds.includes(schedule.parentId));
+
                     return (
-                    <tr key={index} className="hover:bg-gray-50 transition-colors">
-                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isChild ? 'bg-gray-50/50' : ''}`}>
+                    <tr 
+                      key={index} 
+                      className={`${isSelected ? 'bg-red-100 hover:bg-red-200' : 'hover:bg-gray-50'} ${isRemoveMode ? 'cursor-pointer [&>td>*]:pointer-events-none' : ''}`}
+                      onClickCapture={(e) => {
+                        if (isRemoveMode) {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const targetId = schedule.parentId || schedule.id;
+                          setSelectedScheduleIds(prev => 
+                            prev.includes(targetId) ? prev.filter(id => id !== targetId) : [...prev, targetId]
+                          );
+                        }
+                      }}
+                    >
+
+                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium text-left cursor-default">----</div>
                         ) : (
-                          <details className="w-full min-w-[90px] relative h-full group">
+                          <details className="w-full relative h-full group">
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.type ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">{schedule.type ? schedule.type.charAt(0).toUpperCase() + schedule.type.slice(1) : 'Select'}</span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full`}>
+                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded w-full`}>
                               {['normal', 'open lab', 'parallel'].map(opt => (
                                 <button
                                   key={opt}
@@ -1019,7 +1203,7 @@ function MyDepartmentPage() {
                           </details>
                         )}
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative ${isChild ? 'bg-gray-50/50' : ''}`}>
+                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         <input 
                           type="text" 
                           placeholder="ITE 298"
@@ -1027,10 +1211,10 @@ function MyDepartmentPage() {
                           value={schedule.subjectCode}
                           onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
                           onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[44px] min-w-[100px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative ${isChild ? 'bg-gray-50/50' : ''}`}>
+                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         <input 
                           type="text" 
                           placeholder="IT Project Mgmt"
@@ -1038,19 +1222,20 @@ function MyDepartmentPage() {
                           value={schedule.subjectTitle}
                           onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
                           onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[44px] min-w-[150px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
                       </td>
-                      <td className="p-0 border-b border-r border-gray-300 relative">
+                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         <input 
                           type="text" 
                           placeholder="BSIT 3-1"
+                          disabled={isChild}
                           value={schedule.classSection}
                           onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
-                          className={`h-full w-full min-h-[44px] min-w-[90px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isChild ? 'bg-gray-50/50' : ''}`}>
+                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {schedule.faculty || '----'}
@@ -1060,77 +1245,128 @@ function MyDepartmentPage() {
                             Flexible
                           </div>
                         ) : (
-                          <details className="w-full min-w-[70px] relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.faculty ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                              <span className="truncate">{schedule.faculty || 'Select'}</span>
+                          <details className="w-full relative h-full group">
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.faculty || (schedule as any).faculty2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                              <span className="truncate">
+                                {schedule.faculty || 'Select'}
+                                {(schedule as any).faculty2 ? ` / ${(schedule as any).faculty2}` : ''}
+                              </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full`}>
-                              {['Lec', 'Lab'].map(opt => (
-                                <button
-                                  key={opt}
-                                  type="button"
-                                  onClick={(e) => {
-                                    handleScheduleChange(index, 'faculty', opt)
-                                    e.currentTarget.closest('details')?.removeAttribute('open')
+                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                <InnerDropdown
+                                  value={schedule.faculty || ''}
+                                  onChange={(val) => {
+                                    handleScheduleChange(index, 'faculty', val);
+                                    if (!val) handleScheduleChange(index, 'faculty2', '');
                                   }}
-                                  className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate"
-                                >
-                                  {opt}
-                                </button>
-                              ))}
+                                  options={[{value: 'Lec', label: 'Lec'}, {value: 'Lab', label: 'Lab'}]}
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
+                                <InnerDropdown
+                                  value={(schedule as any).faculty2 || ''}
+                                  disabled={!schedule.faculty}
+                                  onChange={(val) => handleScheduleChange(index, 'faculty2', val)}
+                                  options={(() => {
+                                    const opts = [];
+                                    if (schedule.faculty !== 'Lec') opts.push({value: 'Lec', label: 'Lec'});
+                                    if (schedule.faculty !== 'Lab') opts.push({value: 'Lab', label: 'Lab'});
+                                    return opts;
+                                  })()}
+                                />
+                              </div>
                             </div>
                           </details>
                         )}
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isChild ? 'bg-gray-50/50' : ''}`}>
+                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {members.find(m => m.membershipId === schedule.instructorId)?.name || '----'}
                           </div>
                         ) : (
-                          <details className="w-full min-w-[160px] relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.instructorId ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                              <span className="truncate">{members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'}</span>
+                          <details className="w-full relative h-full group">
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.instructorId || (schedule as any).instructorId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                              <span className="truncate">
+                                {members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'}
+                                {(schedule as any).instructorId2 ? ` / ${members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}` : ''}
+                              </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full`}>
-                              {members.filter(m => m.role === 'Instructor').map(m => (
-                                <button
-                                  key={m.membershipId}
-                                  type="button"
-                                  onClick={(e) => {
-                                    handleScheduleChange(index, 'instructorId', m.membershipId)
-                                    e.currentTarget.closest('details')?.removeAttribute('open')
+                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                <InnerDropdown
+                                  value={schedule.instructorId || ''}
+                                  onChange={(val) => {
+                                    handleScheduleChange(index, 'instructorId', val);
+                                    if (!val) handleScheduleChange(index, 'instructorId2', '');
                                   }}
-                                  className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate"
-                                >
-                                  {m.name}
-                                </button>
-                              ))}
+                                  options={members.filter(m => m.role === 'Instructor').map(m => ({value: m.membershipId || '', label: m.name}))}
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
+                                <InnerDropdown
+                                  value={(schedule as any).instructorId2 || ''}
+                                  disabled={!schedule.instructorId}
+                                  onChange={(val) => handleScheduleChange(index, 'instructorId2', val)}
+                                  options={members.filter(m => m.role === 'Instructor' && m.membershipId !== schedule.instructorId).map(m => ({value: m.membershipId || '', label: m.name}))}
+                                />
+                              </div>
                             </div>
                           </details>
                         )}
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative ${isChild ? 'bg-gray-50/50' : ''}`}>
-                        <input 
-                          type="time" 
-                          disabled={isChild}
-                          value={schedule.startTime}
-                          onChange={(e) => handleScheduleChange(index, 'startTime', e.target.value)}
-                          className={`h-full w-full min-h-[44px] min-w-[110px] [&::-webkit-calendar-picker-indicator]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${!isChild ? 'cursor-text' : ''} ${schedule.startTime ? 'text-gray-900 font-medium' : 'text-gray-500'}`}
-                        />
+                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
+                        {isChild ? (
+                          <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
+                            {schedule.startTime || '----'} - {schedule.endTime || '----'}
+                          </div>
+                        ) : (
+                          <details className="w-full relative h-full group">
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.startTime || schedule.endTime || (schedule as any).startTime2 || (schedule as any).endTime2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                              <span className="truncate">
+                                {(() => {
+                                  const time1 = (schedule.startTime || schedule.endTime) ? `${schedule.startTime || '?'} - ${schedule.endTime || '?'}` : '';
+                                  const time2 = ((schedule as any).startTime2 || (schedule as any).endTime2) ? `${(schedule as any).startTime2 || '?'} - ${(schedule as any).endTime2 || '?'}` : '';
+                                  return time1 ? (time2 ? `${time1} / ${time2}` : time1) : 'Select Time';
+                                })()}
+                              </span>
+                            </summary>
+                            <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
+                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-4 rounded w-full`}>
+                              <div className="flex flex-col gap-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session Time</label>
+                                <div className="flex items-center gap-2">
+                                  <input type="time" value={schedule.startTime || ''} onChange={(e) => {
+                                    handleScheduleChange(index, 'startTime', e.target.value);
+                                    if (!e.target.value) handleScheduleChange(index, 'startTime2', '');
+                                  }} className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] bg-white [&::-webkit-calendar-picker-indicator]:hidden cursor-text" />
+                                  <span className="text-gray-500 text-sm">to</span>
+                                  <input type="time" value={schedule.endTime || ''} onChange={(e) => {
+                                    handleScheduleChange(index, 'endTime', e.target.value);
+                                    if (!e.target.value) handleScheduleChange(index, 'endTime2', '');
+                                  }} className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] bg-white [&::-webkit-calendar-picker-indicator]:hidden cursor-text" />
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-2">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session Time</label>
+                                <div className="flex items-center gap-2">
+                                  <input type="time" disabled={!schedule.startTime} value={(schedule as any).startTime2 || ''} onChange={(e) => handleScheduleChange(index, 'startTime2', e.target.value)} className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] bg-white [&::-webkit-calendar-picker-indicator]:hidden cursor-text disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-default" />
+                                  <span className="text-gray-500 text-sm">to</span>
+                                  <input type="time" disabled={!schedule.endTime} value={(schedule as any).endTime2 || ''} onChange={(e) => handleScheduleChange(index, 'endTime2', e.target.value)} className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] bg-white [&::-webkit-calendar-picker-indicator]:hidden cursor-text disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-default" />
+                                </div>
+                              </div>
+                            </div>
+                          </details>
+                        )}
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative ${isChild ? 'bg-gray-50/50' : ''}`}>
-                        <input 
-                          type="time" 
-                          disabled={isChild}
-                          value={schedule.endTime}
-                          onChange={(e) => handleScheduleChange(index, 'endTime', e.target.value)}
-                          className={`h-full w-full min-h-[44px] min-w-[110px] [&::-webkit-calendar-picker-indicator]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${!isChild ? 'cursor-text' : ''} ${schedule.endTime ? 'text-gray-900 font-medium' : 'text-gray-500'}`}
-                        />
-                      </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isChild ? 'bg-gray-50/50' : ''}`}>
+                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium flex items-center cursor-default">
                             <span className="truncate max-w-[100px]">
@@ -1138,14 +1374,14 @@ function MyDepartmentPage() {
                             </span>
                           </div>
                         ) : (
-                          <details className="w-full min-w-[140px] relative h-full group">
+                          <details className="w-full relative h-full group">
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.days.length > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate max-w-[100px]">
                                 {schedule.days.length > 0 ? schedule.days.join(', ') : 'Select'}
                               </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-2 flex flex-col gap-2 rounded min-w-full`}>
+                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-2 rounded w-full`}>
                               {[
                                 { short: 'Mon', full: 'Monday' },
                                 { short: 'Tue', full: 'Tuesday' },
@@ -1154,99 +1390,122 @@ function MyDepartmentPage() {
                                 { short: 'Fri', full: 'Friday' },
                                 { short: 'Sat', full: 'Saturday' },
                                 { short: 'Sun', full: 'Sunday' }
-                              ].map(day => (
-                                <label key={day.short} className="flex items-center gap-2 text-sm font-medium cursor-pointer relative z-50 shrink-0">
+                              ].map(day => {
+                                const isChecked = schedule.days.includes(day.short);
+                                const isMaxReached = schedule.days.length >= 2;
+                                const isDisabled = !isChecked && isMaxReached;
+                                return (
+                                <label key={day.short} className={`flex items-center gap-2 text-sm font-medium relative z-50 shrink-0 ${isDisabled ? 'text-gray-400 cursor-default' : 'cursor-pointer'}`}>
                                   <input 
                                     type="checkbox" 
-                                    checked={schedule.days.includes(day.short)}
+                                    checked={isChecked}
+                                    disabled={isDisabled}
                                     onChange={() => handleToggleDay(index, day.short)} 
-                                    className="rounded text-[var(--brand-color)] focus:ring-[var(--brand-color)]"
+                                    className={`rounded text-[var(--brand-color)] focus:ring-[var(--brand-color)] ${isDisabled ? 'cursor-default' : 'cursor-pointer'}`}
                                   />
                                   {day.full}
                                 </label>
-                              ))}
+                              )})}
+                              {schedule.days.length === 2 && (
+                                <div className="mt-2 text-xs text-[var(--brand-color)] font-medium">
+                                  1st: {schedule.days[0]} / 2nd: {schedule.days[1]}
+                                </div>
+                              )}
                             </div>
                           </details>
                         )}
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isChild ? 'bg-gray-50/50' : ''}`}>
+                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {buildings.find(b => b.id === schedule.buildingId)?.name || '----'}
                           </div>
                         ) : (
-                          <details className="w-full min-w-[120px] relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.buildingId ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                              <span className="truncate">{buildings.find(b => b.id === schedule.buildingId)?.name || 'Select'}</span>
+                          <details className="w-full relative h-full group">
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.buildingId || (schedule as any).buildingId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                              <span className="truncate">
+                                {buildings.find(b => b.id === schedule.buildingId)?.name || 'Select'}
+                                {(schedule as any).buildingId2 ? ` / ${buildings.find(b => b.id === (schedule as any).buildingId2)?.name || '?'}` : ''}
+                              </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full`}>
-                              {buildings.map(b => (
-                                  <button
-                                  key={b.id}
-                                  type="button"
-                                  onClick={(e) => {
-                                    handleScheduleChange(index, 'buildingId', b.id)
+                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                <InnerDropdown
+                                  value={schedule.buildingId || ''}
+                                  onChange={(val) => {
+                                    handleScheduleChange(index, 'buildingId', val)
                                     handleScheduleChange(index, 'roomId', '')
-                                    e.currentTarget.closest('details')?.removeAttribute('open')
+                                    if (!val) {
+                                      handleScheduleChange(index, 'buildingId2', '')
+                                      handleScheduleChange(index, 'roomId2', '')
+                                    }
                                   }}
-                                  className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate shrink-0"
-                                >
-                                  {b.name}
-                                </button>
-                              ))}
+                                  options={buildings.map(b => ({value: b.id, label: b.name}))}
+                                />
+                              </div>
+                              <div className="flex flex-col gap-1.5">
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
+                                <InnerDropdown
+                                  value={(schedule as any).buildingId2 || ''}
+                                  disabled={!schedule.buildingId}
+                                  onChange={(val) => {
+                                    handleScheduleChange(index, 'buildingId2', val)
+                                    handleScheduleChange(index, 'roomId2', '')
+                                  }}
+                                  options={buildings.filter(b => b.id !== schedule.buildingId).map(b => ({value: b.id, label: b.name}))}
+                                />
+                              </div>
                             </div>
                           </details>
                         )}
                       </td>
-                      <td className="p-0 border-b border-r border-gray-300 relative align-middle">
+                      <td className={`p-0 border-b border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : ''}`}>
                         <details 
-                          className="w-full min-w-[140px] relative h-full group"
+                          className="w-full relative h-full group"
                           onClick={(e) => {
                             if (!schedule.buildingId || (isChild && availableRooms.length === 0)) e.preventDefault();
                           }}
                         >
-                          <summary onClick={(e) => { handleDropdownPosition(e); }} className={`h-full min-h-[44px] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset flex items-center justify-between transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer focus:ring-2 focus:ring-[var(--brand-color)] ' + (schedule.roomId ? 'text-gray-900 font-medium' : 'text-gray-500')}`}>
-                            <span className="truncate">{schedule.buildingId ? (rooms.find(r => r.id === schedule.roomId)?.code || 'Select') : 'Select'}</span>
+                          <summary onClick={(e) => { handleDropdownPosition(e); }} className={`h-full min-h-[44px] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset flex items-center justify-between transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer focus:ring-2 focus:ring-[var(--brand-color)] ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}>
+                            <span className="truncate">
+                              {schedule.buildingId ? (rooms.find(r => r.id === schedule.roomId)?.code || 'Select') : 'Select'}
+                              {(schedule as any).roomId2 ? ` / ${rooms.find(r => r.id === (schedule as any).roomId2)?.code || '?'}` : ''}
+                            </span>
                           </summary>
                           {schedule.buildingId && (
                             <>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full`}>
-                                {availableRooms.length === 0 ? (
-                                  <div className="px-2 py-1.5 text-sm text-gray-400">No rooms {isChild && 'available (select parent room first)'}</div>
-                                ) : (
-                                  availableRooms.map(room => (
-                                    <button
-                                      key={room.id}
-                                      type="button"
-                                      onClick={(e) => {
-                                        handleScheduleChange(index, 'roomId', room.id)
-                                        e.currentTarget.closest('details')?.removeAttribute('open')
-                                      }}
-                                      className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate shrink-0"
-                                    >
-                                      {room.code}
-                                    </button>
-                                  ))
-                                )}
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                                <div className="flex flex-col gap-1.5">
+                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                  <InnerDropdown
+                                    value={schedule.roomId || ''}
+                                    onChange={(val) => {
+                                      handleScheduleChange(index, 'roomId', val);
+                                      if (!val) handleScheduleChange(index, 'roomId2', '');
+                                    }}
+                                    options={availableRooms.map(room => ({value: room.id, label: room.code || ''}))}
+                                  />
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
+                                  <InnerDropdown
+                                    value={(schedule as any).roomId2 || ''}
+                                    disabled={!schedule.roomId}
+                                    onChange={(val) => handleScheduleChange(index, 'roomId2', val)}
+                                    options={(() => {
+                                      const bId2 = (schedule as any).buildingId2 || schedule.buildingId;
+                                      const availableRooms2 = bId2 ? rooms.filter(r => r.buildingId === bId2 && r.id !== schedule.roomId).sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true, sensitivity: 'base' })) : [];
+                                      return availableRooms2.map(room => ({value: room.id, label: room.code || ''}));
+                                    })()}
+                                  />
+                                </div>
                               </div>
                             </>
                           )}
                         </details>
-                      </td>
-                      <td className={`p-2 border-b text-center relative border-gray-300 ${isChild ? 'bg-gray-50/50' : ''}`}>
-                        {!isChild && (
-                          <button 
-                            type="button"
-                            disabled={false}
-                            onClick={() => handleRemoveSchedule(index)}
-                            className={`transition-colors p-1 text-gray-400 hover:text-rose-500`}
-                            title="Remove Row"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        )}
                       </td>
                     </tr>
                   );
@@ -1258,10 +1517,54 @@ function MyDepartmentPage() {
             
             <div className="p-4 border-t border-gray-200 bg-white flex justify-between gap-3 shrink-0 rounded-b-md">
               <div className="flex items-center gap-4">
+                {isRemoveMode ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedScheduleIds.length === 0) {
+                          setIsRemoveMode(false);
+                        } else {
+                          executeBulkRemove();
+                        }
+                      }}
+                      className={`rounded border px-4 py-2 text-sm font-bold transition-colors flex items-center justify-center gap-1 shrink-0 ${
+                        selectedScheduleIds.length > 0 
+                          ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-600'
+                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {selectedScheduleIds.length > 0 && <TrashIcon className="h-4 w-4" />}
+                      {selectedScheduleIds.length > 0 ? `Delete Selected (${selectedScheduleIds.length})` : 'Cancel Remove'}
+                    </button>
+                    {selectedScheduleIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsRemoveMode(false);
+                          setSelectedScheduleIds([]);
+                        }}
+                        className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100 transition-colors flex items-center justify-center shrink-0"
+                      >
+                        Cancel Remove
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsRemoveMode(true)}
+                    className="rounded border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-500 hover:border-rose-500 hover:text-rose-600 transition-colors flex items-center justify-center gap-1 shrink-0"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                    Remove
+                  </button>
+                )}
                 <button
                   type="button"
+                  disabled={isRemoveMode}
                   onClick={() => setSchedules([...schedules, createDefaultSchedule()])}
-                  className="rounded border border-dashed border-gray-400 bg-white px-4 py-2 text-sm font-bold text-gray-500 hover:border-[var(--brand-color)] hover:text-[var(--brand-color)] transition-colors flex items-center justify-center gap-1 shrink-0"
+                  className="rounded border border-dashed border-gray-400 bg-white px-4 py-2 text-sm font-bold text-gray-500 hover:border-[var(--brand-color)] hover:text-[var(--brand-color)] transition-colors flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <PlusIcon className="h-4 w-4" />
                   Add Row
