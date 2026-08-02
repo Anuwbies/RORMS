@@ -227,7 +227,7 @@ Manages schedule allocations for subjects, rooms, and instructors.
   - `type`: string (e.g., "open lab", "parallel", "normal")
   - `subjectCode`: string (e.g., "ITE 298", "ITE 083", "ITE 031")
   - `subjectTitle`: string (e.g., "IT project management", "Data Structures and Algorithms", "Networking 1")
-  - `faculty`: string (e.g., "Lec" or "Lab")
+  - `faculty`: string (e.g., "Lec", "Lab", or "Flexible")
   - `startTime`: string (e.g., "07:30")
   - `endTime`: string (e.g., "09:00")
   - `days`: array (Days of the week, e.g., `["Thu", "Sat", "Mon"]`)
