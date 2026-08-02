@@ -45,7 +45,7 @@ function MyDepartmentPage() {
   
   const [rooms, setRooms] = useState<{id: string, code: string, name: string, buildingId: string}[]>([])
   const [buildings, setBuildings] = useState<{id: string, name: string}[]>([])
-  const [isBulkScheduleModalOpen, setIsBulkScheduleModalOpen] = useState(false)
+  const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false)
   
   const defaultSchedule = {
     instructorId: '',
@@ -60,8 +60,8 @@ function MyDepartmentPage() {
     buildingId: '',
     roomId: ''
   }
-  const [bulkSchedules, setBulkSchedules] = useState([defaultSchedule])
-  const [isSubmittingBulkSchedules, setIsSubmittingBulkSchedules] = useState(false)
+  const [schedules, setSchedules] = useState([defaultSchedule])
+  const [isSubmittingSchedules, setIsSubmittingSchedules] = useState(false)
 
   const [currentUserData, setCurrentUserData] = useState<any>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
@@ -329,28 +329,31 @@ function MyDepartmentPage() {
     setIsScheduleModalOpen(true)
   }
 
-  const handleBulkScheduleChange = (index: number, field: string, value: any) => {
-    setBulkSchedules(prev => {
+  const handleScheduleChange = (index: number, field: string, value: any) => {
+    setSchedules(prev => {
       const updated = [...prev]
       updated[index] = { ...updated[index], [field]: value }
       return updated
     })
   }
 
-  const handleBulkToggleDay = (index: number, day: string) => {
-    setBulkSchedules(prev => {
+  const handleToggleDay = (index: number, day: string) => {
+    setSchedules(prev => {
       const updated = [...prev]
       const currentDays = updated[index].days
+      const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
       updated[index] = { 
         ...updated[index], 
-        days: currentDays.includes(day) ? currentDays.filter(d => d !== day) : [...currentDays, day] 
+        days: currentDays.includes(day) 
+          ? currentDays.filter(d => d !== day) 
+          : [...currentDays, day].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
       }
       return updated
     })
   }
 
-  const handleRemoveBulkSchedule = (index: number) => {
-    setBulkSchedules(prev => prev.filter((_, i) => i !== index))
+  const handleRemoveSchedule = (index: number) => {
+    setSchedules(prev => prev.filter((_, i) => i !== index))
   }
 
   const handleDropdownPosition = (e: React.MouseEvent<HTMLElement>) => {
@@ -358,7 +361,7 @@ function MyDepartmentPage() {
     const rect = summary.getBoundingClientRect();
     const dropdown = summary.nextElementSibling?.nextElementSibling as HTMLElement;
     if (dropdown) {
-      if (window.innerHeight - rect.bottom < 300) {
+      if (window.innerHeight - rect.bottom < 350) {
         dropdown.style.top = 'auto';
         dropdown.style.bottom = '100%';
         dropdown.style.marginTop = '0';
@@ -372,11 +375,11 @@ function MyDepartmentPage() {
     }
   }
 
-  const handleSaveBulkSchedules = async () => {
-    const validSchedules = bulkSchedules.filter(s => s.instructorId && s.roomId && s.days.length > 0 && s.subjectCode)
+  const handleSaveSchedules = async () => {
+    const validSchedules = schedules.filter(s => s.instructorId && s.roomId && s.days.length > 0 && s.subjectCode)
     if (validSchedules.length === 0) return
 
-    setIsSubmittingBulkSchedules(true)
+    setIsSubmittingSchedules(true)
     try {
       const promises = validSchedules.map((schedule) => {
         return addDoc(collection(db, 'schedule'), {
@@ -387,12 +390,12 @@ function MyDepartmentPage() {
         })
       })
       await Promise.all(promises)
-      setIsBulkScheduleModalOpen(false)
-      setBulkSchedules([defaultSchedule])
+      setIsAddScheduleModalOpen(false)
+      setSchedules([defaultSchedule])
     } catch (error) {
-      console.error("Error saving bulk schedules:", error)
+      console.error("Error saving schedules:", error)
     } finally {
-      setIsSubmittingBulkSchedules(false)
+      setIsSubmittingSchedules(false)
     }
   }
 
@@ -513,75 +516,47 @@ function MyDepartmentPage() {
         </div>
       )}
 
-      {/* Bulk Add Schedule Modal */}
-      {isBulkScheduleModalOpen && (
+      {/* Add Schedule Modal */}
+      {isAddScheduleModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-[95vw] max-w-[95vw] max-h-[90vh] min-h-[60vh] flex flex-col rounded-md border border-gray-200 bg-gray-50 shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
+            className="w-[95vw] max-w-[95vw] max-h-[90vh] min-h-[60vh] flex flex-col rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-4 text-white rounded-t-md shrink-0">
-              <button 
-                onClick={() => setIsBulkScheduleModalOpen(false)}
-                className="absolute right-4 top-4 text-white/70 hover:text-white transition-colors"
-              >
-                <PlusIcon className="h-6 w-6 rotate-45" />
-              </button>
-              <h3 className="text-xl font-bold">Bulk Add Schedules</h3>
+              <h3 className="text-xl font-bold">Add Schedule</h3>
               <p className="mt-1 text-sm text-white/80">Add multiple schedules and assign them to instructors in your department.</p>
             </div>
             
-            <div className="px-4 py-0 flex-1 overflow-scroll">
-              <table className="w-full text-left text-sm whitespace-nowrap min-w-max border-collapse">
-                <thead className="bg-white sticky top-0 z-20 border-b-2 border-gray-200 text-gray-700 font-bold">
+            <div className="py-0 flex-1 overflow-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
+              <table className="w-full text-left text-sm whitespace-nowrap min-w-max border-separate border-spacing-0">
+                <thead className="bg-gray-50 sticky top-0 z-20 text-gray-700 font-bold text-base shadow-sm">
                   <tr>
-                    <th className="p-2 border-b border-r border-gray-200">Instructor <span className="text-rose-500">*</span></th>
-                    <th className="p-2 border-b border-r border-gray-200">Type</th>
-                    <th className="p-2 border-b border-r border-gray-200">Faculty</th>
-                    <th className="p-2 border-b border-r border-gray-200 w-32">Subject Code <span className="text-rose-500">*</span></th>
-                    <th className="p-2 border-b border-r border-gray-200 w-32">Section</th>
-                    <th className="p-2 border-b border-r border-gray-200 w-48">Subject Title</th>
-                    <th className="p-2 border-b border-r border-gray-200 w-24">Start Time <span className="text-rose-500">*</span></th>
-                    <th className="p-2 border-b border-r border-gray-200 w-24">End Time <span className="text-rose-500">*</span></th>
-                    <th className="p-2 border-b border-r border-gray-200 w-40">Days <span className="text-rose-500">*</span></th>
-                    <th className="p-2 border-b border-r border-gray-200">Building <span className="text-rose-500">*</span></th>
-                    <th className="p-2 border-b border-r border-gray-200">Room <span className="text-rose-500">*</span></th>
-                    <th className="p-2 border-b text-center">Action</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50">Type</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-32 bg-gray-50">Subject Code</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-48 bg-gray-50">Subject Title</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-32 bg-gray-50">Section</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50">Faculty</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50">Instructor</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-24 bg-gray-50">Start Time</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-24 bg-gray-50">End Time</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 w-40 bg-gray-50">Days</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50">Building</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50">Room</th>
+                    <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50">Action</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white">
-                  {bulkSchedules.map((schedule, index) => {
-                    const availableRooms = schedule.buildingId ? rooms.filter(r => r.buildingId === schedule.buildingId) : rooms;
+                  {schedules.map((schedule, index) => {
+                    const availableRooms = (schedule.buildingId ? rooms.filter(r => r.buildingId === schedule.buildingId) : rooms)
+                      .sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true, sensitivity: 'base' }));
                     
                     return (
-                    <tr key={index} className="border-b border-gray-200 hover:bg-gray-50 transition-colors">
-                      <td className="p-0 border-r border-gray-200 relative align-middle">
-                        <details className="w-full min-w-[160px] relative h-full group">
-                          <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.instructorId ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                            <span className="truncate">{members.find(m => m.membershipId === schedule.instructorId)?.name || '\u00A0'}</span>
-                          </summary>
-                          <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                          <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full`}>
-                            {members.map(m => (
-                              <button
-                                key={m.membershipId}
-                                type="button"
-                                onClick={(e) => {
-                                  handleBulkScheduleChange(index, 'instructorId', m.membershipId)
-                                  e.currentTarget.closest('details')?.removeAttribute('open')
-                                }}
-                                className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate"
-                              >
-                                {m.name}
-                              </button>
-                            ))}
-                          </div>
-                        </details>
-                      </td>
-                      <td className="p-0 border-r border-gray-200 relative align-middle">
+                    <tr key={index} className="hover:bg-gray-50 transition-colors">
+                      <td className="p-0 border-b border-r border-gray-300 relative align-middle">
                         <details className="w-full min-w-[90px] relative h-full group">
                           <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.type ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                            <span className="truncate">{schedule.type ? schedule.type.charAt(0).toUpperCase() + schedule.type.slice(1) : '\u00A0'}</span>
+                            <span className="truncate">{schedule.type ? schedule.type.charAt(0).toUpperCase() + schedule.type.slice(1) : 'Select'}</span>
                           </summary>
                           <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                           <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full`}>
@@ -590,7 +565,7 @@ function MyDepartmentPage() {
                                 key={opt}
                                 type="button"
                                 onClick={(e) => {
-                                  handleBulkScheduleChange(index, 'type', opt)
+                                  handleScheduleChange(index, 'type', opt)
                                   e.currentTarget.closest('details')?.removeAttribute('open')
                                 }}
                                 className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate"
@@ -601,10 +576,37 @@ function MyDepartmentPage() {
                           </div>
                         </details>
                       </td>
-                      <td className="p-0 border-r border-gray-200 relative align-middle">
+                      <td className="p-0 border-b border-r border-gray-300 relative">
+                        <input 
+                          type="text" 
+                          placeholder="ITE 298"
+                          value={schedule.subjectCode}
+                          onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
+                          className={`h-full w-full min-h-[44px] min-w-[100px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                        />
+                      </td>
+                      <td className="p-0 border-b border-r border-gray-300 relative">
+                        <input 
+                          type="text" 
+                          placeholder="IT Project Mgmt"
+                          value={schedule.subjectTitle}
+                          onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
+                          className={`h-full w-full min-h-[44px] min-w-[150px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                        />
+                      </td>
+                      <td className="p-0 border-b border-r border-gray-300 relative">
+                        <input 
+                          type="text" 
+                          placeholder="BSIT 3-1"
+                          value={schedule.classSection}
+                          onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
+                          className={`h-full w-full min-h-[44px] min-w-[90px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                        />
+                      </td>
+                      <td className="p-0 border-b border-r border-gray-300 relative align-middle">
                         <details className="w-full min-w-[70px] relative h-full group">
                           <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.faculty ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                            <span className="truncate">{schedule.faculty || '\u00A0'}</span>
+                            <span className="truncate">{schedule.faculty || 'Select'}</span>
                           </summary>
                           <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                           <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full`}>
@@ -613,7 +615,7 @@ function MyDepartmentPage() {
                                 key={opt}
                                 type="button"
                                 onClick={(e) => {
-                                  handleBulkScheduleChange(index, 'faculty', opt)
+                                  handleScheduleChange(index, 'faculty', opt)
                                   e.currentTarget.closest('details')?.removeAttribute('open')
                                 }}
                                 className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate"
@@ -624,54 +626,50 @@ function MyDepartmentPage() {
                           </div>
                         </details>
                       </td>
-                      <td className="p-0 border-r border-gray-200 relative">
-                        <input 
-                          type="text" 
-                          placeholder="ITE 298"
-                          value={schedule.subjectCode}
-                          onChange={(e) => handleBulkScheduleChange(index, 'subjectCode', e.target.value)}
-                          className={`h-full w-full min-h-[44px] min-w-[100px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
-                        />
+                      <td className="p-0 border-b border-r border-gray-300 relative align-middle">
+                        <details className="w-full min-w-[160px] relative h-full group">
+                          <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.instructorId ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <span className="truncate">{members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'}</span>
+                          </summary>
+                          <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
+                          <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full`}>
+                            {members.map(m => (
+                              <button
+                                key={m.membershipId}
+                                type="button"
+                                onClick={(e) => {
+                                  handleScheduleChange(index, 'instructorId', m.membershipId)
+                                  e.currentTarget.closest('details')?.removeAttribute('open')
+                                }}
+                                className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate"
+                              >
+                                {m.name}
+                              </button>
+                            ))}
+                          </div>
+                        </details>
                       </td>
-                      <td className="p-0 border-r border-gray-200 relative">
-                        <input 
-                          type="text" 
-                          placeholder="BSIT 3-1"
-                          value={schedule.classSection}
-                          onChange={(e) => handleBulkScheduleChange(index, 'classSection', e.target.value)}
-                          className={`h-full w-full min-h-[44px] min-w-[90px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
-                        />
-                      </td>
-                      <td className="p-0 border-r border-gray-200 relative">
-                        <input 
-                          type="text" 
-                          placeholder="IT Project Mgmt"
-                          value={schedule.subjectTitle}
-                          onChange={(e) => handleBulkScheduleChange(index, 'subjectTitle', e.target.value)}
-                          className={`h-full w-full min-h-[44px] min-w-[150px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
-                        />
-                      </td>
-                      <td className="p-0 border-r border-gray-200 relative">
+                      <td className="p-0 border-b border-r border-gray-300 relative">
                         <input 
                           type="time" 
                           value={schedule.startTime}
-                          onChange={(e) => handleBulkScheduleChange(index, 'startTime', e.target.value)}
+                          onChange={(e) => handleScheduleChange(index, 'startTime', e.target.value)}
                           className={`h-full w-full min-h-[44px] min-w-[90px] [&::-webkit-calendar-picker-indicator]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.startTime ? 'text-gray-900 font-medium' : 'text-gray-500'}`}
                         />
                       </td>
-                      <td className="p-0 border-r border-gray-200 relative">
+                      <td className="p-0 border-b border-r border-gray-300 relative">
                         <input 
                           type="time" 
                           value={schedule.endTime}
-                          onChange={(e) => handleBulkScheduleChange(index, 'endTime', e.target.value)}
+                          onChange={(e) => handleScheduleChange(index, 'endTime', e.target.value)}
                           className={`h-full w-full min-h-[44px] min-w-[90px] [&::-webkit-calendar-picker-indicator]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.endTime ? 'text-gray-900 font-medium' : 'text-gray-500'}`}
                         />
                       </td>
-                      <td className="p-0 border-r border-gray-200 relative align-middle">
+                      <td className="p-0 border-b border-r border-gray-300 relative align-middle">
                         <details className="w-full min-w-[140px] relative h-full group">
                           <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.days.length > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                             <span className="truncate max-w-[100px]">
-                              {schedule.days.length > 0 ? schedule.days.join(', ') : '\u00A0'}
+                              {schedule.days.length > 0 ? schedule.days.join(', ') : 'Select'}
                             </span>
                           </summary>
                           <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
@@ -689,7 +687,7 @@ function MyDepartmentPage() {
                                 <input 
                                   type="checkbox" 
                                   checked={schedule.days.includes(day.short)}
-                                  onChange={() => handleBulkToggleDay(index, day.short)} 
+                                  onChange={() => handleToggleDay(index, day.short)} 
                                   className="rounded text-[var(--brand-color)] focus:ring-[var(--brand-color)]"
                                 />
                                 {day.full}
@@ -698,10 +696,10 @@ function MyDepartmentPage() {
                           </div>
                         </details>
                       </td>
-                      <td className="p-0 border-r border-gray-200 relative align-middle">
+                      <td className="p-0 border-b border-r border-gray-300 relative align-middle">
                         <details className="w-full min-w-[120px] relative h-full group">
                           <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.buildingId ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                            <span className="truncate">{buildings.find(b => b.id === schedule.buildingId)?.name || '\u00A0'}</span>
+                            <span className="truncate">{buildings.find(b => b.id === schedule.buildingId)?.name || 'Select'}</span>
                           </summary>
                           <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                           <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded min-w-full max-h-48 overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full`}>
@@ -710,8 +708,8 @@ function MyDepartmentPage() {
                                 key={b.id}
                                 type="button"
                                 onClick={(e) => {
-                                  handleBulkScheduleChange(index, 'buildingId', b.id)
-                                  handleBulkScheduleChange(index, 'roomId', '')
+                                  handleScheduleChange(index, 'buildingId', b.id)
+                                  handleScheduleChange(index, 'roomId', '')
                                   e.currentTarget.closest('details')?.removeAttribute('open')
                                 }}
                                 className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate shrink-0"
@@ -722,7 +720,7 @@ function MyDepartmentPage() {
                           </div>
                         </details>
                       </td>
-                      <td className="p-0 border-r border-gray-200 relative align-middle">
+                      <td className="p-0 border-b border-r border-gray-300 relative align-middle">
                         <details 
                           className="w-full min-w-[120px] relative h-full group"
                           onClick={(e) => {
@@ -730,7 +728,7 @@ function MyDepartmentPage() {
                           }}
                         >
                           <summary onClick={(e) => { handleDropdownPosition(e); }} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${!schedule.buildingId ? 'opacity-50 cursor-not-allowed text-gray-400' : schedule.roomId ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                            <span className="truncate">{schedule.buildingId ? (rooms.find(r => r.id === schedule.roomId)?.code || '\u00A0') : 'Select Building'}</span>
+                            <span className="truncate">{schedule.buildingId ? (rooms.find(r => r.id === schedule.roomId)?.code || 'Select') : 'Select'}</span>
                           </summary>
                           {schedule.buildingId && (
                             <>
@@ -744,7 +742,7 @@ function MyDepartmentPage() {
                                       key={room.id}
                                       type="button"
                                       onClick={(e) => {
-                                        handleBulkScheduleChange(index, 'roomId', room.id)
+                                        handleScheduleChange(index, 'roomId', room.id)
                                         e.currentTarget.closest('details')?.removeAttribute('open')
                                       }}
                                       className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate shrink-0"
@@ -758,17 +756,16 @@ function MyDepartmentPage() {
                           )}
                         </details>
                       </td>
-                      <td className="p-2 text-center relative">
-                        {bulkSchedules.length > 1 && (
-                          <button 
-                            type="button"
-                            onClick={() => handleRemoveBulkSchedule(index)}
-                            className="text-gray-400 hover:text-rose-500 transition-colors p-1"
-                            title="Remove Row"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        )}
+                      <td className="p-2 border-b text-center relative border-gray-300">
+                        <button 
+                          type="button"
+                          disabled={schedules.length === 1}
+                          onClick={() => handleRemoveSchedule(index)}
+                          className={`transition-colors p-1 ${schedules.length === 1 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-400 hover:text-rose-500'}`}
+                          title="Remove Row"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
                       </td>
                     </tr>
                   )})}
@@ -776,35 +773,40 @@ function MyDepartmentPage() {
               </table>
             </div>
             
-            <div className="p-4 border-t border-gray-200 bg-gray-50 flex justify-between gap-3 shrink-0 rounded-b-md">
-              <button
-                type="button"
-                onClick={() => setBulkSchedules([...bulkSchedules, defaultSchedule])}
-                className="rounded border border-dashed border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-500 hover:border-[var(--brand-color)] hover:text-[var(--brand-color)] transition-colors flex items-center justify-center gap-1"
-              >
-                <PlusIcon className="h-4 w-4" />
-                Add Row
-              </button>
+            <div className="p-4 border-t border-gray-200 bg-white flex justify-between gap-3 shrink-0 rounded-b-md">
+              <div className="flex items-center gap-4">
+                <button
+                  type="button"
+                  onClick={() => setSchedules([...schedules, defaultSchedule])}
+                  className="rounded border border-dashed border-gray-400 bg-white px-4 py-2 text-sm font-bold text-gray-500 hover:border-[var(--brand-color)] hover:text-[var(--brand-color)] transition-colors flex items-center justify-center gap-1 shrink-0"
+                >
+                  <PlusIcon className="h-4 w-4" />
+                  Add Row
+                </button>
+                <span className="text-sm font-medium text-gray-500">
+                  Rows: {schedules.length}
+                </span>
+              </div>
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsBulkScheduleModalOpen(false)}
+                  onClick={() => setIsAddScheduleModalOpen(false)}
                   className="rounded-md border border-gray-300 bg-white px-6 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100"
                 >
                   Cancel
                 </button>
                 <button
                   type="button"
-                  disabled={isSubmittingBulkSchedules}
-                  onClick={handleSaveBulkSchedules}
+                  disabled={isSubmittingSchedules}
+                  onClick={handleSaveSchedules}
                   className="rounded-md bg-[var(--brand-color)] px-6 py-2 text-sm font-bold text-white shadow-sm transition enabled:hover:bg-[var(--brand-color-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSubmittingBulkSchedules ? 'Saving...' : `Save All`}
+                  {isSubmittingSchedules ? 'Saving...' : `Save All`}
                 </button>
               </div>
             </div>
           </div>
-          <div className="absolute inset-0 -z-10" onClick={() => !isSubmittingBulkSchedules && setIsBulkScheduleModalOpen(false)} />
+          <div className="absolute inset-0 -z-10" onClick={() => !isSubmittingSchedules && setIsAddScheduleModalOpen(false)} />
         </div>
       )}
 
@@ -977,14 +979,6 @@ function MyDepartmentPage() {
 
         <div className="flex justify-between items-end mb-[-1rem]">
           <h3 className="text-xl font-bold text-gray-900"></h3>
-          {(currentUserRole === 'Dean' || currentUserRole === 'Admin') && (
-            <button
-              onClick={() => setIsBulkScheduleModalOpen(true)}
-              className="rounded-md bg-[var(--brand-color)] px-4 py-2 text-sm font-bold text-white shadow-sm hover:bg-[var(--brand-color-hover)] transition"
-            >
-              Add Schedules
-            </button>
-          )}
         </div>
 
         <SearchFilters
@@ -994,6 +988,10 @@ function MyDepartmentPage() {
           primaryButton={currentUserRole === 'Dean' ? {
             label: "Add Instructor",
             onClick: () => setIsAddModalOpen(true)
+          } : undefined}
+          secondaryButton={(currentUserRole === 'Dean' || currentUserRole === 'Admin') ? {
+            label: "Add Schedule",
+            onClick: () => setIsAddScheduleModalOpen(true)
           } : undefined}
         />
 

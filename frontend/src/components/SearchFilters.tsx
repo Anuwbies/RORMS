@@ -11,6 +11,11 @@ interface SearchFiltersProps {
     onClick: () => void
     icon?: React.ReactNode
   }
+  secondaryButton?: {
+    label: string
+    onClick: () => void
+    icon?: React.ReactNode
+  }
   className?: string
 }
 
@@ -20,6 +25,7 @@ export function SearchFilters({
   placeholder = "Search...",
   dropdowns,
   primaryButton,
+  secondaryButton,
   className = ""
 }: SearchFiltersProps) {
   return (
@@ -61,6 +67,17 @@ export function SearchFilters({
           >
             {primaryButton.icon || <PlusIcon className="h-5 w-5" />}
             {primaryButton.label}
+          </button>
+        )}
+
+        {secondaryButton && (
+          <button
+            type="button"
+            className="h-[46px] flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg shrink-0"
+            onClick={secondaryButton.onClick}
+          >
+            {secondaryButton.icon || <PlusIcon className="h-5 w-5" />}
+            {secondaryButton.label}
           </button>
         )}
       </div>
