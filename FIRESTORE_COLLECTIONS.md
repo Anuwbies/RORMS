@@ -234,5 +234,8 @@ Manages schedule allocations for subjects, rooms, and instructors.
   - `buildingId`: string (Reference to the building document ID)
   - `roomId`: string (Reference to the room document ID)
   - `instructorId`: string (Reference to the memberships collection)
+  - `groupId`: string (Unique ID used to group parallel schedules together)
+  - `parentId`: string (Reference to the main schedule's ID if this is a child row)
+  - `orderIndex`: number (Visual top-to-bottom sorting index)
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
