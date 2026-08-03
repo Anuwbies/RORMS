@@ -14,20 +14,20 @@ The Admin ensures the technical integrity and foundational data of the system.
 *   **System Configuration:** Set global constraints, such as standard time blocks, semester start/end dates, and holiday blackout periods.
 *   **Audit Logs:** Monitor system activity to ensure data security and accountability.
 
-### 2. Registrar (Primary Scheduler)
-The Registrar is the "power user" responsible for the actual execution of the schedule.
-*   **Schedule Creation:** Perform the primary assignment of instructors and courses to specific rooms and time slots.
-*   **Conflict Resolution:** Identify and resolve double-bookings of rooms or instructors.
-*   **Publishing:** Finalize the "Draft" schedule and push it live for instructors and students to view.
-*   **Ad-hoc Adjustments:** Manage mid-semester room changes or emergency rescheduling due to maintenance or instructor availability changes.
-*   **Reporting:** Generate reports on room utilization, peak-time usage, and department-wise scheduling efficiency.
+### 2. Registrar (Room Plotter & Global Scheduler)
+The Registrar is the central authority responsible for campus-wide resource allocation and finalizing the master schedule.
+*   **Room Allocation (Plotting):** Review proposed schedules from all departments and plot them into actual physical rooms.
+*   **Conflict Resolution:** Identify and resolve cross-department double-bookings, overlapping instructor schedules, and room capacity issues.
+*   **Publishing:** Finalize and approve the "Proposed" departmental schedules, pushing them live for instructors and students to view.
+*   **Ad-hoc Adjustments:** Manage mid-semester room changes or emergency rescheduling due to maintenance.
+*   **Reporting:** Generate reports on room utilization, peak-time usage, and overall scheduling efficiency.
 
-### 3. Dean (Department Head)
-The Dean acts as the bridge between department-specific needs and the Registrar’s global schedule.
-*   **Departmental Oversight:** Review the schedules assigned to their specific department's instructors.
-*   **Requirement Submission:** Define specific room requirements for courses within their department (e.g., "All Bio-101 sections need a wet lab").
-*   **Instructor Load Management:** Ensure that instructors are not over-scheduled and that their teaching hours align with department policies.
-*   **Approval Workflow:** Review and approve/deny special scheduling requests or change requests submitted by instructors before they reach the Registrar.
+### 3. Dean (Department Head / Academic Planner)
+The Dean acts as the primary academic planner for their specific department.
+*   **Schedule Creation:** Create the initial draft schedule for their department, mapping subjects, instructors, sections, times, and days.
+*   **Room Requests:** Specify preferred rooms or building requirements for their departmental courses.
+*   **Instructor Load Management:** Ensure that instructors are not over-scheduled and that their teaching hours align with department policies before submitting.
+*   **Submission:** Submit the drafted departmental schedule to the Registrar as a "Proposed" schedule for room allocation.
 
 ### 4. Instructor
 The Instructor is the end-user who utilizes the assigned resources to deliver education.
@@ -40,8 +40,7 @@ The Instructor is the end-user who utilizes the assigned resources to deliver ed
 
 ## High-Level Workflow
 1.  **Preparation:** Admin sets up the semester dates and ensures the room database is up to date.
-2.  **Input:** Deans and Instructors submit their departmental needs and instructor availability.
-3.  **Drafting:** The Registrar creates a draft schedule, using the system to flag overlaps or capacity mismatches.
-4.  **Review:** Deans review the draft for their department and suggest minor adjustments.
-5.  **Finalization:** Registrar publishes the final schedule.
-6.  **Operation:** Instructors view their final assignments; the system manages any emergency changes during the semester.
+2.  **Input & Academic Planning:** Deans draft their department's schedule (subjects, instructors, times, etc.) and submit them as "Proposed" schedules. Instructors may submit availability.
+3.  **Plotting:** The Registrar reviews the proposed schedules and "plots" them into specific rooms on a global matrix, resolving any conflicts.
+4.  **Finalization:** Registrar publishes the final approved schedules.
+5.  **Operation:** Instructors view their final assignments; the system manages any emergency changes during the semester.
