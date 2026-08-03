@@ -979,8 +979,17 @@ function MyDepartmentPage() {
                                 const grouped: { parent: any, children: any[] }[] = [];
                                 
                                 daySchedules.forEach(cls => {
-                                  if (cls.type === 'parallel' && !cls.parentId) {
-                                    grouped.push({ parent: cls, children: [] });
+                                  if (cls.type === 'parallel') {
+                                    if (cls.groupId) {
+                                      const existingGroup = grouped.find(g => g.parent.groupId === cls.groupId);
+                                      if (existingGroup) {
+                                        existingGroup.children.push(cls);
+                                      } else {
+                                        grouped.push({ parent: cls, children: [] });
+                                      }
+                                    } else {
+                                      grouped.push({ parent: cls, children: [] });
+                                    }
                                   } else if (cls.parentId) {
                                     const parentGroup = grouped.find(g => g.parent.id === cls.parentId || g.parent.docId === cls.parentId);
                                     if (parentGroup) {
@@ -997,7 +1006,26 @@ function MyDepartmentPage() {
                                   <td key={day} className="px-2 py-2 border-b border-r border-gray-300 last:border-r-0 align-top">
                                     <div className="flex flex-col gap-2">
                                       {grouped.map((group, idx) => (
-                                        group.children.length > 0 ? (
+                                        group.parent.type === 'parallel' ? (
+                                          <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm">
+                                            <span className="font-bold text-gray-900">{group.parent.subjectCode || 'TBA'}</span>
+                                            <span className="text-xs font-bold text-gray-600 uppercase tracking-wider mt-0.5">
+                                              {group.parent.type || 'N/A'}
+                                            </span>
+                                            <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2">
+                                              {[group.parent, ...group.children].map((item, iIdx) => (
+                                                <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30">
+                                                  <div className="flex flex-col gap-0.5 text-gray-500">
+                                                    <span>Sec: <span className="font-medium text-gray-700">{item.classSection || 'TBA'}</span></span>
+                                                    <span className="text-[var(--brand-color)] font-medium truncate" title={item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}>
+                                                      {item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        ) : group.children.length > 0 ? (
                                           <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm">
                                             <span className="font-bold text-gray-900">{group.parent.subjectCode || 'TBA'}</span>
                                             <span className="text-xs font-bold text-gray-600 uppercase tracking-wider mt-0.5">
@@ -1138,8 +1166,7 @@ function MyDepartmentPage() {
                 ) : (
                   schedules.map((schedule, index) => {
                     const isChild = !!schedule.parentId;
-                    const isSplitSessionChild = !!(schedule as any).isSplitSession;
-                    const isParallelChild = isChild && !isSplitSessionChild;
+                    const isParallelChild = isChild;
                     
                     let childAvailableRooms = rooms;
                     if (schedule.buildingId) {
