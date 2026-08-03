@@ -336,8 +336,11 @@ function MyDepartmentPage() {
           const parentMap = new Map();
           const children: any[] = [];
           
+          const allDocs = new Map(rawFetched.map(item => [item.id, item]));
+          
           rawFetched.forEach(item => {
-            if (item.isSplitSession && item.parentId) {
+            const parentDoc = item.parentId ? allDocs.get(item.parentId) : null;
+            if (parentDoc && parentDoc.orderIndex === item.orderIndex) {
               children.push(item);
             } else {
               parentMap.set(item.id, item);
@@ -525,13 +528,23 @@ function MyDepartmentPage() {
       }
 
       if (!current.parentId && current.type === 'parallel') {
-        const fieldsToCopy = ['instructorId', 'subjectCode', 'subjectTitle', 'faculty', 'startTime', 'endTime', 'days', 'buildingId']
+        const fieldsToCopy = [
+          'instructorId', 'instructorId2', 
+          'subjectCode', 'subjectTitle', 
+          'faculty', 'faculty2', 
+          'startTime', 'startTime2', 
+          'endTime', 'endTime2', 
+          'days', 
+          'buildingId', 'buildingId2'
+        ]
         if (fieldsToCopy.includes(field)) {
           for (let i = 0; i < updated.length; i++) {
             if (updated[i].parentId === current.id) {
               updated[i] = { ...updated[i], [field]: value }
               if (field === 'buildingId') {
                 updated[i] = { ...updated[i], roomId: '' }
+              } else if (field === 'buildingId2') {
+                updated[i] = { ...updated[i], roomId2: '' }
               }
             }
           }
@@ -539,6 +552,12 @@ function MyDepartmentPage() {
           for (let i = 0; i < updated.length; i++) {
             if (updated[i].parentId === current.id) {
               updated[i] = { ...updated[i], roomId: '' }
+            }
+          }
+        } else if (field === 'roomId2') {
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].parentId === current.id) {
+              updated[i] = { ...updated[i], roomId2: '' }
             }
           }
         }
@@ -599,13 +618,18 @@ function MyDepartmentPage() {
           parentId,
           type: 'parallel',
           instructorId: current.instructorId,
+          instructorId2: (current as any).instructorId2 || '',
           subjectCode: current.subjectCode,
           subjectTitle: current.subjectTitle,
           faculty: updated[index].faculty,
+          faculty2: (updated[index] as any).faculty2 || '',
           startTime: current.startTime,
+          startTime2: (current as any).startTime2 || '',
           endTime: current.endTime,
+          endTime2: (current as any).endTime2 || '',
           days: current.days,
-          buildingId: current.buildingId
+          buildingId: current.buildingId,
+          buildingId2: (current as any).buildingId2 || ''
         }));
         updated.splice(index + 1, 0, ...children);
       } else {
@@ -1096,7 +1120,7 @@ function MyDepartmentPage() {
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[240px]">Time</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[140px]">Days</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[210px]">Building</th>
-                    <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[160px]">Room</th>
+                    <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[180px]">Room</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -1157,6 +1181,50 @@ function MyDepartmentPage() {
                     }
 
                     const availableRooms = childAvailableRooms.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true, sensitivity: 'base' }));
+
+                    let childAvailableRooms2 = rooms;
+                    const bId2 = (schedule as any).buildingId2 || schedule.buildingId;
+                    if (bId2) {
+                      childAvailableRooms2 = rooms.filter(r => r.buildingId === bId2 && r.id !== schedule.roomId);
+                    } else {
+                      childAvailableRooms2 = [];
+                    }
+
+                    if (isParallelChild) {
+                      const groupRows = schedules.filter(s => s.id === schedule.parentId || s.parentId === schedule.parentId);
+                      const selectedRoomCodes2 = groupRows
+                        .filter(s => s.id !== schedule.id && (s as any).roomId2)
+                        .map(s => {
+                          const r = rooms.find(room => room.id === (s as any).roomId2);
+                          return r ? r.code : null;
+                        })
+                        .filter(Boolean) as string[];
+
+                      if (selectedRoomCodes2.length > 0) {
+                        const selectedNums2 = selectedRoomCodes2.map(code => {
+                          const match = code.match(/\d+/);
+                          return match ? parseInt(match[0], 10) : null;
+                        }).filter(n => n !== null) as number[];
+                        
+                        childAvailableRooms2 = childAvailableRooms2.filter(room => {
+                          if (selectedRoomCodes2.includes(room.code)) return false;
+                          
+                          const roomNumMatch = room.code.match(/\d+/);
+                          if (!roomNumMatch) return false;
+                          const roomNum = parseInt(roomNumMatch[0], 10);
+                          
+                          const allNums = [...selectedNums2, roomNum];
+                          const min = Math.min(...allNums);
+                          const max = Math.max(...allNums);
+                          
+                          return max - min === allNums.length - 1;
+                        });
+                      } else {
+                        childAvailableRooms2 = [];
+                      }
+                    }
+
+                    const availableRooms2 = childAvailableRooms2.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true, sensitivity: 'base' }));
                     
                     const isSelected = selectedScheduleIds.includes(schedule.id) || (!!schedule.parentId && selectedScheduleIds.includes(schedule.parentId));
 
@@ -1229,7 +1297,6 @@ function MyDepartmentPage() {
                         <input 
                           type="text" 
                           placeholder="BSIT 3-1"
-                          disabled={isChild}
                           value={schedule.classSection}
                           onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
                           className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
@@ -1239,6 +1306,7 @@ function MyDepartmentPage() {
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {schedule.faculty || '----'}
+                            {(schedule as any).faculty2 ? ` / ${(schedule as any).faculty2}` : ''}
                           </div>
                         ) : schedule.type === 'open lab' ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
@@ -1287,6 +1355,7 @@ function MyDepartmentPage() {
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {members.find(m => m.membershipId === schedule.instructorId)?.name || '----'}
+                            {(schedule as any).instructorId2 ? ` / ${members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}` : ''}
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
@@ -1325,7 +1394,11 @@ function MyDepartmentPage() {
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
-                            {schedule.startTime || '----'} - {schedule.endTime || '----'}
+                            {(() => {
+                              const time1 = (schedule.startTime || schedule.endTime) ? `${schedule.startTime || '?'} - ${schedule.endTime || '?'}` : '';
+                              const time2 = ((schedule as any).startTime2 || (schedule as any).endTime2) ? `${(schedule as any).startTime2 || '?'} - ${(schedule as any).endTime2 || '?'}` : '';
+                              return time1 ? (time2 ? `${time1} / ${time2}` : time1) : '----';
+                            })()}
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
@@ -1419,6 +1492,7 @@ function MyDepartmentPage() {
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {buildings.find(b => b.id === schedule.buildingId)?.name || '----'}
+                            {(schedule as any).buildingId2 ? ` / ${buildings.find(b => b.id === (schedule as any).buildingId2)?.name || '?'}` : ''}
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
@@ -1495,11 +1569,7 @@ function MyDepartmentPage() {
                                     value={(schedule as any).roomId2 || ''}
                                     disabled={!schedule.roomId}
                                     onChange={(val) => handleScheduleChange(index, 'roomId2', val)}
-                                    options={(() => {
-                                      const bId2 = (schedule as any).buildingId2 || schedule.buildingId;
-                                      const availableRooms2 = bId2 ? rooms.filter(r => r.buildingId === bId2 && r.id !== schedule.roomId).sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true, sensitivity: 'base' })) : [];
-                                      return availableRooms2.map(room => ({value: room.id, label: room.code || ''}));
-                                    })()}
+                                    options={availableRooms2.map(room => ({value: room.id, label: room.code || ''}))}
                                   />
                                 </div>
                               </div>
