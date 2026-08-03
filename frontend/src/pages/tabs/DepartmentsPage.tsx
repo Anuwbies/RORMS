@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { DepartmentIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, ChevronDownIcon, CheckIcon, UserIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
+import { PageHeader } from '../../components/PageHeader'
 import { db, storage } from '../../firebase'
 import { collection, serverTimestamp, onSnapshot, query, orderBy, doc, writeBatch, where, limit } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
@@ -122,7 +123,7 @@ function SingleSelectDropdown({
                 >
                   <span className="whitespace-nowrap">{option.label}</span>
                   {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)]" strokeWidth={3} />}
-                  {option.subLabel && <span className="ml-auto text-[10px] font-bold uppercase opacity-50">{option.subLabel}</span>}
+                  {option.subLabel && <span className="ml-auto text-[0.625rem] font-bold uppercase opacity-50">{option.subLabel}</span>}
                 </button>
               )
             })}
@@ -544,7 +545,7 @@ function DepartmentsPage() {
                 <label htmlFor="dept-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                   Department Name <span className="text-rose-500">*</span>
                   {errors.name === 'exists' && (
-                    <span className="ml-2 text-[10px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
+                    <span className="ml-2 text-[0.625rem] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
                       Name already exists
                     </span>
                   )}
@@ -609,7 +610,7 @@ function DepartmentsPage() {
                     <label htmlFor="dept-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                       Code <span className="text-rose-500">*</span>
                       {errors.code === 'exists' && (
-                        <span className="ml-2 text-[10px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
+                        <span className="ml-2 text-[0.625rem] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
                           Code already exists
                         </span>
                       )}
@@ -834,7 +835,7 @@ function DepartmentsPage() {
                           </p>
                         </div>
                       </div>
-                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
+                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
                         {member.role}
                       </span>
                     </div>
@@ -861,14 +862,10 @@ function DepartmentsPage() {
 
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Departments
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              Manage university departments, assigned deans, and resource allocation.
-            </p>
-          </div>
+          <PageHeader 
+            title="Academic Departments" 
+            description="Manage university departments, assign deans, and oversee faculty members." 
+          />
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

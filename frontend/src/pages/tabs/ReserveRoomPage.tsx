@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
+import { PageHeader } from '../../components/PageHeader'
 import { DoorIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, ClockIcon, BookIcon, CheckIcon, CalendarIcon, ClipboardIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
@@ -435,7 +436,7 @@ function ReserveRoomPage() {
             <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
               <div className="p-6 space-y-5">
                 <div className="flex gap-5">
-                  <div className="w-[152px] h-[152px] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
+                  <div className="w-[9.5rem] h-[9.5rem] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
                     <img 
                       src={selectedRoomInfo.image} 
                       alt={selectedRoomInfo.name} 
@@ -496,14 +497,14 @@ function ReserveRoomPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Availability</h5>
-                      <div className="flex gap-1 h-[34px]">
+                      <div className="flex gap-1 h-[2.125rem]">
                         {DAYS_OF_WEEK.map((day) => {
                           const isAvailable = selectedRoomInfo.availableDays.includes(day)
                           return (
                             <div
                               key={day}
                               title={day}
-                              className={`flex-1 flex items-center justify-center rounded-sm text-[10px] font-bold transition-colors ${
+                              className={`flex-1 flex items-center justify-center rounded-sm text-[0.625rem] font-bold transition-colors ${
                                 isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-200 text-gray-500'
                               }`}
                             >
@@ -515,7 +516,7 @@ function ReserveRoomPage() {
                     </div>
                     <div>
                       <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
-                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[34px] rounded-md border border-gray-200">
+                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[2.125rem] rounded-md border border-gray-200">
                         <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
                         <span>{selectedRoomInfo.startTime} - {selectedRoomInfo.endTime}</span>
                       </div>
@@ -524,7 +525,7 @@ function ReserveRoomPage() {
 
                   <div>
                     <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
-                    <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
+                    <div className="flex flex-wrap gap-1.5 max-h-[7.5rem] overflow-y-auto custom-scrollbar pr-1">
                       {selectedRoomInfo.amenities.length > 0 ? (
                         selectedRoomInfo.amenities.map((amenity, i) => (
                           <span 
@@ -630,7 +631,7 @@ function ReserveRoomPage() {
                           setReservationData({ ...reservationData, duration: val })
                           if (!isNaN(val)) setFormErrors(prev => ({ ...prev, duration: false }))
                         }}
-                        className={`h-[46px] w-full rounded-md border bg-white pl-11 pr-4 text-sm text-gray-900 outline-none transition focus:ring-4 focus:ring-gray-50 shadow-sm ${
+                        className={`h-[2.875rem] w-full rounded-md border bg-white pl-11 pr-4 text-sm text-gray-900 outline-none transition focus:ring-4 focus:ring-gray-50 shadow-sm ${
                           formErrors.duration ? 'border-rose-500 focus:border-rose-500 ring-rose-50' : 'border-gray-200 focus:border-gray-300'
                         }`}
                       />
@@ -642,7 +643,7 @@ function ReserveRoomPage() {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Purpose <span className="text-rose-500">*</span></label>
-                    <span className={`text-[10px] font-bold tabular-nums ${formErrors.purpose ? 'text-rose-500' : 'text-gray-400'}`}>
+                    <span className={`text-[0.625rem] font-bold tabular-nums ${formErrors.purpose ? 'text-rose-500' : 'text-gray-400'}`}>
                       {reservationData.purpose.length}/200
                     </span>
                   </div>
@@ -798,14 +799,10 @@ function ReserveRoomPage() {
 
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Reserve a Room
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              Find and book available rooms for classes, meetings, or special events.
-            </p>
-          </div>
+          <PageHeader 
+            title="Reserve a Room" 
+            description="Find and book available rooms for classes, meetings, or special events." 
+          />
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -915,7 +912,7 @@ function ReserveRoomPage() {
                         <h3 className="text-2xl font-bold tracking-tight text-gray-900">
                           {building.name}
                         </h3>
-                        <span className="inline-flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[10px] font-bold uppercase tracking-widest text-gray-600 shadow-sm leading-none">
+                        <span className="inline-flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[0.625rem] font-bold uppercase tracking-widest text-gray-600 shadow-sm leading-none">
                           {building.code}
                         </span>
                       </div>
@@ -1035,7 +1032,7 @@ function ReserveRoomPage() {
                                           <UserIcon className="h-6 w-6 text-gray-500" />
                                         </div>
                                         <div className="flex flex-col">
-                                          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 leading-tight">
+                                          <span className="text-[0.625rem] font-bold uppercase tracking-widest text-gray-400 leading-tight">
                                             Capacity
                                           </span>
                                           <span className="text-sm font-bold text-gray-700 leading-none mt-0.5">
@@ -1044,7 +1041,7 @@ function ReserveRoomPage() {
                                         </div>
                                       </div>
                                       <span
-                                        className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
+                                        className={`rounded-full px-2.5 py-1 text-[0.625rem] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
                                       >
                                         {room.status}
                                       </span>

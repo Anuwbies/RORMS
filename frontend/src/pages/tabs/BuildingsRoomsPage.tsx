@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { PageHeader } from '../../components/PageHeader'
 import { DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
@@ -173,7 +174,7 @@ function SingleSelectDropdown<T extends string>({
         type="button"
         disabled={isDisabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-[46px] w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+        className="relative flex h-[2.875rem] w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
       >
         <span className="whitespace-nowrap">{value || 'None'}</span>
         <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -1007,7 +1008,7 @@ function BuildingsRoomsPage() {
                           <label htmlFor="room-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                             Room Name <span className="text-rose-500">*</span>
                           </label>
-                          <span className={`text-[10px] font-bold uppercase tracking-tight ${newRoomName.length >= 24 ? 'text-rose-500' : 'text-gray-400'}`}>
+                          <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${newRoomName.length >= 24 ? 'text-rose-500' : 'text-gray-400'}`}>
                             {newRoomName.length} / 24
                           </span>
                         </div>
@@ -1034,7 +1035,7 @@ function BuildingsRoomsPage() {
                           <label htmlFor="room-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                             Code <span className="text-rose-500">*</span>
                           </label>
-                          <span className={`text-[10px] font-bold uppercase tracking-tight ${newRoomCode.length >= 8 ? 'text-rose-500' : 'text-gray-400'}`}>
+                          <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${newRoomCode.length >= 8 ? 'text-rose-500' : 'text-gray-400'}`}>
                             {newRoomCode.length} / 8
                           </span>
                         </div>
@@ -1064,7 +1065,7 @@ function BuildingsRoomsPage() {
                             <label htmlFor="room-name-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                               Name Prefix <span className="text-rose-500">*</span>
                             </label>
-                            <span className={`text-[10px] font-bold uppercase tracking-tight ${roomNamePrefix.length >= 24 ? 'text-rose-500' : 'text-gray-400'}`}>
+                            <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${roomNamePrefix.length >= 24 ? 'text-rose-500' : 'text-gray-400'}`}>
                               {roomNamePrefix.length} / 24
                             </span>
                           </div>
@@ -1091,7 +1092,7 @@ function BuildingsRoomsPage() {
                             <label htmlFor="room-code-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                               Code Prefix <span className="text-rose-500">*</span>
                             </label>
-                            <span className={`text-[10px] font-bold uppercase tracking-tight ${roomCodePrefix.length >= 8 ? 'text-rose-500' : 'text-gray-400'}`}>
+                            <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${roomCodePrefix.length >= 8 ? 'text-rose-500' : 'text-gray-400'}`}>
                               {roomCodePrefix.length} / 8
                             </span>
                           </div>
@@ -1166,7 +1167,7 @@ function BuildingsRoomsPage() {
                         </div>
                       </div>
                       <div className="p-3 bg-gray-50 border border-gray-200 rounded-md flex items-center">
-                        <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest shrink-0 mr-1">Preview:</p>
+                        <p className="text-[0.625rem] font-bold text-gray-500 uppercase tracking-widest shrink-0 mr-1">Preview:</p>
                         <p className="text-xs text-gray-700 truncate">
                           {roomStartNumber && roomEndNumber ? (
                             (() => {
@@ -1280,7 +1281,7 @@ function BuildingsRoomsPage() {
                         ) : (
                           <div className="flex flex-col items-center gap-2">
                             <CameraIcon className="h-8 w-8 text-gray-400" />
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tight text-center px-2">Upload Image</span>
+                            <span className="text-[0.625rem] font-bold text-gray-400 uppercase tracking-tight text-center px-2">Upload Image</span>
                           </div>
                         )}
                         <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1294,7 +1295,7 @@ function BuildingsRoomsPage() {
                         <label htmlFor="room-description" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                           Description
                         </label>
-                        <span className={`text-[10px] font-bold uppercase tracking-tight ${newRoomDescription.length >= 200 ? 'text-rose-500' : 'text-gray-400'}`}>
+                        <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${newRoomDescription.length >= 200 ? 'text-rose-500' : 'text-gray-400'}`}>
                           {newRoomDescription.length} / 200
                         </span>
                       </div>
@@ -1313,7 +1314,7 @@ function BuildingsRoomsPage() {
                     <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
                       Room Amenities
                     </label>
-                    <div className="max-h-[145px] overflow-y-auto custom-scrollbar pr-1">
+                    <div className="max-h-[9.0625rem] overflow-y-auto custom-scrollbar pr-1">
                       <div className="grid grid-cols-6 gap-2 grid-flow-dense">
                         {ROOM_AMENITIES_GROUPS.map((group, groupIndex) => {
                           const span = group.length === 3 ? 'col-span-2' : 'col-span-3'
@@ -1367,7 +1368,7 @@ function BuildingsRoomsPage() {
                               prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
                             )
                           }}
-                          className={`flex-1 flex flex-col items-center justify-center rounded-md border py-2 text-[10px] font-bold uppercase transition ${
+                          className={`flex-1 flex flex-col items-center justify-center rounded-md border py-2 text-[0.625rem] font-bold uppercase transition ${
                             newRoomAvailableDays.includes(day)
                               ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white shadow-sm'
                               : 'border-gray-300 bg-white text-gray-500 hover:border-gray-400'
@@ -1497,7 +1498,7 @@ function BuildingsRoomsPage() {
             <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
               <div className="p-6 space-y-5">
                 <div className="flex gap-5">
-                  <div className="w-[152px] h-[152px] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
+                  <div className="w-[9.5rem] h-[9.5rem] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
                     <img 
                       src={selectedRoomInfo.image} 
                       alt={selectedRoomInfo.name} 
@@ -1558,14 +1559,14 @@ function BuildingsRoomsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Availability</h5>
-                      <div className="flex gap-1 h-[34px]">
+                      <div className="flex gap-1 h-[2.125rem]">
                         {DAYS_OF_WEEK.map((day) => {
                           const isAvailable = selectedRoomInfo.availableDays.includes(day)
                           return (
                             <div
                               key={day}
                               title={day}
-                              className={`flex-1 flex items-center justify-center rounded-sm text-[10px] font-bold transition-colors ${
+                              className={`flex-1 flex items-center justify-center rounded-sm text-[0.625rem] font-bold transition-colors ${
                                 isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-200 text-gray-500'
                               }`}
                             >
@@ -1577,7 +1578,7 @@ function BuildingsRoomsPage() {
                     </div>
                     <div>
                       <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
-                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[34px] rounded-md border border-gray-200">
+                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[2.125rem] rounded-md border border-gray-200">
                         <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
                         <span>{selectedRoomInfo.startTime} - {selectedRoomInfo.endTime}</span>
                       </div>
@@ -1586,7 +1587,7 @@ function BuildingsRoomsPage() {
 
                   <div>
                     <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
-                    <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
+                    <div className="flex flex-wrap gap-1.5 max-h-[7.5rem] overflow-y-auto custom-scrollbar pr-1">
                       {selectedRoomInfo.amenities.length > 0 ? (
                         selectedRoomInfo.amenities.map((amenity, i) => (
                           <span 
@@ -1771,14 +1772,10 @@ function BuildingsRoomsPage() {
 
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Buildings & Rooms
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              Comprehensive directory of campus infrastructure and centralized room inventory management.
-            </p>
-          </div>
+          <PageHeader 
+            title="Buildings & Rooms" 
+            description="Manage campus facilities, view room capacities, and track utilization." 
+          />
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1872,7 +1869,7 @@ function BuildingsRoomsPage() {
                         <h3 className="text-2xl font-bold tracking-tight text-gray-900">
                           {building.name}
                         </h3>
-                        <span className="inline-flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[10px] font-bold uppercase tracking-widest text-gray-600 shadow-sm leading-none">
+                        <span className="inline-flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[0.625rem] font-bold uppercase tracking-widest text-gray-600 shadow-sm leading-none">
                           {building.code}
                         </span>
                       </div>
@@ -2087,7 +2084,7 @@ function BuildingsRoomsPage() {
                                           <UserIcon className="h-6 w-6 text-gray-500" />
                                         </div>
                                         <div className="flex flex-col">
-                                          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 leading-tight">
+                                          <span className="text-[0.625rem] font-bold uppercase tracking-widest text-gray-400 leading-tight">
                                             Capacity
                                           </span>
                                           <span className="text-sm font-bold text-gray-700 leading-none mt-0.5">
@@ -2096,7 +2093,7 @@ function BuildingsRoomsPage() {
                                         </div>
                                       </div>
                                       <span
-                                        className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
+                                        className={`rounded-full px-2.5 py-1 text-[0.625rem] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
                                       >
                                         {room.status}
                                       </span>

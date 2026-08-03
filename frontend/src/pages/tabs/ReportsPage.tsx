@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { PageHeader } from '../../components/PageHeader';
 import { 
   BuildingIcon, DoorIcon, ClipboardIcon, 
   CalendarIcon, CheckCircleIcon 
@@ -43,31 +44,27 @@ function ReportsPage() {
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="space-y-6">
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white relative">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Reports & Analytics
-            </h2>
-            <p className="mt-4 text-sm leading-7 text-white/85 sm:text-base max-w-2xl">
-              Generate and view university-wide reports on room utilization, department activity, and resource management.
-            </p>
-            
-            {/* Tabs Navigation */}
-            <div className="absolute bottom-0 left-8 flex gap-6">
-              {(['requests', 'utilization', 'departments'] as const).map(tab => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
-                    activeTab === tab 
-                    ? 'border-white text-white' 
-                    : 'border-transparent text-white/70 hover:text-white'
-                  }`}
-                >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
+          <PageHeader 
+            title="Reports & Analytics" 
+            description="Generate and view university-wide reports on room utilization, department activity, and resource management."
+            actions={
+              <div className="absolute bottom-0 left-8 flex gap-6">
+                {(['requests', 'utilization', 'departments'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`pb-3 text-sm font-medium transition-colors border-b-2 ${
+                      activeTab === tab 
+                        ? 'border-white text-white' 
+                        : 'border-transparent text-white/60 hover:text-white/80'
+                    }`}
+                  >
+                    {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  </button>
+                ))}
+              </div>
+            }
+          />
 
           <div className="p-6 bg-gray-50/50 space-y-6">
             {/* Top Controls */}
@@ -183,7 +180,7 @@ function ReportsPage() {
                           <p className="text-gray-900">{row.requester}</p>
                           <p className="text-xs font-semibold text-gray-500">{row.dept}</p>
                         </td>
-                        <td className="px-6 py-4 text-gray-700 max-w-[200px] truncate" title={row.purpose}>
+                        <td className="px-6 py-4 text-gray-700 max-w-[12.5rem] truncate" title={row.purpose}>
                           {row.purpose}
                         </td>
                         <td className="px-6 py-4 text-gray-600 font-medium">{row.duration}</td>

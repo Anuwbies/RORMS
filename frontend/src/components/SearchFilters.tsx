@@ -29,7 +29,7 @@ export function SearchFilters({
   className = ""
 }: SearchFiltersProps) {
   return (
-    <div className={`lg:h-22 rounded-md border border-gray-200 bg-gray-50/50 p-5 shadow-md flex items-center ${className}`}>
+    <div className={`lg:h-[5.5rem] rounded-md border border-gray-200 bg-gray-50/50 p-5 shadow-md flex items-center ${className}`}>
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center w-full">
         <div className="relative flex-1">
           <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
@@ -40,7 +40,7 @@ export function SearchFilters({
             value={searchTerm}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder={placeholder}
-            className="h-[46px] w-full rounded-md border border-gray-200 bg-white pl-11 pr-24 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+            className="h-[2.875rem] w-full rounded-md border border-gray-200 bg-white pl-11 pr-24 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
           />
           {searchTerm && (
             <button
@@ -62,7 +62,7 @@ export function SearchFilters({
         {primaryButton && (
           <button
             type="button"
-            className="h-[46px] flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg shrink-0"
+            className="h-[2.875rem] flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg shrink-0"
             onClick={primaryButton.onClick}
           >
             {primaryButton.icon || <PlusIcon className="h-5 w-5" />}
@@ -73,7 +73,7 @@ export function SearchFilters({
         {secondaryButton && (
           <button
             type="button"
-            className="h-[46px] flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg shrink-0"
+            className="h-[2.875rem] flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] px-6 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg shrink-0"
             onClick={secondaryButton.onClick}
           >
             {secondaryButton.icon || <PlusIcon className="h-5 w-5" />}

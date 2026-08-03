@@ -1,4 +1,5 @@
 import {
+import { PageHeader } from '../../components/PageHeader';
   UsersIcon, BuildingIcon, DoorIcon, ClipboardIcon,
   CalendarIcon, CheckCircleIcon, ArrowRightIcon
 } from '../../components/Icons'
@@ -64,14 +65,10 @@ function DashboardPage() {
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Dashboard
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              High-level registrar metrics, room activity, and system summaries.
-            </p>
-          </div>
+          <PageHeader 
+            title="Dashboard" 
+            description="High-level registrar metrics, room activity, and system summaries." 
+          />
 
           <div className="p-6 bg-gray-50/50 space-y-8">
             {/* Enhanced Key Metrics */}
@@ -236,7 +233,7 @@ function DashboardPage() {
                 <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4">
                   <h3 className="font-semibold text-gray-900">System Alerts</h3>
                 </div>
-                <div className="divide-y divide-gray-100 flex-1 overflow-y-auto max-h-[320px]">
+                <div className="divide-y divide-gray-100 flex-1 overflow-y-auto max-h-[20rem]">
                   {systemAlerts.map((alert) => (
                     <div key={alert.id} className="flex items-start gap-3 px-6 py-4 hover:bg-gray-50 transition-colors">
                       <div className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${
@@ -263,7 +260,7 @@ function DashboardPage() {
                     View all <ArrowRightIcon className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="divide-y divide-gray-100 flex-1 overflow-y-auto max-h-[400px]">
+                <div className="divide-y divide-gray-100 flex-1 overflow-y-auto max-h-[25rem]">
                   {[
                     { id: 1, action: "Room 302 booking approved", user: "John Doe", time: "2 hours ago", icon: <CheckCircleIcon className="h-5 w-5 text-green-500" /> },
                     { id: 2, action: "New room request for Lab A", user: "Jane Smith", time: "4 hours ago", icon: <CalendarIcon className="h-5 w-5 text-blue-500" /> },
@@ -294,7 +291,7 @@ function DashboardPage() {
                 <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4">
                   <h3 className="font-semibold text-gray-900">Upcoming Schedule</h3>
                 </div>
-                <div className="divide-y divide-gray-100 flex-1 overflow-y-auto max-h-[400px]">
+                <div className="divide-y divide-gray-100 flex-1 overflow-y-auto max-h-[25rem]">
                   {[
                     { id: 1, room: "Lab C", title: "CITE Networking", time: "10:00 AM - 12:00 PM" },
                     { id: 2, room: "Room 405", title: "Faculty Meeting", time: "01:00 PM - 02:30 PM" },
@@ -308,7 +305,7 @@ function DashboardPage() {
                     <div key={schedule.id} className="px-6 py-4 hover:bg-gray-50 transition-colors">
                       <div className="flex justify-between items-start mb-1">
                         <p className="text-sm font-semibold text-gray-900">{schedule.room}</p>
-                        <span className="text-[10px] font-bold tracking-wider uppercase text-[var(--brand-color)] bg-[var(--brand-color)]/10 px-2 py-0.5 rounded-full">
+                        <span className="text-[0.625rem] font-bold tracking-wider uppercase text-[var(--brand-color)] bg-[var(--brand-color)]/10 px-2 py-0.5 rounded-full">
                           Upcoming
                         </span>
                       </div>

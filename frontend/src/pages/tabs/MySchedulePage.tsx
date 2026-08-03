@@ -1,18 +1,15 @@
 import { CalendarIcon } from '../../components/Icons'
+import { PageHeader } from '../../components/PageHeader';
 
 function MySchedulePage() {
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              My Schedule
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              View and manage your upcoming room bookings and scheduled activities.
-            </p>
-          </div>
+          <PageHeader 
+            title="My Schedule" 
+            description="View and manage your upcoming room bookings and scheduled activities." 
+          />
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">

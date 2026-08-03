@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } from 'react'
+import { PageHeader } from '../../components/PageHeader'
 import { DoorIcon, ClockIcon, CalendarIcon, UserIcon, BuildingIcon, ClipboardIcon, CheckIcon, ChevronDownIcon, SearchIcon, LayersIcon, UsersIcon, BookIcon } from '../../components/Icons'
 import { SearchFilters } from '../../components/SearchFilters'
 import { db, auth } from '../../firebase'
@@ -243,7 +244,7 @@ function ReservationItem({
                 <span className="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-0.5 text-xs font-bold uppercase tracking-widest text-gray-600 border border-gray-200">
                   {room?.code || 'N/A'}
                 </span>
-                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest border ${statusClasses[res.status]}`}>
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest border ${statusClasses[res.status]}`}>
                   {res.status}
                 </span>
               </div>
@@ -284,7 +285,7 @@ function ReservationItem({
                       <BuildingIcon className="h-5 w-5 text-gray-400" />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Building</span>
+                      <span className="text-[0.625rem] font-bold uppercase tracking-widest text-gray-400">Building</span>
                       <span className="text-sm font-bold">{building?.name || 'Unknown'} ({building?.code || 'N/A'})</span>
                     </div>
                   </div>
@@ -294,7 +295,7 @@ function ReservationItem({
                       <CalendarIcon className="h-5 w-5 text-gray-400" />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Date</span>
+                      <span className="text-[0.625rem] font-bold uppercase tracking-widest text-gray-400">Date</span>
                       <span className="text-sm font-bold">{new Date(res.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
                     </div>
                   </div>
@@ -304,7 +305,7 @@ function ReservationItem({
                       <ClockIcon className="h-5 w-5 text-gray-400" />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Schedule</span>
+                      <span className="text-[0.625rem] font-bold uppercase tracking-widest text-gray-400">Schedule</span>
                       <span className="text-sm font-bold">{res.startTime} - {res.endTime} ({res.duration}m)</span>
                     </div>
                   </div>
@@ -314,7 +315,7 @@ function ReservationItem({
                   <div className="flex items-center gap-3">
                     <ClipboardIcon className="h-6 w-6 text-gray-400 shrink-0" />
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="text-[12px] font-bold uppercase tracking-widest text-gray-400 leading-tight">Purpose</span>
+                      <span className="text-[0.75rem] font-bold uppercase tracking-widest text-gray-400 leading-tight">Purpose</span>
                       <p className="text-sm text-gray-600 font-medium leading-5">{res.purpose}</p>
                     </div>
                   </div>
@@ -326,13 +327,13 @@ function ReservationItem({
                       e.stopPropagation()
                       room && onViewRoomInfo(room)
                     }}
-                    className="flex items-center gap-2 self-start rounded-md border border-gray-200 bg-white px-3 py-2 text-[11px] font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
+                    className="flex items-center gap-2 self-start rounded-md border border-gray-200 bg-white px-3 py-2 text-[0.6875rem] font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
                   >
                     <SearchIcon className="h-3.5 w-3.5" />
                     View Room Information
                   </button>
                   <div className="flex flex-col gap-1 lg:items-end">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Requested on</span>
+                    <span className="text-[0.625rem] font-bold uppercase tracking-widest text-gray-400">Requested on</span>
                     <span className="text-xs font-bold text-gray-500">
                       {res.createdAt?.toDate 
                         ? `${res.createdAt.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${res.createdAt.toDate().toLocaleTimeString('en-US')}`
@@ -486,7 +487,7 @@ function MyReservationsPage() {
             <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
               <div className="p-6 space-y-5">
                 <div className="flex gap-5">
-                  <div className="w-[152px] h-[152px] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
+                  <div className="w-[9.5rem] h-[9.5rem] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
                     <img 
                       src={selectedRoomInfo.image} 
                       alt={selectedRoomInfo.name} 
@@ -547,14 +548,14 @@ function MyReservationsPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Availability</h5>
-                      <div className="flex gap-1 h-[34px]">
+                      <div className="flex gap-1 h-[2.125rem]">
                         {DAYS_OF_WEEK.map((day) => {
                           const isAvailable = selectedRoomInfo.availableDays?.includes(day)
                           return (
                             <div
                               key={day}
                               title={day}
-                              className={`flex-1 flex items-center justify-center rounded-sm text-[10px] font-bold transition-colors ${
+                              className={`flex-1 flex items-center justify-center rounded-sm text-[0.625rem] font-bold transition-colors ${
                                 isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-200 text-gray-500'
                               }`}
                             >
@@ -566,7 +567,7 @@ function MyReservationsPage() {
                     </div>
                     <div>
                       <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
-                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[34px] rounded-md border border-gray-200">
+                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[2.125rem] rounded-md border border-gray-200">
                         <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
                         <span>{selectedRoomInfo.startTime} - {selectedRoomInfo.endTime}</span>
                       </div>
@@ -575,7 +576,7 @@ function MyReservationsPage() {
 
                   <div>
                     <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
-                    <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
+                    <div className="flex flex-wrap gap-1.5 max-h-[7.5rem] overflow-y-auto custom-scrollbar pr-1">
                       {selectedRoomInfo.amenities?.length > 0 ? (
                         selectedRoomInfo.amenities.map((amenity, i) => (
                           <span 
@@ -612,14 +613,10 @@ function MyReservationsPage() {
 
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              My Reservations
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              View your current room bookings, historical reservations, and active requests.
-            </p>
-          </div>
+          <PageHeader 
+            title="My Reservations" 
+            description="Track your room bookings, check their status, and manage upcoming schedules." 
+          />
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">

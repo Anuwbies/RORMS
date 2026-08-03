@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } fr
 import { ClipboardIcon, SearchIcon, EditIcon, TrashIcon, CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, DoorIcon, CalendarIcon, UserIcon, BookIcon, BuildingIcon, LayersIcon, UsersIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
+import { PageHeader } from '../../components/PageHeader'
 import { db } from '../../firebase'
 import { 
   collection, 
@@ -187,7 +188,7 @@ function MultiSelectDropdown<T extends string>({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-[46px] w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white pl-4 pr-3 py-3 text-sm font-bold text-gray-600 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+        className="relative flex h-[2.875rem] w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white pl-4 pr-3 py-3 text-sm font-bold text-gray-600 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
       >
         <div className="relative flex items-center">
           <span className="invisible h-0 overflow-hidden whitespace-nowrap font-bold" aria-hidden="true">
@@ -464,7 +465,7 @@ function ReservationDetailsModal({ reservation, onClose, onViewRoom }: Reservati
         <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
           <div className="p-6 space-y-5">
             <div className="flex gap-5">
-              <div className="w-[152px] h-[152px] shrink-0 rounded-full border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
+              <div className="w-[9.5rem] h-[9.5rem] shrink-0 rounded-full border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
                 <img 
                   src={reservation.requester?.avatar} 
                   alt={reservation.requester?.name} 
@@ -477,7 +478,7 @@ function ReservationDetailsModal({ reservation, onClose, onViewRoom }: Reservati
                   <h4 className="text-xl font-bold text-gray-900 leading-tight">{reservation.requester?.name}</h4>
                   <p className="text-sm text-gray-500 font-medium mt-1">{reservation.requester?.email}</p>
                   <div className="mt-3">
-                    <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${statusClasses[reservation.status]}`}>
+                    <span className={`rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[reservation.status]}`}>
                       {reservation.status}
                     </span>
                   </div>
@@ -496,7 +497,7 @@ function ReservationDetailsModal({ reservation, onClose, onViewRoom }: Reservati
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Location</h5>
-                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[46px] rounded-md border border-gray-200">
+                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[2.875rem] rounded-md border border-gray-200">
                     <DoorIcon className="h-4 w-4 text-[var(--brand-color)]" />
                     <div className="truncate">
                       <span>{reservation.roomName} • {reservation.buildingName}</span>
@@ -505,7 +506,7 @@ function ReservationDetailsModal({ reservation, onClose, onViewRoom }: Reservati
                 </div>
                 <div>
                   <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
-                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[46px] rounded-md border border-gray-200">
+                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[2.875rem] rounded-md border border-gray-200">
                     <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
                     <span>{reservation.startTime} - {reservation.endTime}</span>
                   </div>
@@ -514,7 +515,7 @@ function ReservationDetailsModal({ reservation, onClose, onViewRoom }: Reservati
 
               <div>
                 <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Date</h5>
-                <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[46px] rounded-md border border-gray-200">
+                <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[2.875rem] rounded-md border border-gray-200">
                   <CalendarIcon className="h-4 w-4 text-[var(--brand-color)]" />
                   <span>{formatDateFull(reservation.date)}</span>
                 </div>
@@ -587,7 +588,7 @@ function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
         <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
           <div className="p-6 space-y-5">
             <div className="flex gap-5">
-              <div className="w-[152px] h-[152px] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
+              <div className="w-[9.5rem] h-[9.5rem] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
                 <img 
                   src={room.image} 
                   alt={room.name} 
@@ -648,14 +649,14 @@ function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Availability</h5>
-                  <div className="flex gap-1 h-[34px]">
+                  <div className="flex gap-1 h-[2.125rem]">
                     {DAYS_OF_WEEK.map((day) => {
                       const isAvailable = room.availableDays.includes(day)
                       return (
                         <div
                           key={day}
                           title={day}
-                          className={`flex-1 flex items-center justify-center rounded-sm text-[10px] font-bold transition-colors ${
+                          className={`flex-1 flex items-center justify-center rounded-sm text-[0.625rem] font-bold transition-colors ${
                             isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-200 text-gray-500'
                           }`}
                         >
@@ -667,7 +668,7 @@ function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
                 </div>
                 <div>
                   <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
-                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[34px] rounded-md border border-gray-200">
+                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[2.125rem] rounded-md border border-gray-200">
                     <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
                     <span>{room.startTime} - {room.endTime}</span>
                   </div>
@@ -676,7 +677,7 @@ function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
 
               <div>
                 <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
-                <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto custom-scrollbar pr-1">
+                <div className="flex flex-wrap gap-1.5 max-h-[7.5rem] overflow-y-auto custom-scrollbar pr-1">
                   {room.amenities.length > 0 ? (
                     room.amenities.map((amenity, i) => (
                       <span 
@@ -871,14 +872,10 @@ function ManageReservationsPage() {
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Manage Reservations
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              Track, approve, or modify room reservation requests across the university.
-            </p>
-          </div>
+          <PageHeader 
+            title="Manage Reservations" 
+            description="Review, approve, or decline room booking requests from faculty and staff." 
+          />
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
@@ -1019,7 +1016,7 @@ function ManageReservationsPage() {
                         <p className="text-xs font-medium text-gray-400">{res.startTime} - {res.endTime}</p>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${statusClasses[res.status] || 'bg-gray-100 text-gray-700'}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[res.status] || 'bg-gray-100 text-gray-700'}`}>
                           {res.status}
                         </span>
                       </td>

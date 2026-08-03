@@ -60,7 +60,7 @@ export function LeftSidebar({
       <aside
         className={joinClasses(
           'fixed inset-y-0 left-0 z-40 flex overflow-y-auto bg-[var(--brand-surface)] transition-all duration-200 ease-out lg:translate-x-0',
-          'border-r-2 border-t-0 border-b-0 border-l-0 border-[var(--brand-color)]/55 shadow-[0_18px_48px_rgba(0,0,0,0.12)] backdrop-blur-[2px]',
+          'border-r-2 border-t-0 border-b-0 border-l-0 border-[var(--brand-color)]/55 shadow-[0_18px_48px_rgba(0,0,0,0.12)] backdrop-blur-[0.125rem]',
           isSidebarOpen
             ? 'translate-x-0'
             : '-translate-x-full',
@@ -97,8 +97,8 @@ export function LeftSidebar({
                 />
 
                 {isSidebarExpanded && (
-                  <div className="w-[170px] shrink-0 overflow-hidden">
-                    <h1 className="text-[15px] font-medium leading-tight tracking-tight text-black">
+                  <div className="w-[10.625rem] shrink-0 overflow-hidden">
+                    <h1 className="text-[0.9375rem] font-medium leading-tight tracking-tight text-black">
                       <span className="block whitespace-nowrap">Registrar Office Room</span>
                       <span className="block whitespace-nowrap">Management System</span>
                     </h1>

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { PageHeader } from '../../components/PageHeader';
 import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, CheckIcon, UserIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
@@ -57,7 +58,7 @@ const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder
       {!disabled && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={(e) => { e.stopPropagation(); e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-          <div className="absolute top-full mt-1 left-0 z-[70] bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded w-full max-h-[200px] overflow-y-auto">
+          <div className="absolute top-full mt-1 left-0 z-[70] bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded w-full max-h-[12.5rem] overflow-y-auto">
             <button
               type="button"
               onClick={(e) => {
@@ -876,7 +877,7 @@ function MyDepartmentPage() {
       {isScheduleModalOpen && selectedMember && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-fit min-w-[700px] max-w-[90vw] min-h-[500px] max-h-[85vh] flex flex-col rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
+            className="w-fit min-w-[43.75rem] max-w-[80vw] min-h-[31.25rem] max-h-[85vh] flex flex-col rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md relative shrink-0">
@@ -906,7 +907,7 @@ function MyDepartmentPage() {
                   </div>
                 </div>
               ) : (
-                  <table className="grid w-full text-left text-sm whitespace-nowrap min-w-max" style={{ gridTemplateColumns: '8rem repeat(7, minmax(180px, 1fr))' }}>
+                  <table className="grid w-full text-left text-sm whitespace-nowrap min-w-max" style={{ gridTemplateColumns: '6rem repeat(7, minmax(11.25rem, 1fr))' }}>
                     <thead className="contents text-gray-700 font-bold text-base">
                       <tr className="contents">
                         <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 sticky top-0 z-20">Time</th>
@@ -1149,16 +1150,16 @@ function MyDepartmentPage() {
               <table className="w-full text-left text-sm whitespace-nowrap min-w-max border-separate border-spacing-0">
                 <thead className="bg-gray-50 sticky top-0 z-20 text-gray-700 font-bold text-base shadow-sm">
                   <tr>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[90px]">Type</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[90px]">Code</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[240px]">Title</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[100px]">Section</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[120px]">Format</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[260px]">Instructor</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[240px]">Time</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[140px]">Days</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[210px]">Building</th>
-                    <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[180px]">Room</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Type</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Code</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Title</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.25rem]">Section</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[7.5rem]">Format</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[16.25rem]">Instructor</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Time</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[8.75rem]">Days</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[13.125rem]">Building</th>
+                    <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[11.25rem]">Room</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
@@ -1286,7 +1287,7 @@ function MyDepartmentPage() {
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium text-left cursor-default">----</div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.type ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.type ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">{schedule.type ? schedule.type.charAt(0).toUpperCase() + schedule.type.slice(1) : 'Select'}</span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
@@ -1316,7 +1317,7 @@ function MyDepartmentPage() {
                           value={schedule.subjectCode}
                           onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
                           onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
                       </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
@@ -1327,7 +1328,7 @@ function MyDepartmentPage() {
                           value={schedule.subjectTitle}
                           onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
                           onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
                       </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
@@ -1336,7 +1337,7 @@ function MyDepartmentPage() {
                           placeholder="BSIT 3-1"
                           value={schedule.classSection}
                           onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
-                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
                       </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
@@ -1351,7 +1352,7 @@ function MyDepartmentPage() {
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.format || (schedule as any).format2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.format || (schedule as any).format2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {schedule.format || 'Select'}
                                 {(schedule as any).format2 ? ` / ${(schedule as any).format2}` : ''}
@@ -1396,7 +1397,7 @@ function MyDepartmentPage() {
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.instructorId || (schedule as any).instructorId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.instructorId || (schedule as any).instructorId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'}
                                 {(schedule as any).instructorId2 ? ` / ${members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}` : ''}
@@ -1439,7 +1440,7 @@ function MyDepartmentPage() {
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.startTime || schedule.endTime || (schedule as any).startTime2 || (schedule as any).endTime2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.startTime || schedule.endTime || (schedule as any).startTime2 || (schedule as any).endTime2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {(() => {
                                   const time1 = (schedule.startTime || schedule.endTime) ? `${schedule.startTime || '?'} - ${schedule.endTime || '?'}` : '';
@@ -1479,14 +1480,14 @@ function MyDepartmentPage() {
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium flex items-center cursor-default">
-                            <span className="truncate max-w-[100px]">
+                            <span className="truncate max-w-[6.25rem]">
                               {schedule.days.length > 0 ? schedule.days.join(', ') : '----'}
                             </span>
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.days.length > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                              <span className="truncate max-w-[100px]">
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.days.length > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                              <span className="truncate max-w-[6.25rem]">
                                 {schedule.days.length > 0 ? schedule.days.join(', ') : 'Select'}
                               </span>
                             </summary>
@@ -1533,7 +1534,7 @@ function MyDepartmentPage() {
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.buildingId || (schedule as any).buildingId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.buildingId || (schedule as any).buildingId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {buildings.find(b => b.id === schedule.buildingId)?.name || 'Select'}
                                 {(schedule as any).buildingId2 ? ` / ${buildings.find(b => b.id === (schedule as any).buildingId2)?.name || '?'}` : ''}
@@ -1579,7 +1580,7 @@ function MyDepartmentPage() {
                             if (!schedule.buildingId || (isChild && availableRooms.length === 0)) e.preventDefault();
                           }}
                         >
-                          <summary onClick={(e) => { handleDropdownPosition(e); }} className={`h-full min-h-[44px] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset flex items-center justify-between transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer focus:ring-2 focus:ring-[var(--brand-color)] ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}>
+                          <summary onClick={(e) => { handleDropdownPosition(e); }} className={`h-full min-h-[2.75rem] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset flex items-center justify-between transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer focus:ring-2 focus:ring-[var(--brand-color)] ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}>
                             <span className="truncate">
                               {schedule.buildingId ? (rooms.find(r => r.id === schedule.roomId)?.code || 'Select') : 'Select'}
                               {(schedule as any).roomId2 ? ` / ${rooms.find(r => r.id === (schedule as any).roomId2)?.code || '?'}` : ''}
@@ -1723,7 +1724,7 @@ function MyDepartmentPage() {
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="max-h-[352px] overflow-y-auto custom-scrollbar space-y-2 pr-2">
+              <div className="max-h-[22rem] overflow-y-auto custom-scrollbar space-y-2 pr-2">
                 {availableInstructors.length === 0 ? (
                   <p className="py-8 text-center text-sm font-medium text-gray-500">
                     No available instructors found without a department.
@@ -1809,14 +1810,10 @@ function MyDepartmentPage() {
 
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              My Department
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              Overview of your department's members, rooms, and activity.
-            </p>
-          </div>
+          <PageHeader 
+            title="My Department" 
+            description="Overview of your department's members, rooms, and activity." 
+          />
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -1840,7 +1837,7 @@ function MyDepartmentPage() {
                     {loading ? 'Loading...' : (departmentInfo?.name || 'No Department Assigned')}
                   </p>
                   {departmentInfo?.code && (
-                    <span className="flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[16px] font-black uppercase tracking-widest text-gray-500 shadow-sm">
+                    <span className="flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[1rem] font-black uppercase tracking-widest text-gray-500 shadow-sm">
                       <span className="mr-[-0.1em]">{departmentInfo.code}</span>
                     </span>
                   )}
@@ -1946,12 +1943,12 @@ function MyDepartmentPage() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
                           {member.role}
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
                           {member.status}
                         </span>
                       </td>

@@ -72,7 +72,7 @@ export function TimePicker({ value, onChange, onToggle, hasError }: TimePickerPr
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex h-[46px] w-full items-center justify-between gap-2 rounded-md border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm ${
+        className={`flex h-[2.875rem] w-full items-center justify-between gap-2 rounded-md border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm ${
           hasError ? 'border-rose-500 ring-rose-50' : 'border-gray-200'
         }`}
       >

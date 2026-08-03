@@ -4,6 +4,7 @@ import { auth, db } from '../../firebase'
 import { UsersIcon, UserIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
+import { PageHeader } from '../../components/PageHeader'
 
 type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Instructor'
 type MemberStatus = 'Active' | 'Inactive' | 'Pending'
@@ -128,7 +129,7 @@ function MultiSelectDropdown<T extends string>({
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-[46px] w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white pl-4 pr-3 text-sm font-bold text-gray-600 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
+        className="relative flex h-[2.875rem] w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white pl-4 pr-3 text-sm font-bold text-gray-600 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
       >
         <div className="relative flex items-center">
           <span className="invisible h-0 overflow-hidden whitespace-nowrap font-bold" aria-hidden="true">
@@ -243,7 +244,7 @@ function SingleSelectDropdown<T extends string>({
         type="button"
         disabled={isDisabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-[46px] w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+        className="relative flex h-[2.875rem] w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
       >
         <span className="whitespace-nowrap">{value || 'None'}</span>
         <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
@@ -835,7 +836,7 @@ function MembersPage() {
                   }`}>
                     <span>Department</span>
                     {editError && (
-                      <span className="text-[10px] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
+                      <span className="text-[0.625rem] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
                         {editError}
                       </span>
                     )}
@@ -1013,7 +1014,7 @@ function MembersPage() {
                     autoFocus
                   />
                   {inviteError && (
-                    <p className={`absolute left-0 top-[calc(100%+4px)] text-[11px] font-bold animate-in fade-in slide-in-from-top-1 ${
+                    <p className={`absolute left-0 top-[calc(100%+4px)] text-[0.6875rem] font-bold animate-in fade-in slide-in-from-top-1 ${
                       inviteError.startsWith('Sent') ? 'text-emerald-600' : 'text-rose-600'
                     }`}>
                       {inviteError}
@@ -1083,14 +1084,10 @@ function MembersPage() {
 
       <div className="space-y-6">
         <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white">
-            <h2 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-              Members
-            </h2>
-            <p className="mt-4 max-w-3xl text-sm leading-7 text-white/85 sm:text-base">
-              Manage member accounts, role assignments, and registrar system access.
-            </p>
-          </div>
+          <PageHeader 
+            title="User Directory" 
+            description="Manage system access, roles, and department assignments for all users." 
+          />
 
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -1203,7 +1200,7 @@ function MembersPage() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${roleClasses[member.role]}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role]}`}>
                           {member.role}
                         </span>
                       </td>
@@ -1216,7 +1213,7 @@ function MembersPage() {
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-widest ${statusClasses[member.status]}`}>
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[member.status]}`}>
                           {member.status}
                         </span>
                       </td>

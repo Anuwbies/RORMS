@@ -428,7 +428,7 @@ export const RightSidebar = memo(function RightSidebar({
       <aside
         className={joinClasses(
           'fixed top-0 right-0 z-50 hidden h-full flex-col bg-[var(--brand-surface)] transition-all duration-200 ease-out xl:flex',
-          'border-l-2 border-t-0 border-b-0 border-r-0 border-[var(--brand-color)]/55 backdrop-blur-[2px]',
+          'border-l-2 border-t-0 border-b-0 border-r-0 border-[var(--brand-color)]/55 backdrop-blur-[0.125rem]',
           isExpanded ? 'w-80' : 'w-20',
         )}
       >
@@ -494,7 +494,7 @@ export const RightSidebar = memo(function RightSidebar({
                 <div className="flex items-center justify-center gap-1.5">
                   <div className="flex items-center justify-center gap-1.5 rounded-full bg-secondary-100/50 px-2 py-0.5 dark:bg-secondary-800/50">
                     <DepartmentIcon className="h-3 w-3 text-gray-600" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-600">
+                    <span className="text-[0.625rem] font-bold uppercase tracking-wider text-gray-600">
                       {userData.department || (
                         userData.role === 'Admin' ? 'Administrative Office' :
                         userData.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
@@ -502,7 +502,7 @@ export const RightSidebar = memo(function RightSidebar({
                     </span>
                   </div>
                   
-                  <div className={joinClasses("flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider", roleClasses[userData.role] || 'bg-gray-100 text-gray-700')}>
+                  <div className={joinClasses("flex items-center gap-1 rounded-full px-2 py-0.5 text-[0.625rem] font-bold uppercase tracking-wider", roleClasses[userData.role] || 'bg-gray-100 text-gray-700')}>
                     <span>{userData.role}</span>
                   </div>
                 </div>
@@ -529,7 +529,7 @@ export const RightSidebar = memo(function RightSidebar({
                           : 'text-red-500 group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200',
                       )}
                     />
-                    <span className="font-bold leading-none tracking-tight text-[13px] text-gray-600">
+                    <span className="font-bold leading-none tracking-tight text-[0.8125rem] text-gray-600">
                       Notifications
                     </span>
                   </div>
@@ -542,7 +542,7 @@ export const RightSidebar = memo(function RightSidebar({
                 >
                   <div className="flex items-center gap-1.5 scale-[1] origin-center">
                     <LogOutIcon className="h-4 w-4 text-red-500 transition-colors group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200" />
-                    <span className="font-bold leading-none tracking-tight text-[13px] text-red-500">
+                    <span className="font-bold leading-none tracking-tight text-[0.8125rem] text-red-500">
                       Sign Out
                     </span>
                   </div>
@@ -616,7 +616,7 @@ export const RightSidebar = memo(function RightSidebar({
               </h3>
               <span
                 className={joinClasses(
-                  'min-w-[32px] rounded-full px-2 py-0.5 text-center text-[11px] font-bold transition-colors text-black',
+                  'min-w-8 rounded-full px-2 py-0.5 text-center text-[0.6875rem] font-bold transition-colors text-black',
                   notificationsEnabled
                     ? unreadCount > 0
                       ? 'bg-[var(--brand-color)]/20'
@@ -675,19 +675,19 @@ export const RightSidebar = memo(function RightSidebar({
                               {notification.title}
                             </p>
                             {!notification.isRead && (
-                              <span className="h-3.5 shrink-0 rounded-full bg-primary-500 px-1 text-[8px] leading-[14px] font-black uppercase tracking-widest text-white">
+                              <span className="h-3.5 shrink-0 rounded-full bg-primary-500 px-1 text-[0.5rem] leading-[0.875rem] font-black uppercase tracking-widest text-white">
                                 New
                               </span>
                             )}
                           </div>
 
-                          <span className="ml-auto shrink-0 whitespace-nowrap text-[10px] font-bold text-secondary-400 dark:text-secondary-500">
+                          <span className="ml-auto shrink-0 whitespace-nowrap text-[0.625rem] font-bold text-secondary-400 dark:text-secondary-500">
                             {formatRelativeTime(notification.createdAt)}
                           </span>
                         </div>
 
                         <div className="flex items-end justify-between gap-4">
-                          <p className="line-clamp-2 flex-1 text-[11px] font-semibold leading-relaxed text-secondary-500 dark:text-secondary-400">
+                          <p className="line-clamp-2 flex-1 text-[0.6875rem] font-semibold leading-relaxed text-secondary-500 dark:text-secondary-400">
                             {notification.message}
                           </p>
 
@@ -726,7 +726,7 @@ export const RightSidebar = memo(function RightSidebar({
                 onClick={markAllAsRead}
                 disabled={unreadCount === 0}
               >
-                <span className="inline-block scale-[1] origin-center text-[13px] font-bold tracking-tight">
+                <span className="inline-block scale-[1] origin-center text-[0.8125rem] font-bold tracking-tight">
                   Mark all as read
                 </span>
               </button>
@@ -737,7 +737,7 @@ export const RightSidebar = memo(function RightSidebar({
                 onClick={() => setIsClearNotificationsModalOpen(true)}
                 disabled={notifications.length === 0}
               >
-                <span className="inline-block scale-[1] origin-center text-[13px] font-bold tracking-tight">
+                <span className="inline-block scale-[1] origin-center text-[0.8125rem] font-bold tracking-tight">
                   Clear all notifications
                 </span>
               </button>
