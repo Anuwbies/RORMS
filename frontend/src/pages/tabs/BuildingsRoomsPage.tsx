@@ -1783,8 +1783,8 @@ function BuildingsRoomsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
                   <BuildingIcon className="h-9 w-9 text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total buildings</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Total buildings">Total buildings</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{buildings.length}</p>
                 </div>
               </div>
@@ -1793,8 +1793,8 @@ function BuildingsRoomsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50 border border-emerald-100 shrink-0">
                   <DoorIcon className="h-9 w-9 text-emerald-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Tracked rooms</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Tracked rooms">Tracked rooms</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{allRooms.length}</p>
                 </div>
               </div>
@@ -1803,8 +1803,8 @@ function BuildingsRoomsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
                   <LayersIcon className="h-9 w-9 text-amber-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total floors</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Total floors">Total floors</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{totalFloors}</p>
                 </div>
               </div>
@@ -1813,8 +1813,8 @@ function BuildingsRoomsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-rose-50 border border-rose-100 shrink-0">
                   <UsersIcon className="h-9 w-9 text-rose-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Total room capacity</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Total room pax">Total room pax</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{totalCapacity}</p>
                 </div>
               </div>
@@ -1945,8 +1945,8 @@ function BuildingsRoomsPage() {
                       <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
                         <LayersIcon className="h-9 w-9 text-amber-600" />
                       </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500 truncate" title="Floor">
                           Floor
                         </p>
                         <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">
@@ -1959,8 +1959,8 @@ function BuildingsRoomsPage() {
                       <div className="flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50 border border-emerald-100 shrink-0">
                         <DoorIcon className="h-9 w-9 text-emerald-600" />
                       </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500 truncate" title="Rooms">
                           Rooms
                         </p>
                         <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">
@@ -1973,8 +1973,8 @@ function BuildingsRoomsPage() {
                       <div className="flex h-14 w-14 items-center justify-center rounded-md bg-rose-50 border border-rose-100 shrink-0">
                         <UsersIcon className="h-9 w-9 text-rose-600" />
                       </div>
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500 truncate" title="Capacity">
                           Capacity
                         </p>
                         <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">

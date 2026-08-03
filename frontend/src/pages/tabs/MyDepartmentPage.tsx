@@ -1832,12 +1832,12 @@ function MyDepartmentPage() {
                     </div>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <p className="text-3xl font-bold text-gray-900 leading-tight">
+                <div className="flex flex-nowrap items-center gap-3 min-w-0">
+                  <p className="text-xl font-bold text-gray-900 leading-tight truncate" title={departmentInfo?.name}>
                     {loading ? 'Loading...' : (departmentInfo?.name || 'No Department Assigned')}
                   </p>
                   {departmentInfo?.code && (
-                    <span className="flex h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[1rem] font-black uppercase tracking-widest text-gray-500 shadow-sm">
+                    <span className="flex shrink-0 h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[1rem] font-black uppercase tracking-widest text-gray-500 shadow-sm">
                       <span className="mr-[-0.1em]">{departmentInfo.code}</span>
                     </span>
                   )}
@@ -1848,8 +1848,8 @@ function MyDepartmentPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
                   <UsersIcon className="h-9 w-9 text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Department Members</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Department Members">Dept. Members</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{members.length}</p>
                 </div>
               </div>
@@ -1858,8 +1858,8 @@ function MyDepartmentPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-green-50 border border-green-100 shrink-0">
                   <PlusIcon className="h-9 w-9 text-green-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">New (Last 7D)</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="New (Last 7D)">New (Last 7D)</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{newMembersCount}</p>
                 </div>
               </div>

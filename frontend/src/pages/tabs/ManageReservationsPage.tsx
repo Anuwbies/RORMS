@@ -883,8 +883,8 @@ function ManageReservationsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
                   <ClockIcon className="h-9 w-9 text-amber-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Pending</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Pending">Pending</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{pendingCount}</p>
                 </div>
               </div>
@@ -893,8 +893,8 @@ function ManageReservationsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50 border border-emerald-100 shrink-0">
                   <CheckIcon className="h-9 w-9 text-emerald-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Approved</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Approved">Approved</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{approvedCount}</p>
                 </div>
               </div>
@@ -903,8 +903,8 @@ function ManageReservationsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-rose-50 border border-rose-100 shrink-0">
                   <DoorIcon className="h-9 w-9 text-rose-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Declined</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Declined">Declined</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{declinedCount}</p>
                 </div>
               </div>
@@ -913,8 +913,8 @@ function ManageReservationsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-gray-100 border border-gray-200 shrink-0">
                   <CalendarIcon className="h-9 w-9 text-gray-500" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Cancelled</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Cancelled">Cancelled</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{cancelledCount}</p>
                 </div>
               </div>
@@ -923,8 +923,8 @@ function ManageReservationsPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
                   <ClipboardIcon className="h-9 w-9 text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500">Completed</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Completed">Completed</p>
                   <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{completedCount}</p>
                 </div>
               </div>

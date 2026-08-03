@@ -1,5 +1,5 @@
-import {
 import { PageHeader } from '../../components/PageHeader';
+import {
   UsersIcon, BuildingIcon, DoorIcon, ClipboardIcon,
   CalendarIcon, CheckCircleIcon, ArrowRightIcon
 } from '../../components/Icons'
@@ -77,8 +77,8 @@ function DashboardPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-blue-50 border border-blue-100 shrink-0">
                   <BuildingIcon className="h-7 w-7 text-blue-600" />
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Total Rooms</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500 truncate" title="Total Rooms">Total Rooms</p>
                   <div className="flex items-baseline gap-2">
                     <p className="mt-1 text-2xl font-bold text-gray-900 leading-none">124</p>
                     <span className="text-xs font-medium text-green-600">+2 this month</span>
@@ -89,8 +89,8 @@ function DashboardPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-green-50 border border-green-100 shrink-0">
                   <DoorIcon className="h-7 w-7 text-green-600" />
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Daily Utilization</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500 truncate" title="Daily Utilization">Daily Utilization</p>
                   <div className="flex items-baseline gap-2">
                     <p className="mt-1 text-2xl font-bold text-gray-900 leading-none">78%</p>
                     <span className="text-xs font-medium text-green-600">+5% vs last week</span>
@@ -101,8 +101,8 @@ function DashboardPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-amber-50 border border-amber-100 shrink-0">
                   <CalendarIcon className="h-7 w-7 text-amber-600" />
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Peak Hours</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500 truncate" title="Peak Hours">Peak Hours</p>
                   <p className="mt-1 text-xl font-bold text-gray-900 leading-none">10 AM - 2 PM</p>
                 </div>
               </div>
@@ -110,8 +110,8 @@ function DashboardPage() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-rose-50 border border-rose-100 shrink-0">
                   <ClipboardIcon className="h-7 w-7 text-rose-600" />
                 </div>
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Active Maintenance</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-500 truncate" title="Active Maintenance">Active Maintenance</p>
                   <div className="flex items-baseline gap-2">
                     <p className="mt-1 text-2xl font-bold text-gray-900 leading-none">5</p>
                     <span className="text-xs font-medium text-red-600">Requires attention</span>

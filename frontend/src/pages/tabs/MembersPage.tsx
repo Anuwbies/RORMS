@@ -1092,7 +1092,7 @@ function MembersPage() {
           <div className="p-6 bg-gray-50/50">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
               {[
-                { label: 'Total Members', count: members.length, color: 'rose' },
+                { label: 'Total Mbr', count: members.length, color: 'rose' },
                 { label: 'Admins', count: members.filter(m => m.role === 'Admin').length, color: 'purple' },
                 { label: 'Registrars', count: members.filter(m => m.role === 'Registrar').length, color: 'blue' },
                 { label: 'Deans', count: members.filter(m => m.role === 'Dean').length, color: 'amber' },
@@ -1102,8 +1102,8 @@ function MembersPage() {
                   <div className={`flex h-14 w-14 items-center justify-center rounded-md bg-${item.color}-50 border border-${item.color}-100 shrink-0`}>
                     <UsersIcon className={`h-9 w-9 text-${item.color}-600`} />
                   </div>
-                  <div>
-                    <p className="text-sm font-bold uppercase tracking-widest text-gray-500">{item.label}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="{item.label}">{item.label}</p>
                     <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">
                       {item.count}
                     </p>

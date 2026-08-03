@@ -871,7 +871,7 @@ function DepartmentsPage() {
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {[
                 { 
-                  label: 'Total Departments', 
+                  label: 'Total Dept.', 
                   count: departments.length, 
                   color: 'blue', 
                   icon: <DepartmentIcon className="h-9 w-9 text-blue-600" /> 
@@ -904,8 +904,8 @@ function DepartmentsPage() {
                   <div className={`flex h-14 w-14 items-center justify-center rounded-md bg-${item.color}-50 border border-${item.color}-100 shrink-0`}>
                     {item.icon}
                   </div>
-                  <div>
-                    <p className="text-sm font-bold uppercase tracking-widest text-gray-500">{item.label}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="{item.label}">{item.label}</p>
                     <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">
                       {item.count}
                     </p>
