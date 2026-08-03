@@ -149,6 +149,7 @@ const roleClasses: Record<string, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',
+  'Program Head': 'bg-indigo-100 text-indigo-700',
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
@@ -438,6 +439,7 @@ function DepartmentsPage() {
           name: trimmedName,
           code: finalCode,
           dean: newDeptDean,
+          programHead: '',
           logo: creationLogo,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()

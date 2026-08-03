@@ -6,7 +6,7 @@ import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
 import { PageHeader } from '../../components/PageHeader'
 
-type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Instructor'
+type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Program Head' | 'Instructor'
 type MemberStatus = 'Active' | 'Inactive' | 'Pending'
 
 interface Department {
@@ -14,6 +14,7 @@ interface Department {
   name: string
   code: string
   dean: string
+  programHead?: string
 }
 
 interface Member {
@@ -32,13 +33,15 @@ const rolePriority: Record<MemberRole, number> = {
   Admin: 0,
   Registrar: 1,
   Dean: 2,
-  Instructor: 3,
+  'Program Head': 3,
+  Instructor: 4,
 }
 
 const roleClasses: Record<MemberRole, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',
+  'Program Head': 'bg-indigo-100 text-indigo-700',
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
@@ -384,7 +387,8 @@ function MembersPage() {
           id: doc.id,
           name: data.name || '',
           code: data.code || '',
-          dean: data.dean || ''
+          dean: data.dean || '',
+          programHead: data.programHead || ''
         }
       }) as Department[]
       setDepartments(deptsData)
@@ -464,7 +468,7 @@ function MembersPage() {
             const inviteRef = await addDoc(collection(db, 'invitations'), {
               email: normalizedEmail,
               role: inviteRole,
-              department: (inviteRole === 'Instructor' || inviteRole === 'Dean') ? (inviteDepartment === 'None' ? '' : inviteDepartment) : '',
+              department: (inviteRole === 'Instructor' || inviteRole === 'Dean' || inviteRole === 'Program Head') ? (inviteDepartment === 'None' ? '' : inviteDepartment) : '',
               status: 'pending',
               isReactivation: true,
               invitedBy: auth.currentUser?.uid || 'system',
@@ -549,7 +553,7 @@ function MembersPage() {
         const inviteRef = await addDoc(collection(db, 'invitations'), {
           email: normalizedEmail,
           role: inviteRole,
-          department: (inviteRole === 'Instructor' || inviteRole === 'Dean') ? (inviteDepartment === 'None' ? '' : inviteDepartment) : '',
+          department: (inviteRole === 'Instructor' || inviteRole === 'Dean' || inviteRole === 'Program Head') ? (inviteDepartment === 'None' ? '' : inviteDepartment) : '',
           status: 'pending',
           invitedBy: auth.currentUser?.uid || 'system',
           createdAt: serverTimestamp(),
@@ -660,15 +664,24 @@ function MembersPage() {
     setEditError('')
     const wasDean = editingMember.role === 'Dean'
     const isNowDean = editRole === 'Dean'
+    const wasProgramHead = editingMember.role === 'Program Head'
+    const isNowProgramHead = editRole === 'Program Head'
     const oldDeptCode = editingMember.department || ''
     const newDeptCode = editDept
 
-    // 1. Validation for Dean assignment
+    // 1. Validation for Dean and Program Head assignment
     if (isNowDean && newDeptCode) {
-      const targetDept = departments.find(d => d.code === newDeptCode)
-      // Check if another user is already assigned as dean for this department
-      if (targetDept && targetDept.dean && targetDept.dean !== editingMember.id) {
+      const existingDean = members.find(m => m.role === 'Dean' && m.department === newDeptCode && m.id !== editingMember.id && m.status !== 'Inactive')
+      if (existingDean) {
         setEditError(`Dean exists for ${newDeptCode}.`)
+        return
+      }
+    }
+
+    if (isNowProgramHead && newDeptCode) {
+      const existingProgramHead = members.find(m => m.role === 'Program Head' && m.department === newDeptCode && m.id !== editingMember.id && m.status !== 'Inactive')
+      if (existingProgramHead) {
+        setEditError(`Program Head exists for ${newDeptCode}.`)
         return
       }
     }
@@ -677,7 +690,7 @@ function MembersPage() {
     try {
       const batch = writeBatch(db)
 
-      const canHaveDept = editRole === 'Dean' || editRole === 'Instructor'
+      const canHaveDept = editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head'
       const finalDept = canHaveDept ? editDept : ''
 
       if (wasDean && (!isNowDean || oldDeptCode !== finalDept)) {
@@ -697,6 +710,28 @@ function MembersPage() {
           // Set new department's dean field
           batch.update(doc(db, 'departments', newDept.id), {
             dean: editingMember.id,
+            updatedAt: serverTimestamp()
+          })
+        }
+      }
+
+      if (wasProgramHead && (!isNowProgramHead || oldDeptCode !== finalDept)) {
+        // Clear old department's programHead field
+        const oldDept = departments.find(d => d.code === oldDeptCode)
+        if (oldDept) {
+          batch.update(doc(db, 'departments', oldDept.id), {
+            programHead: '',
+            updatedAt: serverTimestamp()
+          })
+        }
+      }
+
+      if (isNowProgramHead && finalDept) {
+        const newDept = departments.find(d => d.code === finalDept)
+        if (newDept) {
+          // Set new department's programHead field
+          batch.update(doc(db, 'departments', newDept.id), {
+            programHead: editingMember.id,
             updatedAt: serverTimestamp()
           })
         }
@@ -746,12 +781,20 @@ function MembersPage() {
           batch.delete(doc(db, 'mail', mDoc.id))
         })
       } else {
-        // 1. If member is a dean, clear the department's dean field
+        // 1. If member is a dean or program head, clear the department's respective field
         if (memberToRemove.role === 'Dean' && memberToRemove.department) {
           const dept = departments.find(d => d.code === memberToRemove.department)
           if (dept && dept.dean === memberToRemove.id) {
             batch.update(doc(db, 'departments', dept.id), {
               dean: '',
+              updatedAt: serverTimestamp()
+            })
+          }
+        } else if (memberToRemove.role === 'Program Head' && memberToRemove.department) {
+          const dept = departments.find(d => d.code === memberToRemove.department)
+          if (dept && dept.programHead === memberToRemove.id) {
+            batch.update(doc(db, 'departments', dept.id), {
+              programHead: '',
               updatedAt: serverTimestamp()
             })
           }
@@ -811,17 +854,17 @@ function MembersPage() {
             
             <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-4">
-                <div className="sm:w-[40%]">
+                <div className="sm:w-1/2">
                   <label htmlFor="edit-role" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                     Role
                   </label>
                   <SingleSelectDropdown
-                    options={['Admin', 'Registrar', 'Dean', 'Instructor']}
+                    options={['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor']}
                     value={editRole}
                     onChange={(val) => {
                       setEditRole(val)
                       setEditError('')
-                      if (val !== 'Dean' && val !== 'Instructor') {
+                      if (val !== 'Dean' && val !== 'Instructor' && val !== 'Program Head') {
                         setEditDept('')
                       }
                     }}
@@ -830,9 +873,9 @@ function MembersPage() {
                   />
                 </div>
 
-                <div className="sm:w-[60%]">
+                <div className="sm:w-1/2">
                   <label htmlFor="edit-dept" className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-2 transition-colors ${
-                    (editRole === 'Dean' || editRole === 'Instructor') ? 'text-gray-500' : 'text-gray-300'
+                    (editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head') ? 'text-gray-500' : 'text-gray-300'
                   }`}>
                     <span>Department</span>
                     {editError && (
@@ -843,13 +886,13 @@ function MembersPage() {
                   </label>
                   <SingleSelectDropdown
                     options={['', ...departments.map(d => d.code)]}
-                    value={(editRole === 'Dean' || editRole === 'Instructor') ? editDept : ''}
+                    value={(editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head') ? editDept : ''}
                     onChange={(val) => {
                       setEditDept(val)
                       setEditError('')
                     }}
                     onToggle={handleDropdownToggle}
-                    isDisabled={editRole !== 'Dean' && editRole !== 'Instructor'}
+                    isDisabled={editRole !== 'Dean' && editRole !== 'Instructor' && editRole !== 'Program Head'}
                     className="w-full"
                   />
                 </div>
@@ -1028,7 +1071,7 @@ function MembersPage() {
                       Assign Role
                     </label>
                     <SingleSelectDropdown
-                      options={['Admin', 'Registrar', 'Dean', 'Instructor']}
+                      options={['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor']}
                       value={inviteRole}
                       onChange={setInviteRole}
                       onToggle={handleDropdownToggle}
@@ -1090,12 +1133,13 @@ function MembersPage() {
           />
 
           <div className="p-6 bg-gray-50/50">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
               {[
                 { label: 'Total Mbr', count: members.length, color: 'rose' },
                 { label: 'Admins', count: members.filter(m => m.role === 'Admin').length, color: 'purple' },
                 { label: 'Registrars', count: members.filter(m => m.role === 'Registrar').length, color: 'blue' },
                 { label: 'Deans', count: members.filter(m => m.role === 'Dean').length, color: 'amber' },
+                { label: 'Prog Heads', count: members.filter(m => m.role === 'Program Head').length, color: 'indigo' },
                 { label: 'Instructors', count: members.filter(m => m.role === 'Instructor').length, color: 'emerald' },
               ].map((item) => (
                 <div key={item.label} className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
@@ -1122,7 +1166,7 @@ function MembersPage() {
             <>
               <MultiSelectDropdown
                 label="Roles"
-                options={['Admin', 'Registrar', 'Dean', 'Instructor']}
+                options={['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor']}
                 selectedValues={selectedRoles}
                 onChange={setSelectedRoles}
                 className="w-full sm:w-auto"

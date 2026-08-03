@@ -24,6 +24,7 @@ const roleClasses: Record<string, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',
+  'Program Head': 'bg-indigo-100 text-indigo-700',
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
@@ -471,10 +472,21 @@ function MyDepartmentPage() {
     try {
       const mId = (memberToRemove as any).membershipId
       if (mId) {
-        await updateDoc(doc(db, 'memberships', mId), {
+        const membershipUpdate = updateDoc(doc(db, 'memberships', mId), {
           departmentCode: '',
           joinedAt: new Date()
         })
+        
+        const scheduleQuery = query(collection(db, 'schedule'), where('instructorId', '==', mId))
+        const scheduleSnapshot = await getDocs(scheduleQuery)
+        
+        const scheduleUpdates = scheduleSnapshot.docs.map(scheduleDoc => 
+          updateDoc(doc(db, 'schedule', scheduleDoc.id), {
+            instructorId: null
+          })
+        )
+        
+        await Promise.all([membershipUpdate, ...scheduleUpdates])
       }
       setIsRemoveModalOpen(false)
       setMemberToRemove(null)
@@ -1413,7 +1425,7 @@ function MyDepartmentPage() {
                                     handleScheduleChange(index, 'instructorId', val);
                                     if (!val) handleScheduleChange(index, 'instructorId2', '');
                                   }}
-                                  options={members.filter(m => m.role === 'Instructor').map(m => ({value: m.membershipId || '', label: m.name}))}
+                                  options={members.filter(m => m.role === 'Instructor' || m.role === 'Program Head').map(m => ({value: m.membershipId || '', label: m.name}))}
                                 />
                               </div>
                               <div className="flex flex-col gap-1.5">
@@ -1422,7 +1434,7 @@ function MyDepartmentPage() {
                                   value={(schedule as any).instructorId2 || ''}
                                   disabled={!schedule.instructorId}
                                   onChange={(val) => handleScheduleChange(index, 'instructorId2', val)}
-                                  options={members.filter(m => m.role === 'Instructor' && m.membershipId !== schedule.instructorId).map(m => ({value: m.membershipId || '', label: m.name}))}
+                                  options={members.filter(m => (m.role === 'Instructor' || m.role === 'Program Head') && m.membershipId !== schedule.instructorId).map(m => ({value: m.membershipId || '', label: m.name}))}
                                 />
                               </div>
                             </div>
@@ -1643,7 +1655,7 @@ function MyDepartmentPage() {
                       }`}
                     >
                       {selectedScheduleIds.length > 0 && <TrashIcon className="h-4 w-4" />}
-                      {selectedScheduleIds.length > 0 ? `Delete Selected (${selectedScheduleIds.length})` : 'Cancel Remove'}
+                      {selectedScheduleIds.length > 0 ? `Delete Selected (${schedules.filter(s => selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId))).length})` : 'Cancel Remove'}
                     </button>
                     {selectedScheduleIds.length > 0 && (
                       <button
@@ -1879,7 +1891,7 @@ function MyDepartmentPage() {
             label: "Add Instructor",
             onClick: () => setIsAddModalOpen(true)
           } : undefined}
-          secondaryButton={(currentUserRole === 'Dean' || currentUserRole === 'Admin') ? {
+          secondaryButton={(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head') ? {
             label: "Add Schedule",
             onClick: () => setIsAddScheduleModalOpen(true)
           } : undefined}

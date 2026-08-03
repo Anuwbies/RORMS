@@ -19,7 +19,7 @@ Tracks secure, role-based invites for new members.
 - **Document ID**: Unique Token (e.g., auto-generated ID)
 - **Fields**:
   - `email`: string (The invited email address)
-  - `role`: string (Admin, Registrar, Dean, or Instructor)
+  - `role`: string (Admin, Registrar, Dean, Program Head, or Instructor)
   - `status`: string (`"pending"`, `"accepted"`, or `"expired"`) | **Default: "pending"**
   - `invitedBy`: string (UID of the user who sent the invite)
   - `createdAt`: timestamp (Date the invite was created) | **Default: serverTimestamp()**
@@ -33,6 +33,7 @@ Manages university departments, assigned deans, and resource metadata.
   - `name`: string (Full name of the department, e.g., "College of Information Technology")
   - `code`: string (Short department code, e.g., "CITE")
   - `dean`: string (UID of the assigned Dean)
+  - `programHead`: string (UID of the assigned Program Head)
   - `logo`: string (URL to the department logo)
   - `createdAt`: timestamp (Date the department was created) | **Default: serverTimestamp()**
   - `updatedAt`: timestamp (Date the department was last updated) | **Default: serverTimestamp()**
@@ -93,7 +94,7 @@ Tracks the association between users and departments.
 - **Fields**:
   - `userId`: string (Reference to the user's UID)
   - `departmentCode`: string (Reference to the department's unique code)
-  - `role`: string (User's role within this department: Admin, Registrar, Dean, or Instructor)
+  - `role`: string (User's role within this department: Admin, Registrar, Dean, Program Head, or Instructor)
   - `joinedAt`: timestamp | **Default: serverTimestamp()**
 
 ## `reservations`
