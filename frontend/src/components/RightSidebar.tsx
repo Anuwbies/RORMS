@@ -329,12 +329,7 @@ export const RightSidebar = memo(function RightSidebar({
           }}
         />
       ) : (
-        <div
-          className={joinClasses(
-            'flex h-full w-full items-center justify-center rounded-full bg-primary-600 font-black uppercase text-white',
-            isExpanded ? 'text-2xl' : 'text-[10px] tracking-tight',
-          )}
-        >
+        <div className="flex h-full w-full items-center justify-center rounded-full bg-gray-100 text-gray-400 border border-gray-200">
           <UserIcon className={isExpanded ? "h-12 w-12" : "h-5 w-5"} />
         </div>
       )}

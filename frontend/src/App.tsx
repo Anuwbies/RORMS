@@ -11,6 +11,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isEmailVerified, setIsEmailVerified] = useState(false)
   const [isSignupMode, setIsSignupMode] = useState(false)
+  const [justSignedUp, setJustSignedUp] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -78,6 +79,7 @@ function App() {
 
   const handleSignup = () => {
     setIsSignupMode(false)
+    setJustSignedUp(true)
     // onAuthStateChanged will handle the state update
   }
 
@@ -91,7 +93,7 @@ function App() {
 
   if (isAuthenticated) {
     if (!isEmailVerified) {
-      return <EmailVerificationPage onSignOut={() => setIsAuthenticated(false)} />
+      return <EmailVerificationPage onSignOut={() => setIsAuthenticated(false)} isNewSignup={justSignedUp} />
     }
     return <LeftSidebarController onSignOut={handleSignOut} />
   }

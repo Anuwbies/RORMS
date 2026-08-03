@@ -6,14 +6,15 @@ import { LogOutIcon, CheckIcon, BellIcon } from '../components/Icons'
 
 interface EmailVerificationPageProps {
   onSignOut: () => void
+  isNewSignup?: boolean
 }
 
-export default function EmailVerificationPage({ onSignOut }: EmailVerificationPageProps) {
+export default function EmailVerificationPage({ onSignOut, isNewSignup = false }: EmailVerificationPageProps) {
   const [isResending, setIsResending] = useState(false)
   const [resendStatus, setResendStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const [hasSentEmail, setHasSentEmail] = useState(true) // Changed to true by default as SignupPage sends it
+  const [hasSentEmail, setHasSentEmail] = useState(isNewSignup)
   const [lastSentWasResend, setLastSentWasResend] = useState(false)
-  const [countdown, setCountdown] = useState(60) // Initial 60s cooldown after signup auto-send
+  const [countdown, setCountdown] = useState(isNewSignup ? 60 : 0)
   const [userEmail, setUserEmail] = useState<string | null>(null)
 
   useEffect(() => {

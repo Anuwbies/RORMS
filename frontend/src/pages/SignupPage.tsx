@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { SyntheticEvent } from 'react'
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth'
-import { doc, getDoc, updateDoc, setDoc, serverTimestamp, collection, writeBatch } from 'firebase/firestore'
+import { doc, getDoc, updateDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs } from 'firebase/firestore'
 import { auth, db } from '../firebase'
 import InfoTabContent from '../components/InfoTabContent'
 
@@ -20,10 +20,12 @@ function SignUpPage({ onSignup }: SignUpPageProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<string | null>(null)
+  const [department, setDepartment] = useState('')
   const [inviteId, setInviteId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [isValidating, setIsValidating] = useState(true)
+  const [isReactivation, setIsReactivation] = useState(false)
 
   useEffect(() => {
     const validateInvitation = async () => {
@@ -62,6 +64,10 @@ function SignUpPage({ onSignup }: SignUpPageProps) {
 
         setEmail(data.email)
         setRole(data.role)
+        setDepartment(data.department || '')
+        if (data.isReactivation) {
+          setIsReactivation(true)
+        }
       } catch (err) {
         console.error('Error validating invitation:', err)
         setError('Failed to validate invitation. Please try again later.')
@@ -82,6 +88,50 @@ function SignUpPage({ onSignup }: SignUpPageProps) {
 
     setLoading(true)
     setError(null)
+    
+    if (isReactivation) {
+      try {
+        const userQuery = query(collection(db, 'users'), where('email', '==', email))
+        const userSnap = await getDocs(userQuery)
+        
+        if (userSnap.empty) {
+          setError('Could not find your original account.')
+          setLoading(false)
+          return
+        }
+        
+        const userId = userSnap.docs[0].id
+        
+        const batch = writeBatch(db)
+        batch.update(doc(db, 'users', userId), { 
+          isActive: true, 
+          updatedAt: serverTimestamp() 
+        })
+        
+        const membershipRef = doc(collection(db, 'memberships'))
+        batch.set(membershipRef, { 
+          userId, 
+          role, 
+          departmentCode: department, 
+          joinedAt: serverTimestamp() 
+        })
+        
+        batch.update(doc(db, 'invitations', inviteId), { 
+          status: 'accepted' 
+        })
+        
+        await batch.commit()
+        
+        // Let the user sign in manually now that they are reactivated
+        window.location.href = '/'
+      } catch (err) {
+        console.error('Reactivation error:', err)
+        setError('Failed to reactivate account. Please try again.')
+      } finally {
+        setLoading(false)
+      }
+      return
+    }
     
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
@@ -113,7 +163,7 @@ function SignUpPage({ onSignup }: SignUpPageProps) {
 
       batch.set(membershipRef, {
         userId: user.uid,
-        departmentCode: '', // Currently invitations don't store departmentCode
+        departmentCode: department,
         role: role,
         joinedAt: serverTimestamp()
       })
@@ -210,10 +260,10 @@ function SignUpPage({ onSignup }: SignUpPageProps) {
       <section className="flex min-h-screen items-center justify-center px-6 py-10 sm:px-10 lg:px-12">
         <div className="w-full max-w-md rounded-lg border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
           <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-color)]">
-            Sign Up
+            {isReactivation ? 'Reactivate' : 'Sign Up'}
           </p>
           <h2 className="mt-3 text-center text-3xl font-semibold text-black">
-            Create Account
+            {isReactivation ? 'Welcome Back' : 'Create Account'}
           </h2>
           {role && (
             <p className="mt-1 text-center text-sm font-bold text-[var(--brand-color)]">
@@ -221,7 +271,9 @@ function SignUpPage({ onSignup }: SignUpPageProps) {
             </p>
           )}
           <p className="mt-1 text-center text-sm leading-6 text-[var(--hint-color)]">
-            Join the team and start managing rooms.
+            {isReactivation 
+              ? 'Your account has been invited back.' 
+              : 'Join the team and start managing rooms.'}
           </p>
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
@@ -231,7 +283,26 @@ function SignUpPage({ onSignup }: SignUpPageProps) {
               </div>
             )}
             
-            {!error && (
+            {!error && isReactivation && (
+              <div className="space-y-6">
+                <div className="rounded-md bg-gray-50 p-4 border border-gray-200">
+                  <p className="text-sm text-gray-700 text-center">
+                    You are restoring your account for: <br />
+                    <span className="font-bold text-gray-900 mt-1 block">{email}</span>
+                  </p>
+                </div>
+                
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-md bg-[var(--brand-color)] px-4 py-3 text-sm font-semibold text-[var(--brand-surface)] transition hover:opacity-90 disabled:opacity-50 shadow-md"
+                >
+                  {loading ? 'Reactivating...' : 'Accept & Reactivate Account'}
+                </button>
+              </div>
+            )}
+            
+            {!error && !isReactivation && (
               <>
                 <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
                   <label className="block">

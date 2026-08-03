@@ -4,7 +4,8 @@ import {
   signInWithEmailAndPassword, 
   setPersistence, 
   browserLocalPersistence, 
-  browserSessionPersistence 
+  browserSessionPersistence,
+  signOut
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../firebase'
@@ -26,29 +27,29 @@ function SignInPage({ onSignIn }: SignInPageProps) {
   const [loading, setLoading] = useState(false)
 
   const checkAndCreateUserDoc = async (user: any) => {
-    try {
-      const userDocRef = doc(db, 'users', user.uid)
-      const userDocSnap = await getDoc(userDocRef)
-      const userData = userDocSnap.data() || {}
+    const userDocRef = doc(db, 'users', user.uid)
+    const userDocSnap = await getDoc(userDocRef)
+    const userData = userDocSnap.data() || {}
 
-      const updates: any = {
-        updatedAt: serverTimestamp(),
-        isVerify: user.emailVerified
-      }
-
-      // Ensure these fields exist, defaulting to empty strings if Auth doesn't have them
-      if (userData.fullName === undefined) updates.fullName = user.displayName || ''
-      if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
-      if (userData.email === undefined) updates.email = user.email || ''
-      
-      // Set initial defaults if document is new
-      if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
-      if (userData.isActive === undefined) updates.isActive = true
-
-      await setDoc(userDocRef, updates, { merge: true })
-    } catch (err) {
-      console.error('Error checking user doc during sign in:', err)
+    if (userDocSnap.exists() && userData.isActive === false) {
+      throw new Error('account-inactive')
     }
+
+    const updates: any = {
+      updatedAt: serverTimestamp(),
+      isVerify: user.emailVerified
+    }
+
+    // Ensure these fields exist, defaulting to empty strings if Auth doesn't have them
+    if (userData.fullName === undefined) updates.fullName = user.displayName || ''
+    if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
+    if (userData.email === undefined) updates.email = user.email || ''
+    
+    // Set initial defaults if document is new
+    if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
+    if (userData.isActive === undefined) updates.isActive = true
+
+    await setDoc(userDocRef, updates, { merge: true })
   }
 
   const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
@@ -66,6 +67,11 @@ function SignInPage({ onSignIn }: SignInPageProps) {
       onSignIn()
     } catch (err: any) {
       console.error('Sign in error:', err)
+      if (err.message === 'account-inactive') {
+        await signOut(auth)
+        setError('Your account has been deactivated. Please contact an administrator.')
+        return
+      }
       switch (err.code) {
         case 'auth/invalid-email':
           setError('Invalid email address.')

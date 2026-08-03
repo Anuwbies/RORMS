@@ -289,6 +289,7 @@ function MembersPage() {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<MemberRole>('Instructor')
+  const [inviteDepartment, setInviteDepartment] = useState('None')
   const [inviteError, setInviteError] = useState('')
   const [isInviting, setIsInviting] = useState(false)
 
@@ -329,7 +330,7 @@ function MembersPage() {
           return {
             id: mData.userId,
             membershipId: mDoc.id,
-            name: userData.fullName || 'No Name',
+            name: userData.fullName || '',
             email: userData.email || '',
             role: (mData.role as MemberRole) || 'Instructor',
             status: (userData.isActive !== false) ? 'Active' : 'Inactive',
@@ -450,8 +451,75 @@ function MembersPage() {
         const userSnapshot = await getDocs(userQuery)
         
         if (!userSnapshot.empty) {
-          results.exists.push(normalizedEmail)
-          continue
+          const userData = userSnapshot.docs[0].data()
+          if (userData.isActive !== false) {
+            results.exists.push(normalizedEmail)
+            continue
+          } else {
+            // User exists but is INACTIVE. Create a reactivation invite.
+            const expiresAt = new Date()
+            expiresAt.setDate(expiresAt.getDate() + 7)
+
+            const inviteRef = await addDoc(collection(db, 'invitations'), {
+              email: normalizedEmail,
+              role: inviteRole,
+              department: (inviteRole === 'Instructor' || inviteRole === 'Dean') ? (inviteDepartment === 'None' ? '' : inviteDepartment) : '',
+              status: 'pending',
+              isReactivation: true,
+              invitedBy: auth.currentUser?.uid || 'system',
+              createdAt: serverTimestamp(),
+              expiresAt: Timestamp.fromDate(expiresAt),
+            })
+
+            const signupLink = `${window.location.origin}/signup?token=${inviteRef.id}`
+            
+            await addDoc(collection(db, 'mail'), {
+              to: normalizedEmail,
+              message: {
+                subject: `Welcome back to RORMS - ${normalizedEmail}`,
+                html: `
+                  <div style="background-color: #f4f7f6; padding: 40px 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0;">
+                    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                      <!-- Brand Header -->
+                      <div style="background-color: #62853e; padding: 30px 20px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">RORMS</h1>
+                        <p style="color: #e0ead6; margin: 5px 0 0 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Registrar Office Room Management System</p>
+                      </div>
+                      <!-- Email Body -->
+                      <div style="padding: 40px 30px;">
+                        <h2 style="color: #333333; margin-top: 0; font-size: 22px;">Welcome Back!</h2>
+                        <p style="color: #555555; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
+                          Hello,<br><br>
+                          Your account has been officially invited back to the <strong>RORMS</strong> platform as a <strong>${inviteRole}</strong>.
+                        </p>
+                        <!-- CTA Button -->
+                        <div style="text-align: center; margin: 40px 0;">
+                          <a href="${signupLink}" style="background-color: #62853e; color: #ffffff; padding: 16px 36px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(98, 133, 62, 0.25);">
+                            Accept & Reactivate Account
+                          </a>
+                        </div>
+                        <!-- Security Callout -->
+                        <div style="background-color: #f9f9f9; border-left: 4px solid #e0e0e0; padding: 15px; margin-bottom: 30px;">
+                          <p style="margin: 0; color: #666666; font-size: 14px; line-height: 1.5;">
+                            <strong>Security Note:</strong> This reactivation link is strictly tied to your email address and will automatically expire in <strong>7 days</strong>.
+                          </p>
+                        </div>
+                      </div>
+                      <!-- Footer -->
+                      <div style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eeeeee;">
+                        <p style="color: #aaaaaa; font-size: 12px; margin: 0;">
+                          &copy; ${new Date().getFullYear()} PHINMA University of Pangasinan. All rights reserved.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                `,
+              },
+            })
+            
+            results.sent.push(normalizedEmail)
+            continue
+          }
         }
 
         // 2. Check for existing active invitations
@@ -480,6 +548,7 @@ function MembersPage() {
         const inviteRef = await addDoc(collection(db, 'invitations'), {
           email: normalizedEmail,
           role: inviteRole,
+          department: (inviteRole === 'Instructor' || inviteRole === 'Dean') ? (inviteDepartment === 'None' ? '' : inviteDepartment) : '',
           status: 'pending',
           invitedBy: auth.currentUser?.uid || 'system',
           createdAt: serverTimestamp(),
@@ -487,36 +556,56 @@ function MembersPage() {
         })
 
         // 4. Create the mail document to trigger the extension
-        const signupLink = `http://localhost:5173/signup?token=${inviteRef.id}`
+        const signupLink = `${window.location.origin}/signup?token=${inviteRef.id}`
         
         await addDoc(collection(db, 'mail'), {
           to: normalizedEmail,
           message: {
-            subject: 'Invitation to join RORMS',
+            subject: `Invitation to join RORMS - ${normalizedEmail}`,
             html: `
-              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                <div style="text-align: center; margin-bottom: 20px;">
-                  <h2 style="color: #62853e; margin: 0;">Welcome to RORMS</h2>
-                  <p style="color: #666;">University Room & Resource Management System</p>
-                </div>
-                <p>Hello,</p>
-                <p>You have been invited to join the <strong>RORMS</strong> system as a <strong>${inviteRole}</strong>.</p>
-                <p>Please click the button below to complete your account registration:</p>
-                <div style="text-align: center; margin: 35px 0;">
-                  <a href="${signupLink}" style="background-color: #62853e; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-                    Accept Invitation & Sign Up
-                  </a>
-                </div>
-                <p style="font-size: 13px; color: #888; line-height: 1.5;">
-                  <strong>Note:</strong> This invitation link is unique to your email and will expire in 7 days. If you did not expect this invitation, you can safely ignore this email.
-                </p>
-                <hr style="border: 0; border-top: 1px solid #eee; margin: 25px 0;" />
-                <p style="font-size: 12px; color: #b9b9b9; text-align: center;">
-                  If the button doesn't work, copy and paste this link into your browser:<br />
-                  <span style="color: #62853e;">${signupLink}</span>
-                </p>
-              </div>
-            `,
+                  <div style="background-color: #f4f7f6; padding: 40px 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0;">
+                    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                      <!-- Brand Header -->
+                      <div style="background-color: #62853e; padding: 30px 20px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">RORMS</h1>
+                        <p style="color: #e0ead6; margin: 5px 0 0 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Registrar Office Room Management System</p>
+                      </div>
+                      <!-- Email Body -->
+                      <div style="padding: 40px 30px;">
+                        <h2 style="color: #333333; margin-top: 0; font-size: 22px;">You've been invited!</h2>
+                        <p style="color: #555555; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
+                          Hello,<br><br>
+                          You have been officially invited to join the <strong>RORMS</strong> platform as a <strong>${inviteRole}</strong>. 
+                          Through this system, you will be able to seamlessly manage and track university resources.
+                        </p>
+                        <!-- CTA Button -->
+                        <div style="text-align: center; margin: 40px 0;">
+                          <a href="${signupLink}" style="background-color: #62853e; color: #ffffff; padding: 16px 36px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(98, 133, 62, 0.25);">
+                            Accept Invitation & Sign Up
+                          </a>
+                        </div>
+                        <!-- Security Callout -->
+                        <div style="background-color: #f9f9f9; border-left: 4px solid #e0e0e0; padding: 15px; margin-bottom: 30px;">
+                          <p style="margin: 0; color: #666666; font-size: 14px; line-height: 1.5;">
+                            <strong>Security Note:</strong> This invitation is strictly tied to your email address and will automatically expire in <strong>7 days</strong>.
+                          </p>
+                        </div>
+                        <hr style="border: none; border-top: 1px solid #eeeeee; margin: 30px 0;" />
+                        <!-- Fallback Link -->
+                        <p style="color: #999999; font-size: 13px; text-align: center; line-height: 1.5; margin: 0;">
+                          If the button above doesn't work, copy and paste the following URL into your browser:<br>
+                          <a href="${signupLink}" style="color: #62853e; word-break: break-all;">${signupLink}</a>
+                        </p>
+                      </div>
+                      <!-- Footer -->
+                      <div style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eeeeee;">
+                        <p style="color: #aaaaaa; font-size: 12px; margin: 0;">
+                          &copy; ${new Date().getFullYear()} PHINMA University of Pangasinan. All rights reserved.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                `,
           },
         })
         results.sent.push(normalizedEmail)
@@ -526,6 +615,7 @@ function MembersPage() {
         setIsInviteModalOpen(false)
         setInviteEmail('')
         setInviteRole('Instructor')
+        setInviteDepartment('None')
         setInviteError('')
       } else {
         const parts = []
@@ -550,7 +640,8 @@ function MembersPage() {
     setIsInviteModalOpen(true)
     setInviteEmail('')
     setInviteRole('Instructor')
-    setInviteError('')
+    setInviteDepartment('None')
+    if (inviteError) setInviteError('')
   }
 
   const openEditModal = (member: Member) => {
@@ -643,31 +734,54 @@ function MembersPage() {
     try {
       const batch = writeBatch(db)
 
-      // 1. If member is a dean, clear the department's dean field
-      if (memberToRemove.role === 'Dean' && memberToRemove.department) {
-        const dept = departments.find(d => d.code === memberToRemove.department)
-        if (dept && dept.dean === memberToRemove.id) {
-          batch.update(doc(db, 'departments', dept.id), {
-            dean: '',
-            updatedAt: serverTimestamp()
-          })
+      if (memberToRemove.status === 'Pending') {
+        // 1. Delete the invitation document
+        batch.delete(doc(db, 'invitations', memberToRemove.id))
+        
+        // 2. Delete the associated mail document (find by email)
+        const mailQuery = query(collection(db, 'mail'), where('to', '==', memberToRemove.email))
+        const mailSnapshot = await getDocs(mailQuery)
+        mailSnapshot.forEach((mDoc) => {
+          batch.delete(doc(db, 'mail', mDoc.id))
+        })
+      } else {
+        // 1. If member is a dean, clear the department's dean field
+        if (memberToRemove.role === 'Dean' && memberToRemove.department) {
+          const dept = departments.find(d => d.code === memberToRemove.department)
+          if (dept && dept.dean === memberToRemove.id) {
+            batch.update(doc(db, 'departments', dept.id), {
+              dean: '',
+              updatedAt: serverTimestamp()
+            })
+          }
         }
+
+        // 2. Soft delete the user document (do not completely delete from Firestore)
+        batch.update(doc(db, 'users', memberToRemove.id), {
+          isActive: false,
+          updatedAt: serverTimestamp()
+        })
+
+        // 3. Delete all membership documents for this user
+        const membershipsQuery = query(collection(db, 'memberships'), where('userId', '==', memberToRemove.id))
+        const membershipsSnapshot = await getDocs(membershipsQuery)
+        membershipsSnapshot.forEach((mDoc) => {
+          batch.delete(doc(db, 'memberships', mDoc.id))
+        })
+
+        // 4. Clean up any lingering mail and invitations
+        const mailQuery = query(collection(db, 'mail'), where('to', '==', memberToRemove.email))
+        const mailSnapshot = await getDocs(mailQuery)
+        mailSnapshot.forEach((mDoc) => {
+          batch.delete(doc(db, 'mail', mDoc.id))
+        })
+        
+        const inviteQuery = query(collection(db, 'invitations'), where('email', '==', memberToRemove.email))
+        const inviteSnapshot = await getDocs(inviteQuery)
+        inviteSnapshot.forEach((iDoc) => {
+          batch.delete(doc(db, 'invitations', iDoc.id))
+        })
       }
-
-      // 2. Delete the user document
-      batch.delete(doc(db, 'users', memberToRemove.id))
-
-      // 3. Delete all membership documents for this user
-      const membershipsQuery = query(collection(db, 'memberships'), where('userId', '==', memberToRemove.id))
-      const membershipsSnapshot = await getDocs(membershipsQuery)
-      membershipsSnapshot.forEach((mDoc) => {
-        batch.delete(doc(db, 'memberships', mDoc.id))
-      })
-
-      // Note: Deleting the user's Auth account requires Firebase Admin SDK (Cloud Functions).
-      // Since this is a client-side implementation, we are performing the Firestore clean-up.
-      // If a Cloud Function is configured to trigger on 'users' document deletion, 
-      // it can handle the Auth account removal.
 
       await batch.commit()
       setMemberToRemove(null)
@@ -796,8 +910,10 @@ function MembersPage() {
                   )}
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-gray-900">{memberToRemove.name || 'No Name'}</p>
-                  <p className="text-xs font-medium text-gray-500">{memberToRemove.email}</p>
+                  {memberToRemove.name && <p className="text-sm font-bold text-gray-900">{memberToRemove.name}</p>}
+                  <p className={memberToRemove.name ? "text-xs font-medium text-gray-500" : "text-sm font-bold text-gray-900"}>
+                    {memberToRemove.email}
+                  </p>
                 </div>
               </div>
 
@@ -875,7 +991,7 @@ function MembersPage() {
             </div>
             
             <form onSubmit={handleInvite} className="p-6 space-y-5" noValidate>
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-4">
+              <div className="flex flex-col gap-5">
                 <div className="relative flex-1">
                   <label htmlFor="invite-email" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                     Email Address
@@ -905,17 +1021,34 @@ function MembersPage() {
                   )}
                 </div>
 
-                <div className="w-full sm:w-36">
-                  <label htmlFor="invite-role" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    Assign Role
-                  </label>
-                  <SingleSelectDropdown
-                    options={['Admin', 'Registrar', 'Dean', 'Instructor']}
-                    value={inviteRole}
-                    onChange={setInviteRole}
-                    onToggle={handleDropdownToggle}
-                    className="w-full"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="w-full">
+                    <label htmlFor="invite-role" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                      Assign Role
+                    </label>
+                    <SingleSelectDropdown
+                      options={['Admin', 'Registrar', 'Dean', 'Instructor']}
+                      value={inviteRole}
+                      onChange={setInviteRole}
+                      onToggle={handleDropdownToggle}
+                      className="w-full"
+                    />
+                  </div>
+                  
+                  <div className="w-full">
+                    <label htmlFor="invite-department" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                      Department
+                    </label>
+                    <div className={(inviteRole === 'Admin' || inviteRole === 'Registrar') ? 'opacity-50 pointer-events-none' : ''}>
+                      <SingleSelectDropdown
+                        options={['None', ...departments.map(d => d.code)]}
+                        value={inviteDepartment}
+                        onChange={setInviteDepartment}
+                        onToggle={handleDropdownToggle}
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
 
