@@ -124,8 +124,8 @@ function MyDepartmentPage() {
     subjectCode: '',
     subjectTitle: '',
     classSection: '',
-    faculty: 'Lec',
-    faculty2: '',
+    format: 'Lec',
+    format2: '',
     startTime: '',
     startTime2: '',
     endTime: '',
@@ -321,7 +321,7 @@ function MyDepartmentPage() {
               type: data.type || 'normal',
               subjectCode: data.subjectCode || '',
               subjectTitle: data.subjectTitle || '',
-              faculty: data.faculty || 'Lec',
+              format: data.format || 'Lec',
               startTime: data.startTime || '',
               endTime: data.endTime || '',
               buildingId: data.buildingId || '',
@@ -351,7 +351,7 @@ function MyDepartmentPage() {
             const parent = parentMap.get(child.parentId);
             if (parent) {
               parent.instructorId2 = child.instructorId === parent.instructorId ? '' : child.instructorId;
-              parent.faculty2 = child.faculty === parent.faculty ? '' : child.faculty;
+              parent.format2 = child.format === parent.format ? '' : child.format;
               parent.startTime2 = child.startTime === parent.startTime ? '' : child.startTime;
               parent.endTime2 = child.endTime === parent.endTime ? '' : child.endTime;
               
@@ -504,6 +504,9 @@ function MyDepartmentPage() {
   }
 
   const handleScheduleChange = (index: number, field: string, value: any) => {
+    if (typeof value === 'string' && (field === 'subjectCode' || field === 'classSection')) {
+      value = value.toUpperCase();
+    }
     if (field === 'type') {
       const currentType = schedules[index].type
       if ((value === 'parallel' && currentType !== 'parallel') ||
@@ -521,9 +524,9 @@ function MyDepartmentPage() {
 
       if (field === 'type') {
         if (value === 'open lab') {
-          updated[index].faculty = 'Flexible'
+          updated[index].format = 'Flexible'
         } else if (current.type === 'open lab' && value !== 'open lab') {
-          updated[index].faculty = 'Lec'
+          updated[index].format = 'Lec'
         }
       }
 
@@ -531,7 +534,7 @@ function MyDepartmentPage() {
         const fieldsToCopy = [
           'instructorId', 'instructorId2', 
           'subjectCode', 'subjectTitle', 
-          'faculty', 'faculty2', 
+          'format', 'format2', 
           'startTime', 'startTime2', 
           'endTime', 'endTime2', 
           'days', 
@@ -608,7 +611,7 @@ function MyDepartmentPage() {
       if (newType === 'parallel') {
         updated[index] = { ...current, type: 'parallel' };
         if (current.type === 'open lab') {
-          updated[index].faculty = 'Lec';
+          updated[index].format = 'Lec';
         }
         const parentId = current.id || generateId();
         if (!current.id) updated[index].id = parentId;
@@ -621,8 +624,8 @@ function MyDepartmentPage() {
           instructorId2: (current as any).instructorId2 || '',
           subjectCode: current.subjectCode,
           subjectTitle: current.subjectTitle,
-          faculty: updated[index].faculty,
-          faculty2: (updated[index] as any).faculty2 || '',
+          format: updated[index].format,
+          format2: (updated[index] as any).format2 || '',
           startTime: current.startTime,
           startTime2: (current as any).startTime2 || '',
           endTime: current.endTime,
@@ -635,9 +638,9 @@ function MyDepartmentPage() {
       } else {
         updated[index] = { ...current, type: newType };
         if (newType === 'open lab') {
-          updated[index].faculty = 'Flexible';
+          updated[index].format = 'Flexible';
         } else if (current.type === 'open lab') {
-          updated[index].faculty = 'Lec';
+          updated[index].format = 'Lec';
         }
         return updated.filter(s => s.parentId !== current.id);
       }
@@ -700,7 +703,7 @@ function MyDepartmentPage() {
         const hasSecondDay = schedule.days.length === 2;
         const hasExplicitSecondSessionFields = !!(schedule as any).startTime2 || 
           !!(schedule as any).endTime2 || 
-          !!(schedule as any).faculty2 || 
+          !!(schedule as any).format2 || 
           !!(schedule as any).instructorId2 || 
           !!(schedule as any).buildingId2 || 
           !!(schedule as any).roomId2;
@@ -714,7 +717,7 @@ function MyDepartmentPage() {
           type: schedule.type || null,
           subjectCode: schedule.subjectCode || null,
           subjectTitle: schedule.subjectTitle || null,
-          faculty: schedule.faculty || null,
+          format: schedule.format || null,
           startTime: schedule.startTime || null,
           endTime: schedule.endTime || null,
           days: schedule.days.length > 0 ? (hasSecondDay ? [schedule.days[0]] : schedule.days) : null,
@@ -745,7 +748,7 @@ function MyDepartmentPage() {
             type: schedule.type || null,
             subjectCode: schedule.subjectCode || null,
             subjectTitle: schedule.subjectTitle || null,
-            faculty: (schedule as any).faculty2 || schedule.faculty || null,
+            format: (schedule as any).format2 || schedule.format || null,
             startTime: (schedule as any).startTime2 || schedule.startTime || null,
             endTime: (schedule as any).endTime2 || schedule.endTime || null,
             days: hasSecondDay ? [schedule.days[1]] : (schedule.days.length > 0 ? schedule.days : null),
@@ -887,7 +890,7 @@ function MyDepartmentPage() {
               <p className="mt-1 text-sm text-white/80">{selectedMember.role} • {selectedMember.email}</p>
             </div>
             
-            <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50/50 overscroll-none [scrollbar-gutter:stable] flex flex-col [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
+            <div className="flex-1 overflow-auto bg-gray-50/50 overscroll-none flex flex-col [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
               {isMemberScheduleLoading ? (
                 <div className="flex-1 flex items-center justify-center text-center text-gray-500">Loading schedule...</div>
               ) : memberSchedules.length === 0 ? (
@@ -903,16 +906,16 @@ function MyDepartmentPage() {
                   </div>
                 </div>
               ) : (
-                  <table className="w-full text-left text-sm whitespace-nowrap min-w-max border-separate border-spacing-0">
-                    <thead className="bg-gray-50 sticky top-0 z-20 text-gray-700 font-bold text-base shadow-sm">
-                      <tr>
-                        <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-32">Time</th>
+                  <table className="grid w-full text-left text-sm whitespace-nowrap min-w-max" style={{ gridTemplateColumns: '8rem repeat(7, minmax(180px, 1fr))' }}>
+                    <thead className="contents text-gray-700 font-bold text-base">
+                      <tr className="contents">
+                        <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 sticky top-0 z-20">Time</th>
                         {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-                          <th key={day} className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[180px] last:border-r-0">{day}</th>
+                          <th key={day} className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 last:border-r-0 sticky top-0 z-20">{day}</th>
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="bg-white">
+                    <tbody className="contents">
                       {(() => {
                         const timeSlotSet = new Set<string>();
                         memberSchedules.forEach(schedule => {
@@ -966,11 +969,10 @@ function MyDepartmentPage() {
                         return timeSlots.map(slot => {
                           const [start, end] = slot.split('-');
                           return (
-                            <tr key={slot} className="transition hover:bg-gray-50/50">
-                              <td className="px-3 py-3 text-sm font-bold text-gray-700 border-b border-r border-gray-300 align-top whitespace-nowrap bg-gray-50/30">
+                            <tr key={slot} className="contents group">
+                              <td className="px-3 py-3 text-sm font-bold text-gray-700 border-b border-r border-gray-300 align-top whitespace-nowrap bg-gray-50/30 group-hover:bg-gray-50/50 transition-colors">
                                 <div className="flex flex-col items-center justify-center h-full gap-1 pt-2">
                                   <span>{formatTime(start)}</span>
-                                  <span className="text-gray-400 font-normal">to</span>
                                   <span>{formatTime(end)}</span>
                                 </div>
                               </td>
@@ -1003,20 +1005,24 @@ function MyDepartmentPage() {
                                 });
 
                                 return (
-                                  <td key={day} className="px-2 py-2 border-b border-r border-gray-300 last:border-r-0 align-top">
+                                  <td key={day} className="px-2 py-2 border-b border-r border-gray-300 last:border-r-0 align-top bg-white group-hover:bg-gray-50/50 transition-colors">
                                     <div className="flex flex-col gap-2">
                                       {grouped.map((group, idx) => (
                                         group.parent.type === 'parallel' ? (
-                                          <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm">
-                                            <span className="font-bold text-gray-900">{group.parent.subjectCode || 'TBA'}</span>
-                                            <span className="text-xs font-bold text-gray-600 uppercase tracking-wider mt-0.5">
-                                              {group.parent.type || 'N/A'}
-                                            </span>
-                                            <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2">
+                                          <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm transition-all">
+                                            <div className="flex flex-col focus:outline-none">
+                                              <div className="flex flex-row items-center gap-1.5">
+                                                <span className="font-bold text-gray-900 uppercase">{group.parent.subjectCode || 'TBA'}</span>
+                                                <span className="font-bold text-gray-600 uppercase tracking-wider">
+                                                  {group.parent.format || 'N/A'}
+                                                </span>
+                                              </div>
+                                            </div>
+                                            <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 cursor-default" onClick={e => e.stopPropagation()}>
                                               {[group.parent, ...group.children].map((item, iIdx) => (
                                                 <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30">
                                                   <div className="flex flex-col gap-0.5 text-gray-500">
-                                                    <span>Sec: <span className="font-medium text-gray-700">{item.classSection || 'TBA'}</span></span>
+                                                    <span>Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
                                                     <span className="text-[var(--brand-color)] font-medium truncate" title={item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}>
                                                       {item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}
                                                     </span>
@@ -1027,12 +1033,14 @@ function MyDepartmentPage() {
                                           </div>
                                         ) : group.children.length > 0 ? (
                                           <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm">
-                                            <span className="font-bold text-gray-900">{group.parent.subjectCode || 'TBA'}</span>
-                                            <span className="text-xs font-bold text-gray-600 uppercase tracking-wider mt-0.5">
-                                              {group.parent.type || 'N/A'}
-                                            </span>
+                                            <div className="flex flex-row items-center gap-1.5">
+                                              <span className="font-bold text-gray-900 uppercase">{group.parent.subjectCode || 'TBA'}</span>
+                                              <span className="font-bold text-gray-600 uppercase tracking-wider">
+                                                {group.parent.format || 'N/A'}
+                                              </span>
+                                            </div>
                                             <div className="mt-1 flex flex-col gap-0.5 text-gray-500">
-                                              <span>Sec: <span className="font-medium text-gray-700">{group.parent.classSection || 'TBA'}</span></span>
+                                              <span>Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
                                               <span className="text-[var(--brand-color)] font-medium truncate" title={group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}>
                                                 {group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}
                                               </span>
@@ -1040,9 +1048,9 @@ function MyDepartmentPage() {
                                             <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2">
                                               {group.children.map((child, cIdx) => (
                                                 <div key={cIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30">
-                                                  <span className="font-bold text-gray-900">{child.subjectCode || 'TBA'}</span>
+                                                  <span className="font-bold text-gray-900 uppercase">{child.subjectCode || 'TBA'}</span>
                                                   <div className="mt-0.5 flex flex-col gap-0.5 text-gray-500">
-                                                    <span>Sec: <span className="font-medium text-gray-700">{child.classSection || 'TBA'}</span></span>
+                                                    <span>Sec: <span className="font-medium text-gray-700 uppercase">{child.classSection || 'TBA'}</span></span>
                                                     <span className="text-[var(--brand-color)] font-medium truncate" title={child.roomId ? rooms.find(r => r.id === child.roomId)?.code || 'TBA' : 'TBA'}>
                                                       {child.roomId ? rooms.find(r => r.id === child.roomId)?.code || 'TBA' : 'TBA'}
                                                     </span>
@@ -1053,12 +1061,14 @@ function MyDepartmentPage() {
                                           </div>
                                         ) : (
                                           <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm">
-                                            <span className="font-bold text-gray-900">{group.parent.subjectCode || 'TBA'}</span>
-                                            <span className="text-xs font-bold text-gray-600 uppercase tracking-wider mt-0.5">
-                                              {group.parent.type || 'N/A'}
-                                            </span>
+                                            <div className="flex flex-row items-center gap-1.5">
+                                              <span className="font-bold text-gray-900 uppercase">{group.parent.subjectCode || 'TBA'}</span>
+                                              <span className="font-bold text-gray-600 uppercase tracking-wider">
+                                                {group.parent.format || 'N/A'}
+                                              </span>
+                                            </div>
                                             <div className="mt-1.5 flex flex-col gap-0.5 text-gray-500">
-                                              <span>Sec: <span className="font-medium text-gray-700">{group.parent.classSection || 'TBA'}</span></span>
+                                              <span>Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
                                               <span className="text-[var(--brand-color)] font-medium truncate" title={group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}>
                                                 {group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}
                                               </span>
@@ -1143,7 +1153,7 @@ function MyDepartmentPage() {
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[90px]">Code</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[240px]">Title</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[100px]">Section</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[120px]">Faculty</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[120px]">Format</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[260px]">Instructor</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[240px]">Time</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[140px]">Days</th>
@@ -1306,7 +1316,7 @@ function MyDepartmentPage() {
                           value={schedule.subjectCode}
                           onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
                           onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
                       </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
@@ -1326,14 +1336,14 @@ function MyDepartmentPage() {
                           placeholder="BSIT 3-1"
                           value={schedule.classSection}
                           onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
-                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[44px] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
                       </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
-                            {schedule.faculty || '----'}
-                            {(schedule as any).faculty2 ? ` / ${(schedule as any).faculty2}` : ''}
+                            {schedule.format || '----'}
+                            {(schedule as any).format2 ? ` / ${(schedule as any).format2}` : ''}
                           </div>
                         ) : schedule.type === 'open lab' ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
@@ -1341,10 +1351,10 @@ function MyDepartmentPage() {
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.faculty || (schedule as any).faculty2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[44px] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.format || (schedule as any).format2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
-                                {schedule.faculty || 'Select'}
-                                {(schedule as any).faculty2 ? ` / ${(schedule as any).faculty2}` : ''}
+                                {schedule.format || 'Select'}
+                                {(schedule as any).format2 ? ` / ${(schedule as any).format2}` : ''}
                               </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
@@ -1352,10 +1362,10 @@ function MyDepartmentPage() {
                               <div className="flex flex-col gap-1.5">
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
                                 <InnerDropdown
-                                  value={schedule.faculty || ''}
+                                  value={schedule.format || ''}
                                   onChange={(val) => {
-                                    handleScheduleChange(index, 'faculty', val);
-                                    if (!val) handleScheduleChange(index, 'faculty2', '');
+                                    handleScheduleChange(index, 'format', val);
+                                    if (!val) handleScheduleChange(index, 'format2', '');
                                   }}
                                   options={[{value: 'Lec', label: 'Lec'}, {value: 'Lab', label: 'Lab'}]}
                                 />
@@ -1363,13 +1373,13 @@ function MyDepartmentPage() {
                               <div className="flex flex-col gap-1.5">
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
                                 <InnerDropdown
-                                  value={(schedule as any).faculty2 || ''}
-                                  disabled={!schedule.faculty}
-                                  onChange={(val) => handleScheduleChange(index, 'faculty2', val)}
+                                  value={(schedule as any).format2 || ''}
+                                  disabled={!schedule.format}
+                                  onChange={(val) => handleScheduleChange(index, 'format2', val)}
                                   options={(() => {
                                     const opts = [];
-                                    if (schedule.faculty !== 'Lec') opts.push({value: 'Lec', label: 'Lec'});
-                                    if (schedule.faculty !== 'Lab') opts.push({value: 'Lab', label: 'Lab'});
+                                    if (schedule.format !== 'Lec') opts.push({value: 'Lec', label: 'Lec'});
+                                    if (schedule.format !== 'Lab') opts.push({value: 'Lab', label: 'Lab'});
                                     return opts;
                                   })()}
                                 />
