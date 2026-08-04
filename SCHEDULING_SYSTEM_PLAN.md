@@ -18,7 +18,7 @@ The system will facilitate a two-step scheduling process, separating department-
 
 ## 2. Data Model (`schedule` collection)
 
-We will utilize the existing `schedule` collection in Firestore. To fully support this workflow, we will need to add a `status` field to the documents in this collection.
+We will utilize the existing `schedule` collection in Firestore. To fully support this workflow, we will need to add a `status` field to the documents in this collection, as well as a way to track the academic term.
 
 **Relevant fields in the `schedule` collection:**
 * `subjectCode`, `subjectTitle`
@@ -27,6 +27,7 @@ We will utilize the existing `schedule` collection in Firestore. To fully suppor
 * `days`, `startTime`, `endTime`
 * `buildingId`, `roomId` *(Set by Dean as a preference, finalized by Registrar)*
 * **[NEW FIELD]** `status`: string (`"Draft"`, `"Proposed"`, `"Conflict"`, `"Approved"`) - Used to track the lifecycle of the schedule from the Dean's desk to the Registrar's final plot.
+* **[NEW FIELD]** `academicTerm`: string (e.g., `"1st Sem 2024-2025"`) - Used to filter schedules so different semesters don't overlap.
 
 ---
 

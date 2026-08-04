@@ -2008,26 +2008,26 @@ function BuildingsRoomsPage() {
                               <div className="h-1 flex-1 bg-gray-200" />
                             </div>
 
-                            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,500px),1fr))]">
+                            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))]">
                               {roomsByFloor[floor]
                                 ?.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
                                 .map((room) => (
                                 <div
                                   key={room.id}
                                   onClick={() => handleOpenRoomInfoModal(room)}
-                                  className="flex overflow-hidden rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
+                                  className="flex rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
                                 >
                                   <img
                                     src={room.image}
                                     alt={room.name}
-                                    className="aspect-square w-32 h-32 shrink-0 object-cover grayscale-[0.2] sm:w-40 sm:h-40"
+                                    className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-l-md sm:w-32 sm:h-32"
                                     onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                                   />
 
-                                  <div className="flex flex-1 flex-col justify-between p-4">
+                                  <div className="flex flex-1 flex-col justify-between p-3.5 min-w-0">
                                     <div>
                                       <div className="flex items-start justify-between gap-2">
-                                        <h5 className="text-lg font-bold leading-tight text-gray-900">
+                                        <h5 className="text-base font-bold leading-tight text-gray-900 truncate">
                                           {room.name}
                                         </h5>
                                         <div className="relative">
@@ -2073,27 +2073,22 @@ function BuildingsRoomsPage() {
                                           )}
                                         </div>
                                       </div>
-                                      <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                      <p className="-mt-1 text-xs font-bold uppercase tracking-wider text-gray-400">
                                         {room.type}
                                       </p>
                                     </div>
 
-                                    <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
-                                      <div className="flex items-center gap-3">
-                                        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-white border border-gray-200 shrink-0">
-                                          <UserIcon className="h-6 w-6 text-gray-500" />
+                                    <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200 shrink-0">
+                                          <UserIcon className="h-4 w-4 text-gray-500" />
                                         </div>
-                                        <div className="flex flex-col">
-                                          <span className="text-[0.625rem] font-bold uppercase tracking-widest text-gray-400 leading-tight">
-                                            Capacity
-                                          </span>
-                                          <span className="text-sm font-bold text-gray-700 leading-none mt-0.5">
-                                            {room.capacity} people
-                                          </span>
-                                        </div>
+                                        <span className="text-sm font-bold text-gray-700">
+                                          {room.capacity} people
+                                        </span>
                                       </div>
                                       <span
-                                        className={`rounded-full px-2.5 py-1 text-[0.625rem] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
+                                        className={`rounded-full px-2 py-0.5 text-[0.5625rem] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
                                       >
                                         {room.status}
                                       </span>

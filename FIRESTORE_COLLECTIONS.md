@@ -137,5 +137,18 @@ Manages schedule allocations for subjects, rooms, and instructors.
   - `groupId`: string (Unique ID used to group parallel schedules together)
   - `parentId`: string (Reference to the main schedule's locally generated `id` if this is a child row)
   - `orderIndex`: number (Visual top-to-bottom sorting index)
+  - `status`: string (`"Draft"`, `"Proposed"`, `"Conflict"`, `"Approved"`) | **Default: "Draft"**
+  - `academicTerm`: string (e.g., `"1st Sem 2024-2025"`)
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
+
+## `academicTerms`
+Tracks current and historical academic semesters, controlling system behavior based on phase.
+
+- **Document ID**: Auto-generated ID
+- **Fields**:
+  - `academicYear`: string (e.g., `"2024-2025"`)
+  - `semester`: string (e.g., `"1st Semester"`, `"2nd Semester"`)
+  - `phase`: string (`"Drafting"`, `"Plotting"`, `"Revision"`, `"Final"`)
+  - `isCurrent`: boolean (Only one document should be true at a time)
+  - `createdAt`: timestamp | **Default: serverTimestamp()**

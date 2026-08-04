@@ -9,6 +9,7 @@ import { IconButton, joinClasses } from './IconButton'
 
 export type DashboardSection =
   | 'dashboard'
+  | 'academicCalendar'
   | 'buildingsRooms'
   | 'members'
   | 'departments'

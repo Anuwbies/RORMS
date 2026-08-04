@@ -3,7 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './firebase'
 import SignInPage from './pages/SignInPage'
-import SignUpPage from './pages/SignUpPage'
+import SignUpPage from './pages/SignupPage'
 import LeftSidebarController from './pages/LeftSidebarController'
 import EmailVerificationPage from './pages/EmailVerificationPage'
 

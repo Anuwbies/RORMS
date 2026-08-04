@@ -22,6 +22,7 @@ import MySchedulePage from './tabs/MySchedulePage'
 import ManageReservationsPage from './tabs/ManageReservationsPage'
 import ReserveRoomPage from './tabs/ReserveRoomPage'
 import MyReservationsPage from './tabs/MyReservationsPage'
+import AcademicCalendarPage from './tabs/AcademicCalendarPage'
 
 const navItems: NavItem[] = [
   {
@@ -44,6 +45,13 @@ const navItems: NavItem[] = [
     eyebrow: 'Reports',
     description: 'Generate and view university-wide utilization reports.',
     icon: ClipboardIcon,
+  },
+  {
+    id: 'academicCalendar',
+    label: 'Academic Calendar',
+    eyebrow: 'System Settings',
+    description: 'Manage academic year and scheduling phases.',
+    icon: CalendarIcon,
   },
   {
     id: 'manageReservations',
@@ -107,6 +115,8 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
     switch (activeSection) {
       case 'dashboard':
         return <DashboardPage />
+      case 'academicCalendar':
+        return <AcademicCalendarPage />
       case 'mySchedule':
         return <MySchedulePage />
       case 'reserveRoom':
