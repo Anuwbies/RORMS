@@ -1244,13 +1244,14 @@ function MyDepartmentPage() {
                     const isChild = !!schedule.parentId;
                     const isParallelChild = isChild;
                     
-                    const missingTime2 = !!(schedule as any).instructorId2 && !(schedule as any).startTime2;
+                    const isParallelSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && !!(schedule as any).instructorId2;
                     const missingRoom1 = !!schedule.buildingId && !schedule.roomId;
-                    const missingRoom2 = !!(schedule as any).buildingId2 && !(schedule as any).roomId2;
+                    const missingRoom2 = (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && !!schedule.buildingId && !(schedule as any).roomId2);
                     const missingFormat2 = !!schedule.format && !(schedule as any).format2;
-                    const missingDay2 = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2;
+                    const missingDay2 = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2 && !isParallelSameTime;
                     const hasSecondSession = !!(schedule as any).instructorId2 || !!(schedule as any).roomId2 || !!(schedule as any).buildingId2 || !!(schedule as any).format2 || !!(schedule as any).startTime2;
                     const isSecondSessionUnlocked = !!(schedule as any).format2 || schedule.type === 'open lab';
+                    const missingTime2 = (!!(schedule as any).instructorId2 || isSecondSessionUnlocked) && !!schedule.startTime && !(schedule as any).startTime2;
                     
                     let childAvailableRooms = rooms;
                     if (schedule.buildingId) {
@@ -1533,7 +1534,7 @@ function MyDepartmentPage() {
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.startTime || schedule.endTime || (schedule as any).startTime2 || (schedule as any).endTime2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {(() => {
-                                  const time1raw = schedule.startTime ? `${schedule.startTime} - ${schedule.endTime}` : ((schedule as any).instructorId2 ? <span className="text-red-500 font-bold" title="Missing 1st Session Time">?</span> : 'Select');
+                                  const time1raw = schedule.startTime ? `${schedule.startTime} - ${schedule.endTime}` : 'Select';
                                   
                                   if ((schedule as any).startTime2) {
                                     if (schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {

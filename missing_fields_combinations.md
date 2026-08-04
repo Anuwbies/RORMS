@@ -20,7 +20,7 @@ The following combinations will trigger visual validation indicators (such as a 
   - A red `?` appears next to the time in the closed Time cell (e.g., `?` instead of "Select").
 
 ## 5. Missing 2nd Session Time
-- **Condition:** A **2nd Session Instructor** is selected, but a **2nd Session Time** is NOT selected.
+- **Condition:** A **1st Session Time** is selected, and either a **2nd Session Format** or **2nd Session Instructor** is present, but a **2nd Session Time** is NOT selected.
 - **Visual Indicator:** 
   - A red `?` appears next to the time in the closed Time cell (e.g., `09:00 AM - 10:30 AM / ?`).
   - The "2nd Session" label turns red when the Time dropdown is expanded.
@@ -32,7 +32,7 @@ The following combinations will trigger visual validation indicators (such as a 
   - The "1st Session" label turns red when the Day dropdown is expanded.
 
 ## 7. Missing 2nd Session Day
-- **Condition:** The 1st and 2nd sessions have the SAME time, but only 1 day is selected.
+- **Condition:** The 1st and 2nd sessions have the SAME time and are taught by the SAME instructor, but only 1 day is selected.
 - **Visual Indicator:** 
   - A red `?` appears in the closed Day cell (e.g., `Mon / ?`).
   - The "2nd Session" label turns red when the Day dropdown is expanded.
@@ -44,7 +44,7 @@ The following combinations will trigger visual validation indicators (such as a 
   - The "1st Session" label turns red when the Room dropdown is expanded.
 
 ## 9. Missing 2nd Session Room
-- **Condition:** A **2nd Session Building** is selected, but a **2nd Session Room** is NOT selected.
+- **Condition:** A **2nd Session Building** is selected, but a **2nd Session Room** is NOT selected. OR, the 1st and 2nd sessions have the SAME time but DIFFERENT instructors (parallel sessions), and a 2nd Session Room is NOT selected.
 - **Visual Indicator:**
   - A red `?` appears in place of the 2nd session room code in the closed Room cell (e.g., `ITB 101 / ?`).
   - The "2nd Session" label turns red when the Room dropdown is expanded.
