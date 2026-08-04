@@ -140,6 +140,10 @@ function MyDepartmentPage() {
   const [rooms, setRooms] = useState<{id: string, code: string, name: string, buildingId: string}[]>([])
   const [buildings, setBuildings] = useState<{id: string, name: string}[]>([])
   const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false)
+  const [isDeleteConfirmModalOpen, setIsDeleteConfirmModalOpen] = useState(false)
+  const [isSaveConfirmModalOpen, setIsSaveConfirmModalOpen] = useState(false)
+  const [isCancelConfirmModalOpen, setIsCancelConfirmModalOpen] = useState(false)
+  const [originalSchedulesSnapshot, setOriginalSchedulesSnapshot] = useState<string>('')
   const [pendingTypeChange, setPendingTypeChange] = useState<{index: number, newType: string} | null>(null)
   
   const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 7)
@@ -399,8 +403,10 @@ function MyDepartmentPage() {
           fetched.sort((a, b) => (a.orderIndex || 0) - (b.orderIndex || 0))
 
           setSchedules(fetched)
+          setOriginalSchedulesSnapshot(JSON.stringify(fetched))
         } else {
           setSchedules([])
+          setOriginalSchedulesSnapshot(JSON.stringify([]))
         }
       }
       fetchSchedules()
@@ -409,6 +415,7 @@ function MyDepartmentPage() {
       setDeletedScheduleIds([])
       setIsRemoveMode(false)
       setSelectedScheduleIds([])
+      setOriginalSchedulesSnapshot('')
     }
   }, [isAddScheduleModalOpen, departmentInfo])
 
@@ -1228,7 +1235,7 @@ function MyDepartmentPage() {
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Code</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Title</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.25rem]">Section</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[16.25rem]">Instructor</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[16.25rem] max-w-[16.25rem]">Instructor</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Time</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[8.5rem]">Days</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[13.125rem]">Building</th>
@@ -1482,14 +1489,16 @@ function MyDepartmentPage() {
                           className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500'} ${!!schedule.instructorId && !schedule.classSection ? 'placeholder:text-red-500 placeholder:font-bold' : 'placeholder:text-gray-400'}`}
                         />
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
+                      <td className={`p-0 border-b border-r border-gray-300 relative align-middle max-w-[16.25rem] ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
-                          <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
-                            {members.find(m => m.membershipId === schedule.instructorId)?.name || '----'}
+                          <div className="px-3 py-3 text-sm text-gray-900 font-medium cursor-default flex items-center overflow-hidden">
+                            <span className="truncate min-w-0">
+                              {members.find(m => m.membershipId === schedule.instructorId)?.name || '----'}
+                            </span>
                             {(schedule as any).instructorId2 ? (
                               <>
-                                {' / '}
-                                <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                <span className="shrink-0 whitespace-pre">{'/ '}</span>
+                                <span className={`truncate min-w-0 ${!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}`}>
                                   {members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}
                                 </span>
                               </>
@@ -1498,16 +1507,18 @@ function MyDepartmentPage() {
                         ) : (
                           <details className="w-full relative h-full group">
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.instructorId || (schedule as any).instructorId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
-                              <span className="truncate">
+                              <span className="flex items-center overflow-hidden w-full">
                                 {!!schedule.classSection && !schedule.instructorId ? (
-                                  <span className="text-red-500 font-bold" title="Missing Instructor">?</span>
+                                  <span className="text-red-500 font-bold shrink-0" title="Missing Instructor">?</span>
                                 ) : (
-                                  members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'
+                                  <span className="truncate min-w-0">
+                                    {members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'}
+                                  </span>
                                 )}
                                 {(schedule as any).instructorId2 ? (
                                   <>
-                                    {' / '}
-                                    <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                    <span className="shrink-0 whitespace-pre">{'/ '}</span>
+                                    <span className={`truncate min-w-0 ${!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}`}>
                                       {members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}
                                     </span>
                                   </>
@@ -1859,10 +1870,14 @@ function MyDepartmentPage() {
                     <button
                       type="button"
                       onClick={() => {
-                        if (selectedScheduleIds.length === 0) {
+                        const rowsToDeleteCount = schedules.filter(s => selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId))).length;
+                        if (rowsToDeleteCount >= 6) {
+                          setIsDeleteConfirmModalOpen(true);
+                        } else if (rowsToDeleteCount > 0) {
                           setIsRemoveMode(false);
-                        } else {
                           executeBulkRemove();
+                        } else {
+                          setIsRemoveMode(false);
                         }
                       }}
                       className={`rounded border px-4 py-2 text-sm font-bold transition-colors flex items-center justify-center gap-1 shrink-0 ${
@@ -1913,7 +1928,14 @@ function MyDepartmentPage() {
               <div className="flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setIsAddScheduleModalOpen(false)}
+                  onClick={() => {
+                    const hasUnsavedChanges = JSON.stringify(schedules) !== originalSchedulesSnapshot || deletedScheduleIds.length > 0;
+                    if (hasUnsavedChanges) {
+                      setIsCancelConfirmModalOpen(true);
+                    } else {
+                      setIsAddScheduleModalOpen(false);
+                    }
+                  }}
                   className="rounded-md border border-gray-300 bg-white px-6 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100"
                 >
                   Cancel
@@ -1921,7 +1943,14 @@ function MyDepartmentPage() {
                 <button
                   type="button"
                   disabled={isSubmittingSchedules}
-                  onClick={handleSaveSchedules}
+                  onClick={() => {
+                    const hasUnsavedChanges = JSON.stringify(schedules) !== originalSchedulesSnapshot || deletedScheduleIds.length > 0;
+                    if (hasUnsavedChanges) {
+                      setIsSaveConfirmModalOpen(true);
+                    } else {
+                      setIsAddScheduleModalOpen(false);
+                    }
+                  }}
                   className="rounded-md bg-[var(--brand-color)] px-6 py-2 text-sm font-bold text-white shadow-sm transition enabled:hover:bg-[var(--brand-color-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmittingSchedules ? 'Saving...' : `Save All`}
@@ -2213,6 +2242,63 @@ function MyDepartmentPage() {
           </div>
         </div>
       </div>
+
+      {/* Delete Rows Confirmation Modal */}
+      {isDeleteConfirmModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-rose-600 p-5 text-white rounded-t-md">
+              <h3 className="text-lg font-bold">Confirm Deletion</h3>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-700">Are you sure you want to delete these rows? This action cannot be undone once saved.</p>
+              <div className="flex items-center gap-3 pt-2">
+                <button type="button" onClick={() => setIsDeleteConfirmModalOpen(false)} className="flex-1 rounded-md border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300">Cancel</button>
+                <button type="button" autoFocus onClick={() => { setIsDeleteConfirmModalOpen(false); setIsRemoveMode(false); executeBulkRemove(); }} className="flex-1 rounded-md bg-rose-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-rose-700">Confirm Delete</button>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onMouseDown={() => setIsDeleteConfirmModalOpen(false)} />
+        </div>
+      )}
+
+      {/* Save Changes Confirmation Modal */}
+      {isSaveConfirmModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-[var(--brand-color)] p-5 text-white rounded-t-md">
+              <h3 className="text-lg font-bold">Save Changes</h3>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-700">Are you sure you want to save all changes to the schedules?</p>
+              <div className="flex items-center gap-3 pt-2">
+                <button type="button" onClick={() => setIsSaveConfirmModalOpen(false)} className="flex-1 rounded-md border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300">Review Changes</button>
+                <button type="button" autoFocus onClick={() => { setIsSaveConfirmModalOpen(false); handleSaveSchedules(); }} className="flex-1 rounded-md bg-[var(--brand-color)] py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)]">Confirm Save</button>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onMouseDown={() => setIsSaveConfirmModalOpen(false)} />
+        </div>
+      )}
+
+      {/* Discard Changes Confirmation Modal */}
+      {isCancelConfirmModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-gray-200 p-5 border-b border-gray-300 rounded-t-md">
+              <h3 className="text-lg font-bold text-gray-900">Unsaved Changes</h3>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-700">You have unsaved changes. Are you sure you want to discard them?</p>
+              <div className="flex items-center gap-3 pt-2">
+                <button type="button" onClick={() => setIsCancelConfirmModalOpen(false)} className="flex-1 rounded-md border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300">Go Back</button>
+                <button type="button" autoFocus onClick={() => { setIsCancelConfirmModalOpen(false); setIsAddScheduleModalOpen(false); }} className="flex-1 rounded-md bg-rose-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-rose-700">Discard</button>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onMouseDown={() => setIsCancelConfirmModalOpen(false)} />
+        </div>
+      )}
     </section>
   )
 }
