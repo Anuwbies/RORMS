@@ -565,7 +565,7 @@ function MyDepartmentPage() {
         if (value === 'open lab') {
           updated[index].format = 'Flexible'
         } else if (current.type === 'open lab' && value !== 'open lab') {
-          updated[index].format = 'Lec'
+          updated[index].format = ''
         }
       }
 
@@ -632,7 +632,7 @@ function MyDepartmentPage() {
       
       if (dayIndex === 0) {
         if (!val) {
-          newDays.splice(0, 1)
+          newDays = []
         } else {
           newDays[0] = val
         }
@@ -677,7 +677,7 @@ function MyDepartmentPage() {
       if (newType === 'parallel') {
         updated[index] = { ...current, type: 'parallel' };
         if (current.type === 'open lab') {
-          updated[index].format = 'Lec';
+          updated[index].format = '';
         }
         const parentId = current.id || generateId();
         if (!current.id) updated[index].id = parentId;
@@ -706,7 +706,7 @@ function MyDepartmentPage() {
         if (newType === 'open lab') {
           updated[index].format = 'Flexible';
         } else if (current.type === 'open lab') {
-          updated[index].format = 'Lec';
+          updated[index].format = '';
         }
         return updated.filter(s => s.parentId !== current.id);
       }
@@ -1246,11 +1246,11 @@ function MyDepartmentPage() {
                     
                     const isParallelSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && !!(schedule as any).instructorId2;
                     const missingRoom1 = !!schedule.buildingId && !schedule.roomId;
-                    const missingRoom2 = (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && !!schedule.buildingId && !(schedule as any).roomId2);
+                    const isSecondSessionUnlocked = !!(schedule as any).format2 || schedule.type === 'open lab';
+                    const missingRoom2 = (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && schedule.days.length === 1 && !!schedule.buildingId && !(schedule as any).roomId2);
                     const missingFormat2 = !!schedule.format && !(schedule as any).format2;
                     const missingDay2 = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2 && !isParallelSameTime;
                     const hasSecondSession = !!(schedule as any).instructorId2 || !!(schedule as any).roomId2 || !!(schedule as any).buildingId2 || !!(schedule as any).format2 || !!(schedule as any).startTime2;
-                    const isSecondSessionUnlocked = !!(schedule as any).format2 || schedule.type === 'open lab';
                     const missingTime2 = (!!(schedule as any).instructorId2 || isSecondSessionUnlocked) && !!schedule.startTime && !(schedule as any).startTime2;
                     
                     let childAvailableRooms = rooms;
@@ -1390,7 +1390,7 @@ function MyDepartmentPage() {
                               schedule.format === (schedule as any).format2 ? (
                                 <>{schedule.format}<sup>2</sup></>
                               ) : (
-                                <>{schedule.format} / {(schedule as any).format2 ? (schedule as any).format2 : ''}</>
+                                <>{schedule.format} / {(schedule as any).format2 ? (schedule as any).format2 : '----'}</>
                               )
                             )}
                           </div>
@@ -1475,7 +1475,14 @@ function MyDepartmentPage() {
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {members.find(m => m.membershipId === schedule.instructorId)?.name || '----'}
-                            {(schedule as any).instructorId2 ? ` / ${members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}` : ''}
+                            {(schedule as any).instructorId2 ? (
+                              <>
+                                {' / '}
+                                <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                  {members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}
+                                </span>
+                              </>
+                            ) : ''}
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
@@ -1486,7 +1493,14 @@ function MyDepartmentPage() {
                                 ) : (
                                   members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'
                                 )}
-                                {(schedule as any).instructorId2 ? ` / ${members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}` : ''}
+                                {(schedule as any).instructorId2 ? (
+                                  <>
+                                    {' / '}
+                                    <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                      {members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}
+                                    </span>
+                                  </>
+                                ) : ''}
                               </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
@@ -1506,7 +1520,7 @@ function MyDepartmentPage() {
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
                                 <InnerDropdown
                                   value={(schedule as any).instructorId2 || ''}
-                                  disabled={!isSecondSessionUnlocked}
+                                  disabled={!isSecondSessionUnlocked || !schedule.instructorId}
                                   onChange={(val) => handleScheduleChange(index, 'instructorId2', val)}
                                   options={members.filter(m => (m.role === 'Instructor' || m.role === 'Program Head') && m.membershipId !== schedule.instructorId).map(m => ({value: m.membershipId || '', label: m.name}))}
                                 />
@@ -1521,12 +1535,21 @@ function MyDepartmentPage() {
                             {(() => {
                               if (!schedule.startTime && !(schedule as any).startTime2) return '----';
                               const time1raw = schedule.startTime ? `${schedule.startTime} - ${schedule.endTime}` : '----';
-                              if (!(schedule as any).startTime2) return time1raw;
+                              if (!(schedule as any).startTime2) {
+                                if (missingTime2) {
+                                  return `${time1raw} / ----`;
+                                }
+                                return time1raw;
+                              }
                               const time2raw = `${(schedule as any).startTime2} - ${(schedule as any).endTime2}`;
-                              if (schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {
+                              if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {
                                 return `${schedule.startTime} - ${(schedule as any).endTime2}`;
                               }
-                              return `${time1raw} / ${time2raw}`;
+                              return (
+                                <>
+                                  {time1raw} / <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>{time2raw}</span>
+                                </>
+                              );
                             })()}
                           </div>
                         ) : (
@@ -1537,10 +1560,18 @@ function MyDepartmentPage() {
                                   const time1raw = schedule.startTime ? `${schedule.startTime} - ${schedule.endTime}` : 'Select';
                                   
                                   if ((schedule as any).startTime2) {
-                                    if (schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {
-                                      return <>{schedule.startTime} - {(schedule as any).endTime2}</>;
+                                    if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {
+                                      return (
+                                        <>
+                                          {schedule.startTime} - {(schedule as any).endTime2}
+                                        </>
+                                      );
                                     }
-                                    return <>{time1raw} / {(schedule as any).startTime2} - {(schedule as any).endTime2}</>;
+                                    return (
+                                      <>
+                                        {time1raw} / <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>{(schedule as any).startTime2} - {(schedule as any).endTime2}</span>
+                                      </>
+                                    );
                                   }
                                   
                                   if (missingTime2) {
@@ -1584,7 +1615,7 @@ function MyDepartmentPage() {
                                         <InnerDropdown
                                           value={(schedule as any).startTime2 || ''}
                                           placeholder="Start Time"
-                                          disabled={!isSecondSessionUnlocked}
+                                          disabled={!isSecondSessionUnlocked || !schedule.startTime}
                                           onChange={(val) => {
                                             handleScheduleChange(index, 'startTime2', val);
                                             if (!val) {
@@ -1607,7 +1638,19 @@ function MyDepartmentPage() {
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium flex items-center cursor-default">
                             <span className="truncate max-w-[6.25rem]">
-                              {schedule.days.length > 0 ? schedule.days.join(' / ') : '----'}
+                              {schedule.days.length > 0 ? (
+                                <>
+                                  {schedule.days[0]}
+                                  {schedule.days[1] && (
+                                    <>
+                                      {' / '}
+                                      <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                        {schedule.days[1]}
+                                      </span>
+                                    </>
+                                  )}
+                                </>
+                              ) : '----'}
                             </span>
                           </div>
                         ) : (
@@ -1616,7 +1659,15 @@ function MyDepartmentPage() {
                               <span className="truncate max-w-[6.25rem]">
                                 {schedule.days.length > 0 ? (
                                   <>
-                                    {schedule.days.join(' / ')}
+                                    {schedule.days[0]}
+                                    {schedule.days[1] && (
+                                      <>
+                                        {' / '}
+                                        <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                          {schedule.days[1]}
+                                        </span>
+                                      </>
+                                    )}
                                     {missingDay2 && <> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Day">?</span></>}
                                   </>
                                 ) : (
@@ -1656,7 +1707,7 @@ function MyDepartmentPage() {
                                       </label>
                                       <InnerDropdown
                                         value={schedule.days[1] || ''}
-                                        disabled={!isSecondSessionUnlocked || getDurationMins(schedule.startTime, schedule.endTime) === 180}
+                                        disabled={!isSecondSessionUnlocked || !schedule.days[0] || getDurationMins(schedule.startTime, schedule.endTime) === 180}
                                         onChange={(val) => handleDayChange(index, 1, val)}
                                         options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => ({value: d, label: d}))}
                                       />
@@ -1672,14 +1723,28 @@ function MyDepartmentPage() {
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {buildings.find(b => b.id === schedule.buildingId)?.name || '----'}
-                            {(schedule as any).buildingId2 ? ` / ${buildings.find(b => b.id === (schedule as any).buildingId2)?.name || '?'}` : ''}
+                            {(schedule as any).buildingId2 ? (
+                              <>
+                                {' / '}
+                                <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                  {buildings.find(b => b.id === (schedule as any).buildingId2)?.name || '?'}
+                                </span>
+                              </>
+                            ) : ''}
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.buildingId || (schedule as any).buildingId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {buildings.find(b => b.id === schedule.buildingId)?.name || 'Select'}
-                                {(schedule as any).buildingId2 ? ` / ${buildings.find(b => b.id === (schedule as any).buildingId2)?.name || '?'}` : ''}
+                                {(schedule as any).buildingId2 ? (
+                                  <>
+                                    {' / '}
+                                    <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                      {buildings.find(b => b.id === (schedule as any).buildingId2)?.name || '?'}
+                                    </span>
+                                  </>
+                                ) : ''}
                               </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
@@ -1703,7 +1768,7 @@ function MyDepartmentPage() {
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
                                 <InnerDropdown
                                   value={(schedule as any).buildingId2 || ''}
-                                  disabled={!isSecondSessionUnlocked}
+                                  disabled={!isSecondSessionUnlocked || !schedule.buildingId}
                                   onChange={(val) => {
                                     handleScheduleChange(index, 'buildingId2', val)
                                     handleScheduleChange(index, 'roomId2', '')
@@ -1725,7 +1790,14 @@ function MyDepartmentPage() {
                           <summary onClick={(e) => { handleDropdownPosition(e); }} className={`h-full min-h-[2.75rem] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset flex items-center justify-between transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer focus:ring-2 focus:ring-[var(--brand-color)] ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}>
                             <span className="truncate">
                               {schedule.buildingId ? (rooms.find(r => r.id === schedule.roomId)?.code || (missingRoom1 ? <span className="text-red-500 font-bold ml-1" title="Missing 1st Session Room">?</span> : 'Select')) : 'Select'}
-                              {(schedule as any).roomId2 ? ` / ${rooms.find(r => r.id === (schedule as any).roomId2)?.code || '?'}` : (missingRoom2 ? <> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Room">?</span></> : '')}
+                              {(schedule as any).roomId2 ? (
+                                <>
+                                  {' / '}
+                                  <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
+                                    {rooms.find(r => r.id === (schedule as any).roomId2)?.code || '?'}
+                                  </span>
+                                </>
+                              ) : (missingRoom2 ? <> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Room">?</span></> : '')}
                             </span>
                           </summary>
                           {schedule.buildingId && (
@@ -1751,7 +1823,7 @@ function MyDepartmentPage() {
                                   </label>
                                   <InnerDropdown
                                     value={(schedule as any).roomId2 || ''}
-                                    disabled={!isSecondSessionUnlocked || !(schedule as any).startTime2}
+                                    disabled={!isSecondSessionUnlocked || !schedule.roomId}
                                     onChange={(val) => handleScheduleChange(index, 'roomId2', val)}
                                     options={availableRooms2.map(room => ({value: room.id, label: room.code || ''}))}
                                   />
