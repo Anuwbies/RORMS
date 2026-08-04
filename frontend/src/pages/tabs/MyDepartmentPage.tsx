@@ -1244,10 +1244,13 @@ function MyDepartmentPage() {
                     const isChild = !!schedule.parentId;
                     const isParallelChild = isChild;
                     
+                    const parentSchedule = isChild ? schedules.find(s => s.id === schedule.parentId) : null;
+                    const parentHasRoom2 = parentSchedule ? !!(parentSchedule as any).roomId2 : false;
+                    
                     const isParallelSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && !!(schedule as any).instructorId2;
                     const missingRoom1 = !!schedule.buildingId && !schedule.roomId;
                     const isSecondSessionUnlocked = !!(schedule as any).format2 || schedule.type === 'open lab';
-                    const missingRoom2 = (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && schedule.days.length === 1 && !!schedule.buildingId && !(schedule as any).roomId2);
+                    const missingRoom2 = (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && schedule.days.length === 1 && !!schedule.buildingId && !(schedule as any).roomId2) || (isChild && parentHasRoom2 && !(schedule as any).roomId2);
                     const missingFormat2 = !!schedule.format && !(schedule as any).format2;
                     const missingDay2 = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2 && !isParallelSameTime;
                     const hasSecondSession = !!(schedule as any).instructorId2 || !!(schedule as any).roomId2 || !!(schedule as any).buildingId2 || !!(schedule as any).format2 || !!(schedule as any).startTime2;
@@ -1542,7 +1545,7 @@ function MyDepartmentPage() {
                                 return time1raw;
                               }
                               const time2raw = `${(schedule as any).startTime2} - ${(schedule as any).endTime2}`;
-                              if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {
+                              if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2 && schedule.days.length < 2) {
                                 return `${schedule.startTime} - ${(schedule as any).endTime2}`;
                               }
                               return (
@@ -1560,7 +1563,7 @@ function MyDepartmentPage() {
                                   const time1raw = schedule.startTime ? `${schedule.startTime} - ${schedule.endTime}` : 'Select';
                                   
                                   if ((schedule as any).startTime2) {
-                                    if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {
+                                    if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2 && schedule.days.length < 2) {
                                       return (
                                         <>
                                           {schedule.startTime} - {(schedule as any).endTime2}
