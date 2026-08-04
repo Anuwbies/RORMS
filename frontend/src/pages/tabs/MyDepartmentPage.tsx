@@ -573,6 +573,13 @@ function MyDepartmentPage() {
         updated[index].endTime = calculateEndTime(updated[index].startTime, 90);
       }
 
+      if (field === 'startTime' || field === 'endTime') {
+        const newDur = getDurationMins(updated[index].startTime, updated[index].endTime);
+        if (newDur === 180 && updated[index].days && updated[index].days.length > 1) {
+          updated[index].days = [updated[index].days[0]];
+        }
+      }
+
       if (!current.parentId && current.type === 'parallel') {
         const fieldsToCopy = [
           'instructorId', 'instructorId2', 
@@ -586,7 +593,10 @@ function MyDepartmentPage() {
         if (fieldsToCopy.includes(field)) {
           for (let i = 0; i < updated.length; i++) {
             if (updated[i].parentId === current.id) {
-              updated[i] = { ...updated[i], [field]: value }
+              updated[i] = { ...updated[i], [field]: updated[index][field] !== undefined ? updated[index][field] : value }
+              if ((field === 'startTime' || field === 'endTime') && updated[index].days && updated[index].days.length !== (current.days ? current.days.length : 0)) {
+                updated[i] = { ...updated[i], days: updated[index].days }
+              }
               if (field === 'buildingId') {
                 updated[i] = { ...updated[i], roomId: '' }
               } else if (field === 'buildingId2') {
@@ -1195,9 +1205,9 @@ function MyDepartmentPage() {
                 <thead className="bg-gray-50 sticky top-0 z-20 text-gray-700 font-bold text-base shadow-sm">
                   <tr>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Type</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[7.5rem]">Format</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Code</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Title</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[7.5rem]">Format</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.25rem]">Section</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[16.25rem]">Instructor</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Time</th>
@@ -1359,34 +1369,6 @@ function MyDepartmentPage() {
                           </details>
                         )}
                       </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
-                        <input 
-                          type="text" 
-                          placeholder="ITE 298"
-                          disabled={isChild}
-                          value={schedule.subjectCode}
-                          onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
-                          onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase pr-8 ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
-                        />
-                        {!!schedule.subjectTitle && !schedule.subjectCode && (
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold" title="Missing Subject Code">?</span>
-                        )}
-                      </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
-                        <input 
-                          type="text" 
-                          placeholder="IT Project Mgmt"
-                          disabled={isChild}
-                          value={schedule.subjectTitle}
-                          onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
-                          onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent pr-8 ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
-                        />
-                        {!!schedule.subjectCode && !schedule.subjectTitle && (
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold" title="Missing Subject Title">?</span>
-                        )}
-                      </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
@@ -1439,14 +1421,36 @@ function MyDepartmentPage() {
                       <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         <input 
                           type="text" 
-                          placeholder="BSIT 3-1"
+                          placeholder={!!schedule.subjectTitle && !schedule.subjectCode ? "?" : "ITE 298"}
+                          disabled={isChild}
+                          value={schedule.subjectCode}
+                          onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
+                          onBlur={(e) => { e.target.scrollLeft = 0; }}
+                          title={!!schedule.subjectTitle && !schedule.subjectCode ? "Missing Subject Code" : ""}
+                          className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500'} ${!!schedule.subjectTitle && !schedule.subjectCode ? 'placeholder:text-red-500 placeholder:font-bold' : 'placeholder:text-gray-400'}`}
+                        />
+                      </td>
+                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
+                        <input 
+                          type="text" 
+                          placeholder={!!schedule.subjectCode && !schedule.subjectTitle ? "?" : "IT Project Mgmt"}
+                          disabled={isChild}
+                          value={schedule.subjectTitle}
+                          onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
+                          onBlur={(e) => { e.target.scrollLeft = 0; }}
+                          title={!!schedule.subjectCode && !schedule.subjectTitle ? "Missing Subject Title" : ""}
+                          className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500'} ${!!schedule.subjectCode && !schedule.subjectTitle ? 'placeholder:text-red-500 placeholder:font-bold' : 'placeholder:text-gray-400'}`}
+                        />
+                      </td>
+                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
+                        <input 
+                          type="text" 
+                          placeholder={!!schedule.instructorId && !schedule.classSection ? "?" : "BSIT 3-1"}
                           value={schedule.classSection}
                           onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
-                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase pr-8 ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          title={!!schedule.instructorId && !schedule.classSection ? "Missing Section" : ""}
+                          className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500'} ${!!schedule.instructorId && !schedule.classSection ? 'placeholder:text-red-500 placeholder:font-bold' : 'placeholder:text-gray-400'}`}
                         />
-                        {!!schedule.instructorId && !schedule.classSection && (
-                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold" title="Missing Section">?</span>
-                        )}
                       </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
@@ -1456,14 +1460,15 @@ function MyDepartmentPage() {
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 pr-8 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.instructorId || (schedule as any).instructorId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.instructorId || (schedule as any).instructorId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
-                                {members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'}
+                                {!!schedule.classSection && !schedule.instructorId ? (
+                                  <span className="text-red-500 font-bold" title="Missing Instructor">?</span>
+                                ) : (
+                                  members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'
+                                )}
                                 {(schedule as any).instructorId2 ? ` / ${members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}` : ''}
                               </span>
-                              {!!schedule.classSection && !schedule.instructorId && (
-                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold" title="Missing Instructor">?</span>
-                              )}
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                             <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
@@ -1509,7 +1514,7 @@ function MyDepartmentPage() {
                                   const time2 = ((schedule as any).startTime2 || (schedule as any).endTime2) ? `${(schedule as any).startTime2 || '?'} - ${(schedule as any).endTime2 || 'TBD'}` : '';
                                   return (
                                     <>
-                                      {time1 || ((schedule as any).instructorId2 ? <span className="text-red-500 font-bold" title="Missing 1st Session Time">?</span> : 'Select Time')}
+                                      {time1 || ((schedule as any).instructorId2 ? <span className="text-red-500 font-bold" title="Missing 1st Session Time">?</span> : 'Select')}
                                       {missingTime2 && !time2 ? (
                                         <> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Time">?</span></>
                                       ) : time2 ? (
@@ -1637,7 +1642,11 @@ function MyDepartmentPage() {
                                       <span className="text-red-500 font-bold" title="Missing 1st Session Day">?</span> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Day">?</span>
                                     </>
                                   ) : (
-                                    'Select'
+                                    (schedule.startTime || (schedule as any).startTime2) ? (
+                                      <span className="text-red-500 font-bold" title="Missing Day">?</span>
+                                    ) : (
+                                      'Select'
+                                    )
                                   )
                                 )}
                               </span>
