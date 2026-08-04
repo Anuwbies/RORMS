@@ -152,7 +152,7 @@ function MyDepartmentPage() {
     subjectCode: '',
     subjectTitle: '',
     classSection: '',
-    format: 'Lec',
+    format: '',
     format2: '',
     startTime: '',
     startTime2: '',
@@ -349,7 +349,7 @@ function MyDepartmentPage() {
               type: data.type || 'normal',
               subjectCode: data.subjectCode || '',
               subjectTitle: data.subjectTitle || '',
-              format: data.format || 'Lec',
+              format: data.format || '',
               startTime: data.startTime || '',
               endTime: data.endTime || '',
               buildingId: data.buildingId || '',
@@ -593,7 +593,7 @@ function MyDepartmentPage() {
         if (fieldsToCopy.includes(field)) {
           for (let i = 0; i < updated.length; i++) {
             if (updated[i].parentId === current.id) {
-              updated[i] = { ...updated[i], [field]: updated[index][field] !== undefined ? updated[index][field] : value }
+              updated[i] = { ...updated[i], [field]: (updated[index] as any)[field] !== undefined ? (updated[index] as any)[field] : value }
               if ((field === 'startTime' || field === 'endTime') && updated[index].days && updated[index].days.length !== (current.days ? current.days.length : 0)) {
                 updated[i] = { ...updated[i], days: updated[index].days }
               }
@@ -623,25 +623,35 @@ function MyDepartmentPage() {
     })
   }
 
-  const handleToggleDay = (index: number, day: string) => {
+  const handleDayChange = (index: number, dayIndex: number, val: string) => {
     setSchedules(prev => {
       const updated = [...prev]
       const current = updated[index]
-      const currentDays = current.days
+      let newDays = [...current.days]
       const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-      const dur1 = getDurationMins(current.startTime, current.endTime)
-      const maxDays = dur1 === 180 ? 1 : 2
       
-      let newDays;
-      if (currentDays.includes(day)) {
-        newDays = currentDays.filter((d: string) => d !== day)
-      } else {
-        if (currentDays.length >= maxDays) {
-          return updated;
+      if (dayIndex === 0) {
+        if (!val) {
+          newDays.splice(0, 1)
+        } else {
+          newDays[0] = val
         }
-        newDays = [...currentDays, day].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
+      } else if (dayIndex === 1) {
+        if (!val) {
+          if (newDays.length > 1) {
+            newDays.splice(1, 1)
+          }
+        } else {
+          if (newDays.length === 0) {
+            newDays[0] = val
+          } else {
+            newDays[1] = val
+          }
+        }
       }
-      
+
+      newDays = Array.from(new Set(newDays.filter(Boolean))).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
+
       updated[index] = { ...current, days: newDays }
 
       if (!current.parentId && current.type === 'parallel') {
@@ -651,6 +661,7 @@ function MyDepartmentPage() {
           }
         }
       }
+
       return updated
     })
   }
@@ -1211,7 +1222,7 @@ function MyDepartmentPage() {
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.25rem]">Section</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[16.25rem]">Instructor</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Time</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.75rem]">Days</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[8.5rem]">Days</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[13.125rem]">Building</th>
                     <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[11.25rem]">Room</th>
                   </tr>
@@ -1236,8 +1247,10 @@ function MyDepartmentPage() {
                     const missingTime2 = !!(schedule as any).instructorId2 && !(schedule as any).startTime2;
                     const missingRoom1 = !!schedule.buildingId && !schedule.roomId;
                     const missingRoom2 = !!(schedule as any).buildingId2 && !(schedule as any).roomId2;
+                    const missingFormat2 = !!schedule.format && !(schedule as any).format2;
                     const missingDay2 = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2;
                     const hasSecondSession = !!(schedule as any).instructorId2 || !!(schedule as any).roomId2 || !!(schedule as any).buildingId2 || !!(schedule as any).format2 || !!(schedule as any).startTime2;
+                    const isSecondSessionUnlocked = !!(schedule as any).format2 || schedule.type === 'open lab';
                     
                     let childAvailableRooms = rooms;
                     if (schedule.buildingId) {
@@ -1372,8 +1385,13 @@ function MyDepartmentPage() {
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
-                            {schedule.format || '----'}
-                            {(schedule as any).format2 ? ` / ${(schedule as any).format2}` : ''}
+                            {!schedule.format ? '----' : (
+                              schedule.format === (schedule as any).format2 ? (
+                                <>{schedule.format}<sup>2</sup></>
+                              ) : (
+                                <>{schedule.format} / {(schedule as any).format2 ? (schedule as any).format2 : ''}</>
+                              )
+                            )}
                           </div>
                         ) : schedule.type === 'open lab' ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
@@ -1383,8 +1401,13 @@ function MyDepartmentPage() {
                           <details className="w-full relative h-full group">
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.format || (schedule as any).format2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
-                                {schedule.format || 'Select'}
-                                {(schedule as any).format2 ? ` / ${(schedule as any).format2}` : ''}
+                                {!schedule.format ? 'Select' : (
+                                  schedule.format === (schedule as any).format2 ? (
+                                    <>{schedule.format}<sup>2</sup></>
+                                  ) : (
+                                    <>{schedule.format} / {(schedule as any).format2 ? (schedule as any).format2 : (missingFormat2 ? <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Format">?</span> : '')}</>
+                                  )
+                                )}
                               </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
@@ -1401,17 +1424,12 @@ function MyDepartmentPage() {
                                 />
                               </div>
                               <div className="flex flex-col gap-1.5">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
+                                <label className={`text-xs font-bold uppercase tracking-wider ${missingFormat2 ? 'text-red-500' : 'text-gray-500'}`}>2nd Session</label>
                                 <InnerDropdown
                                   value={(schedule as any).format2 || ''}
                                   disabled={!schedule.format}
                                   onChange={(val) => handleScheduleChange(index, 'format2', val)}
-                                  options={(() => {
-                                    const opts = [];
-                                    if (schedule.format !== 'Lec') opts.push({value: 'Lec', label: 'Lec'});
-                                    if (schedule.format !== 'Lab') opts.push({value: 'Lab', label: 'Lab'});
-                                    return opts;
-                                  })()}
+                                  options={[{value: 'Lec', label: 'Lec'}, {value: 'Lab', label: 'Lab'}]}
                                 />
                               </div>
                             </div>
@@ -1487,7 +1505,7 @@ function MyDepartmentPage() {
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
                                 <InnerDropdown
                                   value={(schedule as any).instructorId2 || ''}
-                                  disabled={!schedule.instructorId}
+                                  disabled={!isSecondSessionUnlocked}
                                   onChange={(val) => handleScheduleChange(index, 'instructorId2', val)}
                                   options={members.filter(m => (m.role === 'Instructor' || m.role === 'Program Head') && m.membershipId !== schedule.instructorId).map(m => ({value: m.membershipId || '', label: m.name}))}
                                 />
@@ -1500,9 +1518,14 @@ function MyDepartmentPage() {
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                             {(() => {
-                              const time1 = (schedule.startTime || schedule.endTime) ? `${schedule.startTime || '?'} - ${schedule.endTime || '?'}` : '';
-                              const time2 = ((schedule as any).startTime2 || (schedule as any).endTime2) ? `${(schedule as any).startTime2 || '?'} - ${(schedule as any).endTime2 || '?'}` : '';
-                              return time1 ? (time2 ? `${time1} / ${time2}` : time1) : '----';
+                              if (!schedule.startTime && !(schedule as any).startTime2) return '----';
+                              const time1raw = schedule.startTime ? `${schedule.startTime} - ${schedule.endTime}` : '----';
+                              if (!(schedule as any).startTime2) return time1raw;
+                              const time2raw = `${(schedule as any).startTime2} - ${(schedule as any).endTime2}`;
+                              if (schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {
+                                return `${schedule.startTime} - ${(schedule as any).endTime2}`;
+                              }
+                              return `${time1raw} / ${time2raw}`;
                             })()}
                           </div>
                         ) : (
@@ -1510,18 +1533,20 @@ function MyDepartmentPage() {
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.startTime || schedule.endTime || (schedule as any).startTime2 || (schedule as any).endTime2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {(() => {
-                                  const time1 = (schedule.startTime || schedule.endTime) ? `${schedule.startTime || '?'} - ${schedule.endTime || 'TBD'}` : '';
-                                  const time2 = ((schedule as any).startTime2 || (schedule as any).endTime2) ? `${(schedule as any).startTime2 || '?'} - ${(schedule as any).endTime2 || 'TBD'}` : '';
-                                  return (
-                                    <>
-                                      {time1 || ((schedule as any).instructorId2 ? <span className="text-red-500 font-bold" title="Missing 1st Session Time">?</span> : 'Select')}
-                                      {missingTime2 && !time2 ? (
-                                        <> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Time">?</span></>
-                                      ) : time2 ? (
-                                        ` / ${time2}`
-                                      ) : null}
-                                    </>
-                                  );
+                                  const time1raw = schedule.startTime ? `${schedule.startTime} - ${schedule.endTime}` : ((schedule as any).instructorId2 ? <span className="text-red-500 font-bold" title="Missing 1st Session Time">?</span> : 'Select');
+                                  
+                                  if ((schedule as any).startTime2) {
+                                    if (schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2) {
+                                      return <>{schedule.startTime} - {(schedule as any).endTime2}</>;
+                                    }
+                                    return <>{time1raw} / {(schedule as any).startTime2} - {(schedule as any).endTime2}</>;
+                                  }
+                                  
+                                  if (missingTime2) {
+                                    return <>{time1raw} / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Time">?</span></>;
+                                  }
+                                  
+                                  return <>{time1raw}</>;
                                 })()}
                               </span>
                             </summary>
@@ -1529,89 +1554,46 @@ function MyDepartmentPage() {
                             <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-4 rounded w-full`}>
                                 {(() => {
                                   const duration1 = getDurationMins(schedule.startTime, schedule.endTime);
-                                  const session2Disabled = !schedule.startTime || duration1 === 180;
+                                  const session2Disabled = !isSecondSessionUnlocked || duration1 === 180;
                                   
                                   return (
                                     <>
                                       <div className="flex flex-col gap-2">
-                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session Time</label>
-                                        <div className="flex items-center gap-2">
-                                          <div className="flex-1">
-                                            <InnerDropdown
-                                              value={schedule.startTime || ''}
-                                              placeholder="Start Time"
-                                              onChange={(val) => {
-                                                handleScheduleChange(index, 'startTime', val);
-                                                if (!val) {
-                                                  handleScheduleChange(index, 'endTime', '');
-                                                  handleScheduleChange(index, 'startTime2', '');
-                                                  handleScheduleChange(index, 'endTime2', '');
-                                                } else {
-                                                  const nextDur = (schedule as any).instructorId2 ? 90 : (duration1 > 0 ? duration1 : 90);
-                                                  handleScheduleChange(index, 'endTime', calculateEndTime(val, nextDur));
-                                                }
-                                              }}
-                                              options={START_TIME_OPTIONS}
-                                            />
-                                          </div>
-                                          <div className="flex-1">
-                                            <InnerDropdown
-                                              value={duration1 ? duration1.toString() : ((schedule as any).instructorId2 ? '90' : '')}
-                                              placeholder="Duration"
-                                              disabled={!schedule.startTime || !!(schedule as any).instructorId2}
-                                              onChange={(val) => {
-                                                handleScheduleChange(index, 'endTime', calculateEndTime(schedule.startTime, parseInt(val)));
-                                                if (val === '180') {
-                                                  handleScheduleChange(index, 'startTime2', '');
-                                                  handleScheduleChange(index, 'endTime2', '');
-                                                }
-                                              }}
-                                              options={
-                                                (schedule as any).instructorId2 ? 
-                                                [{ value: '90', label: '1h 30m' }] :
-                                                [
-                                                  { value: '90', label: '1h 30m' },
-                                                  { value: '180', label: '3h' }
-                                                ]
-                                              }
-                                            />
-                                          </div>
-                                        </div>
+                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                        <InnerDropdown
+                                          value={schedule.startTime || ''}
+                                          placeholder="Start Time"
+                                          onChange={(val) => {
+                                            handleScheduleChange(index, 'startTime', val);
+                                            if (!val) {
+                                              handleScheduleChange(index, 'endTime', '');
+                                              handleScheduleChange(index, 'startTime2', '');
+                                              handleScheduleChange(index, 'endTime2', '');
+                                            } else {
+                                              handleScheduleChange(index, 'endTime', calculateEndTime(val, 90));
+                                            }
+                                          }}
+                                          options={START_TIME_OPTIONS}
+                                        />
                                       </div>
                                       <div className="flex flex-col gap-2">
-                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                                          2nd Session Time
-                                          {missingTime2 && <span className="text-red-500 text-sm font-bold" title="Required">?</span>}
+                                        <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingTime2 ? 'text-red-500' : 'text-gray-500'}`}>
+                                          2nd Session
                                         </label>
-                                        <div className="flex items-center gap-2">
-                                          <div className="flex-1">
-                                            <InnerDropdown
-                                              value={(schedule as any).startTime2 || ''}
-                                              placeholder="Start Time"
-                                              disabled={session2Disabled}
-                                              onChange={(val) => {
-                                                handleScheduleChange(index, 'startTime2', val);
-                                                if (!val) {
-                                                  handleScheduleChange(index, 'endTime2', '');
-                                                } else {
-                                                  handleScheduleChange(index, 'endTime2', calculateEndTime(val, 90));
-                                                }
-                                              }}
-                                              options={START_TIME_OPTIONS}
-                                            />
-                                          </div>
-                                          <div className="flex-1">
-                                            <InnerDropdown
-                                              value={((schedule as any).startTime2 || (schedule as any).instructorId2) ? '90' : ''}
-                                              placeholder="Duration"
-                                              disabled={true}
-                                              onChange={() => {}}
-                                              options={[
-                                                { value: '90', label: '1h 30m' }
-                                              ]}
-                                            />
-                                          </div>
-                                        </div>
+                                        <InnerDropdown
+                                          value={(schedule as any).startTime2 || ''}
+                                          placeholder="Start Time"
+                                          disabled={!isSecondSessionUnlocked}
+                                          onChange={(val) => {
+                                            handleScheduleChange(index, 'startTime2', val);
+                                            if (!val) {
+                                              handleScheduleChange(index, 'endTime2', '');
+                                            } else {
+                                              handleScheduleChange(index, 'endTime2', calculateEndTime(val, 90));
+                                            }
+                                          }}
+                                          options={START_TIME_OPTIONS}
+                                        />
                                       </div>
                                     </>
                                   );
@@ -1652,33 +1634,35 @@ function MyDepartmentPage() {
                               </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-2 rounded w-full`}>
-                              {[
-                                { short: 'Mon', full: 'Mon' },
-                                { short: 'Tue', full: 'Tue' },
-                                { short: 'Wed', full: 'Wed' },
-                                { short: 'Thu', full: 'Thu' },
-                                { short: 'Fri', full: 'Fri' },
-                                { short: 'Sat', full: 'Sat' },
-                                { short: 'Sun', full: 'Sun' }
-                              ].map(day => {
-                                const dur1 = getDurationMins(schedule.startTime, schedule.endTime);
-                                const maxDays = dur1 === 180 ? 1 : 2;
-                                const isChecked = schedule.days.includes(day.short);
-                                const isMaxReached = schedule.days.length >= maxDays;
-                                const isDisabled = !isChecked && isMaxReached;
+                            <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                              {(() => {
+                                const missingDay1 = schedule.days.length === 0 && (!!schedule.startTime || !!(schedule as any).startTime2);
                                 return (
-                                <label key={day.short} className={`flex items-center gap-2 text-sm font-medium relative z-50 shrink-0 ${isDisabled ? 'text-gray-400 cursor-default' : 'cursor-pointer'}`}>
-                                  <input 
-                                    type="checkbox" 
-                                    checked={isChecked}
-                                    disabled={isDisabled}
-                                    onChange={() => handleToggleDay(index, day.short)} 
-                                    className={`rounded text-[var(--brand-color)] focus:ring-[var(--brand-color)] ${isDisabled ? 'cursor-default' : 'cursor-pointer'}`}
-                                  />
-                                  {day.full}
-                                </label>
-                              )})}
+                                  <>
+                                    <div className="flex flex-col gap-1.5">
+                                      <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingDay1 ? 'text-red-500' : 'text-gray-500'}`}>
+                                        1st Session
+                                      </label>
+                                      <InnerDropdown
+                                        value={schedule.days[0] || ''}
+                                        onChange={(val) => handleDayChange(index, 0, val)}
+                                        options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => ({value: d, label: d}))}
+                                      />
+                                    </div>
+                                    <div className="flex flex-col gap-1.5">
+                                      <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingDay2 ? 'text-red-500' : 'text-gray-500'}`}>
+                                        2nd Session
+                                      </label>
+                                      <InnerDropdown
+                                        value={schedule.days[1] || ''}
+                                        disabled={!isSecondSessionUnlocked || getDurationMins(schedule.startTime, schedule.endTime) === 180}
+                                        onChange={(val) => handleDayChange(index, 1, val)}
+                                        options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => ({value: d, label: d}))}
+                                      />
+                                    </div>
+                                  </>
+                                );
+                              })()}
                             </div>
                           </details>
                         )}
@@ -1718,7 +1702,7 @@ function MyDepartmentPage() {
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
                                 <InnerDropdown
                                   value={(schedule as any).buildingId2 || ''}
-                                  disabled={!schedule.buildingId}
+                                  disabled={!isSecondSessionUnlocked}
                                   onChange={(val) => {
                                     handleScheduleChange(index, 'buildingId2', val)
                                     handleScheduleChange(index, 'roomId2', '')
@@ -1748,9 +1732,8 @@ function MyDepartmentPage() {
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                               <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                                  <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingRoom1 ? 'text-red-500' : 'text-gray-500'}`}>
                                     1st Session
-                                    {missingRoom1 && <span className="text-red-500 text-sm font-bold" title="Required">?</span>}
                                   </label>
                                   <InnerDropdown
                                     value={schedule.roomId || ''}
@@ -1762,13 +1745,12 @@ function MyDepartmentPage() {
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                                  <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingRoom2 ? 'text-red-500' : 'text-gray-500'}`}>
                                     2nd Session
-                                    {missingRoom2 && <span className="text-red-500 text-sm font-bold" title="Required">?</span>}
                                   </label>
                                   <InnerDropdown
                                     value={(schedule as any).roomId2 || ''}
-                                    disabled={!schedule.roomId}
+                                    disabled={!isSecondSessionUnlocked || !(schedule as any).startTime2}
                                     onChange={(val) => handleScheduleChange(index, 'roomId2', val)}
                                     options={availableRooms2.map(room => ({value: room.id, label: room.code || ''}))}
                                   />
