@@ -98,6 +98,32 @@ const statusClasses: Record<string, string> = {
   Pending: 'bg-amber-100 text-amber-700',
 }
 
+const getDurationMins = (start: string, end: string) => {
+  if (!start || !end) return 0;
+  const [sh, sm] = start.split(':').map(Number);
+  const [eh, em] = end.split(':').map(Number);
+  return (eh * 60 + em) - (sh * 60 + sm);
+};
+
+const calculateEndTime = (start: string, durationMins: number) => {
+  if (!start || !durationMins || isNaN(durationMins)) return '';
+  const [h, m] = start.split(':').map(Number);
+  const totalMins = h * 60 + m + durationMins;
+  const endH = Math.floor(totalMins / 60).toString().padStart(2, '0');
+  const endM = (totalMins % 60).toString().padStart(2, '0');
+  return `${endH}:${endM}`;
+};
+
+const START_TIME_OPTIONS = [
+  { value: '07:30', label: '07:30 AM' },
+  { value: '09:00', label: '09:00 AM' },
+  { value: '10:30', label: '10:30 AM' },
+  { value: '12:00', label: '12:00 PM' },
+  { value: '13:30', label: '01:30 PM' },
+  { value: '15:00', label: '03:00 PM' },
+  { value: '16:30', label: '04:30 PM' },
+];
+
 function MyDepartmentPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
@@ -543,6 +569,10 @@ function MyDepartmentPage() {
         }
       }
 
+      if (field === 'instructorId2' && value && updated[index].startTime) {
+        updated[index].endTime = calculateEndTime(updated[index].startTime, 90);
+      }
+
       if (!current.parentId && current.type === 'parallel') {
         const fieldsToCopy = [
           'instructorId', 'instructorId2', 
@@ -589,12 +619,14 @@ function MyDepartmentPage() {
       const current = updated[index]
       const currentDays = current.days
       const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+      const dur1 = getDurationMins(current.startTime, current.endTime)
+      const maxDays = dur1 === 180 ? 1 : 2
       
       let newDays;
       if (currentDays.includes(day)) {
         newDays = currentDays.filter((d: string) => d !== day)
       } else {
-        if (currentDays.length >= 2) {
+        if (currentDays.length >= maxDays) {
           return updated;
         }
         newDays = [...currentDays, day].sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
@@ -1165,11 +1197,11 @@ function MyDepartmentPage() {
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Type</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Code</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Title</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.25rem]">Section</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[7.5rem]">Format</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.25rem]">Section</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[16.25rem]">Instructor</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Time</th>
-                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[8.75rem]">Days</th>
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.75rem]">Days</th>
                     <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[13.125rem]">Building</th>
                     <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[11.25rem]">Room</th>
                   </tr>
@@ -1190,6 +1222,12 @@ function MyDepartmentPage() {
                   schedules.map((schedule, index) => {
                     const isChild = !!schedule.parentId;
                     const isParallelChild = isChild;
+                    
+                    const missingTime2 = !!(schedule as any).instructorId2 && !(schedule as any).startTime2;
+                    const missingRoom1 = !!schedule.buildingId && !schedule.roomId;
+                    const missingRoom2 = !!(schedule as any).buildingId2 && !(schedule as any).roomId2;
+                    const missingDay2 = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2;
+                    const hasSecondSession = !!(schedule as any).instructorId2 || !!(schedule as any).roomId2 || !!(schedule as any).buildingId2 || !!(schedule as any).format2 || !!(schedule as any).startTime2;
                     
                     let childAvailableRooms = rooms;
                     if (schedule.buildingId) {
@@ -1329,8 +1367,11 @@ function MyDepartmentPage() {
                           value={schedule.subjectCode}
                           onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
                           onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase pr-8 ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
+                        {!!schedule.subjectTitle && !schedule.subjectCode && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold" title="Missing Subject Code">?</span>
+                        )}
                       </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         <input 
@@ -1340,17 +1381,11 @@ function MyDepartmentPage() {
                           value={schedule.subjectTitle}
                           onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
                           onBlur={(e) => { e.target.scrollLeft = 0; }}
-                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent pr-8 ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
                         />
-                      </td>
-                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
-                        <input 
-                          type="text" 
-                          placeholder="BSIT 3-1"
-                          value={schedule.classSection}
-                          onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
-                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
-                        />
+                        {!!schedule.subjectCode && !schedule.subjectTitle && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold" title="Missing Subject Title">?</span>
+                        )}
                       </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
@@ -1401,6 +1436,18 @@ function MyDepartmentPage() {
                           </details>
                         )}
                       </td>
+                      <td className={`p-0 border-b border-r border-gray-300 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
+                        <input 
+                          type="text" 
+                          placeholder="BSIT 3-1"
+                          value={schedule.classSection}
+                          onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
+                          className={`h-full w-full min-h-[2.75rem] px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] transition-colors bg-transparent uppercase pr-8 ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-gray-400'}`}
+                        />
+                        {!!schedule.instructorId && !schedule.classSection && (
+                          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold" title="Missing Section">?</span>
+                        )}
+                      </td>
                       <td className={`p-0 border-b border-r border-gray-300 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
@@ -1409,11 +1456,14 @@ function MyDepartmentPage() {
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
-                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.instructorId || (schedule as any).instructorId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
+                            <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 pr-8 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.instructorId || (schedule as any).instructorId2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {members.find(m => m.membershipId === schedule.instructorId)?.name || 'Select'}
                                 {(schedule as any).instructorId2 ? ` / ${members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}` : ''}
                               </span>
+                              {!!schedule.classSection && !schedule.instructorId && (
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 font-bold" title="Missing Instructor">?</span>
+                              )}
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                             <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
@@ -1455,36 +1505,112 @@ function MyDepartmentPage() {
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${(schedule.startTime || schedule.endTime || (schedule as any).startTime2 || (schedule as any).endTime2) ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate">
                                 {(() => {
-                                  const time1 = (schedule.startTime || schedule.endTime) ? `${schedule.startTime || '?'} - ${schedule.endTime || '?'}` : '';
-                                  const time2 = ((schedule as any).startTime2 || (schedule as any).endTime2) ? `${(schedule as any).startTime2 || '?'} - ${(schedule as any).endTime2 || '?'}` : '';
-                                  return time1 ? (time2 ? `${time1} / ${time2}` : time1) : 'Select Time';
+                                  const time1 = (schedule.startTime || schedule.endTime) ? `${schedule.startTime || '?'} - ${schedule.endTime || 'TBD'}` : '';
+                                  const time2 = ((schedule as any).startTime2 || (schedule as any).endTime2) ? `${(schedule as any).startTime2 || '?'} - ${(schedule as any).endTime2 || 'TBD'}` : '';
+                                  return (
+                                    <>
+                                      {time1 || ((schedule as any).instructorId2 ? <span className="text-red-500 font-bold" title="Missing 1st Session Time">?</span> : 'Select Time')}
+                                      {missingTime2 && !time2 ? (
+                                        <> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Time">?</span></>
+                                      ) : time2 ? (
+                                        ` / ${time2}`
+                                      ) : null}
+                                    </>
+                                  );
                                 })()}
                               </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                             <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-4 rounded w-full`}>
-                              <div className="flex flex-col gap-2">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session Time</label>
-                                <div className="flex items-center gap-2">
-                                  <input type="time" value={schedule.startTime || ''} onChange={(e) => {
-                                    handleScheduleChange(index, 'startTime', e.target.value);
-                                    if (!e.target.value) handleScheduleChange(index, 'startTime2', '');
-                                  }} className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] bg-white [&::-webkit-calendar-picker-indicator]:hidden cursor-text" />
-                                  <span className="text-gray-500 text-sm">to</span>
-                                  <input type="time" value={schedule.endTime || ''} onChange={(e) => {
-                                    handleScheduleChange(index, 'endTime', e.target.value);
-                                    if (!e.target.value) handleScheduleChange(index, 'endTime2', '');
-                                  }} className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] bg-white [&::-webkit-calendar-picker-indicator]:hidden cursor-text" />
-                                </div>
-                              </div>
-                              <div className="flex flex-col gap-2">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session Time</label>
-                                <div className="flex items-center gap-2">
-                                  <input type="time" disabled={!schedule.startTime} value={(schedule as any).startTime2 || ''} onChange={(e) => handleScheduleChange(index, 'startTime2', e.target.value)} className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] bg-white [&::-webkit-calendar-picker-indicator]:hidden cursor-text disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-default" />
-                                  <span className="text-gray-500 text-sm">to</span>
-                                  <input type="time" disabled={!schedule.endTime} value={(schedule as any).endTime2 || ''} onChange={(e) => handleScheduleChange(index, 'endTime2', e.target.value)} className="flex-1 p-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] bg-white [&::-webkit-calendar-picker-indicator]:hidden cursor-text disabled:opacity-50 disabled:bg-gray-100 disabled:cursor-default" />
-                                </div>
-                              </div>
+                                {(() => {
+                                  const duration1 = getDurationMins(schedule.startTime, schedule.endTime);
+                                  const session2Disabled = !schedule.startTime || duration1 === 180;
+                                  
+                                  return (
+                                    <>
+                                      <div className="flex flex-col gap-2">
+                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session Time</label>
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1">
+                                            <InnerDropdown
+                                              value={schedule.startTime || ''}
+                                              placeholder="Start Time"
+                                              onChange={(val) => {
+                                                handleScheduleChange(index, 'startTime', val);
+                                                if (!val) {
+                                                  handleScheduleChange(index, 'endTime', '');
+                                                  handleScheduleChange(index, 'startTime2', '');
+                                                  handleScheduleChange(index, 'endTime2', '');
+                                                } else {
+                                                  const nextDur = (schedule as any).instructorId2 ? 90 : (duration1 > 0 ? duration1 : 90);
+                                                  handleScheduleChange(index, 'endTime', calculateEndTime(val, nextDur));
+                                                }
+                                              }}
+                                              options={START_TIME_OPTIONS}
+                                            />
+                                          </div>
+                                          <div className="flex-1">
+                                            <InnerDropdown
+                                              value={duration1 ? duration1.toString() : ((schedule as any).instructorId2 ? '90' : '')}
+                                              placeholder="Duration"
+                                              disabled={!schedule.startTime || !!(schedule as any).instructorId2}
+                                              onChange={(val) => {
+                                                handleScheduleChange(index, 'endTime', calculateEndTime(schedule.startTime, parseInt(val)));
+                                                if (val === '180') {
+                                                  handleScheduleChange(index, 'startTime2', '');
+                                                  handleScheduleChange(index, 'endTime2', '');
+                                                }
+                                              }}
+                                              options={
+                                                (schedule as any).instructorId2 ? 
+                                                [{ value: '90', label: '1h 30m' }] :
+                                                [
+                                                  { value: '90', label: '1h 30m' },
+                                                  { value: '180', label: '3h' }
+                                                ]
+                                              }
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col gap-2">
+                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                                          2nd Session Time
+                                          {missingTime2 && <span className="text-red-500 text-sm font-bold" title="Required">?</span>}
+                                        </label>
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex-1">
+                                            <InnerDropdown
+                                              value={(schedule as any).startTime2 || ''}
+                                              placeholder="Start Time"
+                                              disabled={session2Disabled}
+                                              onChange={(val) => {
+                                                handleScheduleChange(index, 'startTime2', val);
+                                                if (!val) {
+                                                  handleScheduleChange(index, 'endTime2', '');
+                                                } else {
+                                                  handleScheduleChange(index, 'endTime2', calculateEndTime(val, 90));
+                                                }
+                                              }}
+                                              options={START_TIME_OPTIONS}
+                                            />
+                                          </div>
+                                          <div className="flex-1">
+                                            <InnerDropdown
+                                              value={((schedule as any).startTime2 || (schedule as any).instructorId2) ? '90' : ''}
+                                              placeholder="Duration"
+                                              disabled={true}
+                                              onChange={() => {}}
+                                              options={[
+                                                { value: '90', label: '1h 30m' }
+                                              ]}
+                                            />
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </>
+                                  );
+                                })()}
                             </div>
                           </details>
                         )}
@@ -1493,29 +1619,44 @@ function MyDepartmentPage() {
                         {isChild ? (
                           <div className="px-3 py-3 text-sm text-gray-900 font-medium flex items-center cursor-default">
                             <span className="truncate max-w-[6.25rem]">
-                              {schedule.days.length > 0 ? schedule.days.join(', ') : '----'}
+                              {schedule.days.length > 0 ? schedule.days.join(' / ') : '----'}
                             </span>
                           </div>
                         ) : (
                           <details className="w-full relative h-full group">
                             <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset focus:ring-2 focus:ring-[var(--brand-color)] flex items-center justify-between transition-colors bg-transparent ${schedule.days.length > 0 ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
                               <span className="truncate max-w-[6.25rem]">
-                                {schedule.days.length > 0 ? schedule.days.join(', ') : 'Select'}
+                                {schedule.days.length > 0 ? (
+                                  <>
+                                    {schedule.days.join(' / ')}
+                                    {missingDay2 && <> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Day">?</span></>}
+                                  </>
+                                ) : (
+                                  missingDay2 ? (
+                                    <>
+                                      <span className="text-red-500 font-bold" title="Missing 1st Session Day">?</span> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Day">?</span>
+                                    </>
+                                  ) : (
+                                    'Select'
+                                  )
+                                )}
                               </span>
                             </summary>
                             <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                             <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-2 rounded w-full`}>
                               {[
-                                { short: 'Mon', full: 'Monday' },
-                                { short: 'Tue', full: 'Tuesday' },
-                                { short: 'Wed', full: 'Wednesday' },
-                                { short: 'Thu', full: 'Thursday' },
-                                { short: 'Fri', full: 'Friday' },
-                                { short: 'Sat', full: 'Saturday' },
-                                { short: 'Sun', full: 'Sunday' }
+                                { short: 'Mon', full: 'Mon' },
+                                { short: 'Tue', full: 'Tue' },
+                                { short: 'Wed', full: 'Wed' },
+                                { short: 'Thu', full: 'Thu' },
+                                { short: 'Fri', full: 'Fri' },
+                                { short: 'Sat', full: 'Sat' },
+                                { short: 'Sun', full: 'Sun' }
                               ].map(day => {
+                                const dur1 = getDurationMins(schedule.startTime, schedule.endTime);
+                                const maxDays = dur1 === 180 ? 1 : 2;
                                 const isChecked = schedule.days.includes(day.short);
-                                const isMaxReached = schedule.days.length >= 2;
+                                const isMaxReached = schedule.days.length >= maxDays;
                                 const isDisabled = !isChecked && isMaxReached;
                                 return (
                                 <label key={day.short} className={`flex items-center gap-2 text-sm font-medium relative z-50 shrink-0 ${isDisabled ? 'text-gray-400 cursor-default' : 'cursor-pointer'}`}>
@@ -1529,11 +1670,6 @@ function MyDepartmentPage() {
                                   {day.full}
                                 </label>
                               )})}
-                              {schedule.days.length === 2 && (
-                                <div className="mt-2 text-xs text-[var(--brand-color)] font-medium">
-                                  1st: {schedule.days[0]} / 2nd: {schedule.days[1]}
-                                </div>
-                              )}
                             </div>
                           </details>
                         )}
@@ -1594,8 +1730,8 @@ function MyDepartmentPage() {
                         >
                           <summary onClick={(e) => { handleDropdownPosition(e); }} className={`h-full min-h-[2.75rem] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-inset flex items-center justify-between transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer focus:ring-2 focus:ring-[var(--brand-color)] ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}>
                             <span className="truncate">
-                              {schedule.buildingId ? (rooms.find(r => r.id === schedule.roomId)?.code || 'Select') : 'Select'}
-                              {(schedule as any).roomId2 ? ` / ${rooms.find(r => r.id === (schedule as any).roomId2)?.code || '?'}` : ''}
+                              {schedule.buildingId ? (rooms.find(r => r.id === schedule.roomId)?.code || (missingRoom1 ? <span className="text-red-500 font-bold ml-1" title="Missing 1st Session Room">?</span> : 'Select')) : 'Select'}
+                              {(schedule as any).roomId2 ? ` / ${rooms.find(r => r.id === (schedule as any).roomId2)?.code || '?'}` : (missingRoom2 ? <> / <span className="text-red-500 font-bold ml-1" title="Missing 2nd Session Room">?</span></> : '')}
                             </span>
                           </summary>
                           {schedule.buildingId && (
@@ -1603,7 +1739,10 @@ function MyDepartmentPage() {
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                               <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                                    1st Session
+                                    {missingRoom1 && <span className="text-red-500 text-sm font-bold" title="Required">?</span>}
+                                  </label>
                                   <InnerDropdown
                                     value={schedule.roomId || ''}
                                     onChange={(val) => {
@@ -1614,7 +1753,10 @@ function MyDepartmentPage() {
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
+                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+                                    2nd Session
+                                    {missingRoom2 && <span className="text-red-500 text-sm font-bold" title="Required">?</span>}
+                                  </label>
                                   <InnerDropdown
                                     value={(schedule as any).roomId2 || ''}
                                     disabled={!schedule.roomId}
