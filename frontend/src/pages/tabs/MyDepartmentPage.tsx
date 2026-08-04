@@ -378,10 +378,10 @@ function MyDepartmentPage() {
           children.forEach(child => {
             const parent = parentMap.get(child.parentId);
             if (parent) {
-              parent.instructorId2 = child.instructorId === parent.instructorId ? '' : child.instructorId;
-              parent.format2 = child.format === parent.format ? '' : child.format;
-              parent.startTime2 = child.startTime === parent.startTime ? '' : child.startTime;
-              parent.endTime2 = child.endTime === parent.endTime ? '' : child.endTime;
+              parent.instructorId2 = parent.instructorId2 || (child.instructorId === parent.instructorId ? '' : child.instructorId);
+              parent.format2 = parent.format2 || (child.format === parent.format ? '' : child.format);
+              parent.startTime2 = parent.startTime2 || (child.startTime === parent.startTime ? '' : child.startTime);
+              parent.endTime2 = parent.endTime2 || (child.endTime === parent.endTime ? '' : child.endTime);
               
               if (child.days && child.days.length > 0) {
                 const combinedDays = [...(parent.days || []), ...child.days];
@@ -389,8 +389,8 @@ function MyDepartmentPage() {
                 parent.days = Array.from(new Set(combinedDays)).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
               }
 
-              parent.buildingId2 = child.buildingId === parent.buildingId ? '' : child.buildingId;
-              parent.roomId2 = child.roomId === parent.roomId ? '' : child.roomId;
+              parent.buildingId2 = parent.buildingId2 || (child.buildingId === parent.buildingId ? '' : child.buildingId);
+              parent.roomId2 = parent.roomId2 || (child.roomId === parent.roomId ? '' : child.roomId);
               parent.childDocId = child.docId;
             }
           });
@@ -407,6 +407,8 @@ function MyDepartmentPage() {
     } else {
       setSchedules([])
       setDeletedScheduleIds([])
+      setIsRemoveMode(false)
+      setSelectedScheduleIds([])
     }
   }, [isAddScheduleModalOpen, departmentInfo])
 
@@ -722,7 +724,7 @@ function MyDepartmentPage() {
     }
     setSchedules(prev => {
       const removedSchedules = prev.filter(s => selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId)));
-      const removedDocIds = removedSchedules.map(s => (s as any).docId).filter(Boolean);
+      const removedDocIds = removedSchedules.flatMap(s => [(s as any).docId, (s as any).childDocId]).filter(Boolean);
       if (removedDocIds.length > 0) {
         setDeletedScheduleIds(current => [...current, ...removedDocIds]);
       }
@@ -790,6 +792,12 @@ function MyDepartmentPage() {
           buildingId: schedule.buildingId || null,
           roomId: schedule.roomId || null,
           instructorId: schedule.instructorId || null,
+          format2: (schedule as any).format2 || null,
+          startTime2: (schedule as any).startTime2 || null,
+          endTime2: (schedule as any).endTime2 || null,
+          buildingId2: (schedule as any).buildingId2 || null,
+          roomId2: (schedule as any).roomId2 || null,
+          instructorId2: (schedule as any).instructorId2 || null,
           groupId: groupId,
           parentId: schedule.parentId || null,
           orderIndex: index,
@@ -1921,7 +1929,7 @@ function MyDepartmentPage() {
               </div>
             </div>
           </div>
-          <div className="absolute inset-0 -z-10" onClick={() => !isSubmittingSchedules && setIsAddScheduleModalOpen(false)} />
+          <div className="absolute inset-0 -z-10" />
         </div>
       )}
 
