@@ -27,17 +27,34 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ]
 
+const formatShortMonth = (monthName: string) => {
+  if (!monthName) return ''
+  return monthName.slice(0, 3)
+}
+
+const phaseClasses: Record<string, string> = {
+  Closed: 'bg-gray-100 text-gray-600 border-gray-200',
+  Drafting: 'bg-amber-100 text-amber-700 border-amber-200',
+  Plotting: 'bg-blue-100 text-blue-700 border-blue-200',
+  Revision: 'bg-purple-100 text-purple-700 border-purple-200',
+  Final: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  Ended: 'bg-rose-100 text-rose-700 border-rose-200',
+}
+
 function AcademicCalendarPage() {
   const [years, setYears] = useState<AcademicYear[]>([])
   const [searchTerm, setSearchTerm] = useState('')
-  const [isLoading, setIsLoading] = useState(true)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isPhaseModalOpen, setIsPhaseModalOpen] = useState(false)
   const [editingYearId, setEditingYearId] = useState<string | null>(null)
   
   // Manage Phase State
   const [manageYearId, setManageYearId] = useState('')
+  const [manageSem1Start, setManageSem1Start] = useState('July')
+  const [manageSem1End, setManageSem1End] = useState('September')
   const [manageSem1Phase, setManageSem1Phase] = useState('Closed')
+  const [manageSem2Start, setManageSem2Start] = useState('November')
+  const [manageSem2End, setManageSem2End] = useState('January')
   const [manageSem2Phase, setManageSem2Phase] = useState('Closed')
   const [manageError, setManageError] = useState('')
   const [isManageSubmitting, setIsManageSubmitting] = useState(false)
@@ -46,8 +63,10 @@ function AcademicCalendarPage() {
   const [newYear, setNewYear] = useState('')
   const [sem1Start, setSem1Start] = useState('July')
   const [sem1End, setSem1End] = useState('September')
+  const [sem1Phase, setSem1Phase] = useState('Closed')
   const [sem2Start, setSem2Start] = useState('November')
   const [sem2End, setSem2End] = useState('January')
+  const [sem2Phase, setSem2Phase] = useState('Closed')
   
   const [createError, setCreateError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -57,7 +76,6 @@ function AcademicCalendarPage() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AcademicYear))
       setYears(fetched)
-      setIsLoading(false)
     })
     return () => unsubscribe()
   }, [])
@@ -96,8 +114,10 @@ function AcademicCalendarPage() {
     setNewYear(year.academicYear)
     setSem1Start(year.sem1.startMonth)
     setSem1End(year.sem1.endMonth)
+    setSem1Phase(year.sem1.phase || 'Closed')
     setSem2Start(year.sem2.startMonth)
     setSem2End(year.sem2.endMonth)
+    setSem2Phase(year.sem2.phase || 'Closed')
     setCreateError('')
     setIsModalOpen(true)
   }
@@ -174,10 +194,6 @@ function AcademicCalendarPage() {
 
     setIsSubmitting(true)
     try {
-      const existingYear = editingYearId ? years.find(y => y.id === editingYearId) : null
-      const sem1Phase = existingYear ? existingYear.sem1.phase : 'Closed'
-      const sem2Phase = existingYear ? existingYear.sem2.phase : 'Closed'
-
       if (editingYearId) {
         const docRef = doc(db, 'academicYears', editingYearId)
         await updateDoc(docRef, {
@@ -200,8 +216,10 @@ function AcademicCalendarPage() {
       setNewYear('')
       setSem1Start('July')
       setSem1End('September')
+      setSem1Phase('Closed')
       setSem2Start('November')
       setSem2End('January')
+      setSem2Phase('Closed')
       setCreateError('')
     } catch (error) {
       console.error('Error creating school year:', error)
@@ -225,12 +243,20 @@ function AcademicCalendarPage() {
     const currentActive = years.find(y => y.isActive)
     if (currentActive) {
       setManageYearId(currentActive.id)
-      setManageSem1Phase(currentActive.sem1.phase)
-      setManageSem2Phase(currentActive.sem2.phase)
+      setManageSem1Start(currentActive.sem1.startMonth || 'July')
+      setManageSem1End(currentActive.sem1.endMonth || 'September')
+      setManageSem1Phase(currentActive.sem1.phase || 'Closed')
+      setManageSem2Start(currentActive.sem2.startMonth || 'November')
+      setManageSem2End(currentActive.sem2.endMonth || 'January')
+      setManageSem2Phase(currentActive.sem2.phase || 'Closed')
     } else if (years.length > 0) {
       setManageYearId(years[0].id)
-      setManageSem1Phase(years[0].sem1.phase)
-      setManageSem2Phase(years[0].sem2.phase)
+      setManageSem1Start(years[0].sem1.startMonth || 'July')
+      setManageSem1End(years[0].sem1.endMonth || 'September')
+      setManageSem1Phase(years[0].sem1.phase || 'Closed')
+      setManageSem2Start(years[0].sem2.startMonth || 'November')
+      setManageSem2End(years[0].sem2.endMonth || 'January')
+      setManageSem2Phase(years[0].sem2.phase || 'Closed')
     }
     setManageError('')
     setIsPhaseModalOpen(true)
@@ -240,8 +266,12 @@ function AcademicCalendarPage() {
     const selectedYear = years.find(y => y.academicYear === academicYearStr)
     if (selectedYear) {
       setManageYearId(selectedYear.id)
-      setManageSem1Phase(selectedYear.sem1.phase)
-      setManageSem2Phase(selectedYear.sem2.phase)
+      setManageSem1Start(selectedYear.sem1.startMonth || 'July')
+      setManageSem1End(selectedYear.sem1.endMonth || 'September')
+      setManageSem1Phase(selectedYear.sem1.phase || 'Closed')
+      setManageSem2Start(selectedYear.sem2.startMonth || 'November')
+      setManageSem2End(selectedYear.sem2.endMonth || 'January')
+      setManageSem2Phase(selectedYear.sem2.phase || 'Closed')
     }
   }
 
@@ -253,6 +283,64 @@ function AcademicCalendarPage() {
       return
     }
 
+    const selectedYearDoc = years.find(y => y.id === manageYearId)
+    if (!selectedYearDoc) {
+      setManageError('Selected school year not found.')
+      return
+    }
+
+    const yearMatches = selectedYearDoc.academicYear.match(/(\d{4})\s*-\s*(\d{4})/)
+    let baseYear = new Date().getFullYear()
+    if (yearMatches) {
+      baseYear = parseInt(yearMatches[1], 10)
+    }
+
+    const getMonthIndex = (monthName: string) => MONTHS.indexOf(monthName)
+
+    // Sem 1 Inference
+    const sem1StartIdx = getMonthIndex(manageSem1Start)
+    const sem1EndIdx = getMonthIndex(manageSem1End)
+    const sem1StartYear = baseYear
+    const sem1EndYear = sem1EndIdx < sem1StartIdx ? baseYear + 1 : baseYear
+
+    // Sem 2 Inference
+    const sem2StartIdx = getMonthIndex(manageSem2Start)
+    const sem2EndIdx = getMonthIndex(manageSem2End)
+    const sem2StartYear = Math.min(sem2StartIdx < sem1EndIdx ? sem1EndYear + 1 : sem1EndYear, baseYear + 1)
+    const sem2EndYear = Math.min(sem2EndIdx < sem2StartIdx ? sem2StartYear + 1 : sem2StartYear, baseYear + 1)
+
+    // Validation (Absolute Months: Year * 12 + Month)
+    const date1Start = sem1StartYear * 12 + sem1StartIdx
+    const date1End = sem1EndYear * 12 + sem1EndIdx
+    const date2Start = sem2StartYear * 12 + sem2StartIdx
+    const date2End = sem2EndYear * 12 + sem2EndIdx
+
+    if (date1Start >= date1End) {
+      setManageError('1st Semester end month must be after its start month.')
+      return
+    }
+    if (date2Start >= date2End) {
+      setManageError('2nd Semester end month must be after its start month.')
+      return
+    }
+    if (date2Start <= date1End) {
+      setManageError('2nd Semester must start after 1st Semester ends.')
+      return
+    }
+
+    // Inter-Year Overlap Validation
+    for (const existing of years) {
+      if (manageYearId === existing.id) continue;
+
+      const existingStart = existing.sem1.startYear * 12 + getMonthIndex(existing.sem1.startMonth)
+      const existingEnd = existing.sem2.endYear * 12 + getMonthIndex(existing.sem2.endMonth)
+
+      if (date1Start <= existingEnd && date2End >= existingStart) {
+        setManageError(`Overlaps with ${existing.academicYear} (${existing.sem1.startMonth} ${existing.sem1.startYear} - ${existing.sem2.endMonth} ${existing.sem2.endYear})`)
+        return
+      }
+    }
+
     setIsManageSubmitting(true)
     try {
       const batch = writeBatch(db)
@@ -261,8 +349,20 @@ function AcademicCalendarPage() {
         if (y.id === manageYearId) {
           batch.update(ref, { 
             isActive: true,
-            'sem1.phase': manageSem1Phase,
-            'sem2.phase': manageSem2Phase
+            sem1: {
+              startMonth: manageSem1Start,
+              startYear: sem1StartYear,
+              endMonth: manageSem1End,
+              endYear: sem1EndYear,
+              phase: manageSem1Phase
+            },
+            sem2: {
+              startMonth: manageSem2Start,
+              startYear: sem2StartYear,
+              endMonth: manageSem2End,
+              endYear: sem2EndYear,
+              phase: manageSem2Phase
+            }
           })
         } else if (y.isActive) {
           batch.update(ref, { isActive: false })
@@ -279,14 +379,6 @@ function AcademicCalendarPage() {
   }
 
   const activeYear = years.find(y => y.isActive)
-
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-[var(--brand-surface)]">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--brand-color)] border-t-transparent"></div>
-      </div>
-    )
-  }
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
@@ -351,8 +443,10 @@ function AcademicCalendarPage() {
               setNewYear('')
               setSem1Start('July')
               setSem1End('September')
+              setSem1Phase('Closed')
               setSem2Start('November')
               setSem2End('January')
+              setSem2Phase('Closed')
               setCreateError('')
               setIsModalOpen(true)
             },
@@ -391,17 +485,23 @@ function AcademicCalendarPage() {
                           <span className={`font-bold text-base ${year.isActive ? 'text-emerald-600' : 'text-gray-900'}`}>{year.academicYear}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 align-top">
-                        <div className="flex flex-col">
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex items-center gap-2.5">
                           <span className="text-sm font-semibold text-gray-700">
-                            {year.sem1.startMonth} - {year.sem1.endMonth}
+                            {formatShortMonth(year.sem1.startMonth)} - {formatShortMonth(year.sem1.endMonth)}
+                          </span>
+                          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider border ${phaseClasses[year.sem1.phase] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                            {year.sem1.phase || 'Closed'}
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-4 align-top">
-                        <div className="flex flex-col">
+                      <td className="px-6 py-4 align-middle">
+                        <div className="flex items-center gap-2.5">
                           <span className="text-sm font-semibold text-gray-700">
-                            {year.sem2.startMonth} - {year.sem2.endMonth}
+                            {formatShortMonth(year.sem2.startMonth)} - {formatShortMonth(year.sem2.endMonth)}
+                          </span>
+                          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider border ${phaseClasses[year.sem2.phase] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+                            {year.sem2.phase || 'Closed'}
                           </span>
                         </div>
                       </td>
@@ -482,6 +582,10 @@ function AcademicCalendarPage() {
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Month</label>
                     <SingleSelectDropdown value={sem1End} options={MONTHS} onChange={setSem1End} />
                   </div>
+                  <div>
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Phase</label>
+                    <SingleSelectDropdown value={sem1Phase} options={['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended']} onChange={setSem1Phase} />
+                  </div>
                 </div>
 
                 {/* 2nd Semester Config */}
@@ -495,6 +599,10 @@ function AcademicCalendarPage() {
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Month</label>
                     <SingleSelectDropdown value={sem2End} options={MONTHS} onChange={setSem2End} />
+                  </div>
+                  <div>
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Phase</label>
+                    <SingleSelectDropdown value={sem2Phase} options={['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended']} onChange={setSem2Phase} />
                   </div>
                 </div>
               </div>
@@ -544,9 +652,18 @@ function AcademicCalendarPage() {
             className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
-              <h3 className="text-xl font-bold">Manage Active Year & Phases</h3>
-              <p className="mt-1 text-sm text-white/80">Set the active school year and its semester phases.</p>
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold">Manage Active Year & Phases</h3>
+                <p className="mt-1 text-sm text-white/80">Set the active school year and its semester details.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPhaseModalOpen(false)}
+                className="text-white/80 hover:text-white transition"
+              >
+                ✕
+              </button>
             </div>
             <form onSubmit={handleSavePhases} className="p-6 space-y-6">
               <div>
@@ -565,6 +682,14 @@ function AcademicCalendarPage() {
                 <div className="space-y-4 rounded-md border border-gray-200 bg-gray-100 p-4 shadow-sm">
                   <h4 className="text-sm font-bold text-gray-800">1st Semester</h4>
                   <div>
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Month</label>
+                    <SingleSelectDropdown value={manageSem1Start} options={MONTHS} onChange={setManageSem1Start} />
+                  </div>
+                  <div>
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Month</label>
+                    <SingleSelectDropdown value={manageSem1End} options={MONTHS} onChange={setManageSem1End} />
+                  </div>
+                  <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Phase</label>
                     <SingleSelectDropdown value={manageSem1Phase} options={['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended']} onChange={setManageSem1Phase} />
                   </div>
@@ -573,6 +698,14 @@ function AcademicCalendarPage() {
                 {/* 2nd Semester Config */}
                 <div className="space-y-4 rounded-md border border-gray-200 bg-gray-100 p-4 shadow-sm">
                   <h4 className="text-sm font-bold text-gray-800">2nd Semester</h4>
+                  <div>
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Month</label>
+                    <SingleSelectDropdown value={manageSem2Start} options={MONTHS} onChange={setManageSem2Start} />
+                  </div>
+                  <div>
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Month</label>
+                    <SingleSelectDropdown value={manageSem2End} options={MONTHS} onChange={setManageSem2End} />
+                  </div>
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Phase</label>
                     <SingleSelectDropdown value={manageSem2Phase} options={['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended']} onChange={setManageSem2Phase} />

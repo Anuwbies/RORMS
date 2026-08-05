@@ -19,7 +19,7 @@ export function IconButton({ label, onClick, className, children, disabled }: Ic
       aria-label={label}
       disabled={disabled}
       className={joinClasses(
-        'inline-flex items-center justify-center rounded-2xl text-[var(--brand-color)] transition hover:bg-[rgba(98,133,62,0.08)] hover:text-[var(--brand-color)]',
+        'inline-flex items-center justify-center rounded-2xl text-[var(--brand-color)] transition hover:bg-[rgba(98,133,62,0.08)] hover:text-[var(--brand-color)] cursor-pointer disabled:cursor-not-allowed',
         className,
       )}
       onClick={onClick}

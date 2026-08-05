@@ -53,7 +53,7 @@ export function LeftSidebar({
         <button
           type="button"
           aria-label="Close navigation"
-          className="fixed inset-0 z-30 bg-[rgba(0,0,0,0.2)] lg:hidden"
+          className="fixed inset-0 z-30 bg-[rgba(0,0,0,0.2)] lg:hidden cursor-pointer"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -82,9 +82,15 @@ export function LeftSidebar({
                 isSidebarExpanded ? 'justify-between' : 'flex-col justify-center gap-4',
               )}
             >
-              <div
+              <button
+                type="button"
+                onClick={() => {
+                  onSectionChange('dashboard')
+                  setIsSidebarOpen(false)
+                }}
+                title="Go to Dashboard"
                 className={joinClasses(
-                  'flex min-w-0 items-center gap-2',
+                  'flex min-w-0 items-center gap-2 text-left cursor-pointer group focus:outline-none',
                   !isSidebarExpanded && 'order-2',
                 )}
               >
@@ -92,25 +98,25 @@ export function LeftSidebar({
                   src="/logo2.png"
                   alt="RORMS Logo"
                   className={joinClasses(
-                    'shrink-0 object-cover',
+                    'shrink-0 object-cover transition-transform group-hover:scale-105',
                     isSidebarExpanded ? 'h-12 w-12' : 'h-10 w-10',
                   )}
                 />
 
                 {isSidebarExpanded && (
                   <div className="w-[10.625rem] shrink-0 overflow-hidden">
-                    <h1 className="text-[0.9375rem] font-medium leading-tight tracking-tight text-black">
+                    <h1 className="text-[0.9375rem] font-medium leading-tight tracking-tight text-black group-hover:text-[var(--brand-color)] transition-colors">
                       <span className="block whitespace-nowrap">Registrar Office Room</span>
                       <span className="block whitespace-nowrap">Management System</span>
                     </h1>
                   </div>
                 )}
-              </div>
+              </button>
 
               {isSidebarExpanded ? (
                 <IconButton
                   label="Collapse sidebar"
-                  className="h-8 w-8 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
+                  className="h-8 w-8 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100 cursor-pointer"
                   onClick={() => setIsSidebarExpanded(false)}
                 >
                   <ChevronLeftIcon className="h-5 w-5" />
@@ -118,7 +124,7 @@ export function LeftSidebar({
               ) : (
                 <IconButton
                   label="Expand sidebar"
-                  className="order-1 h-8 w-8 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100"
+                  className="order-1 h-8 w-8 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100 cursor-pointer"
                   onClick={() => setIsSidebarExpanded(true)}
                 >
                   <ChevronRightIcon className="h-5 w-5" />
@@ -129,7 +135,7 @@ export function LeftSidebar({
             <button
               type="button"
               aria-label="Close navigation"
-              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 lg:hidden"
+              className="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-md text-gray-500 transition hover:bg-gray-100 lg:hidden cursor-pointer"
               onClick={() => setIsSidebarOpen(false)}
             >
               <CloseIcon className="h-5 w-5" />
@@ -155,7 +161,7 @@ export function LeftSidebar({
                     setIsSidebarOpen(false)
                   }}
                   className={joinClasses(
-                    'group flex w-full items-center gap-3 text-left text-base font-semibold transition-all duration-200',
+                    'group flex w-full items-center gap-3 text-left text-base font-semibold transition-all duration-200 cursor-pointer',
                     isSidebarExpanded ? 'h-12 px-3.5' : 'h-12 justify-center',
                     isActive
                       ? 'rounded-md bg-[var(--brand-color)]/20 text-[var(--brand-color)]'

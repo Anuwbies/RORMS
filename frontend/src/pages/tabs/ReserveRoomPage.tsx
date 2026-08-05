@@ -3,6 +3,7 @@ import { PageHeader } from '../../components/PageHeader'
 import { DoorIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, ClockIcon, BookIcon, CheckIcon, CalendarIcon, ClipboardIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
+import { MultiSelectDropdown } from '../../components/MultiSelectDropdown'
 import { TimePicker } from '../../components/TimePicker'
 import { DatePicker } from '../../components/DatePicker'
 import { db, auth } from '../../firebase'
@@ -94,131 +95,7 @@ function getEarliestAvailableDate(availableDays: string[]) {
   return getLocalIsoDate(today)
 }
 
-interface MultiSelectDropdownProps<T extends string> {
-  label: string
-  options: T[]
-  selectedValues: T[]
-  onChange: (values: T[]) => void
-  className?: string
-  onToggle?: (isOpen: boolean) => void
-}
 
-function MultiSelectDropdown<T extends string>({ 
-  label, 
-  options, 
-  selectedValues, 
-  onChange, 
-  className = '',
-  onToggle
-}: MultiSelectDropdownProps<T>) {
-  const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const menuWidthRef = useRef<HTMLDivElement>(null)
-  const [menuMinWidth, setMenuMinWidth] = useState<number | null>(null)
-
-  useEffect(() => {
-    onToggle?.(isOpen)
-  }, [isOpen, onToggle])
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  const toggleOption = (option: T) => {
-    const nextValues = selectedValues.includes(option)
-      ? selectedValues.filter((v) => v !== option)
-      : [...selectedValues, option]
-    onChange(nextValues)
-  }
-
-  const displayText = selectedValues.length === 0 
-    ? label 
-    : selectedValues.length === 1 
-      ? selectedValues[0] 
-      : `${selectedValues[0]} +${selectedValues.length - 1}`
-
-  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), label)
-  const widestTriggerText = [label, longestOption, `${longestOption} +${Math.max(options.length - 1, 0)}`]
-    .reduce((a, b) => (a.length > b.length ? a : b))
-
-  useLayoutEffect(() => {
-    if (!menuWidthRef.current) {
-      return
-    }
-
-    setMenuMinWidth(menuWidthRef.current.offsetWidth)
-  }, [longestOption])
-
-  return (
-    <div
-      className={`relative ${className}`}
-      ref={dropdownRef}
-      style={menuMinWidth ? { minWidth: `${menuMinWidth}px` } : undefined}
-    >
-      <div
-        ref={menuWidthRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 invisible w-max rounded-md border border-transparent p-1.5"
-      >
-        <div className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-bold">
-          <span className="h-4 w-4 shrink-0 rounded border border-transparent" />
-          <span className="whitespace-nowrap">{longestOption}</span>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative flex w-full items-center justify-between gap-3 rounded-md border border-gray-200 bg-white pl-4 pr-3 py-3 text-sm font-bold text-gray-600 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
-      >
-        <div className="relative flex items-center">
-          <span className="invisible h-0 overflow-hidden whitespace-nowrap font-bold" aria-hidden="true">
-            {widestTriggerText}
-          </span>
-          <span className="absolute left-0 whitespace-nowrap text-gray-900">{displayText}</span>
-        </div>
-        <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute left-0 z-20 mt-2 min-w-full overflow-hidden rounded-md border border-gray-200 bg-white p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-          <div className="space-y-1">
-            {options.map((option) => {
-              const isSelected = selectedValues.includes(option)
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => toggleOption(option)}
-                  className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm font-bold transition-colors ${
-                    isSelected 
-                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)]' 
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <div className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                    isSelected 
-                      ? 'bg-[var(--brand-color)] border-[var(--brand-color)]' 
-                      : 'border-gray-300 bg-white group-hover:border-gray-400'
-                  }`}>
-                    {isSelected && <CheckIcon className="h-3 w-3 text-white" strokeWidth={3} />}
-                  </div>
-                  <span className="whitespace-nowrap">{option}</span>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function ReserveRoomPage() {
   const [searchTerm, setSearchTerm] = useState('')
@@ -998,50 +875,46 @@ function ReserveRoomPage() {
                               <div className="h-1 flex-1 bg-gray-200" />
                             </div>
 
-                            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,500px),1fr))]">
+                            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))]">
                               {roomsByFloor[floor]
                                 ?.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
                                 .map((room) => (
                                 <div
                                   key={room.id}
                                   onClick={() => handleOpenRoomInfoModal(room)}
-                                  className="flex overflow-hidden rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
+                                  className="flex rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
                                 >
                                   <img
                                     src={room.image}
                                     alt={room.name}
-                                    className="aspect-square w-32 h-32 shrink-0 object-cover grayscale-[0.2] sm:w-40 sm:h-40"
+                                    className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-l-md sm:w-32 sm:h-32"
                                     onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                                   />
 
-                                  <div className="flex flex-1 flex-col justify-between p-4">
+                                  <div className="flex flex-1 flex-col justify-between p-3.5 min-w-0">
                                     <div>
                                       <div className="flex items-start justify-between gap-2">
-                                        <h5 className="text-lg font-bold leading-tight text-gray-900">
+                                        <h5 className="text-base font-bold leading-tight text-gray-900 truncate mt-1">
                                           {room.name}
                                         </h5>
+                                        <div className="h-8 w-8 shrink-0"></div>
                                       </div>
-                                      <p className="mt-0.5 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                      <p className="-mt-1 text-xs font-bold uppercase tracking-wider text-gray-400">
                                         {room.type}
                                       </p>
                                     </div>
 
-                                    <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
-                                      <div className="flex items-center gap-3">
-                                        <div className="flex h-11 w-11 items-center justify-center rounded-md bg-white border border-gray-200 shrink-0">
-                                          <UserIcon className="h-6 w-6 text-gray-500" />
+                                    <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
+                                      <div className="flex items-center gap-2">
+                                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200 shrink-0">
+                                          <UserIcon className="h-4 w-4 text-gray-500" />
                                         </div>
-                                        <div className="flex flex-col">
-                                          <span className="text-[0.625rem] font-bold uppercase tracking-widest text-gray-400 leading-tight">
-                                            Capacity
-                                          </span>
-                                          <span className="text-sm font-bold text-gray-700 leading-none mt-0.5">
-                                            {room.capacity} people
-                                          </span>
-                                        </div>
+                                        <span className="text-sm font-bold text-gray-700">
+                                          {room.capacity} people
+                                        </span>
                                       </div>
                                       <span
-                                        className={`rounded-full px-2.5 py-1 text-[0.625rem] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
+                                        className={`rounded-full px-2 py-0.5 text-[0.5625rem] font-black uppercase tracking-widest ${roomStatusClasses[room.status]}`}
                                       >
                                         {room.status}
                                       </span>

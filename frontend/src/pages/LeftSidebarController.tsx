@@ -33,18 +33,18 @@ const navItems: NavItem[] = [
     icon: DashboardIcon,
   },
   {
-    id: 'mySchedule',
-    label: 'My Schedule',
-    eyebrow: 'My Schedule',
-    description: 'View and manage your upcoming room bookings.',
-    icon: CalendarIcon,
-  },
-  {
     id: 'reports',
     label: 'Reports',
     eyebrow: 'Reports',
     description: 'Generate and view university-wide utilization reports.',
     icon: ClipboardIcon,
+  },
+  {
+    id: 'mySchedule',
+    label: 'My Schedule',
+    eyebrow: 'My Schedule',
+    description: 'View and manage your upcoming room bookings.',
+    icon: CalendarIcon,
   },
   {
     id: 'academicCalendar',
