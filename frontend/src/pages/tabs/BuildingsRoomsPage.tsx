@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
-import { PageHeader } from '../../components/PageHeader'
+import { SectionHeader } from '../../components/SectionHeader'
 import { DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
 import { SearchFilters } from '../../components/SearchFilters'
+import { FilterDropdown } from '../../components/FilterDropdown'
 import { db, storage } from '../../firebase'
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import { 
@@ -213,6 +214,8 @@ function SingleSelectDropdown<T extends string>({
 
 function BuildingsRoomsPage() {
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedRoomStatuses, setSelectedRoomStatuses] = useState<RoomStatus[]>([])
+  const [selectedRoomTypes, setSelectedRoomTypes] = useState<string[]>([])
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
   const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
@@ -821,11 +824,7 @@ function BuildingsRoomsPage() {
   const normalizedSearch = searchTerm.trim().toLowerCase()
   const filteredBuildings = buildings
     .map((building) => {
-      if (!normalizedSearch) {
-        return building
-      }
-
-      const buildingMatches = [
+      const buildingMatchesSearch = !normalizedSearch || [
         building.name,
         building.code,
         String(building.floor),
@@ -833,19 +832,20 @@ function BuildingsRoomsPage() {
         String(building.capacity),
       ].some((value) => value.toLowerCase().includes(normalizedSearch))
 
-      if (buildingMatches) {
-        return building
-      }
-
-      const matchingRooms = building.rooms.filter((room) =>
-        [
+      const matchingRooms = building.rooms.filter((room) => {
+        const matchesSearch = !normalizedSearch || buildingMatchesSearch || [
           room.name,
           room.code,
           room.type,
           String(room.capacity),
           room.status,
-        ].some((value) => value.toLowerCase().includes(normalizedSearch)),
-      )
+        ].some((value) => value.toLowerCase().includes(normalizedSearch))
+
+        const matchesStatus = selectedRoomStatuses.length === 0 || selectedRoomStatuses.includes(room.status)
+        const matchesType = selectedRoomTypes.length === 0 || selectedRoomTypes.includes(room.type)
+
+        return matchesSearch && matchesStatus && matchesType
+      })
 
       if (matchingRooms.length === 0) {
         return null
@@ -860,7 +860,7 @@ function BuildingsRoomsPage() {
 
   return (
     <section 
-      className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8"
+      className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8"
       onClick={() => setOpenMenuId(null)}
     >
       {/* Create/Edit Building Modal */}
@@ -1771,13 +1771,10 @@ function BuildingsRoomsPage() {
       )}
 
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <PageHeader 
-            title="Buildings & Rooms" 
-            description="Manage campus facilities, view room capacities, and track utilization." 
-          />
-
-          <div className="p-6 bg-gray-50/50">
+        <SectionHeader 
+          title="Buildings & Rooms" 
+          description="Manage campus facilities, view room capacities, and track utilization." 
+        />
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
@@ -1819,13 +1816,34 @@ function BuildingsRoomsPage() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
         <SearchFilters
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
           placeholder="Search by building name, room code, status, capacity..."
+          dropdowns={
+            <FilterDropdown
+              groups={[
+                {
+                  id: 'status',
+                  title: 'Room Status',
+                  options: ['Available', 'Occupied', 'Reserved', 'Maintenance'],
+                  selectedValues: selectedRoomStatuses,
+                  onChange: (newVals) => setSelectedRoomStatuses(newVals as RoomStatus[]),
+                },
+                {
+                  id: 'type',
+                  title: 'Room Type',
+                  options: Array.from(new Set(buildings.flatMap(b => b.rooms.map(r => r.type)))).filter(Boolean).sort(),
+                  selectedValues: selectedRoomTypes,
+                  onChange: (newVals) => setSelectedRoomTypes(newVals),
+                },
+              ]}
+              onClearAll={() => {
+                setSelectedRoomStatuses([])
+                setSelectedRoomTypes([])
+              }}
+            />
+          }
           primaryButton={{
             label: "Add Building",
             onClick: () => handleOpenBuildingModal()
@@ -2106,9 +2124,7 @@ function BuildingsRoomsPage() {
               </article>
             )
           })}
-        </div>
       </div>
-
       {/* Crop Modal */}
       {cropModalData.isOpen && (
         <CropModal
@@ -2121,6 +2137,7 @@ function BuildingsRoomsPage() {
           cropShape="rect"
         />
       )}
+      </div>
     </section>
   )
 }

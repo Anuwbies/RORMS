@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, useLayoutEffect, useCallback } fr
 import { ClipboardIcon, SearchIcon, EditIcon, TrashIcon, CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, DoorIcon, CalendarIcon, UserIcon, BookIcon, BuildingIcon, LayersIcon, UsersIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
-import { PageHeader } from '../../components/PageHeader'
+import { SectionHeader } from '../../components/SectionHeader'
 import { db } from '../../firebase'
 import { 
   collection, 
@@ -869,15 +869,12 @@ function ManageReservationsPage() {
   }
 
   return (
-    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <PageHeader 
-            title="Manage Reservations" 
-            description="Review, approve, or decline room booking requests from faculty and staff." 
-          />
-
-          <div className="p-6 bg-gray-50/50">
+        <SectionHeader 
+          title="Manage Reservations" 
+          description="Review, approve, or decline room booking requests from faculty and staff." 
+        />
             <div className="grid gap-4 grid-cols-2 md:grid-cols-3 xl:grid-cols-5">
               <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
@@ -929,9 +926,6 @@ function ManageReservationsPage() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
         <SearchFilters
           searchTerm={searchTerm}
           onSearchChange={setSearchTerm}
@@ -1069,7 +1063,6 @@ function ManageReservationsPage() {
             </table>
           </div>
         </div>
-      </div>
 
       {viewingReservation && (
         <ReservationDetailsModal
@@ -1105,6 +1098,7 @@ function ManageReservationsPage() {
           onClose={() => setConfirmingAction(null)}
         />
       )}
+      </div>
     </section>
   )
 }

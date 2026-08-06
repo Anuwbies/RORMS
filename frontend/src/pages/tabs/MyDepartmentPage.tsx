@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { PageHeader } from '../../components/PageHeader';
+import { SectionHeader } from '../../components/SectionHeader';
 import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
@@ -25,7 +25,7 @@ const roleClasses: Record<string, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',
-  'Program Head': 'bg-indigo-100 text-indigo-700',
+  'Program Head': 'bg-rose-100 text-rose-700',
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
@@ -924,7 +924,7 @@ function MyDepartmentPage() {
   }
 
   return (
-    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       {/* Remove Member Modal */}
       {isRemoveModalOpen && memberToRemove && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
@@ -2304,13 +2304,10 @@ function MyDepartmentPage() {
       )}
 
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <PageHeader 
-            title="My Department" 
-            description="Overview of your department's members, rooms, and activity." 
-          />
-
-          <div className="p-6 bg-gray-50/50">
+        <SectionHeader 
+          title="My Department" 
+          description="Overview of your department's members, rooms, and activity." 
+        />
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="xl:col-span-2 rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
                 <div className={`flex h-14 w-14 items-center justify-center overflow-hidden border border-gray-200 shrink-0 ${departmentInfo?.logo && !logoError ? 'rounded-full' : 'rounded-md'}`}>
@@ -2359,8 +2356,6 @@ function MyDepartmentPage() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
 
         <div className="flex justify-between items-end mb-[-1rem]">
           <h3 className="text-xl font-bold text-gray-900"></h3>

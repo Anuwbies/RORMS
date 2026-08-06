@@ -1,4 +1,4 @@
-import { PageHeader } from '../../components/PageHeader';
+import { SectionHeader } from '../../components/SectionHeader';
 import {
   UsersIcon, BuildingIcon, DoorIcon, ClipboardIcon,
   CalendarIcon, CheckCircleIcon, ArrowRightIcon
@@ -62,15 +62,14 @@ const systemAlerts = [
 
 function DashboardPage() {
   return (
-    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <PageHeader 
-            title="Dashboard" 
-            description="High-level registrar metrics, room activity, and system summaries." 
-          />
+        <SectionHeader 
+          title="Dashboard" 
+          description="High-level registrar metrics, room activity, and system summaries." 
+        />
 
-          <div className="p-6 bg-gray-50/50 space-y-8">
+        <div className="space-y-8">
             {/* Enhanced Key Metrics */}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
@@ -315,11 +314,10 @@ function DashboardPage() {
                       </p>
                     </div>
                   ))}
-                </div>
               </div>
             </div>
-          </div>
         </div>
+      </div>
       </div>
     </section>
   )

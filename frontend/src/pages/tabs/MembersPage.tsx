@@ -1,36 +1,16 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
 import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy, writeBatch, doc } from 'firebase/firestore'
 import { auth, db } from '../../firebase'
-import { UsersIcon, UserIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon } from '../../components/Icons'
+import { UsersIcon, UserIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon, SearchIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, FilterIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
-import { SearchFilters } from '../../components/SearchFilters'
-import { PageHeader } from '../../components/PageHeader'
-import { MultiSelectDropdown } from '../../components/MultiSelectDropdown'
+import { TextInput } from '../../components/TextInput'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 
-type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Program Head' | 'Instructor'
-type MemberStatus = 'Active' | 'Inactive' | 'Pending'
-
-interface Department {
-  id: string
-  name: string
-  code: string
-  dean: string
-  programHead?: string
-}
-
-interface Member {
-  id: string
-  name: string
-  email: string
-  role: MemberRole
-  status: MemberStatus
-  department?: string
-  joinedDate: string
-  avatar: string
-  membershipId?: string
-}
-
+import { SectionHeader } from '../../components/SectionHeader'
+import type { MemberRole, MemberStatus, Department, Member } from '../../types/member'
+import { Button } from '../../components/Button'
+import { FilterDropdown } from '../../components/FilterDropdown'
+import { DataTable, type ColumnDef } from '../../components/DataTable'
 const rolePriority: Record<MemberRole, number> = {
   Admin: 0,
   Registrar: 1,
@@ -43,7 +23,7 @@ const roleClasses: Record<MemberRole, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',
-  'Program Head': 'bg-indigo-100 text-indigo-700',
+  'Program Head': 'bg-rose-100 text-rose-700',
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
@@ -60,7 +40,10 @@ function MembersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<MemberRole[]>([])
   const [selectedStatuses, setSelectedStatuses] = useState<MemberStatus[]>([])
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([])
   const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
+  
+  // Pagination state is now handled internally by DataTable
   
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
@@ -183,8 +166,11 @@ function MembersPage() {
       )
       const matchesRole = selectedRoles.length === 0 || selectedRoles.includes(member.role)
       const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(member.status)
+      
+      const memberDept = member.department || (member.role === 'Admin' ? 'Administrative Office' : member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned')
+      const matchesDepartment = selectedDepartments.length === 0 || selectedDepartments.includes(memberDept)
 
-      return matchesSearch && matchesRole && matchesStatus
+      return matchesSearch && matchesRole && matchesStatus && matchesDepartment
     })
     .sort((a, b) => rolePriority[a.role] - rolePriority[b.role])
 
@@ -611,15 +597,16 @@ function MembersPage() {
   }
 
   return (
-    <section className="relative h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
+      {/* Decorative Background Elements */}
       {/* Edit Member Modal */}
       {editingMember && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
               <h3 className="text-xl font-bold">Edit Member</h3>
               <p className="mt-1 text-sm text-white/80">Update role and department for {editingMember.name || editingMember.email}.</p>
             </div>
@@ -671,21 +658,23 @@ function MembersPage() {
               </div>
 
               <div className="flex items-center gap-3 pt-2">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => setEditingMember(null)}
                   disabled={isSavingEdit}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="brand"
                   disabled={isSavingEdit}
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1"
                 >
                   {isSavingEdit ? 'Saving...' : 'Save Changes'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -703,16 +692,16 @@ function MembersPage() {
       {memberToRemove && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-md">
+            <div className="bg-rose-600 p-6 text-white">
               <h3 className="text-xl font-bold">Remove Member</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to remove this member from the system?</p>
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+              <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden">
                   {memberToRemove.avatar && !avatarErrors[memberToRemove.avatar] ? (
                     <img 
@@ -733,7 +722,7 @@ function MembersPage() {
                 </div>
               </div>
 
-              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+              <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
                 <p className="text-xs leading-relaxed text-rose-700">
                   <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete their account, all membership records, and access to the system.
                 </p>
@@ -745,10 +734,14 @@ function MembersPage() {
                 </label>
                 <input
                   type="text"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck="false"
                   value={removeConfirmText}
                   onChange={(e) => setRemoveConfirmText(e.target.value)}
                   placeholder="Type confirm here..."
-                  className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-sm"
+                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-xs"
                   autoFocus
                 />
               </div>
@@ -760,22 +753,23 @@ function MembersPage() {
               )}
 
               <div className="flex items-center gap-3 pt-2">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => {
                     setMemberToRemove(null)
                     setRemoveConfirmText('')
                   }}
                   disabled={isRemovingMember}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
+                </Button>
                 <button
                   type="button"
                   onClick={handleRemoveSubmit}
                   disabled={isRemovingMember || removeConfirmText.toLowerCase() !== 'confirm'}
-                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1 h-12 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white shadow-md transition-all hover:bg-rose-700 active:scale-95 active:shadow-none disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isRemovingMember ? 'Removing...' : 'Confirm Remove'}
                 </button>
@@ -796,12 +790,12 @@ function MembersPage() {
 
       {/* Invite Member Modal Overlay */}
       {isInviteModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl overflow-hidden">
               <h3 className="text-xl font-bold">Invite New Member</h3>
               <p className="mt-1 text-sm text-white/80">Send an invitation link to join the team.</p>
             </div>
@@ -812,20 +806,20 @@ function MembersPage() {
                   <label htmlFor="invite-email" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                     Email Address
                   </label>
-                  <input
-                    id="invite-email"
-                    type="text"
+                  <TextInput
                     value={inviteEmail}
-                    onChange={(e) => {
-                      setInviteEmail(e.target.value)
-                      if (inviteError) setInviteError('')
+                    onChange={(val) => {
+                      setInviteEmail(val);
+                      if (inviteError) setInviteError('');
                     }}
+                    error={!!inviteError && !inviteError.startsWith('Sent')}
                     placeholder="name@example.com, another"
-                    className={`w-full rounded-md border bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
+                    inputClassName={`border ${
                       inviteError && !inviteError.startsWith('Sent')
                         ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                        : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                    }`}
+                        : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'}
+                    `}
+                    className="w-full"
                     autoFocus
                   />
                   {inviteError && (
@@ -837,7 +831,7 @@ function MembersPage() {
                   )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div className="w-full">
                     <label htmlFor="invite-role" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                       Assign Role
@@ -869,20 +863,22 @@ function MembersPage() {
               </div>
 
               <div className="flex items-center gap-3 pt-2">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => setIsInviteModalOpen(false)}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="brand"
                   disabled={isInviting || !inviteEmail.trim()}
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1"
                 >
                   {isInviting ? 'Sending...' : 'Send Invitations'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -898,173 +894,246 @@ function MembersPage() {
       )}
 
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <PageHeader 
-            title="User Directory" 
-            description="Manage system access, roles, and department assignments for all users." 
-          />
-
-          <div className="p-6 bg-gray-50/50">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-              {[
-                { label: 'Total Mbr', count: members.length, color: 'rose' },
-                { label: 'Admins', count: members.filter(m => m.role === 'Admin').length, color: 'purple' },
-                { label: 'Registrars', count: members.filter(m => m.role === 'Registrar').length, color: 'blue' },
-                { label: 'Deans', count: members.filter(m => m.role === 'Dean').length, color: 'amber' },
-                { label: 'Prog Heads', count: members.filter(m => m.role === 'Program Head').length, color: 'indigo' },
-                { label: 'Instructors', count: members.filter(m => m.role === 'Instructor').length, color: 'emerald' },
-              ].map((item) => (
-                <div key={item.label} className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                  <div className={`flex h-14 w-14 items-center justify-center rounded-md bg-${item.color}-50 border border-${item.color}-100 shrink-0`}>
-                    <UsersIcon className={`h-9 w-9 text-${item.color}-600`} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="{item.label}">{item.label}</p>
-                    <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">
-                      {item.count}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <SearchFilters
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          placeholder="Search by name or email..."
-          dropdowns={
-            <>
-              <MultiSelectDropdown
-                label="Roles"
-                options={['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor']}
-                selectedValues={selectedRoles}
-                onChange={setSelectedRoles}
-                className="w-full sm:w-auto"
-              />
-              <MultiSelectDropdown
-                label="Status"
-                options={['Active', 'Inactive', 'Pending']}
-                selectedValues={selectedStatuses}
-                onChange={setSelectedStatuses}
-                className="w-full sm:w-auto"
-              />
-            </>
-          }
-          primaryButton={{
-            label: "Invite Member",
-            onClick: openInviteModal
-          }}
+        <SectionHeader 
+          title="User Directory"
+          description="Manage system access, roles, and department assignments for all users in a centralized hub."
         />
 
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-left">
-              <thead className="bg-gray-50/80">
-                <tr>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[30%]">
-                    Member
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Role
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Department
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Status
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Joined Date
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {filteredMembers.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                      No members found matching your filters.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredMembers.map((member) => (
-                    <tr key={member.id} className="transition hover:bg-gray-50/50">
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="flex items-center gap-4">
-                          {member.avatar && !avatarErrors[member.avatar] ? (
-                            <img
-                              src={member.avatar}
-                              alt={member.name}
-                              className="h-10 w-10 rounded-full border border-gray-300 object-cover"
-                              onError={() => setAvatarErrors(prev => ({ ...prev, [member.avatar]: true }))}
-                            />
-                          ) : (
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-gray-50 text-gray-400">
-                              <UserIcon className="h-6 w-6" />
-                            </div>
-                          )}
-                          <div>
-                            {member.name && <p className="text-sm font-bold text-gray-900">{member.name}</p>}
-                            <p className={member.name ? "text-xs font-medium text-gray-500" : "text-sm font-bold text-gray-900"}>
-                              {member.email}
-                            </p>
+        {(() => {
+          const totalMembers = members.length
+          const adminCount = members.filter(m => m.role === 'Admin').length
+          const registrarCount = members.filter(m => m.role === 'Registrar').length
+          const deanCount = members.filter(m => m.role === 'Dean').length
+          const programHeadCount = members.filter(m => m.role === 'Program Head').length
+          const instructorCount = members.filter(m => m.role === 'Instructor').length
+          const activeCount = members.filter(m => m.status === 'Active').length
+          
+          const roleStats = [
+            { label: 'Admin', count: adminCount, color: 'bg-purple-500' },
+            { label: 'Registrar', count: registrarCount, color: 'bg-blue-500' },
+            { label: 'Dean', count: deanCount, color: 'bg-amber-500' },
+            { label: 'Prog. Head', count: programHeadCount, color: 'bg-rose-500' },
+            { label: 'Instructor', count: instructorCount, color: 'bg-emerald-500' },
+          ]
+
+          return (
+            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+              {/* Completely Custom User Distribution Visualization */}
+              <div className="p-5 sm:p-6 bg-slate-50/80 rounded-2xl border border-slate-200 shadow-sm mb-6">
+                <div className="flex flex-col lg:flex-row lg:items-stretch justify-between gap-6">
+                  {/* Left Column: Header & Progress Bar */}
+                  <div className="flex-1 flex flex-col justify-between gap-3">
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-900 tracking-tight">User Distribution</h2>
+                        <p className="text-xs sm:text-sm font-medium text-gray-500">
+                          <span className="text-emerald-600 font-bold">{activeCount} Active</span> out of {totalMembers} total members
+                        </p>
+                      </div>
+                      <div className="flex -space-x-2">
+                        {members.slice(0, 4).map(m => (
+                          <div key={m.id} className="h-8 w-8 rounded-full border-2 border-white overflow-hidden bg-gray-100 shadow-xs">
+                            {m.avatar && !avatarErrors[m.avatar] ? (
+                              <img src={m.avatar} alt={m.name} className="h-full w-full object-cover" onError={() => setAvatarErrors(prev => ({...prev, [m.avatar]: true}))} />
+                            ) : (
+                              <div className="h-full w-full flex items-center justify-center text-gray-400 bg-white"><UserIcon className="h-4 w-4" /></div>
+                            )}
+                          </div>
+                        ))}
+                        {members.length > 4 && (
+                          <div className="h-8 w-8 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center shadow-xs">
+                            <span className="text-[0.6875rem] font-bold text-gray-600">+{members.length - 4}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="w-full flex h-3 rounded-full overflow-hidden shadow-inner gap-0.5 bg-gray-200/80">
+                      {roleStats.filter(s => s.count > 0).map((stat) => (
+                        <div 
+                          key={stat.label} 
+                          className={`h-full ${stat.color} transition-all duration-700 ease-out`}
+                          style={{ width: `${totalMembers > 0 ? (stat.count / totalMembers) * 100 : 0}%` }}
+                          title={`${stat.label}: ${stat.count}`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Right Column: Compact Role Stat Cards */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 shrink-0 lg:self-stretch">
+                    {roleStats.map((stat) => {
+                      const percentage = totalMembers > 0 ? Math.round((stat.count / totalMembers) * 100) : 0
+                      return (
+                        <div key={stat.label} className="flex items-center gap-3.5 px-4 py-3 bg-white rounded-xl border border-slate-200/80 shadow-xs h-full min-w-[9.25rem]">
+                          <div className={`w-1.5 h-8 rounded-full ${stat.color} shrink-0`} />
+                          <div className="flex flex-col min-w-0">
+                            <span className="text-base font-bold text-gray-900 truncate">{stat.label}</span>
+                            <span className="text-sm font-bold text-gray-600">{stat.count} ({percentage}%)</span>
                           </div>
                         </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role]}`}>
-                          {member.role}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <span className="text-sm font-semibold text-gray-700">
-                          {member.department || (
-                            member.role === 'Admin' ? 'Administrative Office' :
-                            member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
-                          )}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[member.status]}`}>
-                          {member.status}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-gray-600">
-                        {member.joinedDate}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-right">
-                        <div className="flex justify-end gap-2">
-                          <IconButton
-                            label="Edit member"
-                            onClick={() => openEditModal(member)}
-                            className={`h-8 w-8 rounded-md bg-white shadow-sm transition-all border border-gray-100 ${
-                              member.status === 'Pending' 
-                                ? 'text-gray-200 cursor-not-allowed' 
-                                : 'text-gray-400 hover:bg-gray-50 hover:text-gray-600'
-                            }`}
-                            disabled={member.status === 'Pending'}
-                          >
-                            <EditIcon className="h-4.5 w-4.5" />
-                          </IconButton>
-                          <IconButton
-                            label="Remove member"
-                            onClick={() => setMemberToRemove(member)}
-                            className="h-8 w-8 rounded-md bg-white text-rose-400 shadow-sm hover:bg-rose-50 hover:text-rose-600 transition-all border border-gray-100"
-                          >
-                            <TrashIcon className="h-4.5 w-4.5" />
-                          </IconButton>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )
+        })()}        {/* Unified Table Container */}
+        <div className="relative z-10">
+          <DataTable
+            data={filteredMembers}
+            columns={[
+              {
+                header: 'Member Info',
+                width: '30%',
+                render: (member) => (
+                  <div className="flex items-center gap-4">
+                    {member.avatar && !avatarErrors[member.avatar] ? (
+                      <img
+                        src={member.avatar}
+                        alt={member.name}
+                        className="h-10 w-10 rounded-full object-cover shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300"
+                        onError={() => setAvatarErrors(prev => ({ ...prev, [member.avatar]: true }))}
+                      />
+                    ) : (
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300">
+                        <UserIcon className="h-5 w-5" />
+                      </div>
+                    )}
+                    <div className="flex flex-col">
+                      {member.name ? (
+                        <>
+                          <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{member.name}</span>
+                          <span className="text-xs font-medium text-slate-500">{member.email}</span>
+                        </>
+                      ) : (
+                        <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{member.email}</span>
+                      )}
+                    </div>
+                  </div>
+                )
+              },
+              {
+                header: 'Assigned Role',
+                width: '20%',
+                render: (member) => (
+                  <div className="flex items-center gap-2">
+                    <div className={`h-2 w-2 rounded-full ${roleClasses[member.role]?.split(' ')[0] || 'bg-gray-200'}`} />
+                    <span className={`text-[0.7rem] font-bold uppercase tracking-widest ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
+                      {member.role}
+                    </span>
+                  </div>
+                )
+              },
+              {
+                header: 'Department',
+                width: '16%',
+                render: (member) => (
+                  <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
+                    {member.department || (
+                      member.role === 'Admin' ? 'Administrative Office' :
+                      member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
+                    )}
+                  </span>
+                )
+              },
+              {
+                header: 'Current Status',
+                width: '16%',
+                render: (member) => (
+                  <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[member.status]}`}>
+                    {member.status}
+                  </span>
+                )
+              },
+              {
+                header: 'Join Date',
+                width: '16%',
+                render: (member) => (
+                  <span className="text-sm font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">
+                    {member.joinedDate}
+                  </span>
+                )
+              },
+              {
+                header: 'Manage',
+                width: '2%',
+                align: 'right',
+                render: (member) => (
+                  <div className="flex justify-end gap-1.5">
+                    <IconButton
+                      label="Edit member"
+                      onClick={() => openEditModal(member)}
+                      className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
+                        member.status === 'Pending' 
+                          ? 'text-slate-300 cursor-not-allowed' 
+                          : 'text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
+                      }`}
+                      disabled={member.status === 'Pending'}
+                    >
+                      <EditIcon className="h-4 w-4" />
+                    </IconButton>
+                    <IconButton
+                      label="Remove member"
+                      onClick={() => setMemberToRemove(member)}
+                      className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 text-rose-500 transition-all hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </IconButton>
+                  </div>
+                )
+              }
+            ]}
+            searchPlaceholder="Search by name or email..."
+            searchValue={searchTerm}
+            onSearchChange={setSearchTerm}
+            filters={
+              <FilterDropdown
+                groups={[
+                  {
+                    id: 'role',
+                    title: 'Role',
+                    options: ['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor'],
+                    selectedValues: selectedRoles,
+                    onChange: (newSelected) => setSelectedRoles(newSelected as MemberRole[])
+                  },
+                  {
+                    id: 'department',
+                    title: 'Department',
+                    options: ['Administrative Office', "Registrar's Office", 'Unassigned', ...departments.map(d => d.code)],
+                    selectedValues: selectedDepartments,
+                    onChange: setSelectedDepartments
+                  },
+                  {
+                    id: 'status',
+                    title: 'Status',
+                    options: ['Active', 'Inactive', 'Pending'],
+                    selectedValues: selectedStatuses,
+                    onChange: (newSelected) => setSelectedStatuses(newSelected as MemberStatus[])
+                  }
+                ]}
+                onClearAll={() => {
+                  setSelectedRoles([])
+                  setSelectedDepartments([])
+                  setSelectedStatuses([])
+                }}
+              />
+            }
+            primaryAction={
+              <Button
+                variant="brand"
+                className="w-full lg:w-auto"
+                onClick={openInviteModal}
+                icon={<PlusIcon className="h-5 w-5" />}
+              >
+                Invite Member
+              </Button>
+            }
+            emptyTitle="No members found"
+            emptyDescription="Try adjusting your filters or search terms."
+            emptyIcon={<UsersIcon className="h-12 w-12" />}
+          />
         </div>
       </div>
     </section>

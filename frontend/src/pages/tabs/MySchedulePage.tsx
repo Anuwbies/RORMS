@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { CalendarIcon, ClockIcon, BuildingIcon, LayersIcon, SearchIcon } from '../../components/Icons'
-import { PageHeader } from '../../components/PageHeader'
+import { SectionHeader } from '../../components/SectionHeader'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, query, where, onSnapshot, limit } from 'firebase/firestore'
@@ -88,14 +88,12 @@ function MySchedulePage() {
   }, [])
 
   return (
-    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <PageHeader 
-            title="My Schedule" 
-            description="View and manage your upcoming room bookings and scheduled activities." 
-          />
-        </div>
+        <SectionHeader 
+          title="My Schedule" 
+          description="View and manage your upcoming room bookings and scheduled activities." 
+        />
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               

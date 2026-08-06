@@ -22,6 +22,23 @@ export function MainLayout({
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true)
   const [isRightSidebarExpanded, setIsRightSidebarExpanded] = useState(false)
 
+  const handleRightSidebarExpandChange = (isExpanded: boolean) => {
+    setIsRightSidebarExpanded(isExpanded)
+    if (isExpanded) {
+      setIsSidebarExpanded(false)
+    }
+  }
+
+  const handleLeftSidebarExpandChange = (isExpanded: boolean | ((prev: boolean) => boolean)) => {
+    setIsSidebarExpanded((prev) => {
+      const next = typeof isExpanded === 'function' ? isExpanded(prev) : isExpanded
+      if (next) {
+        setIsRightSidebarExpanded(false)
+      }
+      return next
+    })
+  }
+
   return (
     <main className="min-h-screen bg-[var(--brand-surface)] text-[var(--brand-color)]">
       <LeftSidebar
@@ -31,7 +48,7 @@ export function MainLayout({
         isSidebarOpen={isSidebarOpen}
         setIsSidebarOpen={setIsSidebarOpen}
         isSidebarExpanded={isSidebarExpanded}
-        setIsSidebarExpanded={setIsSidebarExpanded}
+        setIsSidebarExpanded={handleLeftSidebarExpandChange}
       />
 
       <div
@@ -48,7 +65,7 @@ export function MainLayout({
 
       <RightSidebar
         isExpanded={isRightSidebarExpanded}
-        onExpandChange={setIsRightSidebarExpanded}
+        onExpandChange={handleRightSidebarExpandChange}
         onSignOut={onSignOut}
       />
     </main>

@@ -2,137 +2,18 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
 import { DepartmentIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, ChevronDownIcon, CheckIcon, UserIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
-import { PageHeader } from '../../components/PageHeader'
+import { SectionHeader } from '../../components/SectionHeader'
+import { Button } from '../../components/Button'
+import { TextInput } from '../../components/TextInput'
+import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db, storage } from '../../firebase'
 import { collection, serverTimestamp, onSnapshot, query, orderBy, doc, writeBatch, where, limit } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { CropModal } from '../../components/CropModal'
+import { DataTable, type ColumnDef } from '../../components/DataTable'
+import type { Member } from '../../types/member'
 
-interface Member {
-  id: string
-  membershipId: string
-  name: string
-  email: string
-  role: string
-  status: string
-  department?: string
-  joinedDate: string
-  avatar: string
-}
 
-interface DropdownOption {
-  label: string
-  value: string
-  isDisabled?: boolean
-  subLabel?: string
-}
-
-interface SingleSelectDropdownProps {
-  options: DropdownOption[]
-  value: string
-  onChange: (value: string) => void
-  onOpenChange?: (open: boolean) => void
-  className?: string
-}
-
-function SingleSelectDropdown({ 
-  options, 
-  value, 
-  onChange, 
-  onOpenChange,
-  className = '' 
-}: SingleSelectDropdownProps) {
-  const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const menuWidthRef = useRef<HTMLDivElement>(null)
-  const [menuMinWidth, setMenuMinWidth] = useState<number | null>(null)
-
-  useEffect(() => {
-    onOpenChange?.(isOpen)
-  }, [isOpen, onOpenChange])
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  const handleSelect = (option: DropdownOption) => {
-    if (option.isDisabled) return
-    onChange(option.value)
-    setIsOpen(false)
-  }
-
-  const longestOption = options.reduce((a, b) => (a.label.length > b.label.length ? a : b), { label: '', value: '' }).label
-  const selectedOption = options.find(o => o.value === value)
-
-  useLayoutEffect(() => {
-    if (!menuWidthRef.current) {
-      return
-    }
-    setMenuMinWidth(menuWidthRef.current.offsetWidth)
-  }, [longestOption])
-
-  return (
-    <div
-      className={`relative ${className}`}
-      ref={dropdownRef}
-      style={menuMinWidth ? { minWidth: `${menuMinWidth}px` } : undefined}
-    >
-      <div
-        ref={menuWidthRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 invisible w-max rounded-md border border-transparent p-1.5"
-      >
-        <div className="flex items-center gap-3 rounded-md px-3 py-2.5 text-xs">
-          <span className="whitespace-nowrap">{longestOption}</span>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative flex w-full items-center justify-between gap-2 rounded-md border border-gray-200 bg-white px-4 py-3 text-xs text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm"
-      >
-        <span className="whitespace-nowrap">{selectedOption?.label || 'None'}</span>
-        <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute left-0 z-20 mt-2 min-w-full overflow-hidden rounded-md border border-gray-200 bg-white p-1.5 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-          <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-1">
-            {options.map((option) => {
-              const isSelected = value === option.value
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={option.isDisabled}
-                  onClick={() => handleSelect(option)}
-                  className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-xs transition-colors ${
-                    isSelected 
-                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-semibold' 
-                      : option.isDisabled
-                        ? 'text-gray-500 cursor-not-allowed italic'
-                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <span className="whitespace-nowrap">{option.label}</span>
-                  {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)]" strokeWidth={3} />}
-                  {option.subLabel && <span className="ml-auto text-[0.625rem] font-bold uppercase opacity-50">{option.subLabel}</span>}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 interface Department {
   id: string
@@ -149,7 +30,7 @@ const roleClasses: Record<string, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',
-  'Program Head': 'bg-indigo-100 text-indigo-700',
+  'Program Head': 'bg-rose-100 text-rose-700',
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
@@ -176,7 +57,7 @@ function DepartmentsPage() {
   const [pendingLogoBlob, setPendingLogoBlob] = useState<Blob | null>(null)
   const [newDeptName, setNewDeptName] = useState('')
   const [newDeptCode, setNewDeptCode] = useState('')
-  const [newDeptDean, setNewDeptDean] = useState('') // Storing Dean UID
+  const [newDeptDeanName, setNewDeptDeanName] = useState('None')
   const [isDeanDropdownOpen, setIsDeanDropdownOpen] = useState(false)
   const [newDeptLogo, setNewDeptLogo] = useState('')
   const [logoErrors, setLogoErrors] = useState<Record<string, boolean>>({})
@@ -204,7 +85,7 @@ function DepartmentsPage() {
             membershipId: mDoc.id,
             name: userData.fullName || '',
             email: userData.email || '',
-            role: mData.role || 'Instructor',
+            role: (mData.role as any) || 'Instructor',
             status: (userData.isActive !== false) ? 'Active' : 'Inactive',
             department: mData.departmentCode || '',
             joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
@@ -270,6 +151,22 @@ function DepartmentsPage() {
       )
   }, [departments, allUsers, searchTerm])
 
+  const summaryStats = useMemo(() => {
+    const totalDepartments = departments.length;
+    const totalFacultyCount = allUsers.filter(u => u.department).length;
+    const assignedDeansCount = departments.filter(d => d.deanUID).length;
+    const avgDeptSize = totalDepartments ? Math.round(totalFacultyCount / totalDepartments) : 0;
+    const deansPercentage = totalDepartments > 0 ? Math.round((assignedDeansCount / totalDepartments) * 100) : 0;
+
+    return {
+      totalDepartments,
+      totalFacultyCount,
+      assignedDeansCount,
+      avgDeptSize,
+      deansPercentage
+    };
+  }, [departments, allUsers]);
+
   const deptMembers = selectedDept 
     ? allUsers
         .filter(m => m.department === selectedDept.code)
@@ -284,7 +181,8 @@ function DepartmentsPage() {
     setEditingDept(dept)
     setNewDeptName(dept.name)
     setNewDeptCode(dept.code)
-    setNewDeptDean(dept.deanUID)
+    const deanUser = availableDeans.find(d => d.id === dept.deanUID)
+    setNewDeptDeanName(deanUser ? deanUser.name : 'None')
     setNewDeptLogo(dept.logo)
     setErrors({ name: null, code: null })
   }
@@ -294,7 +192,7 @@ function DepartmentsPage() {
     setEditingDept(null)
     setNewDeptName('')
     setNewDeptCode('')
-    setNewDeptDean('')
+    setNewDeptDeanName('None')
     setNewDeptLogo('')
     setPendingLogoBlob(null)
     setErrors({ name: null, code: null })
@@ -327,6 +225,9 @@ function DepartmentsPage() {
     
     const trimmedName = newDeptName.trim()
     const trimmedCode = newDeptCode.trim().toUpperCase()
+
+    const selectedDeanUser = availableDeans.find(d => d.name === newDeptDeanName)
+    const newDeptDean = selectedDeanUser ? selectedDeanUser.id : ''
 
     const nameRequired = !trimmedName
     const codeRequired = !trimmedCode
@@ -508,34 +409,158 @@ function DepartmentsPage() {
     }
   }
 
-  const deanOptions: DropdownOption[] = [
-    { label: 'None', value: '', isDisabled: false },
-    ...availableDeans.map(dean => {
-      const assignedDept = departments.find(d => d.deanUID === dean.id)
-      const isTaken = assignedDept && assignedDept.id !== editingDept?.id
-      return {
-        label: dean.name,
-        value: dean.id,
-        isDisabled: isTaken,
-        subLabel: isTaken ? assignedDept.code : undefined
-      }
-    }).sort((a, b) => {
-      if (a.isDisabled && !b.isDisabled) return 1
-      if (!a.isDisabled && b.isDisabled) return -1
-      return a.label.localeCompare(b.label)
-    })
+  const deanOptions = [
+    'None',
+    ...availableDeans
+      .filter(dean => {
+        const assignedDept = departments.find(d => d.deanUID === dean.id)
+        return !(assignedDept && assignedDept.id !== editingDept?.id)
+      })
+      .map(dean => dean.name)
+      .sort((a, b) => a.localeCompare(b))
   ]
 
+  const deptMemberColumns: ColumnDef<Member>[] = [
+    {
+      header: 'Member Info',
+      width: '50%',
+      render: (member) => (
+        <div className="flex items-center gap-4">
+          {member.avatar && !avatarErrors[member.avatar] ? (
+            <img
+              src={member.avatar}
+              alt={member.name}
+              className="h-10 w-10 rounded-full object-cover shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300"
+              onError={() => setAvatarErrors(prev => ({ ...prev, [member.avatar]: true }))}
+            />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300">
+              <UserIcon className="h-5 w-5" />
+            </div>
+          )}
+          <div className="flex flex-col">
+            {member.name ? (
+              <>
+                <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{member.name}</span>
+                <span className="text-xs font-medium text-slate-500">{member.email}</span>
+              </>
+            ) : (
+              <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{member.email}</span>
+            )}
+          </div>
+        </div>
+      )
+    },
+    {
+      header: 'Assigned Role',
+      width: '25%',
+      render: (member) => (
+        <div className="flex items-center gap-2">
+          <div className={`h-2 w-2 rounded-full ${roleClasses[member.role]?.split(' ')[0] || 'bg-gray-200'}`} />
+          <span className={`text-[0.7rem] font-bold uppercase tracking-widest ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
+            {member.role}
+          </span>
+        </div>
+      )
+    },
+    {
+      header: 'Current Status',
+      width: '25%',
+      render: (member) => (
+        <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${
+          member.status === 'Active' ? 'bg-emerald-100 text-emerald-700' :
+          member.status === 'Inactive' ? 'bg-gray-100 text-gray-700' : 'bg-amber-100 text-amber-700'
+        }`}>
+          {member.status}
+        </span>
+      )
+    }
+  ];
+
+  const deptColumns: ColumnDef<Department>[] = [
+    {
+      header: 'Department',
+      width: '35%',
+      render: (dept) => (
+        <div className="flex items-center gap-4">
+          {dept.logo && !logoErrors[dept.logo] ? (
+            <img
+              src={dept.logo}
+              alt={dept.name}
+              className="h-10 w-10 rounded-full border border-gray-300 object-cover"
+              onError={() => setLogoErrors(prev => ({ ...prev, [dept.logo]: true }))}
+            />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-gray-50 text-gray-400">
+              <DepartmentIcon className="h-6 w-6" />
+            </div>
+          )}
+          <span className="text-sm font-bold text-gray-900 group-hover:text-[var(--brand-color)] transition-colors">
+            {dept.name}
+          </span>
+        </div>
+      )
+    },
+    {
+      header: 'Code',
+      width: '16%',
+      render: (dept) => <span className="text-sm font-medium text-gray-500">{dept.code}</span>
+    },
+    {
+      header: 'Dean',
+      width: '16%',
+      render: (dept) => <span className="text-sm font-semibold text-gray-600">{dept.deanName}</span>
+    },
+    {
+      header: 'Members',
+      width: '16%',
+      render: (dept) => (
+        <div className="flex items-center gap-2 text-sm font-semibold text-gray-600">
+          <UsersIcon className="h-4 w-4 text-gray-400" />
+          {dept.memberCount}
+        </div>
+      )
+    },
+    {
+      header: 'Created Date',
+      width: '16%',
+      render: (dept) => <span className="text-sm font-medium text-gray-500">{dept.createdDate}</span>
+    },
+    {
+      header: 'Actions',
+      width: '2%',
+      align: 'right',
+      render: (dept) => (
+        <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+          <IconButton
+            label="Edit department"
+            className="h-8 w-8 rounded-md bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all border border-gray-100"
+            onClick={() => handleOpenEdit(dept)}
+          >
+            <EditIcon className="h-4.5 w-4.5" />
+          </IconButton>
+          <IconButton
+            label="Remove department"
+            className="h-8 w-8 rounded-md bg-white text-rose-400 shadow-sm hover:bg-rose-50 hover:text-rose-600 transition-all border border-gray-100"
+            onClick={() => handleOpenDelete(dept)}
+          >
+            <TrashIcon className="h-4.5 w-4.5" />
+          </IconButton>
+        </div>
+      )
+    }
+  ];
+
   return (
-    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       {/* Create/Edit Department Modal */}
       {(isCreateModalOpen || editingDept) && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
               <h3 className="text-xl font-bold">{editingDept ? 'Edit Department' : 'Create Department'}</h3>
               <p className="mt-1 text-sm text-white/80">
                 {editingDept ? 'Update the details of this university department.' : 'Add a new university department to the system.'}
@@ -552,20 +577,15 @@ function DepartmentsPage() {
                     </span>
                   )}
                 </label>
-                <input
+                <TextInput
                   id="dept-name"
-                  type="text"
                   value={newDeptName}
-                  onChange={(e) => {
-                    setNewDeptName(e.target.value)
+                  onChange={(val) => {
+                    setNewDeptName(val)
                     if (errors.name) setErrors(prev => ({ ...prev, name: null }))
                   }}
                   placeholder="e.g. College of Information Technology"
-                  className={`w-full rounded-md border px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                    errors.name 
-                      ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                      : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                  }`}
+                  error={!!errors.name}
                   autoFocus
                 />
               </div>
@@ -617,20 +637,15 @@ function DepartmentsPage() {
                         </span>
                       )}
                     </label>
-                    <input
+                    <TextInput
                       id="dept-code"
-                      type="text"
                       value={newDeptCode}
-                      onChange={(e) => {
-                        setNewDeptCode(e.target.value)
+                      onChange={(val) => {
+                        setNewDeptCode(val)
                         if (errors.code) setErrors(prev => ({ ...prev, code: null }))
                       }}
                       placeholder="e.g. CITE"
-                      className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                        errors.code 
-                          ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                          : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                      }`}
+                      error={!!errors.code}
                     />
                   </div>
 
@@ -640,9 +655,9 @@ function DepartmentsPage() {
                     </label>
                     <SingleSelectDropdown
                       options={deanOptions}
-                      value={newDeptDean}
-                      onChange={setNewDeptDean}
-                      onOpenChange={setIsDeanDropdownOpen}
+                      value={newDeptDeanName}
+                      onChange={setNewDeptDeanName}
+                      onToggle={setIsDeanDropdownOpen}
                       className="w-full"
                     />
                   </div>
@@ -650,23 +665,25 @@ function DepartmentsPage() {
               </div>
 
               <div className="flex items-center gap-3 pt-2">
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={handleCloseFormModal}
                   disabled={isSubmitting}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="brand"
                   disabled={isSubmitting}
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="flex-1"
                 >
                   {isSubmitting 
                     ? (editingDept ? 'Saving Changes...' : 'Creating Department...') 
                     : (editingDept ? 'Save Changes' : 'Create Department')}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -774,10 +791,10 @@ function DepartmentsPage() {
       {selectedDept && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-2xl rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+            className="w-full max-w-4xl rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white flex justify-between items-start">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white flex justify-between items-start shrink-0">
               <div className="flex items-center gap-4">
                 {selectedDept.logo && !logoErrors[selectedDept.logo] ? (
                   <img
@@ -805,45 +822,14 @@ function DepartmentsPage() {
               </IconButton>
             </div>
             
-            <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              {deptMembers.length === 0 ? (
-                <div className="py-12 text-center text-gray-500">
-                  No members assigned to this department yet.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {deptMembers.map((member) => (
-                    <div key={member.id} className="flex items-center justify-between rounded-lg border border-gray-100 p-4 shadow-sm">
-                      <div className="flex items-center gap-4">
-                        {member.avatar && !avatarErrors[member.avatar] ? (
-                          <img
-                            src={member.avatar}
-                            alt={member.name}
-                            className="h-10 w-10 rounded-full border border-gray-300 object-cover"
-                            onError={() => setAvatarErrors(prev => ({ ...prev, [member.avatar]: true }))}
-                          />
-                        ) : (
-                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-gray-50 text-gray-400">
-                            <UserIcon className="h-6 w-6" />
-                          </div>
-                        )}
-                        <div>
-                          <p className="text-sm font-bold text-gray-900">{member.name}</p>
-                          <p className="text-xs font-medium text-gray-500">
-                            {member.department || (
-                              member.role === 'Admin' ? 'Administrative Office' :
-                              member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
-                        {member.role}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50">
+              <DataTable
+                data={deptMembers}
+                columns={deptMemberColumns}
+                emptyTitle="No members found"
+                emptyDescription="No members assigned to this department yet."
+                emptyIcon={<UsersIcon className="h-12 w-12" />}
+              />
             </div>
           </div>
           <div className="absolute inset-0 -z-10" onClick={() => setSelectedDept(null)} />
@@ -863,175 +849,236 @@ function DepartmentsPage() {
       )}
 
       <div className="space-y-6">
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <PageHeader 
-            title="Academic Departments" 
-            description="Manage university departments, assign deans, and oversee faculty members." 
-          />
-
-          <div className="p-6 bg-gray-50/50">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              {[
-                { 
-                  label: 'Total Dept.', 
-                  count: departments.length, 
-                  color: 'blue', 
-                  icon: <DepartmentIcon className="h-9 w-9 text-blue-600" /> 
-                },
-                { 
-                  label: 'Without Dean', 
-                  count: departments.filter(d => !d.deanUID).length, 
-                  color: 'amber', 
-                  icon: <UserIcon className="h-9 w-9 text-amber-600" /> 
-                },
-                { 
-                  label: 'New (Last 7d)', 
-                  count: departments.filter(d => {
-                    if (!d.createdDate) return false
-                    const sevenDaysAgo = new Date()
-                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-                    return new Date(d.createdDate) > sevenDaysAgo
-                  }).length, 
-                  color: 'emerald', 
-                  icon: <PlusIcon className="h-9 w-9 text-emerald-600" /> 
-                },
-                { 
-                  label: 'Dept. Members', 
-                  count: allUsers.filter(u => u.department).length, 
-                  color: 'purple', 
-                  icon: <UsersIcon className="h-9 w-9 text-purple-600" /> 
-                },
-              ].map((item) => (
-                <div key={item.label} className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                  <div className={`flex h-14 w-14 items-center justify-center rounded-md bg-${item.color}-50 border border-${item.color}-100 shrink-0`}>
-                    {item.icon}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="{item.label}">{item.label}</p>
-                    <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">
-                      {item.count}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <SearchFilters
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          placeholder="Search departments..."
-          primaryButton={{
-            label: "Add Department",
-            onClick: () => setIsCreateModalOpen(true)
-          }}
+        <SectionHeader 
+          title="Academic Departments" 
+          description="Manage university departments, assign deans, and oversee faculty members." 
         />
 
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-left">
-              <thead className="bg-gray-50/80">
-                <tr>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[30%]">
-                    Department
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Code
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Dean
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Members
-                  </th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Created Date
-                  </th>
-                  <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-500 w-[14%]">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {isLoading ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                      Loading departments...
-                    </td>
-                  </tr>
-                ) : filteredDepartments.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
-                      No departments found matching your search.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredDepartments.map((dept) => (
-                    <tr 
-                      key={dept.id} 
-                      className="transition hover:bg-gray-50/50 cursor-pointer group"
-                      onClick={() => setSelectedDept(dept)}
-                    >
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="flex items-center gap-4">
-                          {dept.logo && !logoErrors[dept.logo] ? (
-                            <img
-                              src={dept.logo}
-                              alt={dept.name}
-                              className="h-10 w-10 rounded-full border border-gray-300 object-cover"
-                              onError={() => setLogoErrors(prev => ({ ...prev, [dept.logo]: true }))}
-                            />
+        {/* ══ Department Overview ══ */}
+        {(() => {
+          const { totalDepartments, totalFacultyCount, avgDeptSize, assignedDeansCount, deansPercentage } = summaryStats
+          const unassigned = totalDepartments - assignedDeansCount
+
+          const R = 28
+          const C = 2 * Math.PI * R
+          const filled = C * (deansPercentage / 100)
+
+          const facultyInDepts = allUsers.filter(u => u.department)
+          const roleCounts = {
+            Instructor: facultyInDepts.filter(u => u.role === 'Instructor').length,
+            Dean: facultyInDepts.filter(u => u.role === 'Dean').length,
+            'Program Head': facultyInDepts.filter(u => u.role === 'Program Head').length,
+            Registrar: facultyInDepts.filter(u => u.role === 'Registrar').length,
+            Admin: facultyInDepts.filter(u => u.role === 'Admin').length,
+          }
+
+          const roleRows = [
+            { role: 'Instructor', count: roleCounts.Instructor, bg: 'bg-emerald-500', text: 'text-emerald-600', light: 'bg-emerald-50' },
+            { role: 'Dean', count: roleCounts.Dean, bg: 'bg-amber-500', text: 'text-amber-600', light: 'bg-amber-50' },
+            { role: 'Program Head', count: roleCounts['Program Head'], bg: 'bg-rose-500', text: 'text-rose-600', light: 'bg-rose-50' },
+            { role: 'Registrar', count: roleCounts.Registrar, bg: 'bg-blue-500', text: 'text-blue-600', light: 'bg-blue-50' },
+          ]
+
+          return (
+            <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm mb-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+
+              {/* ── TOP: Full-width gradient hero ── */}
+              <div className="relative bg-[linear-gradient(135deg,var(--brand-color)_0%,#526f34_40%,#7b9d4f_80%,#a3c48b_100%)] px-6 py-5 overflow-hidden">
+                <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
+                <DepartmentIcon className="absolute -right-10 -top-10 h-52 w-52 text-white/[0.07] pointer-events-none" />
+
+                <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-0 justify-between">
+                  {/* Left: headline */}
+                  <div>
+                    <p className="text-[0.6rem] font-bold uppercase tracking-[0.2em] text-white/60 mb-1">Academic Departments</p>
+                    <div className="flex items-end gap-3">
+                      <span className="text-[3.5rem] font-black leading-none tabular-nums text-white drop-shadow-lg">{totalDepartments}</span>
+                      <div className="pb-1.5">
+                        <p className="text-sm font-bold text-white/90 leading-tight">Total</p>
+                        <p className="text-[0.65rem] text-white/50 font-medium">Registered</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right: dept logo strip */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex -space-x-3">
+                      {departments.slice(0, 6).map((d, i) => (
+                        <div
+                          key={d.id}
+                          className="h-10 w-10 rounded-full border-2 border-white/30 overflow-hidden bg-white/20 shadow-lg hover:-translate-y-1 transition-transform duration-200 cursor-default"
+                          style={{ zIndex: 6 - i }}
+                          title={d.name}
+                        >
+                          {d.logo && !logoErrors[d.logo] ? (
+                            <img src={d.logo} alt={d.name} className="h-full w-full object-cover" onError={() => setLogoErrors(prev => ({ ...prev, [d.logo]: true }))} />
                           ) : (
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-gray-50 text-gray-400">
-                              <DepartmentIcon className="h-6 w-6" />
+                            <div className="h-full w-full flex items-center justify-center bg-white/10">
+                              <DepartmentIcon className="h-5 w-5 text-white/70" />
                             </div>
                           )}
-                          <span className="text-sm font-bold text-gray-900 group-hover:text-[var(--brand-color)] transition-colors">
-                            {dept.name}
-                          </span>
                         </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-500">
-                        {dept.code}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-semibold text-gray-600">
-                        {dept.deanName}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-gray-600">
-                          <UsersIcon className="h-4 w-4 text-gray-400" />
-                          {dept.memberCount}
+                      ))}
+                      {departments.length > 6 && (
+                        <div className="h-10 w-10 rounded-full border-2 border-white/30 bg-white/20 flex items-center justify-center text-white text-xs font-black shadow-lg" style={{ zIndex: 0 }}>
+                          +{departments.length - 6}
                         </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-sm font-medium text-gray-500">
-                        {dept.createdDate}
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-end gap-2">
-                          <IconButton
-                            label="Edit department"
-                            className="h-8 w-8 rounded-md bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all border border-gray-100"
-                            onClick={() => handleOpenEdit(dept)}
-                          >
-                            <EditIcon className="h-4.5 w-4.5" />
-                          </IconButton>
-                          <IconButton
-                            label="Remove department"
-                            className="h-8 w-8 rounded-md bg-white text-rose-400 shadow-sm hover:bg-rose-50 hover:text-rose-600 transition-all border border-gray-100"
-                            onClick={() => handleOpenDelete(dept)}
-                          >
-                            <TrashIcon className="h-4.5 w-4.5" />
-                          </IconButton>
+                      )}
+                    </div>
+                    {departments.length === 0 && (
+                      <span className="text-xs text-white/50 italic">No departments yet</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── BOTTOM: 4 stat cards in a row ── */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 bg-slate-100 gap-px">
+
+                {/* Card 1: Total Faculty */}
+                <div className="group bg-white px-5 py-4 flex flex-col gap-1 hover:bg-slate-50 transition-colors relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-400" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-slate-400">Faculty</span>
+                    <UsersIcon className="h-4 w-4 text-blue-400" />
+                  </div>
+                  <span className="text-4xl font-black tabular-nums text-slate-900 leading-none mt-1">{totalFacultyCount}</span>
+                  <p className="text-[0.65rem] text-slate-400 font-medium">enrolled members</p>
+                  <div className="flex w-full h-1.5 rounded-full overflow-hidden bg-slate-100 mt-3 shadow-inner">
+                    {totalFacultyCount > 0 ? roleRows.map(({ role, count, bg }) => {
+                      if (!count) return null
+                      return <div key={role} className={`h-full ${bg}`} style={{ width: `${(count / totalFacultyCount) * 100}%` }} title={`${role}: ${count}`} />
+                    }) : <div className="h-full w-full bg-slate-200" />}
+                  </div>
+                  <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1.5">
+                    {roleRows.map(({ role, count, bg }) => count > 0 && (
+                      <div key={role} className="flex items-center gap-1">
+                        <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${bg}`} />
+                        <span className="text-[0.56rem] font-semibold text-slate-400 uppercase tracking-wider leading-none">{role.replace('Program Head', 'PH')} <span className="text-slate-600">{count}</span></span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Card 2: Avg Dept Size */}
+                <div className="group bg-white px-5 py-4 flex flex-col gap-1 hover:bg-slate-50 transition-colors relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-purple-400" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-slate-400">Avg. Size</span>
+                    <UserIcon className="h-4 w-4 text-purple-400" />
+                  </div>
+                  <span className="text-4xl font-black tabular-nums text-slate-900 leading-none mt-1">{avgDeptSize}</span>
+                  <p className="text-[0.65rem] text-slate-400 font-medium">members / department</p>
+                  {/* Sparkline bars */}
+                  <div className="flex items-end gap-0.5 h-10 mt-3 w-full">
+                    {(() => {
+                      const sizes = departments.map(d => allUsers.filter(u => u.department === d.code).length).sort((a, b) => a - b)
+                      const maxBars = 12
+                      const display = sizes.length > maxBars
+                        ? Array.from({ length: maxBars }, (_, i) => sizes[Math.floor(i * (sizes.length - 1) / (maxBars - 1))])
+                        : sizes.length > 0 ? sizes : [0]
+                      const maxVal = Math.max(...display, 1)
+                      return display.map((v, i) => (
+                        <div key={i} className="flex-1 rounded-sm bg-purple-100 group-hover:bg-purple-200 transition-colors relative flex flex-col justify-end" style={{ height: '100%' }}>
+                          <div className="rounded-sm bg-purple-400 group-hover:bg-purple-500 transition-colors w-full" style={{ height: `${Math.max(12, (v / maxVal) * 100)}%` }} title={`${v} members`} />
                         </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                      ))
+                    })()}
+                  </div>
+                  <p className="text-[0.56rem] text-slate-400 font-bold uppercase tracking-[0.15em] mt-0.5">Size distribution</p>
+                </div>
+
+                {/* Card 3: Dean Coverage */}
+                <div className="group bg-white px-5 py-4 flex flex-col gap-1 hover:bg-slate-50 transition-colors relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--brand-color)]" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-slate-400">Dean Coverage</span>
+                    <UserIcon className="h-4 w-4 text-[var(--brand-color)]" />
+                  </div>
+                  <div className="flex items-center gap-4 mt-1">
+                    <div className="relative shrink-0">
+                      <svg width="60" height="60" viewBox="0 0 72 72" className="-rotate-90">
+                        <circle cx="36" cy="36" r={R} fill="none" stroke="#f1f5f9" strokeWidth="7" />
+                        <circle cx="36" cy="36" r={R} fill="none" stroke="var(--brand-color)" strokeWidth="7" strokeLinecap="round" strokeDasharray={`${filled} ${C}`} className="transition-all duration-1000 ease-out" />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <span className="text-base font-black text-slate-900 tabular-nums leading-none">{deansPercentage}<span className="text-[0.55rem] font-bold">%</span></span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <div>
+                        <p className="text-[0.58rem] text-slate-400 font-bold uppercase tracking-wider">Assigned</p>
+                        <span className="text-xl font-black text-slate-900 tabular-nums leading-none">{assignedDeansCount}</span>
+                      </div>
+                      {unassigned > 0 ? (
+                        <div>
+                          <p className="text-[0.58rem] text-amber-500 font-bold uppercase tracking-wider">Unassigned</p>
+                          <span className="text-xl font-black text-amber-500 tabular-nums leading-none">{unassigned}</span>
+                        </div>
+                      ) : totalDepartments > 0 ? (
+                        <div className="flex items-center gap-1.5 bg-emerald-50 rounded-md px-2 py-1">
+                          <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
+                          <span className="text-[0.58rem] font-bold text-emerald-600 uppercase tracking-wider">Full Coverage</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Card 4: Role Breakdown */}
+                <div className="group bg-white px-5 py-4 flex flex-col gap-1 hover:bg-slate-50 transition-colors relative overflow-hidden">
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-400" />
+                  <div className="flex items-center justify-between">
+                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-slate-400">Role Breakdown</span>
+                    <UsersIcon className="h-4 w-4 text-amber-400" />
+                  </div>
+                  <div className="flex flex-col gap-2 mt-2">
+                    {roleRows.map(({ role, count, bg, text, light }) => {
+                      const pct = totalFacultyCount > 0 ? Math.round((count / totalFacultyCount) * 100) : 0
+                      return (
+                        <div key={role}>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${bg}`} />
+                              <span className="text-[0.6rem] font-bold text-slate-500 uppercase tracking-wider leading-none">{role}</span>
+                            </div>
+                            <span className={`text-[0.6rem] font-black tabular-nums ${text}`}>{count}</span>
+                          </div>
+                          <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
+                            <div className={`h-full ${bg} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )
+        })()}
+
+        <DataTable
+          data={filteredDepartments}
+          columns={deptColumns}
+          searchPlaceholder="Search departments..."
+          searchValue={searchTerm}
+          onSearchChange={setSearchTerm}
+          primaryAction={
+            <Button
+              variant="brand"
+              className="shrink-0 w-full lg:w-auto"
+              onClick={() => setIsCreateModalOpen(true)}
+              icon={<PlusIcon className="h-5 w-5" />}
+            >
+              Add Department
+            </Button>
+          }
+          emptyTitle="No departments found"
+          emptyDescription="Try adjusting your filters or search terms."
+          emptyIcon={<DepartmentIcon className="h-12 w-12" />}
+          onRowClick={(dept) => setSelectedDept(dept)}
+        />
       </div>
     </section>
   )

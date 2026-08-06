@@ -72,8 +72,7 @@ export function LeftSidebar({
           <div
             className={joinClasses(
               'relative bg-[var(--card-surface)] transition-all duration-200',
-              'border-b-1 border-[var(--brand-color)]/30',
-              isSidebarExpanded ? 'px-5 py-3' : 'px-2.5 py-2.5',
+              isSidebarExpanded ? 'px-5 py-5' : 'px-2.5 py-5',
             )}
           >
             <div
@@ -144,7 +143,7 @@ export function LeftSidebar({
 
           <nav
             className={joinClasses(
-              'flex-1 space-y-1 bg-[var(--card-surface)] py-4 transition-all duration-200',
+              'flex-1 space-y-1 bg-[var(--card-surface)] transition-all duration-200',
               isSidebarExpanded ? 'px-3' : 'px-2',
             )}
           >

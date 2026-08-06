@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { PageHeader } from '../../components/PageHeader'
+import { SectionHeader } from '../../components/SectionHeader'
 import { SearchFilters } from '../../components/SearchFilters'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db } from '../../firebase'
@@ -381,16 +381,13 @@ function AcademicCalendarPage() {
   const activeYear = years.find(y => y.isActive)
 
   return (
-    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
+    <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       <div className="space-y-6">
         
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <PageHeader 
-            title="Academic Calendar" 
-            description="Manage academic years, historical records, and scheduling phases." 
-          />
-
-          <div className="p-6 bg-gray-50/50">
+        <SectionHeader 
+          title="Academic Calendar" 
+          description="Manage academic years, historical records, and scheduling phases." 
+        />
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
                 <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
@@ -429,8 +426,6 @@ function AcademicCalendarPage() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
 
         <SearchFilters
           searchTerm={searchTerm}
@@ -529,9 +524,7 @@ function AcademicCalendarPage() {
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
-
+          </div>
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
@@ -748,7 +741,8 @@ function AcademicCalendarPage() {
           />
         </div>
       )}
-</section>
+      </div>
+    </section>
   )
 }
 

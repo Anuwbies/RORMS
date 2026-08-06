@@ -121,7 +121,7 @@ const roleClasses: Record<string, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',
-  'Program Head': 'bg-indigo-100 text-indigo-700',
+  'Program Head': 'bg-rose-100 text-rose-700',
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
@@ -436,8 +436,7 @@ export const RightSidebar = memo(function RightSidebar({
         <div
           className={joinClasses(
             'bg-[var(--card-surface)] shadow-none transition-all duration-200',
-              'border-b-1 border-[var(--brand-color)]/30',
-            isExpanded ? 'p-6' : 'px-2.5 py-2.5',
+            isExpanded ? 'p-6 border-b-1 border-[var(--brand-color)]/30' : 'px-2.5 py-5',
           )}
         >
           <input
@@ -575,7 +574,7 @@ export const RightSidebar = memo(function RightSidebar({
         </div>
 
         {!isExpanded && (
-          <div className="flex flex-1 flex-col bg-[var(--card-surface)] px-2 py-4 transition-all duration-200">
+          <div className="flex flex-1 flex-col bg-[var(--card-surface)] px-2 transition-all duration-200">
             <div className="flex flex-col space-y-1">
               <button
                 type="button"
