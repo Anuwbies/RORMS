@@ -42,7 +42,7 @@ export function SingleSelectDropdown<T extends string>({
     setIsOpen(false)
   }
 
-  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), '')
+  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), '' as T)
 
   useLayoutEffect(() => {
     if (!menuWidthRef.current) {

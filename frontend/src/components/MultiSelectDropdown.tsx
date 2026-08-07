@@ -50,7 +50,7 @@ export function MultiSelectDropdown<T extends string>({
       ? selectedValues[0] 
       : `${selectedValues[0]} +${selectedValues.length - 1}`
 
-  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), label)
+  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), label as T)
   const widestTriggerText = [label, longestOption, `${longestOption} +${Math.max(options.length - 1, 0)}`]
     .reduce((a, b) => (a.length > b.length ? a : b))
 

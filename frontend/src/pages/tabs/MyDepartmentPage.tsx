@@ -2,8 +2,11 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { SectionHeader } from '../../components/SectionHeader';
 import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
-import { SearchFilters } from '../../components/SearchFilters'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
+import { DataTable, type ColumnDef } from '../../components/DataTable'
+import { Button } from '../../components/Button'
+import { DashedButton } from '../../components/DashedButton'
+import { FilterDropdown } from '../../components/FilterDropdown'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, query, where, onSnapshot, doc, updateDoc, limit, addDoc, serverTimestamp, getDocs, deleteDoc } from 'firebase/firestore'
@@ -141,6 +144,8 @@ const START_TIME_OPTIONS = [
 
 function MyDepartmentPage() {
   const [searchTerm, setSearchTerm] = useState('')
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([])
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [memberSchedules, setMemberSchedules] = useState<any[]>([])
@@ -489,11 +494,14 @@ function MyDepartmentPage() {
   }, [])
 
   const filteredMembers = members
-    .filter((member) =>
-      [member.name, member.email, member.role, member.status].some((val) =>
+    .filter((member) => {
+      const matchSearch = [member.name, member.email, member.role, member.status].some((val) =>
         val.toLowerCase().includes(searchTerm.toLowerCase())
       )
-    )
+      const matchRole = selectedRoles.length === 0 || selectedRoles.includes(member.role)
+      const matchStatus = selectedStatuses.length === 0 || selectedStatuses.includes(member.status)
+      return matchSearch && matchRole && matchStatus
+    })
     .sort((a, b) => {
       if (a.role === 'Dean') return -1
       if (b.role === 'Dean') return 1
@@ -923,22 +931,105 @@ function MyDepartmentPage() {
     }
   }
 
+  const memberColumns: ColumnDef<Member>[] = useMemo(() => {
+    const cols: ColumnDef<Member>[] = [
+      {
+        header: 'Member',
+        width: currentUserRole === 'Dean' ? '30%' : '31%',
+        render: (member) => (
+          <div className="flex items-center gap-4">
+            {member.avatar ? (
+              <img
+                src={member.avatar}
+                alt={member.name}
+                className="h-10 w-10 rounded-full border border-gray-300 object-cover"
+              />
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary-100 text-secondary-500 border border-gray-300">
+                <UserIcon className="h-6 w-6" />
+              </div>
+            )}
+            <div>
+              <p className="text-sm font-bold text-gray-900">{member.name}</p>
+              <p className="text-xs font-medium text-gray-500">{member.email}</p>
+            </div>
+          </div>
+        )
+      },
+      {
+        header: 'Role',
+        width: '23%',
+        render: (member) => (
+          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
+            {member.role}
+          </span>
+        )
+      },
+      {
+        header: 'Status',
+        width: '23%',
+        render: (member) => (
+          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
+            {member.status}
+          </span>
+        )
+      },
+      {
+        header: 'Joined Date',
+        width: '23%',
+        render: (member) => (
+          <span className="text-sm font-semibold text-gray-600">
+            {member.joinedDate}
+          </span>
+        )
+      }
+    ];
+
+    if (currentUserRole === 'Dean') {
+      cols.push({
+        header: 'Actions',
+        width: '1%',
+        align: 'right',
+        render: (member) => (
+          <div className="flex justify-end gap-2">
+            <IconButton
+              label="Remove member"
+              disabled={member.id === currentUserData?.id}
+              className={`h-8 w-8 rounded-md bg-white shadow-sm transition-all border border-gray-100 ${
+                member.id === currentUserData?.id 
+                  ? 'text-gray-300 cursor-not-allowed opacity-50' 
+                  : 'text-rose-400 hover:bg-rose-50 hover:text-rose-600'
+              }`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRemoveMember(member);
+              }}
+            >
+              <TrashIcon className="h-4.5 w-4.5" />
+            </IconButton>
+          </div>
+        )
+      });
+    }
+    return cols;
+  }, [currentUserRole, currentUserData]);
+
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       {/* Remove Member Modal */}
       {isRemoveModalOpen && memberToRemove && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-md">
+            <div className="bg-rose-600 p-6 text-white rounded-t-3xl">
               <h3 className="text-xl font-bold">Remove Member</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to remove this member from the {departmentInfo?.code || 'the'} department?</p>
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+              <div className="flex items-center gap-4 rounded-2xl border border-gray-100 bg-gray-50 p-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden">
                   {memberToRemove.avatar && !avatarErrors[memberToRemove.avatar] ? (
                     <img 
@@ -957,7 +1048,7 @@ function MyDepartmentPage() {
                 </div>
               </div>
 
-              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+              <div className="rounded-2xl bg-rose-50 p-4 border border-rose-100">
                 <p className="text-xs leading-relaxed text-rose-700">
                   <span className="font-bold uppercase tracking-wider">Warning:</span> This action will remove them from the <strong>{departmentInfo?.code}</strong> department. This can be undone by adding them back later.
                 </p>
@@ -970,25 +1061,24 @@ function MyDepartmentPage() {
               )}
 
               <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  className="flex-1"
                   onClick={() => {
                     setIsRemoveModalOpen(false)
                     setMemberToRemove(null)
                   }}
                   disabled={isRemoving}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white !border-none !shadow-md"
                   onClick={confirmRemoveMember}
                   disabled={isRemoving}
-                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isRemoving ? 'Removing...' : 'Confirm Remove'}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -1008,10 +1098,10 @@ function MyDepartmentPage() {
       {isScheduleModalOpen && selectedMember && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-fit min-w-[43.75rem] max-w-[80vw] min-h-[31.25rem] max-h-[85vh] flex flex-col rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
+            className="w-fit min-w-[43.75rem] max-w-[80vw] min-h-[31.25rem] max-h-[85vh] flex flex-col rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md relative shrink-0">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl relative shrink-0">
               <button 
                 onClick={() => setIsScheduleModalOpen(false)}
                 className="absolute right-4 top-4 text-white/70 hover:text-white transition-colors"
@@ -1229,10 +1319,10 @@ function MyDepartmentPage() {
       {pendingTypeChange && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4" onClick={() => setPendingTypeChange(null)}>
           <div 
-            className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-4 text-white rounded-t-md">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-4 text-white rounded-t-3xl">
               <h3 className="text-lg font-bold">Confirm Type Change</h3>
             </div>
             
@@ -1244,21 +1334,20 @@ function MyDepartmentPage() {
               </p>
               
               <div className="flex items-center gap-3 pt-4">
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  className="flex-1"
                   onClick={() => setPendingTypeChange(null)}
-                  className="flex-1 rounded-md border border-gray-300 bg-white py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-50"
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
-                  autoFocus
+                </Button>
+                <Button
+                  variant="brand"
+                  className="flex-1"
                   onClick={confirmTypeChange}
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-2 text-sm font-bold text-white shadow-md transition hover:opacity-90"
                 >
                   Confirm
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -1269,10 +1358,10 @@ function MyDepartmentPage() {
       {isSchoolYearModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
               <h3 className="text-xl font-bold">Select School Year & Semester</h3>
               <p className="mt-1 text-sm text-white/80">Choose the academic year and semester to manage schedules.</p>
             </div>
@@ -1314,7 +1403,7 @@ function MyDepartmentPage() {
                           setIsAddScheduleModalOpen(true)
                         }}
                         disabled={!selectedAcademicYear}
-                        className="group relative flex flex-col justify-between rounded-md border border-gray-200 bg-white p-4 text-left shadow-sm transition-all duration-200 hover:border-[var(--brand-color)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--brand-color)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-sm cursor-pointer"
+                        className="group relative flex flex-col justify-between rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-all duration-200 hover:border-[var(--brand-color)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--brand-color)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-sm cursor-pointer"
                       >
                         <div className="space-y-3">
                           <div className="flex items-start justify-between gap-2">
@@ -1366,7 +1455,7 @@ function MyDepartmentPage() {
                           setIsAddScheduleModalOpen(true)
                         }}
                         disabled={!selectedAcademicYear}
-                        className="group relative flex flex-col justify-between rounded-md border border-gray-200 bg-white p-4 text-left shadow-sm transition-all duration-200 hover:border-[var(--brand-color)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--brand-color)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-sm cursor-pointer"
+                        className="group relative flex flex-col justify-between rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition-all duration-200 hover:border-[var(--brand-color)] hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[var(--brand-color)] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:shadow-sm cursor-pointer"
                       >
                         <div className="space-y-3">
                           <div className="flex items-start justify-between gap-2">
@@ -1404,17 +1493,17 @@ function MyDepartmentPage() {
               </div>
 
               <div className="flex items-center gap-4 pt-2">
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  className="flex-1"
                   onClick={() => {
                     setIsSchoolYearModalOpen(false)
                     const active = academicYears.find((y: any) => y.isActive)
                     if (active) setSelectedAcademicYear(active)
                   }}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-50 active:shadow-none"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -1433,10 +1522,10 @@ function MyDepartmentPage() {
       {isAddScheduleModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-[95vw] max-w-[95vw] h-[90vh] max-h-[90vh] flex flex-col rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
+            className="w-[95vw] max-w-[95vw] h-[90vh] max-h-[90vh] flex flex-col rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-4 text-white rounded-t-md shrink-0">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-4 text-white rounded-t-3xl shrink-0">
               <div className="flex items-center justify-between">
                 <h3 className="text-xl font-bold">
                   {selectedAcademicYear?.academicYear} - {selectedSemesterPhase?.name} Schedules
@@ -2094,8 +2183,9 @@ function MyDepartmentPage() {
               <div className="flex items-center gap-4">
                 {isRemoveMode ? (
                   <>
-                    <button
-                      type="button"
+                    <Button
+                      variant={selectedScheduleIds.length > 0 ? 'primary' : 'outline'}
+                      className={selectedScheduleIds.length > 0 ? '!bg-rose-500 hover:!bg-rose-600 !border-none !text-white !shadow-md' : ''}
                       onClick={() => {
                         const rowsToDeleteCount = schedules.filter(s => selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId))).length;
                         if (rowsToDeleteCount >= 6) {
@@ -2107,46 +2197,38 @@ function MyDepartmentPage() {
                           setIsRemoveMode(false);
                         }
                       }}
-                      className={`rounded border px-4 py-2 text-sm font-bold transition-colors flex items-center justify-center gap-1 shrink-0 ${
-                        selectedScheduleIds.length > 0 
-                          ? 'border-rose-500 bg-rose-500 text-white hover:bg-rose-600'
-                          : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-100'
-                      }`}
                     >
                       {selectedScheduleIds.length > 0 && <TrashIcon className="h-4 w-4" />}
                       {selectedScheduleIds.length > 0 ? `Delete Selected (${schedules.filter(s => selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId))).length})` : 'Cancel Remove'}
-                    </button>
+                    </Button>
                     {selectedScheduleIds.length > 0 && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
                         onClick={() => {
                           setIsRemoveMode(false);
                           setSelectedScheduleIds([]);
                         }}
-                        className="rounded border border-gray-300 bg-white px-4 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100 transition-colors flex items-center justify-center shrink-0"
                       >
                         Cancel
-                      </button>
+                      </Button>
                     )}
                   </>
                 ) : (
                   <>
-                    <button
-                      type="button"
+                    <DashedButton
+                      variant="danger"
                       onClick={() => setIsRemoveMode(true)}
-                      className="rounded border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-500 hover:border-rose-500 hover:text-rose-600 transition-colors flex items-center justify-center gap-1 shrink-0"
+                      icon={<TrashIcon className="h-4 w-4" />}
                     >
-                      <TrashIcon className="h-4 w-4" />
                       Remove
-                    </button>
-                    <button
-                      type="button"
+                    </DashedButton>
+                    <DashedButton
+                      variant="brand"
                       onClick={() => setSchedules([...schedules, createDefaultSchedule()])}
-                      className="rounded border border-dashed border-gray-400 bg-white px-4 py-2 text-sm font-bold text-gray-500 hover:border-[var(--brand-color)] hover:text-[var(--brand-color)] transition-colors flex items-center justify-center gap-1 shrink-0"
+                      icon={<PlusIcon className="h-4 w-4" />}
                     >
-                      <PlusIcon className="h-4 w-4" />
                       Add Row
-                    </button>
+                    </DashedButton>
                   </>
                 )}
                 <span className="text-sm font-medium text-gray-500">
@@ -2161,23 +2243,26 @@ function MyDepartmentPage() {
                 </div>
               )}
               <div className="flex gap-3">
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
                   onClick={() => {
-                    const hasUnsavedChanges = JSON.stringify(schedules) !== originalSchedulesSnapshot || deletedScheduleIds.length > 0;
-                    if (hasUnsavedChanges) {
-                      setIsCancelConfirmModalOpen(true);
+                    if (isEditable) {
+                      const hasUnsavedChanges = JSON.stringify(schedules) !== originalSchedulesSnapshot || deletedScheduleIds.length > 0;
+                      if (hasUnsavedChanges) {
+                        setIsCancelConfirmModalOpen(true);
+                      } else {
+                        setIsAddScheduleModalOpen(false);
+                      }
                     } else {
                       setIsAddScheduleModalOpen(false);
                     }
                   }}
-                  className="rounded-md border border-gray-300 bg-white px-6 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100"
                 >
                   {isEditable ? 'Cancel' : 'Close'}
-                </button>
+                </Button>
                 {isEditable && (
-                <button
-                  type="button"
+                <Button
+                  variant="brand"
                   disabled={isSubmittingSchedules}
                   onClick={() => {
                     const hasUnsavedChanges = JSON.stringify(schedules) !== originalSchedulesSnapshot || deletedScheduleIds.length > 0;
@@ -2187,10 +2272,9 @@ function MyDepartmentPage() {
                       setIsAddScheduleModalOpen(false);
                     }
                   }}
-                  className="rounded-md bg-[var(--brand-color)] px-6 py-2 text-sm font-bold text-white shadow-sm transition enabled:hover:bg-[var(--brand-color-hover)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmittingSchedules ? 'Saving...' : `Save All`}
-                </button>
+                </Button>
                 )}
               </div>
             </div>
@@ -2203,10 +2287,10 @@ function MyDepartmentPage() {
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md relative">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl relative">
               <button 
                 onClick={() => !isAdding && setIsAddModalOpen(false)}
                 disabled={isAdding}
@@ -2233,7 +2317,7 @@ function MyDepartmentPage() {
                         type="button"
                         disabled={isAdding}
                         onClick={() => toggleInstructorSelection(instructor.id)}
-                        className={`group flex w-full items-center gap-4 rounded-md border p-3 text-left transition-all ${
+                        className={`group flex w-full items-center gap-4 rounded-2xl border p-3 text-left transition-all ${
                           isSelected 
                             ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/5 shadow-sm' 
                             : 'border-gray-100 bg-white hover:border-gray-200 hover:shadow-md'
@@ -2279,22 +2363,22 @@ function MyDepartmentPage() {
               </div>
 
               <div className="flex items-center gap-3 pt-4">
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  className="flex-1"
                   disabled={isAdding}
                   onClick={() => setIsAddModalOpen(false)}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="brand"
+                  className="flex-1"
                   disabled={selectedInstructorIds.length === 0 || isAdding}
                   onClick={handleAddInstructors}
-                  className="flex-1 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[var(--brand-color)] flex items-center justify-center gap-2"
                 >
                   {isAdding ? 'Adding...' : `Add ${selectedInstructorIds.length > 0 ? `(${selectedInstructorIds.length})` : ''} to Dept`}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -2307,190 +2391,234 @@ function MyDepartmentPage() {
         <SectionHeader 
           title="My Department" 
           description="Overview of your department's members, rooms, and activity." 
-        />
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="xl:col-span-2 rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className={`flex h-14 w-14 items-center justify-center overflow-hidden border border-gray-200 shrink-0 ${departmentInfo?.logo && !logoError ? 'rounded-full' : 'rounded-md'}`}>
-                  {departmentInfo?.logo && !logoError ? (
-                    <img 
-                      src={departmentInfo.logo} 
-                      alt={departmentInfo.name}
-                      className="h-full w-full object-cover"
-                      onError={() => setLogoError(true)}
-                    />
-                  ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-blue-50 border border-blue-100">
-                      <DepartmentIcon className="h-9 w-9 text-blue-600" />
+        />            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 mb-6">
+              {(() => {
+                const totalMembers = members.length;
+                const activeCount = members.filter(m => m.status === 'Active').length;
+                const inactiveCount = totalMembers - activeCount;
+
+                return (
+                  <div className="grid grid-cols-2 lg:grid-cols-12 gap-2 sm:gap-3 transition-all duration-300">
+                    
+                    {/* 1. Identity (Brand Dark) - Spans 5 cols, 2 rows */}
+                    <div className="col-span-2 lg:col-span-5 lg:row-span-2 bg-[linear-gradient(135deg,var(--brand-color),#334322)] rounded-[1.25rem] p-4 sm:p-5 flex flex-col justify-center relative overflow-hidden group shadow-sm">
+                      <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 blur-3xl rounded-full transition-transform duration-700 group-hover:scale-150 pointer-events-none" />
+                      
+                      <div className="flex items-center gap-3 sm:gap-4 relative z-10">
+                        <div className={`flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center overflow-hidden shrink-0 shadow-lg ${departmentInfo?.logo && !logoError ? 'rounded-xl border border-white/20' : 'rounded-xl bg-white/10 border border-white/20 backdrop-blur-md'}`}>
+                          {departmentInfo?.logo && !logoError ? (
+                            <img src={departmentInfo.logo} alt={departmentInfo.name} className="h-full w-full object-cover" onError={() => setLogoError(true)} />
+                          ) : (
+                            <DepartmentIcon className="h-6 w-6 sm:h-7 sm:w-7 text-white/80" />
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            {departmentInfo?.code && (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/20 backdrop-blur-md border border-white/10 text-white/90 text-[0.6rem] font-black tracking-widest uppercase">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
+                                {departmentInfo.code}
+                              </span>
+                            )}
+                          </div>
+                          <h2 className="text-xl sm:text-2xl font-black text-white leading-none truncate tracking-tight drop-shadow-md">
+                            {loading ? 'Loading...' : (departmentInfo?.name || 'Unassigned')}
+                          </h2>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                </div>
-                <div className="flex flex-nowrap items-center gap-3 min-w-0">
-                  <p className="text-xl font-bold text-gray-900 leading-tight truncate" title={departmentInfo?.name}>
-                    {loading ? 'Loading...' : (departmentInfo?.name || 'No Department Assigned')}
-                  </p>
-                  {departmentInfo?.code && (
-                    <span className="flex shrink-0 h-6 items-center justify-center rounded-full bg-white border border-gray-200 px-3 text-[1rem] font-black uppercase tracking-widest text-gray-500 shadow-sm">
-                      <span className="mr-[-0.1em]">{departmentInfo.code}</span>
-                    </span>
-                  )}
-                </div>
-              </div>
 
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
-                  <UsersIcon className="h-9 w-9 text-blue-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Department Members">Dept. Members</p>
-                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{members.length}</p>
-                </div>
-              </div>
+                    {/* 2. Academic Term - Spans 3 cols, 1 row (Top) */}
+                    <div className="col-span-1 lg:col-span-3 bg-white rounded-[1.25rem] border border-slate-200/60 p-3 flex flex-col justify-center shadow-sm relative overflow-hidden">
+                       <div className="absolute right-0 top-0 opacity-[0.02] flex flex-wrap w-16 gap-1 -mt-2 -mr-2 pointer-events-none">
+                         {[...Array(12)].map((_, i) => <div key={i} className="w-3 h-3 bg-slate-900 rounded-sm"></div>)}
+                       </div>
+                       <div className="flex items-center gap-2 mb-2 relative z-10">
+                         <CalendarIcon className="w-3.5 h-3.5 text-[var(--brand-color)]" />
+                         <p className="text-[0.65rem] font-black text-slate-700 tracking-wider">
+                           SY {(() => {
+                             const activeYear = academicYears.find((y: any) => y.isActive) || selectedAcademicYear;
+                             return activeYear?.academicYear || 'Not Set';
+                           })()}
+                         </p>
+                       </div>
+                       
+                       <div className="flex flex-col relative z-10">
+                         {(() => {
+                           const activeYear = academicYears.find((y: any) => y.isActive) || selectedAcademicYear;
+                           const sem1Phase = activeYear?.sem1?.phase || 'Closed';
+                           const sem2Phase = activeYear?.sem2?.phase || 'Closed';
+                           
+                           const getPhaseColor = (phase: string) => {
+                             switch(phase) {
+                               case 'Drafting': return 'text-amber-600 bg-amber-50';
+                               case 'Plotting': return 'text-blue-600 bg-blue-50';
+                               case 'Revision': return 'text-purple-600 bg-purple-50';
+                               case 'Final': return 'text-emerald-600 bg-emerald-50';
+                               default: return 'text-slate-500 bg-slate-50';
+                             }
+                           };
+                           
+                           return (
+                             <div className="flex items-center justify-between gap-1">
+                               <div className="flex-1 flex flex-col gap-1">
+                                 <span className="text-[0.55rem] font-bold text-slate-400 uppercase leading-none">1st Sem</span>
+                                 <span className={`text-[0.6rem] font-black px-1.5 py-0.5 rounded inline-block text-center truncate leading-tight ${getPhaseColor(sem1Phase)}`}>{sem1Phase}</span>
+                               </div>
+                               <div className="w-px h-6 bg-slate-100 mx-1"></div>
+                               <div className="flex-1 flex flex-col gap-1">
+                                 <span className="text-[0.55rem] font-bold text-slate-400 uppercase leading-none text-right">2nd Sem</span>
+                                 <span className={`text-[0.6rem] font-black px-1.5 py-0.5 rounded inline-block text-center truncate leading-tight ${getPhaseColor(sem2Phase)}`}>{sem2Phase}</span>
+                               </div>
+                             </div>
+                           );
+                         })()}
+                       </div>
+                    </div>
 
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-green-50 border border-green-100 shrink-0">
-                  <PlusIcon className="h-9 w-9 text-green-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="New (Last 7D)">New (Last 7D)</p>
-                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{newMembersCount}</p>
-                </div>
-              </div>
+                    {/* 3. Campus Rooms - Spans 2 cols, 1 row (Top) */}
+                    <div className="col-span-1 lg:col-span-2 bg-white rounded-[1.25rem] border border-slate-200/60 p-3 flex flex-col justify-center items-center text-center shadow-sm relative overflow-hidden group/room">
+                      <div className="absolute inset-0 bg-slate-50/50 opacity-0 group-hover/room:opacity-100 transition-opacity pointer-events-none" />
+                      <span className="text-[0.55rem] font-bold text-slate-400 uppercase tracking-widest mb-1 relative z-10">Campus Rooms</span>
+                      <div className="flex items-end gap-1 relative z-10">
+                        <span className="text-2xl font-black text-slate-900 leading-none tracking-tight">{rooms.length}</span>
+                        <span className="text-[0.55rem] font-bold text-slate-400 mb-0.5">Units</span>
+                      </div>
+                    </div>
+
+                    {/* 4. Total Users - Spans 2 cols, 2 rows (Tall) */}
+                    <div className="col-span-2 lg:col-span-2 lg:row-span-2 bg-[#161f0e] rounded-[1.25rem] p-4 flex flex-col justify-center items-center text-center shadow-sm relative overflow-hidden group shrink-0">
+                      <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/10 rounded-full blur-xl transition-transform duration-700 group-hover:scale-150 pointer-events-none" />
+                      
+                      {/* Abstract Bar Chart Infographic */}
+                      <div className="absolute bottom-4 right-0 left-0 flex justify-center items-end gap-[3px] opacity-20 group-hover:opacity-40 transition-opacity duration-500 pointer-events-none px-4">
+                        {[30, 50, 40, 70, 50, 90, 60, 40].map((h, i) => (
+                          <div key={i} className="flex-1 bg-emerald-500 rounded-t-sm" style={{ height: `${h}px`, maxHeight: '40px', minHeight: '4px' }}></div>
+                        ))}
+                      </div>
+
+                      <span className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-widest mb-2 relative z-10">Total Users</span>
+                      <span className="text-4xl font-black text-white leading-none relative z-10 drop-shadow-md">{totalMembers}</span>
+                    </div>
+
+                    {/* 5. Status - Spans 3 cols, 1 row (Bottom) */}
+                    <div className="col-span-1 lg:col-span-3 bg-white rounded-[1.25rem] border border-slate-200/60 p-3 flex flex-col justify-center shadow-sm relative overflow-hidden group/stat">
+                       <p className="text-[0.6rem] font-bold text-slate-400 uppercase tracking-widest mb-2">Status</p>
+                       <div className="flex justify-between items-end mb-2 relative z-10">
+                         <div className="flex items-center gap-1.5">
+                           <span className="relative flex h-1.5 w-1.5">
+                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                           </span>
+                           <span className="text-[0.7rem] font-black text-emerald-700 leading-none">{activeCount} Active</span>
+                         </div>
+                         <span className="text-[0.6rem] font-bold text-slate-400 leading-none">{inactiveCount} Inact.</span>
+                       </div>
+                       {/* Mini Stacked Bar */}
+                       <div className="w-full flex h-1.5 rounded-full overflow-hidden bg-slate-100 shadow-inner relative z-10">
+                         <div className="bg-emerald-500 h-full transition-all duration-1000 ease-out group-hover/stat:bg-emerald-400" style={{ width: `${totalMembers ? (activeCount/totalMembers)*100 : 0}%` }}></div>
+                       </div>
+                    </div>
+
+                    {/* 6. New 7D - Spans 2 cols, 1 row (Bottom) */}
+                    <div className="col-span-1 lg:col-span-2 bg-gradient-to-br from-amber-400 to-orange-500 rounded-[1.25rem] p-3 flex flex-col justify-center items-center text-center shadow-sm relative overflow-hidden group">
+                      <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                      
+                      {/* SVG Sparkline Area Chart */}
+                      <svg className="absolute bottom-0 left-0 w-full h-[70%] opacity-20 transition-transform duration-700 group-hover:scale-105 pointer-events-none" viewBox="0 0 100 50" preserveAspectRatio="none">
+                        <path d="M0,50 Q20,35 40,40 T80,15 L100,5 L100,50 Z" fill="currentColor" className="text-white" />
+                      </svg>
+
+                      <span className="text-[0.55rem] font-bold text-white/90 uppercase tracking-widest mb-1 drop-shadow-sm relative z-10">New 7D</span>
+                      <div className="flex items-center text-2xl font-black text-white leading-none drop-shadow-sm relative z-10 mt-1">
+                        <PlusIcon className="w-3.5 h-3.5 mr-0.5" />
+                        {newMembersCount}
+                      </div>
+                    </div>
+
+                  </div>
+                );
+              })()}
             </div>
 
-        <div className="flex justify-between items-end mb-[-1rem]">
-          <h3 className="text-xl font-bold text-gray-900"></h3>
-        </div>
 
-        <SearchFilters
-          searchTerm={searchTerm}
+
+        <DataTable<Member>
+          data={filteredMembers}
+          columns={memberColumns}
+          onRowClick={handleRowClick}
+          searchPlaceholder="Search members..."
+          searchValue={searchTerm}
           onSearchChange={setSearchTerm}
-          placeholder="Search members..."
-          primaryButton={currentUserRole === 'Dean' ? {
-            label: "Add Instructor",
-            onClick: () => setIsAddModalOpen(true)
-          } : undefined}
-          secondaryButton={(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head') ? {
-            label: "Manage Schedule",
-            onClick: () => {
-              const active = academicYears.find((y: any) => y.isActive)
-              if (active) setSelectedAcademicYear(active)
-              setIsSchoolYearModalOpen(true)
-            }
-          } : undefined}
+          filters={
+            <FilterDropdown 
+              groups={[
+                {
+                  id: 'role',
+                  title: 'Role',
+                  options: ['Dean', 'Program Head', 'Instructor'],
+                  selectedValues: selectedRoles,
+                  onChange: setSelectedRoles
+                },
+                {
+                  id: 'status',
+                  title: 'Status',
+                  options: ['Active', 'Inactive', 'Pending'],
+                  selectedValues: selectedStatuses,
+                  onChange: setSelectedStatuses
+                }
+              ]}
+              onClearAll={() => {
+                setSelectedRoles([])
+                setSelectedStatuses([])
+              }}
+            />
+          }
+          emptyTitle={loading ? "Loading..." : "No members found"}
+          emptyDescription={loading ? 'Loading members...' : 'No members found matching your search.'}
+          primaryAction={
+            <div className="flex flex-col sm:flex-row gap-2">
+              {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head') && (
+                <Button
+                  type="button"
+                  variant="brand"
+                  icon={<CalendarIcon className="h-5 w-5" />}
+                  onClick={() => {
+                    const active = academicYears.find((y: any) => y.isActive)
+                    if (active) setSelectedAcademicYear(active)
+                    setIsSchoolYearModalOpen(true)
+                  }}
+                >
+                  Manage Schedule
+                </Button>
+              )}
+              {currentUserRole === 'Dean' && (
+                <Button
+                  type="button"
+                  variant="brand"
+                  icon={<PlusIcon className="h-5 w-5" />}
+                  onClick={() => setIsAddModalOpen(true)}
+                >
+                  Add Instructor
+                </Button>
+              )}
+            </div>
+          }
         />
-
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-left">
-              <thead className="bg-gray-50/80">
-                <tr>
-                  <th className={`px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 ${currentUserRole === 'Dean' ? 'w-[30%]' : 'w-[40%]'}`}>
-                    Member
-                  </th>
-                  <th className={`px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 ${currentUserRole === 'Dean' ? 'w-[20%]' : 'w-[30%]'}`}>
-                    Role
-                  </th>
-                  <th className={`px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 ${currentUserRole === 'Dean' ? 'w-[20%]' : 'w-[30%]'}`}>
-                    Status
-                  </th>
-                  <th className={`px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 ${currentUserRole === 'Dean' ? 'w-[15%]' : 'w-1 whitespace-nowrap'}`}>
-                    Joined Date
-                  </th>
-                  {currentUserRole === 'Dean' && (
-                    <th className="px-6 py-4 text-right text-xs font-bold uppercase tracking-widest text-gray-500 w-[15%]">
-                      Actions
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {filteredMembers.length === 0 ? (
-                  <tr>
-                    <td colSpan={currentUserRole === 'Dean' ? 5 : 4} className="px-6 py-12 text-center text-gray-500">
-                      {loading ? 'Loading members...' : 'No members found matching your search.'}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredMembers.map((member) => (
-                    <tr 
-                      key={member.id} 
-                      onClick={() => handleRowClick(member)}
-                      className="transition hover:bg-gray-50/50 cursor-pointer"
-                    >
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <div className="flex items-center gap-4">
-                          {member.avatar ? (
-                            <img
-                              src={member.avatar}
-                              alt={member.name}
-                              className="h-10 w-10 rounded-full border border-gray-300 object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary-100 text-secondary-500 border border-gray-300">
-                              <UserIcon className="h-6 w-6" />
-                            </div>
-                          )}
-                          <div>
-                            <p className="text-sm font-bold text-gray-900">{member.name}</p>
-                            <p className="text-xs font-medium text-gray-500">{member.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
-                          {member.role}
-                        </span>
-                      </td>
-                      <td className="whitespace-nowrap px-6 py-4">
-                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
-                          {member.status}
-                        </span>
-                      </td>
-                      <td className={`whitespace-nowrap px-6 py-4 text-sm font-semibold text-gray-600 ${currentUserRole !== 'Dean' ? 'w-1' : ''}`}>
-                        {member.joinedDate}
-                      </td>
-                      {currentUserRole === 'Dean' && (
-                        <td className="whitespace-nowrap px-6 py-4 text-right">
-                          <div className="flex justify-end gap-2">
-                            <IconButton
-                              label="Remove member"
-                              disabled={member.id === currentUserData?.id}
-                              className={`h-8 w-8 rounded-md bg-white shadow-sm transition-all border border-gray-100 ${
-                                member.id === currentUserData?.id 
-                                  ? 'text-gray-300 cursor-not-allowed opacity-50' 
-                                  : 'text-rose-400 hover:bg-rose-50 hover:text-rose-600'
-                              }`}
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleRemoveMember(member)
-                              }}
-                            >
-                              <TrashIcon className="h-4.5 w-4.5" />
-                            </IconButton>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
 
       {/* Delete Rows Confirmation Modal */}
       {isDeleteConfirmModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-            <div className="bg-rose-600 p-5 text-white rounded-t-md">
+          <div className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-rose-600 p-5 text-white rounded-t-3xl">
               <h3 className="text-lg font-bold">Confirm Deletion</h3>
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-gray-700">Are you sure you want to delete these rows? This action cannot be undone once saved.</p>
               <div className="flex items-center gap-3 pt-2">
-                <button type="button" onClick={() => setIsDeleteConfirmModalOpen(false)} className="flex-1 rounded-md border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300">Cancel</button>
-                <button type="button" autoFocus onClick={() => { setIsDeleteConfirmModalOpen(false); setIsRemoveMode(false); executeBulkRemove(); }} className="flex-1 rounded-md bg-rose-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-rose-700">Confirm Delete</button>
+                <Button variant="outline" className="flex-1" onClick={() => setIsDeleteConfirmModalOpen(false)}>Cancel</Button>
+                <Button className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white !border-none !shadow-md" onClick={() => { setIsDeleteConfirmModalOpen(false); setIsRemoveMode(false); executeBulkRemove(); }}>Confirm Delete</Button>
               </div>
             </div>
           </div>
@@ -2501,15 +2629,15 @@ function MyDepartmentPage() {
       {/* Save Changes Confirmation Modal */}
       {isSaveConfirmModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-            <div className="bg-[var(--brand-color)] p-5 text-white rounded-t-md">
+          <div className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-[var(--brand-color)] p-5 text-white rounded-t-3xl">
               <h3 className="text-lg font-bold">Save Changes</h3>
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-gray-700">Are you sure you want to save all changes to the schedules?</p>
               <div className="flex items-center gap-3 pt-2">
-                <button type="button" onClick={() => setIsSaveConfirmModalOpen(false)} className="flex-1 rounded-md border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300">Review Changes</button>
-                <button type="button" autoFocus onClick={() => { setIsSaveConfirmModalOpen(false); handleSaveSchedules(); }} className="flex-1 rounded-md bg-[var(--brand-color)] py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)]">Confirm Save</button>
+                <Button variant="outline" className="flex-1" onClick={() => setIsSaveConfirmModalOpen(false)}>Review Changes</Button>
+                <Button variant="brand" className="flex-1" onClick={() => { setIsSaveConfirmModalOpen(false); handleSaveSchedules(); }}>Confirm Save</Button>
               </div>
             </div>
           </div>
@@ -2520,15 +2648,15 @@ function MyDepartmentPage() {
       {/* Discard Changes Confirmation Modal */}
       {isCancelConfirmModalOpen && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
-            <div className="bg-gray-200 p-5 border-b border-gray-300 rounded-t-md">
+          <div className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-gray-200 p-5 border-b border-gray-300 rounded-t-3xl">
               <h3 className="text-lg font-bold text-gray-900">Unsaved Changes</h3>
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-gray-700">You have unsaved changes. Are you sure you want to discard them?</p>
               <div className="flex items-center gap-3 pt-2">
-                <button type="button" onClick={() => setIsCancelConfirmModalOpen(false)} className="flex-1 rounded-md border border-gray-200 bg-white py-2.5 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300">Go Back</button>
-                <button type="button" autoFocus onClick={() => { setIsCancelConfirmModalOpen(false); setIsAddScheduleModalOpen(false); }} className="flex-1 rounded-md bg-rose-600 py-2.5 text-sm font-bold text-white shadow-md transition hover:bg-rose-700">Discard</button>
+                <Button variant="outline" className="flex-1" onClick={() => setIsCancelConfirmModalOpen(false)}>Go Back</Button>
+                <Button className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white !border-none !shadow-md" onClick={() => { setIsCancelConfirmModalOpen(false); setIsAddScheduleModalOpen(false); }}>Discard</Button>
               </div>
             </div>
           </div>

@@ -4,6 +4,7 @@ import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
 import { SectionHeader } from '../../components/SectionHeader'
 import { Button } from '../../components/Button'
+import { FilterDropdown } from '../../components/FilterDropdown'
 import { TextInput } from '../../components/TextInput'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db, storage } from '../../firebase'
@@ -36,6 +37,8 @@ const roleClasses: Record<string, string> = {
 
 function DepartmentsPage() {
   const [searchTerm, setSearchTerm] = useState('')
+  const [deanStatusFilters, setDeanStatusFilters] = useState<string[]>([])
+  const [deptSizeFilters, setDeptSizeFilters] = useState<string[]>([])
   const [selectedDept, setSelectedDept] = useState<Department | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [editingDept, setEditingDept] = useState<Department | null>(null)
@@ -144,12 +147,32 @@ function DepartmentsPage() {
         ...dept,
         memberCount: allUsers.filter((u) => u.department === dept.code).length,
       }))
-      .filter((dept) =>
-        [dept.name, dept.code, dept.deanName].some((val) =>
+      .filter((dept) => {
+        // 1. Search Filter
+        const matchesSearch = [dept.name, dept.code, dept.deanName].some((val) =>
           val.toLowerCase().includes(searchTerm.toLowerCase())
         )
-      )
-  }, [departments, allUsers, searchTerm])
+        if (!matchesSearch) return false
+
+        // 2. Dean Status Filter
+        if (deanStatusFilters.length > 0) {
+          const status = (dept.deanUID && dept.deanUID !== '') ? 'Assigned' : 'Unassigned'
+          if (!deanStatusFilters.includes(status)) return false
+        }
+
+        // 3. Department Size Filter
+        if (deptSizeFilters.length > 0) {
+          let size = 'Empty'
+          if (dept.memberCount && dept.memberCount > 50) size = 'Large'
+          else if (dept.memberCount && dept.memberCount >= 11) size = 'Medium'
+          else if (dept.memberCount && dept.memberCount >= 1) size = 'Small'
+          
+          if (!deptSizeFilters.includes(size)) return false
+        }
+
+        return true
+      })
+  }, [departments, allUsers, searchTerm, deanStatusFilters, deptSizeFilters])
 
   const summaryStats = useMemo(() => {
     const totalDepartments = departments.length;
@@ -880,176 +903,221 @@ function DepartmentsPage() {
           ]
 
           return (
-            <div className="rounded-2xl overflow-hidden border border-slate-200 shadow-sm mb-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
 
-              {/* ── TOP: Full-width gradient hero ── */}
-              <div className="relative bg-[linear-gradient(135deg,var(--brand-color)_0%,#526f34_40%,#7b9d4f_80%,#a3c48b_100%)] px-6 py-5 overflow-hidden">
-                <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: 'radial-gradient(circle, #fff 1px, transparent 1px)', backgroundSize: '18px 18px' }} />
-                <DepartmentIcon className="absolute -right-10 -top-10 h-52 w-52 text-white/[0.07] pointer-events-none" />
+                {/* Card 0: Academic Departments */}
+                <div className="group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col justify-between">
+                  {/* Decorative gradient blob */}
+                  <div className="absolute -top-4 -right-4 h-20 w-20 rounded-full bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14 transition-colors duration-300" />
+                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-[var(--brand-color)] to-[#7b9d4f]" />
 
-                <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-0 justify-between">
-                  {/* Left: headline */}
-                  <div>
-                    <p className="text-[0.6rem] font-bold uppercase tracking-[0.2em] text-white/60 mb-1">Academic Departments</p>
-                    <div className="flex items-end gap-3">
-                      <span className="text-[3.5rem] font-black leading-none tabular-nums text-white drop-shadow-lg">{totalDepartments}</span>
-                      <div className="pb-1.5">
-                        <p className="text-sm font-bold text-white/90 leading-tight">Total</p>
-                        <p className="text-[0.65rem] text-white/50 font-medium">Registered</p>
-                      </div>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-slate-400">Departments</p>
+                      <p className="text-[0.65rem] text-slate-400 font-medium mt-0.5">Total registered</p>
+                    </div>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--brand-color)] to-[#7b9d4f] shadow-sm shrink-0">
+                      <DepartmentIcon className="h-4.5 w-4.5 text-white" />
                     </div>
                   </div>
 
-                  {/* Right: dept logo strip */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex -space-x-3">
-                      {departments.slice(0, 6).map((d, i) => (
-                        <div
-                          key={d.id}
-                          className="h-10 w-10 rounded-full border-2 border-white/30 overflow-hidden bg-white/20 shadow-lg hover:-translate-y-1 transition-transform duration-200 cursor-default"
-                          style={{ zIndex: 6 - i }}
-                          title={d.name}
-                        >
+                  <div className="flex items-end gap-1 my-3">
+                    <span className="text-4xl font-black tabular-nums text-slate-900 leading-none">{totalDepartments}</span>
+                    <span className="text-sm font-bold text-slate-400 mb-1">total</span>
+                  </div>
+
+                  {/* Largest / Smallest dept mini stats */}
+                  <div className="flex gap-2">
+                    {(() => {
+                      const sized = departments.map(d => ({ ...d, count: allUsers.filter(u => u.department === d.code).length }))
+                      const largest = sized.reduce((a, b) => b.count > a.count ? b : a, sized[0])
+                      const smallest = sized.reduce((a, b) => b.count < a.count ? b : a, sized[0])
+                      return (<>
+                        <div className="flex-1 rounded-xl bg-[var(--brand-color)]/8 px-3 py-2 min-w-0 flex flex-col justify-between">
+                          <p className="text-[0.58rem] font-bold uppercase tracking-wider text-[var(--brand-color)]">Largest</p>
+                          <p className="text-sm font-black text-slate-900 leading-tight truncate">{largest?.code ?? '—'}</p>
+                          <p className="text-[0.6rem] font-semibold text-slate-400">{largest?.count ?? 0} members</p>
+                        </div>
+                        <div className="flex-1 rounded-xl bg-slate-100 px-3 py-2 min-w-0 flex flex-col justify-between">
+                          <p className="text-[0.58rem] font-bold uppercase tracking-wider text-slate-400">Smallest</p>
+                          <p className="text-sm font-black text-slate-900 leading-tight truncate">{smallest?.code ?? '—'}</p>
+                          <p className="text-[0.6rem] font-semibold text-slate-400">{smallest?.count ?? 0} members</p>
+                        </div>
+                      </>)
+                    })()}
+                  </div>
+
+                  {/* Avatar stack */}
+                  <div className="flex items-center gap-2 pt-2 mt-auto">
+                    <div className="flex -space-x-2">
+                      {departments.slice(0, 5).map((d) => (
+                        <div key={d.id} className="h-6 w-6 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center overflow-hidden shadow-sm">
                           {d.logo && !logoErrors[d.logo] ? (
                             <img src={d.logo} alt={d.name} className="h-full w-full object-cover" onError={() => setLogoErrors(prev => ({ ...prev, [d.logo]: true }))} />
                           ) : (
-                            <div className="h-full w-full flex items-center justify-center bg-white/10">
-                              <DepartmentIcon className="h-5 w-5 text-white/70" />
-                            </div>
+                            <DepartmentIcon className="h-3 w-3 text-slate-400" />
                           )}
                         </div>
                       ))}
-                      {departments.length > 6 && (
-                        <div className="h-10 w-10 rounded-full border-2 border-white/30 bg-white/20 flex items-center justify-center text-white text-xs font-black shadow-lg" style={{ zIndex: 0 }}>
-                          +{departments.length - 6}
+                      {departments.length > 5 && (
+                        <div className="h-6 w-6 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[0.5rem] font-black text-slate-500 shadow-sm">
+                          +{departments.length - 5}
                         </div>
                       )}
                     </div>
-                    {departments.length === 0 && (
-                      <span className="text-xs text-white/50 italic">No departments yet</span>
+                    {departments.length > 0 && (
+                      <span className="text-[0.6rem] font-semibold text-slate-400 truncate">{departments[0]?.name?.split(' ').slice(-1)[0]}{departments.length > 1 ? ` & ${departments.length - 1} more` : ''}</span>
                     )}
                   </div>
                 </div>
-              </div>
-
-              {/* ── BOTTOM: 4 stat cards in a row ── */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 bg-slate-100 gap-px">
 
                 {/* Card 1: Total Faculty */}
-                <div className="group bg-white px-5 py-4 flex flex-col gap-1 hover:bg-slate-50 transition-colors relative overflow-hidden">
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-blue-400" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-slate-400">Faculty</span>
-                    <UsersIcon className="h-4 w-4 text-blue-400" />
+                <div className="group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col justify-between">
+                  <div className="absolute -top-4 -right-4 h-20 w-20 rounded-full bg-blue-400/8 group-hover:bg-blue-400/14 transition-colors duration-300" />
+                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-blue-400 to-sky-400" />
+
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-slate-400">Faculty</p>
+                      <p className="text-[0.65rem] text-slate-400 font-medium mt-0.5">Enrolled members</p>
+                    </div>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-400 to-sky-400 shadow-sm shrink-0">
+                      <UsersIcon className="h-4.5 w-4.5 text-white" />
+                    </div>
                   </div>
-                  <span className="text-4xl font-black tabular-nums text-slate-900 leading-none mt-1">{totalFacultyCount}</span>
-                  <p className="text-[0.65rem] text-slate-400 font-medium">enrolled members</p>
-                  <div className="flex w-full h-1.5 rounded-full overflow-hidden bg-slate-100 mt-3 shadow-inner">
-                    {totalFacultyCount > 0 ? roleRows.map(({ role, count, bg }) => {
-                      if (!count) return null
-                      return <div key={role} className={`h-full ${bg}`} style={{ width: `${(count / totalFacultyCount) * 100}%` }} title={`${role}: ${count}`} />
-                    }) : <div className="h-full w-full bg-slate-200" />}
+
+                  <div className="flex items-end gap-1 my-3">
+                    <span className="text-4xl font-black tabular-nums text-slate-900 leading-none">{totalFacultyCount}</span>
+                    <span className="text-sm font-bold text-slate-400 mb-1">members</span>
                   </div>
-                  <div className="flex flex-wrap gap-x-2 gap-y-1 mt-1.5">
-                    {roleRows.map(({ role, count, bg }) => count > 0 && (
-                      <div key={role} className="flex items-center gap-1">
-                        <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${bg}`} />
-                        <span className="text-[0.56rem] font-semibold text-slate-400 uppercase tracking-wider leading-none">{role.replace('Program Head', 'PH')} <span className="text-slate-600">{count}</span></span>
-                      </div>
-                    ))}
+
+                  {/* Active / Inactive mini stats */}
+                  <div className="flex gap-2">
+                    <div className="flex-1 rounded-xl bg-emerald-50 px-3 py-2 min-w-0 flex flex-col justify-between">
+                      <p className="text-[0.58rem] font-bold uppercase tracking-wider text-emerald-600">Active</p>
+                      <p className="text-sm font-black text-slate-900 leading-tight truncate">{allUsers.filter(u => u.department && u.status === 'Active').length}</p>
+                      <p className="text-[0.6rem] font-semibold text-slate-400">members</p>
+                    </div>
+                    <div className="flex-1 rounded-xl bg-slate-100 px-3 py-2 min-w-0 flex flex-col justify-between">
+                      <p className="text-[0.58rem] font-bold uppercase tracking-wider text-slate-400">Inactive</p>
+                      <p className="text-sm font-black text-slate-500 leading-tight truncate">{allUsers.filter(u => u.department && u.status === 'Inactive').length}</p>
+                      <p className="text-[0.6rem] font-semibold text-slate-400">members</p>
+                    </div>
+                  </div>
+
+                  {/* Role breakdown bar + legend */}
+                  <div className="pt-2 mt-auto space-y-2">
+                    <div className="flex w-full h-2 rounded-full overflow-hidden bg-slate-100 shadow-inner">
+                      {totalFacultyCount > 0 ? roleRows.map(({ role, count, bg }) => {
+                        if (!count) return null
+                        return <div key={role} className={`h-full ${bg} transition-all duration-500`} style={{ width: `${(count / totalFacultyCount) * 100}%` }} title={`${role}: ${count}`} />
+                      }) : <div className="h-full w-full bg-slate-200" />}
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1">
+                      {roleRows.map(({ role, count, bg, text }) => count > 0 && (
+                        <div key={role} className="flex items-center gap-1">
+                          <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${bg}`} />
+                          <span className="text-[0.58rem] font-semibold text-slate-400 uppercase tracking-wider leading-none">
+                            {role.replace('Program Head', 'Prog Head')} <span className={`font-black ${text}`}>{count}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
-                {/* Card 2: Avg Dept Size */}
-                <div className="group bg-white px-5 py-4 flex flex-col gap-1 hover:bg-slate-50 transition-colors relative overflow-hidden">
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-purple-400" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-slate-400">Avg. Size</span>
-                    <UserIcon className="h-4 w-4 text-purple-400" />
+                {/* Card 2: Dean Coverage */}
+                <div className="group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col justify-between">
+                  <div className="absolute -top-4 -right-4 h-20 w-20 rounded-full bg-orange-400/8 group-hover:bg-orange-400/14 transition-colors duration-300" />
+                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-orange-400 to-amber-400" />
+
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-slate-400">Dean Coverage</p>
+                      <p className="text-[0.65rem] text-slate-400 font-medium mt-0.5">Assigned deans</p>
+                    </div>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-amber-400 shadow-sm shrink-0">
+                      <UserIcon className="h-4.5 w-4.5 text-white" />
+                    </div>
                   </div>
-                  <span className="text-4xl font-black tabular-nums text-slate-900 leading-none mt-1">{avgDeptSize}</span>
-                  <p className="text-[0.65rem] text-slate-400 font-medium">members / department</p>
-                  {/* Sparkline bars */}
-                  <div className="flex items-end gap-0.5 h-10 mt-3 w-full">
+
+                  <div className="flex items-end gap-1 my-3">
+                    <span className="text-4xl font-black tabular-nums text-slate-900 leading-none">{deansPercentage}</span>
+                    <span className="text-sm font-bold text-slate-400 mb-1">%</span>
+                  </div>
+
+                  {/* Assigned / Missing mini stats */}
+                  <div className="flex gap-2">
+                    <div className="flex-1 rounded-xl bg-orange-50 px-3 py-2 min-w-0 flex flex-col justify-between">
+                      <p className="text-[0.58rem] font-bold uppercase tracking-wider text-orange-600">Assigned</p>
+                      <p className="text-sm font-black text-slate-900 leading-tight truncate">{assignedDeansCount}</p>
+                      <p className="text-[0.6rem] font-semibold text-slate-400">deans</p>
+                    </div>
+                    <div className="flex-1 rounded-xl bg-slate-100 px-3 py-2 min-w-0 flex flex-col justify-between">
+                      <p className="text-[0.58rem] font-bold uppercase tracking-wider text-slate-400">Missing</p>
+                      <p className="text-sm font-black text-amber-600 leading-tight truncate">{unassigned}</p>
+                      <p className="text-[0.6rem] font-semibold text-slate-400">deans</p>
+                    </div>
+                  </div>
+
+                  {/* Coverage progress bar + label */}
+                  <div className="pt-2 mt-auto space-y-2">
+                    <div className="flex w-full h-2 rounded-full overflow-hidden bg-slate-100 shadow-inner">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-orange-400 to-amber-400 transition-all duration-1000 ease-out"
+                        style={{ width: `${deansPercentage}%` }}
+                      />
+                    </div>
+                    <p className="text-[0.58rem] font-semibold text-slate-400 uppercase tracking-wider leading-none">
+                      {unassigned === 0 && totalDepartments > 0 ? 'Full Coverage' : `${deansPercentage}% department coverage`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Card 3: Avg Dept Size */}
+                <div className="group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col justify-between">
+                  <div className="absolute -top-4 -right-4 h-20 w-20 rounded-full bg-purple-400/8 group-hover:bg-purple-400/14 transition-colors duration-300" />
+                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-purple-400 to-violet-400" />
+
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-slate-400">Avg. Size</p>
+                      <p className="text-[0.65rem] text-slate-400 font-medium mt-0.5">Per department</p>
+                    </div>
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-violet-400 shadow-sm shrink-0">
+                      <UserIcon className="h-4.5 w-4.5 text-white" />
+                    </div>
+                  </div>
+
+                  <div className="flex items-end gap-1 my-3">
+                    <span className="text-4xl font-black tabular-nums text-slate-900 leading-none">{avgDeptSize}</span>
+                    <span className="text-sm font-bold text-slate-400 mb-1">avg</span>
+                  </div>
+
+                  {/* Sparkline */}
+                  <div className="flex items-end gap-[3px] h-[58px] w-full">
                     {(() => {
                       const sizes = departments.map(d => allUsers.filter(u => u.department === d.code).length).sort((a, b) => a - b)
-                      const maxBars = 12
+                      const maxBars = 14
                       const display = sizes.length > maxBars
                         ? Array.from({ length: maxBars }, (_, i) => sizes[Math.floor(i * (sizes.length - 1) / (maxBars - 1))])
                         : sizes.length > 0 ? sizes : [0]
                       const maxVal = Math.max(...display, 1)
                       return display.map((v, i) => (
                         <div key={i} className="flex-1 rounded-sm bg-purple-100 group-hover:bg-purple-200 transition-colors relative flex flex-col justify-end" style={{ height: '100%' }}>
-                          <div className="rounded-sm bg-purple-400 group-hover:bg-purple-500 transition-colors w-full" style={{ height: `${Math.max(12, (v / maxVal) * 100)}%` }} title={`${v} members`} />
+                          <div
+                            className="rounded-sm bg-purple-400 group-hover:bg-purple-500 transition-all duration-300 w-full"
+                            style={{ height: `${Math.max(14, (v / maxVal) * 100)}%` }}
+                            title={`${v} members`}
+                          />
                         </div>
                       ))
                     })()}
                   </div>
-                  <p className="text-[0.56rem] text-slate-400 font-bold uppercase tracking-[0.15em] mt-0.5">Size distribution</p>
-                </div>
 
-                {/* Card 3: Dean Coverage */}
-                <div className="group bg-white px-5 py-4 flex flex-col gap-1 hover:bg-slate-50 transition-colors relative overflow-hidden">
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-[var(--brand-color)]" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-slate-400">Dean Coverage</span>
-                    <UserIcon className="h-4 w-4 text-[var(--brand-color)]" />
-                  </div>
-                  <div className="flex items-center gap-4 mt-1">
-                    <div className="relative shrink-0">
-                      <svg width="60" height="60" viewBox="0 0 72 72" className="-rotate-90">
-                        <circle cx="36" cy="36" r={R} fill="none" stroke="#f1f5f9" strokeWidth="7" />
-                        <circle cx="36" cy="36" r={R} fill="none" stroke="var(--brand-color)" strokeWidth="7" strokeLinecap="round" strokeDasharray={`${filled} ${C}`} className="transition-all duration-1000 ease-out" />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <span className="text-base font-black text-slate-900 tabular-nums leading-none">{deansPercentage}<span className="text-[0.55rem] font-bold">%</span></span>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-2">
-                      <div>
-                        <p className="text-[0.58rem] text-slate-400 font-bold uppercase tracking-wider">Assigned</p>
-                        <span className="text-xl font-black text-slate-900 tabular-nums leading-none">{assignedDeansCount}</span>
-                      </div>
-                      {unassigned > 0 ? (
-                        <div>
-                          <p className="text-[0.58rem] text-amber-500 font-bold uppercase tracking-wider">Unassigned</p>
-                          <span className="text-xl font-black text-amber-500 tabular-nums leading-none">{unassigned}</span>
-                        </div>
-                      ) : totalDepartments > 0 ? (
-                        <div className="flex items-center gap-1.5 bg-emerald-50 rounded-md px-2 py-1">
-                          <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 shrink-0" />
-                          <span className="text-[0.58rem] font-bold text-emerald-600 uppercase tracking-wider">Full Coverage</span>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Card 4: Role Breakdown */}
-                <div className="group bg-white px-5 py-4 flex flex-col gap-1 hover:bg-slate-50 transition-colors relative overflow-hidden">
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-amber-400" />
-                  <div className="flex items-center justify-between">
-                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.18em] text-slate-400">Role Breakdown</span>
-                    <UsersIcon className="h-4 w-4 text-amber-400" />
-                  </div>
-                  <div className="flex flex-col gap-2 mt-2">
-                    {roleRows.map(({ role, count, bg, text, light }) => {
-                      const pct = totalFacultyCount > 0 ? Math.round((count / totalFacultyCount) * 100) : 0
-                      return (
-                        <div key={role}>
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-1.5">
-                              <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${bg}`} />
-                              <span className="text-[0.6rem] font-bold text-slate-500 uppercase tracking-wider leading-none">{role}</span>
-                            </div>
-                            <span className={`text-[0.6rem] font-black tabular-nums ${text}`}>{count}</span>
-                          </div>
-                          <div className="h-1 w-full rounded-full bg-slate-100 overflow-hidden">
-                            <div className={`h-full ${bg} rounded-full transition-all duration-700`} style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      )
-                    })}
+                  <div className="pt-2 mt-auto space-y-2">
+                    <p className="text-[0.58rem] font-semibold text-slate-400 uppercase tracking-wider leading-none">Size distribution across departments</p>
                   </div>
                 </div>
 
@@ -1064,6 +1132,41 @@ function DepartmentsPage() {
           searchPlaceholder="Search departments..."
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
+          filters={
+            <FilterDropdown
+              label="Filters"
+              className="w-full sm:w-auto"
+              buttonClassName="w-full sm:w-auto"
+              onClearAll={() => {
+                setDeanStatusFilters([])
+                setDeptSizeFilters([])
+              }}
+              groups={[
+                {
+                  id: 'deanStatus',
+                  title: 'Dean Status',
+                  options: [
+                    { value: 'Assigned', label: 'Assigned' },
+                    { value: 'Unassigned', label: 'Unassigned' }
+                  ],
+                  selectedValues: deanStatusFilters,
+                  onChange: setDeanStatusFilters
+                },
+                {
+                  id: 'size',
+                  title: 'Department Size',
+                  options: [
+                    { value: 'Empty', label: 'Empty (0)' },
+                    { value: 'Small', label: 'Small (1-10)' },
+                    { value: 'Medium', label: 'Medium (11-50)' },
+                    { value: 'Large', label: 'Large (51+)' }
+                  ],
+                  selectedValues: deptSizeFilters,
+                  onChange: setDeptSizeFilters
+                }
+              ]}
+            />
+          }
           primaryAction={
             <Button
               variant="brand"
