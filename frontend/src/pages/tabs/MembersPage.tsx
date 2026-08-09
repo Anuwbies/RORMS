@@ -69,6 +69,8 @@ function MembersPage() {
     setActiveDropdowns(prev => isOpen ? prev + 1 : Math.max(0, prev - 1))
   }, [])
 
+  const [isLoading, setIsLoading] = useState(true)
+
   useEffect(() => {
     // 1. Fetch all users to have a local map for joining
     let unsubscribeUsers: (() => void) | null = null
@@ -76,34 +78,61 @@ function MembersPage() {
     let unsubscribeInvites: (() => void) | null = null
     let unsubscribeDepts: (() => void) | null = null
 
+    let usersLoaded = false
+    let membershipsLoaded = false
+    let invitesLoaded = false
+    let deptsLoaded = false
+
+    const checkFinishedLoading = () => {
+      if (usersLoaded && (membershipsLoaded || usersSnapEmpty) && invitesLoaded && deptsLoaded) {
+        setIsLoading(false)
+      }
+    }
+    let usersSnapEmpty = false
+
     unsubscribeUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
       const usersMap = new Map()
       usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
+      usersLoaded = true
+      if (usersSnap.empty) {
+        usersSnapEmpty = true
+        setIsLoading(false)
+      }
 
       // 2. Fetch memberships and join with users
-      unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
-        const membersData = mSnap.docs.map(mDoc => {
-          const mData = mDoc.data()
-          const userData = usersMap.get(mData.userId) || {}
-          
-          return {
-            id: mData.userId,
-            membershipId: mDoc.id,
-            name: userData.fullName || '',
-            email: userData.email || '',
-            role: (mData.role as MemberRole) || 'Instructor',
-            status: (userData.isActive !== false) ? 'Active' : 'Inactive',
-            department: mData.departmentCode || '',
-            joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
-              month: 'short',
-              day: '2-digit',
-              year: 'numeric'
-            }) : '—',
-            avatar: userData.profilePicture || '',
-          }
-        }) as Member[]
-        setUsers(membersData)
-      })
+      if (!unsubscribeMemberships) {
+        unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
+          const membersData = mSnap.docs.map(mDoc => {
+            const mData = mDoc.data()
+            const userData = usersMap.get(mData.userId) || {}
+            
+            return {
+              id: mData.userId,
+              membershipId: mDoc.id,
+              name: userData.fullName || '',
+              email: userData.email || '',
+              role: (mData.role as MemberRole) || 'Instructor',
+              status: (userData.isActive !== false) ? 'Active' : 'Inactive',
+              department: mData.departmentCode || '',
+              joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
+                month: 'short',
+                day: '2-digit',
+                year: 'numeric'
+              }) : '—',
+              avatar: userData.profilePicture || '',
+            }
+          }) as Member[]
+          setUsers(membersData)
+          membershipsLoaded = true
+          checkFinishedLoading()
+        }, () => {
+          membershipsLoaded = true
+          checkFinishedLoading()
+        })
+      }
+    }, () => {
+      usersLoaded = true
+      checkFinishedLoading()
     })
 
     // 3. Listener for pending invitations
@@ -131,6 +160,11 @@ function MembersPage() {
         }
       }).filter(Boolean) as Member[]
       setInvites(invitesData)
+      invitesLoaded = true
+      checkFinishedLoading()
+    }, () => {
+      invitesLoaded = true
+      checkFinishedLoading()
     })
 
     // 4. Listener for departments
@@ -147,6 +181,11 @@ function MembersPage() {
         }
       }) as Department[]
       setDepartments(deptsData)
+      deptsLoaded = true
+      checkFinishedLoading()
+    }, () => {
+      deptsLoaded = true
+      checkFinishedLoading()
     })
 
     return () => {
@@ -982,6 +1021,7 @@ function MembersPage() {
         })()}        {/* Unified Table Container */}
         <div className="relative z-10">
           <DataTable
+            isLoading={isLoading}
             data={filteredMembers}
             columns={[
               {

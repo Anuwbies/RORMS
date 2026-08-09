@@ -1,10 +1,17 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
+import { BuildingBrowser } from '../../components/BuildingBrowser'
+import { RoomInfoModal } from '../../components/RoomInfoModal'
+import { Button } from '../../components/Button'
+import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
+import { NumberInput } from '../../components/NumberInput'
+import { TextInput } from '../../components/TextInput'
+import { TextAreaInput } from '../../components/TextAreaInput'
+import { RoomAmenities } from '../../components/RoomAmenities'
 import { DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
-import { SearchFilters } from '../../components/SearchFilters'
-import { FilterDropdown } from '../../components/FilterDropdown'
+
 import { db, storage } from '../../firebase'
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import { 
@@ -69,17 +76,10 @@ interface Building {
 }
 
 const roomStatusClasses: Record<RoomStatus, string> = {
-  Available: 'bg-emerald-100/90 text-emerald-800 border border-emerald-200/80',
-  Occupied: 'bg-amber-100/90 text-amber-800 border border-amber-200/80',
-  Reserved: 'bg-sky-100/90 text-sky-800 border border-sky-200/80',
-  Maintenance: 'bg-rose-100/90 text-rose-800 border border-rose-200/80',
-}
-
-const roomStatusDots: Record<RoomStatus, string> = {
-  Available: 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)] animate-pulse',
-  Occupied: 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)]',
-  Reserved: 'bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.7)]',
-  Maintenance: 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)]',
+  Available: 'bg-emerald-100 text-emerald-700',
+  Occupied: 'bg-amber-100 text-amber-700',
+  Reserved: 'bg-sky-100 text-sky-700',
+  Maintenance: 'bg-rose-100 text-rose-700',
 }
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -112,117 +112,9 @@ for (let i = 0; i < maxGroups; i++) {
   if (i < longGroups.length) ROOM_AMENITIES_GROUPS.push(longGroups[i])
 }
 
-interface SingleSelectDropdownProps<T extends string> {
-  options: T[]
-  value: T
-  onChange: (value: T) => void
-  className?: string
-  isDisabled?: boolean
-  onToggle?: (isOpen: boolean) => void
-}
-
-function SingleSelectDropdown<T extends string>({ 
-  options, 
-  value, 
-  onChange, 
-  className = '',
-  isDisabled = false,
-  onToggle
-}: SingleSelectDropdownProps<T>) {
-  const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
-  const menuWidthRef = useRef<HTMLDivElement>(null)
-  const [menuMinWidth, setMenuMinWidth] = useState<number | null>(null)
-
-  useEffect(() => {
-    onToggle?.(isOpen)
-  }, [isOpen, onToggle])
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  const handleSelect = (option: T) => {
-    onChange(option)
-    setIsOpen(false)
-  }
-
-  const longestOption = options.reduce((a, b) => (a.length > b.length ? a : b), '')
-
-  useLayoutEffect(() => {
-    if (!menuWidthRef.current) {
-      return
-    }
-    setMenuMinWidth(menuWidthRef.current.offsetWidth)
-  }, [longestOption])
-
-  return (
-    <div
-      className={`relative ${className}`}
-      ref={dropdownRef}
-      style={menuMinWidth ? { minWidth: `${menuMinWidth}px` } : undefined}
-    >
-      <div
-        ref={menuWidthRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute left-0 top-0 invisible w-max rounded-xl border border-transparent p-1.5"
-      >
-        <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm">
-          <span className="whitespace-nowrap">{longestOption}</span>
-        </div>
-      </div>
-
-      <button
-        type="button"
-        disabled={isDisabled}
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-[2.875rem] w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-800 outline-none transition-all duration-200 hover:border-slate-300 hover:shadow-sm focus:border-[var(--brand-color)] focus:ring-4 focus:ring-[var(--brand-color)]/10 shadow-xs disabled:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
-      >
-        <span className="whitespace-nowrap">{value || 'None'}</span>
-        <ChevronDownIcon className={`h-4.5 w-4.5 text-slate-400 transition-transform duration-200 ${isOpen ? 'rotate-180 text-[var(--brand-color)]' : ''}`} />
-      </button>
-
-      {isOpen && !isDisabled && (
-        <div 
-          className="absolute left-0 z-50 mt-2 min-w-full overflow-y-scroll custom-scrollbar rounded-2xl border border-slate-200/90 bg-white p-1.5 shadow-xl animate-in fade-in zoom-in-95 duration-150"
-          style={{ height: options.length > 4 ? '203px' : 'auto' }}
-        >
-          <div className="space-y-1">
-            {options.map((option) => {
-              const isSelected = value === option
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  onClick={() => handleSelect(option)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all duration-150 ${
-                    isSelected 
-                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
-                      : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-medium'
-                  }`}
-                >
-                  <span className="whitespace-nowrap">{option || 'None'}</span>
-                  {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)] shrink-0" strokeWidth={3} />}
-                </button>
-              )
-            })}
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 function BuildingsRoomsPage() {
-  const [searchTerm, setSearchTerm] = useState('')
-  const [selectedRoomStatuses, setSelectedRoomStatuses] = useState<RoomStatus[]>([])
-  const [selectedRoomTypes, setSelectedRoomTypes] = useState<string[]>([])
+
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
   const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
@@ -825,166 +717,115 @@ function BuildingsRoomsPage() {
     }
   }
 
-  const allRooms = buildings.flatMap((building) => building.rooms)
-  const availableRoomsCount = allRooms.filter(r => r.status === 'Available').length
-  const totalCapacity = buildings.reduce((sum, building) => sum + building.capacity, 0)
-  const totalFloors = buildings.reduce((sum, building) => sum + building.floor, 0)
-  const normalizedSearch = searchTerm.trim().toLowerCase()
-  const filteredBuildings = buildings
-    .map((building) => {
-      const buildingMatchesSearch = !normalizedSearch || [
-        building.name,
-        building.code,
-        String(building.floor),
-        String(building.rooms.length),
-        String(building.capacity),
-      ].some((value) => value.toLowerCase().includes(normalizedSearch))
 
-      const matchingRooms = building.rooms.filter((room) => {
-        const matchesSearch = !normalizedSearch || buildingMatchesSearch || [
-          room.name,
-          room.code,
-          room.type,
-          String(room.capacity),
-          room.status,
-        ].some((value) => value.toLowerCase().includes(normalizedSearch))
-
-        const matchesStatus = selectedRoomStatuses.length === 0 || selectedRoomStatuses.includes(room.status)
-        const matchesType = selectedRoomTypes.length === 0 || selectedRoomTypes.includes(room.type)
-
-        return matchesSearch && matchesStatus && matchesType
-      })
-
-      if (matchingRooms.length === 0) {
-        return null
-      }
-
-      return {
-        ...building,
-        rooms: matchingRooms,
-      }
-    })
-    .filter((building): building is Building => building !== null)
 
   return (
     <section 
-      className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-8 sm:px-6 lg:px-8 lg:pb-10"
+      className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8"
       onClick={() => setOpenMenuId(null)}
     >
       {/* Create/Edit Building Modal */}
       {isBuildingModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-3xl border border-slate-100 bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white relative">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-extrabold tracking-tight">{editingBuilding ? 'Edit Building' : 'Add New Building'}</h3>
-                  <p className="mt-1 text-xs text-white/90 font-medium">
-                    {editingBuilding ? 'Update building details and identifiers.' : 'Register a new building facility in the system.'}
-                  </p>
-                </div>
-                <button
-                  onClick={handleCloseModals}
-                  className="h-8 w-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors shrink-0"
-                >
-                  ✕
-                </button>
-              </div>
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
+              <h3 className="text-xl font-bold">{editingBuilding ? 'Edit Building' : 'Add Building'}</h3>
+              <p className="mt-1 text-sm text-white/80">
+                {editingBuilding ? 'Update building information.' : 'Register a new building in the system.'}
+              </p>
             </div>
             
             <form onSubmit={handleBuildingSubmit} className="p-6 space-y-5">
               <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-2">
-                  <label htmlFor="building-name" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                  <label htmlFor="building-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                     Building Name <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <TextInput
                     id="building-name"
-                    type="text"
                     value={newBuildingName}
-                    onChange={(e) => {
-                      setNewBuildingName(e.target.value)
+                    onChange={(val) => {
+                      setNewBuildingName(val)
                       if (errors.name) setErrors(prev => ({ ...prev, name: false }))
                     }}
                     placeholder="e.g. Administration Building"
-                    className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:ring-4 shadow-xs ${
-                      errors.name 
-                        ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100 bg-rose-50/30' 
-                        : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-[var(--brand-color)] focus:ring-[var(--brand-color)]/10'
-                    }`}
+                    error={errors.name}
                     autoFocus
                   />
                 </div>
 
                 <div className="col-span-1">
-                  <label htmlFor="building-code" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                  <label htmlFor="building-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                     Code <span className="text-rose-500">*</span>
                   </label>
-                  <input
+                  <TextInput
                     id="building-code"
-                    type="text"
                     value={newBuildingCode}
-                    onChange={(e) => {
-                      setNewBuildingCode(e.target.value)
+                    onChange={(val) => {
+                      setNewBuildingCode(val)
                       if (errors.code) setErrors(prev => ({ ...prev, code: false }))
                     }}
                     placeholder="e.g. ADM"
-                    className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:ring-4 shadow-xs uppercase ${
-                      errors.code 
-                        ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100 bg-rose-50/30' 
-                        : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-[var(--brand-color)] focus:ring-[var(--brand-color)]/10'
-                    }`}
+                    error={errors.code}
                   />
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
-                <button
+              <div className="flex items-center gap-3 pt-2">
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={handleCloseModals}
                   disabled={isSubmitting}
-                  className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs active:scale-[0.98]"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="brand"
                   disabled={isSubmitting}
-                  className="flex-1 rounded-xl bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-[var(--brand-color-hover)] hover:shadow-lg focus:ring-4 focus:ring-[var(--brand-color)]/20 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                  className="flex-1"
                 >
                   {isSubmitting 
-                    ? (editingBuilding ? 'Saving...' : 'Adding...') 
+                    ? (editingBuilding ? 'Saving Changes...' : 'Adding Building...') 
                     : (editingBuilding ? 'Save Changes' : 'Add Building')}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onClick={() => {
+              if (!isSubmitting) handleCloseModals()
+            }} 
+          />
         </div>
       )}
 
       {/* Create/Edit Room Modal */}
       {isRoomModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-3xl border border-slate-100 bg-white shadow-2xl overflow-visible animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-xl font-extrabold tracking-tight">{editingRoom ? 'Edit Room' : 'Add Room'}</h3>
-                  <p className="mt-1 text-xs text-white/90 font-medium">
-                    Step {roomModalStep} of 3: {roomModalStep === 1 ? 'General Information' : roomModalStep === 2 ? 'Media & Amenities' : 'Schedule & Limits'}
+                  <h3 className="text-xl font-bold">{editingRoom ? 'Edit Room' : 'Add Room'}</h3>
+                  <p className="mt-1 text-xs text-white/80">
+                    Step {roomModalStep} of 3: {roomModalStep === 1 ? 'General Info' : roomModalStep === 2 ? 'Media & Description' : 'Availability & Limits'}
                   </p>
                 </div>
-                <div className="flex gap-1.5 items-center">
+                <div className="flex gap-1.5">
                   {[1, 2, 3].map((s) => (
                     <div 
                       key={s} 
-                      className={`h-2 rounded-full transition-all duration-300 ${s === roomModalStep ? 'w-6 bg-white' : s < roomModalStep ? 'w-2 bg-white/80' : 'w-2 bg-white/30'}`} 
+                      className={`h-1.5 w-6 rounded-full transition-colors ${s <= roomModalStep ? 'bg-white' : 'bg-white/30'}`} 
                     />
                   ))}
                 </div>
@@ -993,22 +834,22 @@ function BuildingsRoomsPage() {
             
             <form onSubmit={handleRoomSubmit} className="p-6 space-y-5 overflow-visible">
               {roomModalStep === 1 && (
-                <div className="space-y-4 overflow-visible animate-in fade-in duration-200">
+                <div className="space-y-4 overflow-visible animate-in fade-in slide-in-from-right-4 duration-300">
                   {!editingRoom && (
-                    <div className="flex p-1 bg-slate-100/80 rounded-xl mb-4 border border-slate-200/60">
+                    <div className="flex p-1 bg-gray-100 rounded-md mb-6">
                       <button
                         type="button"
                         onClick={() => setIsMultipleRooms(false)}
-                        className={`flex-1 py-2 text-xs font-extrabold uppercase tracking-wider rounded-lg transition-all ${!isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${!isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                       >
                         Single Room
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsMultipleRooms(true)}
-                        className={`flex-1 py-2 text-xs font-extrabold uppercase tracking-wider rounded-lg transition-all ${isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-xs' : 'text-slate-500 hover:text-slate-700'}`}
+                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                       >
-                        Batch / Multi
+                        Multiple Rooms
                       </button>
                     </div>
                   )}
@@ -1016,56 +857,46 @@ function BuildingsRoomsPage() {
                   {!isMultipleRooms ? (
                     <div className="grid grid-cols-5 gap-4 overflow-visible">
                       <div className="col-span-3 overflow-visible">
-                        <div className="flex justify-between items-end mb-1.5">
-                          <label htmlFor="room-name" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500">
+                        <div className="flex justify-between items-end mb-2">
+                          <label htmlFor="room-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                             Room Name <span className="text-rose-500">*</span>
                           </label>
-                          <span className={`text-[0.65rem] font-bold ${newRoomName.length >= 24 ? 'text-rose-500' : 'text-slate-400'}`}>
-                            {newRoomName.length}/24
+                          <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${newRoomName.length >= 24 ? 'text-rose-500' : 'text-gray-400'}`}>
+                            {newRoomName.length} / 24
                           </span>
                         </div>
-                        <input
+                        <TextInput
                           id="room-name"
-                          type="text"
                           value={newRoomName}
                           maxLength={24}
-                          onChange={(e) => {
-                            setNewRoomName(e.target.value)
+                          onChange={(val) => {
+                            setNewRoomName(val)
                             if (errors.name) setErrors(prev => ({ ...prev, name: false }))
                           }}
-                          placeholder="e.g. Science Lab 1"
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:ring-4 shadow-xs ${
-                            errors.name 
-                              ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100 bg-rose-50/30' 
-                              : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-[var(--brand-color)] focus:ring-[var(--brand-color)]/10'
-                          }`}
+                          placeholder="e.g. Registrar Receiving"
+                          error={errors.name}
                           autoFocus
                         />
                       </div>
                       <div className="col-span-2 overflow-visible">
-                        <div className="flex justify-between items-end mb-1.5">
-                          <label htmlFor="room-code" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500">
+                        <div className="flex justify-between items-end mb-2">
+                          <label htmlFor="room-code" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                             Code <span className="text-rose-500">*</span>
                           </label>
-                          <span className={`text-[0.65rem] font-bold ${newRoomCode.length >= 8 ? 'text-rose-500' : 'text-slate-400'}`}>
-                            {newRoomCode.length}/8
+                          <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${newRoomCode.length >= 8 ? 'text-rose-500' : 'text-gray-400'}`}>
+                            {newRoomCode.length} / 8
                           </span>
                         </div>
-                        <input
+                        <TextInput
                           id="room-code"
-                          type="text"
                           value={newRoomCode}
                           maxLength={8}
-                          onChange={(e) => {
-                            setNewRoomCode(e.target.value)
+                          onChange={(val) => {
+                            setNewRoomCode(val)
                             if (errors.code) setErrors(prev => ({ ...prev, code: false }))
                           }}
                           placeholder="e.g. ADM-101"
-                          className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:ring-4 shadow-xs uppercase ${
-                            errors.code 
-                              ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100 bg-rose-50/30' 
-                              : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-[var(--brand-color)] focus:ring-[var(--brand-color)]/10'
-                          }`}
+                          error={errors.code}
                         />
                       </div>
                     </div>
@@ -1073,62 +904,52 @@ function BuildingsRoomsPage() {
                     <div className="space-y-4">
                       <div className="grid grid-cols-5 gap-4 overflow-visible">
                         <div className="col-span-3 overflow-visible">
-                          <div className="flex justify-between items-end mb-1.5">
-                            <label htmlFor="room-name-prefix" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500">
+                          <div className="flex justify-between items-end mb-2">
+                            <label htmlFor="room-name-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                               Name Prefix <span className="text-rose-500">*</span>
                             </label>
-                            <span className={`text-[0.65rem] font-bold ${roomNamePrefix.length >= 24 ? 'text-rose-500' : 'text-slate-400'}`}>
-                              {roomNamePrefix.length}/24
+                            <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${roomNamePrefix.length >= 24 ? 'text-rose-500' : 'text-gray-400'}`}>
+                              {roomNamePrefix.length} / 24
                             </span>
                           </div>
-                          <input
+                          <TextInput
                             id="room-name-prefix"
-                            type="text"
                             value={roomNamePrefix}
                             maxLength={24}
-                            onChange={(e) => {
-                              setRoomNamePrefix(e.target.value)
+                            onChange={(val) => {
+                              setRoomNamePrefix(val)
                               if (errors.name) setErrors(prev => ({ ...prev, name: false }))
                             }}
-                            placeholder="e.g. PTC Room "
-                            className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:ring-4 shadow-xs ${
-                              errors.name 
-                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100 bg-rose-50/30' 
-                                : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-[var(--brand-color)] focus:ring-[var(--brand-color)]/10'
-                            }`}
+                            placeholder="e.g. PTC "
+                            error={errors.name}
                             autoFocus
                           />
                         </div>
                         <div className="col-span-2 overflow-visible">
-                          <div className="flex justify-between items-end mb-1.5">
-                            <label htmlFor="room-code-prefix" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500">
+                          <div className="flex justify-between items-end mb-2">
+                            <label htmlFor="room-code-prefix" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                               Code Prefix <span className="text-rose-500">*</span>
                             </label>
-                            <span className={`text-[0.65rem] font-bold ${roomCodePrefix.length >= 8 ? 'text-rose-500' : 'text-slate-400'}`}>
-                              {roomCodePrefix.length}/8
+                            <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${roomCodePrefix.length >= 8 ? 'text-rose-500' : 'text-gray-400'}`}>
+                              {roomCodePrefix.length} / 8
                             </span>
                           </div>
-                          <input
+                          <TextInput
                             id="room-code-prefix"
-                            type="text"
                             value={roomCodePrefix}
                             maxLength={8}
-                            onChange={(e) => {
-                              setRoomCodePrefix(e.target.value)
+                            onChange={(val) => {
+                              setRoomCodePrefix(val)
                               if (errors.code) setErrors(prev => ({ ...prev, code: false }))
                             }}
                             placeholder="e.g. PTC-"
-                            className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:ring-4 shadow-xs uppercase ${
-                              errors.code 
-                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100 bg-rose-50/30' 
-                                : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-[var(--brand-color)] focus:ring-[var(--brand-color)]/10'
-                            }`}
+                            error={errors.code}
                           />
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label htmlFor="room-start-number" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                          <label htmlFor="room-start-number" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                             Start Number <span className="text-rose-500">*</span>
                           </label>
                           <input
@@ -1139,16 +960,21 @@ function BuildingsRoomsPage() {
                               setRoomStartNumber(e.target.value)
                               if (errors.start) setErrors(prev => ({ ...prev, start: false }))
                             }}
+                            onKeyDown={(e) => {
+                              if (['e', 'E', '+', '-', '.'].includes(e.key)) {
+                                e.preventDefault()
+                              }
+                            }}
                             placeholder="e.g. 101"
-                            className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:ring-4 shadow-xs ${
+                            className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
                               errors.start 
-                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100 bg-rose-50/30' 
-                                : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-[var(--brand-color)] focus:ring-[var(--brand-color)]/10'
+                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                                : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
                             }`}
                           />
                         </div>
                         <div>
-                          <label htmlFor="room-end-number" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                          <label htmlFor="room-end-number" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                             End Number <span className="text-rose-500">*</span>
                           </label>
                           <input
@@ -1159,18 +985,23 @@ function BuildingsRoomsPage() {
                               setRoomEndNumber(e.target.value)
                               if (errors.end) setErrors(prev => ({ ...prev, end: false }))
                             }}
+                            onKeyDown={(e) => {
+                              if (['e', 'E', '+', '-', '.'].includes(e.key)) {
+                                e.preventDefault()
+                              }
+                            }}
                             placeholder="e.g. 105"
-                            className={`w-full rounded-xl border px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:ring-4 shadow-xs ${
+                            className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
                               errors.end 
-                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-100 bg-rose-50/30' 
-                                : 'border-slate-200 bg-slate-50/60 focus:bg-white focus:border-[var(--brand-color)] focus:ring-[var(--brand-color)]/10'
+                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
+                                : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
                             }`}
                           />
                         </div>
                       </div>
-                      <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center">
-                        <p className="text-[0.65rem] font-black text-slate-500 uppercase tracking-widest shrink-0 mr-2">Preview:</p>
-                        <p className="text-xs font-semibold text-slate-700 truncate">
+                      <div className="p-3 bg-gray-50 border border-gray-200 rounded-md flex items-center">
+                        <p className="text-[0.625rem] font-bold text-gray-500 uppercase tracking-widest shrink-0 mr-1">Preview:</p>
+                        <p className="text-xs text-gray-700 truncate">
                           {roomStartNumber && roomEndNumber ? (
                             (() => {
                               const s = parseInt(roomStartNumber)
@@ -1189,39 +1020,35 @@ function BuildingsRoomsPage() {
                         </p>
                       </div>
                     </div>
-                  )}
+                  ) }
 
                   <div className="grid grid-cols-2 gap-4 overflow-visible">
                     <div className="overflow-visible">
-                      <label htmlFor="room-floor" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
-                        Floor Number
+                      <label htmlFor="room-floor" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Floor
                       </label>
-                      <input
+                      <NumberInput
                         id="room-floor"
-                        type="number"
                         value={newRoomFloor}
-                        onChange={(e) => setNewRoomFloor(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all focus:bg-white focus:border-[var(--brand-color)] focus:ring-4 focus:ring-[var(--brand-color)]/10 shadow-xs"
+                        onChange={setNewRoomFloor}
                       />
                     </div>
                     <div className="overflow-visible">
-                      <label htmlFor="room-capacity" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
-                        Capacity (Pax)
+                      <label htmlFor="room-capacity" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Capacity
                       </label>
-                      <input
+                      <NumberInput
                         id="room-capacity"
-                        type="number"
                         value={newRoomCapacity}
-                        onChange={(e) => setNewRoomCapacity(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all focus:bg-white focus:border-[var(--brand-color)] focus:ring-4 focus:ring-[var(--brand-color)]/10 shadow-xs"
+                        onChange={setNewRoomCapacity}
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 overflow-visible">
                     <div className="overflow-visible">
-                      <label htmlFor="room-type" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
-                        Room Type
+                      <label htmlFor="room-type" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                        Type
                       </label>
                       <SingleSelectDropdown
                         options={['Lecture Room', 'Laboratory', 'Office', 'Meeting Room', 'Studio', 'Administrative']}
@@ -1232,7 +1059,7 @@ function BuildingsRoomsPage() {
                       />
                     </div>
                     <div className="overflow-visible">
-                      <label htmlFor="room-status" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                      <label htmlFor="room-status" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                         Status
                       </label>
                       <SingleSelectDropdown
@@ -1248,10 +1075,10 @@ function BuildingsRoomsPage() {
               )}
 
               {roomModalStep === 2 && (
-                <div className="space-y-5 animate-in fade-in duration-200">
-                  <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                  <div className="grid grid-cols-3 gap-6">
                     <div className="col-span-1 flex flex-col">
-                      <label className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                         Room Photo
                       </label>
                       <input
@@ -1267,10 +1094,10 @@ function BuildingsRoomsPage() {
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onDrop={handleRoomImageDrop}
-                        className={`w-full aspect-square rounded-2xl border-2 border-dashed flex flex-col items-center justify-center overflow-hidden transition-all group relative shadow-xs ${
+                        className={`w-full aspect-square rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group relative shadow-sm ${
                           isDraggingRoomImage 
                             ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/5 ring-4 ring-[var(--brand-color)]/10 scale-[0.98]' 
-                            : 'border-slate-200 bg-slate-50 hover:border-[var(--brand-color)]'
+                            : 'border-gray-200 bg-gray-50 hover:border-[var(--brand-color)]'
                         }`}
                       >
                         {newRoomImage ? (
@@ -1281,114 +1108,91 @@ function BuildingsRoomsPage() {
                             onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                           />
                         ) : (
-                          <div className="flex flex-col items-center gap-1.5 p-2">
-                            <CameraIcon className="h-7 w-7 text-slate-400" />
-                            <span className="text-[0.625rem] font-extrabold text-slate-500 uppercase tracking-tight text-center">Upload Photo</span>
+                          <div className="flex flex-col items-center gap-2">
+                            <CameraIcon className="h-8 w-8 text-gray-400" />
+                            <span className="text-[0.625rem] font-bold text-gray-400 uppercase tracking-tight text-center px-2">Upload Image</span>
                           </div>
                         )}
-                        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity">
-                          <UploadIcon className="h-7 w-7 text-white" />
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <UploadIcon className="h-8 w-8 text-white" />
                         </div>
                       </button>
                     </div>
 
                     <div className="col-span-2 flex flex-col">
-                      <div className="flex justify-between items-end mb-1.5">
-                        <label htmlFor="room-description" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500">
+                      <div className="flex justify-between items-end mb-2">
+                        <label htmlFor="room-description" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
                           Description
                         </label>
-                        <span className={`text-[0.65rem] font-bold ${newRoomDescription.length >= 200 ? 'text-rose-500' : 'text-slate-400'}`}>
-                          {newRoomDescription.length}/200
+                        <span className={`text-[0.625rem] font-bold uppercase tracking-tight ${newRoomDescription.length >= 200 ? 'text-rose-500' : 'text-gray-400'}`}>
+                          {newRoomDescription.length} / 200
                         </span>
                       </div>
-                      <textarea
+                      <TextAreaInput
                         id="room-description"
                         value={newRoomDescription}
                         maxLength={200}
-                        onChange={(e) => setNewRoomDescription(e.target.value)}
-                        placeholder="Describe room layout, available equipment, or notes..."
-                        className="w-full flex-1 rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all focus:bg-white focus:border-[var(--brand-color)] focus:ring-4 focus:ring-[var(--brand-color)]/10 shadow-xs resize-none"
+                        onChange={setNewRoomDescription}
+                        placeholder="Describe the room, equipment, and other details..."
+                        className="flex-1"
+                        inputClassName="h-full"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-2">
+                    <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
                       Room Amenities
                     </label>
-                    <div className="max-h-[9.5rem] overflow-y-auto custom-scrollbar pr-1">
-                      <div className="grid grid-cols-6 gap-2 grid-flow-dense">
-                        {ROOM_AMENITIES_GROUPS.map((group) => {
-                          const span = group.length === 3 ? 'col-span-2' : 'col-span-3'
-                          
-                          return group.map((amenity) => {
-                            const isSelected = newRoomAmenities.includes(amenity)
-                            
-                            return (
-                              <button
-                                key={amenity}
-                                type="button"
-                                onClick={() => {
-                                  setNewRoomAmenities(prev => {
-                                    if (prev.includes(amenity)) {
-                                      return prev.filter(a => a !== amenity)
-                                    } else {
-                                      return [...prev, amenity]
-                                    }
-                                  })
-                                }}
-                                className={`flex items-center justify-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition-all ${span} ${
-                                  isSelected
-                                    ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/10 text-[var(--brand-color)] shadow-xs scale-[1.02]'
-                                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
-                                }`}
-                              >
-                                {isSelected && <CheckIcon className="h-3.5 w-3.5 shrink-0 text-[var(--brand-color)]" strokeWidth={3} />}
-                                <span className="truncate">{amenity}</span>
-                              </button>
-                            )
-                          })
-                        })}
-                      </div>
-                    </div>
+                    <RoomAmenities
+                      amenities={ROOM_AMENITIES_GROUPS.flat()}
+                      selectedAmenities={newRoomAmenities}
+                      onToggleAmenity={(amenity) => {
+                        setNewRoomAmenities(prev => 
+                          prev.includes(amenity) 
+                            ? prev.filter(a => a !== amenity) 
+                            : [...prev, amenity]
+                        )
+                      }}
+                      maxHeightClass="max-h-[7.8rem]"
+                    />
                   </div>
                 </div>
               )}
 
               {roomModalStep === 3 && (
-                <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
                   <div>
-                    <label className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-2">
+                    <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-3">
                       Available Days
                     </label>
                     <div className="flex gap-1.5">
-                      {DAYS_OF_WEEK.map((day) => {
-                        const isAvailable = newRoomAvailableDays.includes(day)
-                        return (
-                          <button
-                            key={day}
-                            type="button"
-                            onClick={() => {
-                              setNewRoomAvailableDays(prev => 
-                                prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
-                              )
-                            }}
-                            className={`flex-1 flex flex-col items-center justify-center rounded-xl border py-2.5 text-[0.65rem] font-black uppercase tracking-wider transition-all ${
-                              isAvailable
-                                ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white shadow-xs'
-                                : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
-                            }`}
-                          >
-                            <span>{day.slice(0, 3)}</span>
-                          </button>
-                        )
-                      })}
+                      {DAYS_OF_WEEK.map((day) => (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => {
+                            setNewRoomAvailableDays(prev => 
+                              prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
+                            )
+                          }}
+                          className={`flex-1 flex flex-col items-center justify-center rounded-xl border py-2 text-[0.625rem] font-bold uppercase transition cursor-pointer ${
+                            newRoomAvailableDays.includes(day)
+                              ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white shadow-sm'
+                              : 'border-gray-300 bg-white text-gray-500 hover:border-gray-400'
+                          }`}
+                        >
+                          {day.slice(0, 3).split('').map((char, index) => (
+                            <span key={index} className="leading-tight">{char}</span>
+                          ))}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                         Start Time
                       </label>
                       <TimePicker
@@ -1398,7 +1202,7 @@ function BuildingsRoomsPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                         End Time
                       </label>
                       <TimePicker
@@ -1411,267 +1215,136 @@ function BuildingsRoomsPage() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label htmlFor="room-min-mins" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                      <label htmlFor="room-min-mins" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                         Min Booking (Mins)
                       </label>
-                      <input
+                      <NumberInput
                         id="room-min-mins"
-                        type="number"
                         min="0"
                         step="15"
                         value={newRoomMinBookingMins}
-                        onChange={(e) => setNewRoomMinBookingMins(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all focus:bg-white focus:border-[var(--brand-color)] focus:ring-4 focus:ring-[var(--brand-color)]/10 shadow-xs"
+                        onChange={setNewRoomMinBookingMins}
                       />
                     </div>
                     <div>
-                      <label htmlFor="room-max-mins" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500 mb-1.5">
+                      <label htmlFor="room-max-mins" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                         Max Booking (Mins)
                       </label>
-                      <input
+                      <NumberInput
                         id="room-max-mins"
-                        type="number"
                         min="0"
                         step="15"
                         value={newRoomMaxBookingMins}
-                        onChange={(e) => setNewRoomMaxBookingMins(e.target.value)}
-                        className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all focus:bg-white focus:border-[var(--brand-color)] focus:ring-4 focus:ring-[var(--brand-color)]/10 shadow-xs"
+                        onChange={setNewRoomMaxBookingMins}
                       />
                     </div>
                   </div>
                 </div>
               )}
 
-              <div className="flex items-center gap-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center gap-3 pt-2">
                 {roomModalStep > 1 ? (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => setRoomModalStep(prev => prev - 1)}
                     disabled={isSubmitting}
-                    className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs active:scale-[0.98]"
+                    className="flex-1"
                   >
                     Back
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={handleCloseModals}
                     disabled={isSubmitting}
-                    className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs active:scale-[0.98]"
+                    className="flex-1"
                   >
                     Cancel
-                  </button>
+                  </Button>
                 )}
                 
-                <button
+                <Button
                   type="submit"
+                  variant="brand"
                   disabled={isSubmitting}
-                  className="flex-1 rounded-xl bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-[var(--brand-color-hover)] hover:shadow-lg focus:ring-4 focus:ring-[var(--brand-color)]/20 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                  className="flex-1"
                 >
                   {roomModalStep < 3 
                     ? 'Next Step' 
                     : (isSubmitting 
-                        ? (editingRoom ? 'Saving...' : 'Adding...') 
+                        ? (editingRoom ? 'Saving Changes...' : 'Adding Room...') 
                         : (editingRoom ? 'Save Changes' : 'Add Room'))}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => {
+              if (activeDropdowns > 0 || isSubmitting) return
+              handleCloseModals()
+            }} 
+          />
         </div>
       )}
 
       {/* Room Information Modal */}
-      {isRoomInfoModalOpen && selectedRoomInfo && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div 
-            className="w-full max-w-lg rounded-3xl border border-slate-100 bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
-            onClick={(e) => e.stopPropagation()}
+      <RoomInfoModal
+        isOpen={isRoomInfoModalOpen}
+        room={selectedRoomInfo}
+        onClose={handleCloseModals}
+        actionButton={
+          <Button
+            variant="brand"
+            icon={<EditIcon className="h-4 w-4" />}
+            className="flex-1"
+            onClick={() => {
+              if (!selectedRoomInfo) return
+              const buildingId = buildings.find(b => b.rooms.some(r => r.id === selectedRoomInfo.id))?.id
+              if (buildingId) {
+                handleOpenRoomModal(buildingId, selectedRoomInfo)
+                setIsRoomInfoModalOpen(false)
+              }
+            }}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white relative">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-xl font-extrabold tracking-tight">Room Information</h3>
-                  <p className="text-xs text-white/90 font-medium mt-0.5">Facility details, schedule & availability</p>
-                </div>
-                <button
-                  onClick={handleCloseModals}
-                  className="h-8 w-8 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center transition-colors shrink-0"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
-              <div className="p-6 space-y-5">
-                <div className="flex flex-col sm:flex-row gap-5">
-                  <div className="w-full sm:w-40 h-40 shrink-0 rounded-2xl border border-slate-200/80 bg-slate-100 overflow-hidden shadow-xs relative">
-                    <img 
-                      src={selectedRoomInfo.image} 
-                      alt={selectedRoomInfo.name} 
-                      className="h-full w-full object-cover" 
-                      onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
-                    />
-                    <span className="absolute top-2 left-2 rounded-lg bg-slate-900/80 backdrop-blur-md px-2 py-0.5 text-[0.65rem] font-extrabold uppercase text-white border border-white/20">
-                      {selectedRoomInfo.code}
-                    </span>
-                  </div>
-                  
-                  <div className="flex-1 flex flex-col justify-between py-0.5">
-                    <div>
-                      <div className="flex items-center justify-between gap-2">
-                        <h4 className="text-xl font-extrabold text-slate-900 leading-tight">{selectedRoomInfo.name}</h4>
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider flex items-center gap-1.5 ${roomStatusClasses[selectedRoomInfo.status]}`}>
-                          <span className={`h-2 w-2 rounded-full ${roomStatusDots[selectedRoomInfo.status]}`} />
-                          {selectedRoomInfo.status}
-                        </span>
-                        <span className="text-xs text-slate-500 font-bold uppercase tracking-wider bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200/60">
-                          {selectedRoomInfo.type} • Floor {selectedRoomInfo.floor}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3 mt-4">
-                      <div className="space-y-1">
-                        <p className="text-[0.65rem] font-black uppercase tracking-widest text-slate-400">Capacity</p>
-                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 flex items-center gap-2">
-                          <UserIcon className="h-4 w-4 text-[var(--brand-color)] shrink-0" />
-                          <p className="text-sm font-bold text-slate-800">{selectedRoomInfo.capacity} pax</p>
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[0.65rem] font-black uppercase tracking-widest text-slate-400">Booking Range</p>
-                        <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 flex items-center gap-2">
-                          <ClockIcon className="h-4 w-4 text-[var(--brand-color)] shrink-0" />
-                          <p className="text-sm font-bold text-slate-800">
-                            {selectedRoomInfo.minBookingMins}m - {selectedRoomInfo.maxBookingMins}m
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <h5 className="text-[0.7rem] font-black uppercase tracking-widest text-slate-400 mb-1.5">Description</h5>
-                    <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4">
-                      <p className="text-sm text-slate-600 leading-relaxed font-medium">
-                        {selectedRoomInfo.description || 'No description provided for this room.'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <h5 className="text-[0.7rem] font-black uppercase tracking-widest text-slate-400 mb-1.5">Availability Days</h5>
-                      <div className="flex gap-1 h-9">
-                        {DAYS_OF_WEEK.map((day) => {
-                          const isAvailable = selectedRoomInfo.availableDays.includes(day)
-                          return (
-                            <div
-                              key={day}
-                              title={day}
-                              className={`flex-1 flex items-center justify-center rounded-lg text-xs font-black transition-colors ${
-                                isAvailable ? 'bg-[var(--brand-color)] text-white shadow-xs' : 'bg-slate-100 text-slate-400'
-                              }`}
-                            >
-                              {day.slice(0, 1)}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                    <div>
-                      <h5 className="text-[0.7rem] font-black uppercase tracking-widest text-slate-400 mb-1.5">Operating Hours</h5>
-                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-slate-800 bg-slate-50/80 h-9 rounded-xl border border-slate-200/80">
-                        <ClockIcon className="h-4 w-4 text-[var(--brand-color)] shrink-0" />
-                        <span>{selectedRoomInfo.startTime} - {selectedRoomInfo.endTime}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h5 className="text-[0.7rem] font-black uppercase tracking-widest text-slate-400 mb-2">Room Amenities</h5>
-                    <div className="flex flex-wrap gap-2 max-h-[7.5rem] overflow-y-auto custom-scrollbar pr-1">
-                      {selectedRoomInfo.amenities.length > 0 ? (
-                        selectedRoomInfo.amenities.map((amenity, i) => (
-                          <span 
-                            key={i}
-                            className="flex items-center gap-1.5 rounded-xl border border-slate-200/80 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-xs"
-                          >
-                            <CheckIcon className="h-3.5 w-3.5 text-[var(--brand-color)]" strokeWidth={3} />
-                            {amenity}
-                          </span>
-                        ))
-                      ) : (
-                        <p className="text-xs italic text-slate-400 font-medium">No amenities listed.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-3 border-t border-slate-100">
-                  <button
-                    onClick={handleCloseModals}
-                    className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 shadow-xs active:scale-[0.98]"
-                  >
-                    Close
-                  </button>
-                  <button
-                    onClick={() => {
-                      const buildingId = buildings.find(b => b.rooms.some(r => r.id === selectedRoomInfo.id))?.id
-                      if (buildingId) {
-                        handleOpenRoomModal(buildingId, selectedRoomInfo)
-                        setIsRoomInfoModalOpen(false)
-                      }
-                    }}
-                    className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-[var(--brand-color-hover)] hover:shadow-lg active:scale-[0.98]"
-                  >
-                    <EditIcon className="h-4 w-4" />
-                    Edit Details
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="absolute inset-0 -z-10" onClick={handleCloseModals} />
-        </div>
-      )}
+            Edit Details
+          </Button>
+        }
+      />
 
       {/* Delete Room Confirmation Modal */}
       {isDeleteRoomModalOpen && roomToDelete && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-3xl border border-slate-100 bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white">
-              <h3 className="text-xl font-extrabold tracking-tight">Delete Room</h3>
-              <p className="mt-1 text-xs text-white/90 font-medium">Are you sure you want to delete this room?</p>
+            <div className="bg-rose-600 p-6 text-white rounded-t-3xl">
+              <h3 className="text-xl font-bold">Delete Room</h3>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this room from the system?</p>
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-slate-50 p-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white overflow-hidden shrink-0 shadow-xs">
+              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 overflow-hidden shrink-0">
                   <img 
                     src={roomToDelete.image} 
                     alt="" 
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-cover grayscale-[0.2]"
                     onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                   />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-900 truncate">{roomToDelete.name}</p>
-                  <p className="text-xs font-semibold text-slate-500">{roomToDelete.code} • {roomToDelete.type}</p>
+                  <p className="text-sm font-bold text-gray-900 truncate">{roomToDelete.name}</p>
+                  <p className="text-xs font-medium text-gray-500">{roomToDelete.type}</p>
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-rose-50 p-4 border border-rose-100">
-                <p className="text-xs leading-relaxed text-rose-800 font-medium">
-                  <span className="font-extrabold uppercase tracking-wider">Warning:</span> This action will permanently delete this room and all associated schedule history. This action cannot be undone.
+              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+                <p className="text-xs leading-relaxed text-rose-700">
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this room and all its associated booking history. This action cannot be undone.
                 </p>
               </div>
 
@@ -1681,14 +1354,14 @@ function BuildingsRoomsPage() {
                     type="button"
                     onClick={handleCloseDeleteRoomModal}
                     disabled={isDeletingRoom}
-                    className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 shadow-xs active:scale-[0.98]"
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isDeletingRoom}
-                    className="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-rose-700 hover:shadow-lg disabled:opacity-50 active:scale-[0.98]"
+                    className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isDeletingRoom ? 'Deleting...' : 'Confirm Delete'}
                   </button>
@@ -1707,36 +1380,36 @@ function BuildingsRoomsPage() {
 
       {/* Delete Building Confirmation Modal */}
       {isDeleteBuildingModalOpen && buildingToDelete && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-3xl border border-slate-100 bg-white shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white">
-              <h3 className="text-xl font-extrabold tracking-tight">Delete Building</h3>
-              <p className="mt-1 text-xs text-white/90 font-medium">Are you sure you want to delete this building facility?</p>
+            <div className="bg-rose-600 p-6 text-white rounded-t-3xl">
+              <h3 className="text-xl font-bold">Delete Building</h3>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this building from the system?</p>
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4 rounded-2xl border border-slate-200/80 bg-slate-50 p-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-slate-200 bg-white text-rose-600 shrink-0 shadow-xs">
-                  <BuildingIcon className="h-6 w-6 text-rose-600" />
+              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 shrink-0">
+                  <BuildingIcon className="h-7 w-7 text-gray-400" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-900 truncate">{buildingToDelete.name}</p>
-                  <p className="text-xs font-semibold text-slate-500">{buildingToDelete.code} • {buildingToDelete.rooms.length} Rooms</p>
+                  <p className="text-sm font-bold text-gray-900 truncate">{buildingToDelete.name}</p>
+                  <p className="text-xs font-medium text-gray-500">{buildingToDelete.code} • {buildingToDelete.rooms.length} Rooms</p>
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-rose-50 p-4 border border-rose-100">
-                <p className="text-xs leading-relaxed text-rose-800 font-medium">
-                  <span className="font-extrabold uppercase tracking-wider">Warning:</span> This action will permanently delete this building and all rooms contained inside it.
+              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+                <p className="text-xs leading-relaxed text-rose-700">
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this building and all rooms associated with it. This action cannot be undone.
                 </p>
               </div>
 
-              <div className="space-y-2 pt-1">
-                <label htmlFor="confirm-building-name" className="block text-[0.7rem] font-black uppercase tracking-widest text-slate-500">
-                  Type <span className="text-rose-600">"{buildingToDelete.name}"</span> to confirm:
+              <div className="space-y-3 pt-2">
+                <label htmlFor="confirm-building-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                  To confirm, please type: <span className="text-rose-600">"{buildingToDelete.name}"</span>
                 </label>
                 <input
                   id="confirm-building-name"
@@ -1744,7 +1417,7 @@ function BuildingsRoomsPage() {
                   value={confirmBuildingName}
                   onChange={(e) => setConfirmBuildingName(e.target.value)}
                   placeholder="Enter building name"
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/60 px-4 py-2.5 text-sm font-medium text-slate-900 outline-none transition-all focus:bg-white focus:border-rose-500 focus:ring-4 focus:ring-rose-100 shadow-xs"
+                  className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-sm"
                   autoFocus
                 />
               </div>
@@ -1755,14 +1428,14 @@ function BuildingsRoomsPage() {
                     type="button"
                     onClick={handleCloseDeleteBuildingModal}
                     disabled={isDeletingBuilding}
-                    className="flex-1 rounded-xl border border-slate-200 bg-white py-3 text-sm font-bold text-slate-700 transition-all hover:bg-slate-50 shadow-xs active:scale-[0.98]"
+                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isDeletingBuilding || confirmBuildingName !== buildingToDelete.name}
-                    className="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition-all enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]"
+                    className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isDeletingBuilding ? 'Deleting...' : 'Confirm Delete'}
                   </button>
@@ -1784,404 +1457,123 @@ function BuildingsRoomsPage() {
           title="Buildings & Rooms" 
           description="Manage campus facilities, view room capacities, and track utilization." 
         />
-        
-        {/* Filter Bar */}
-        <SearchFilters
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          placeholder="Search by building name, room code, status, capacity..."
-          dropdowns={
-            <FilterDropdown
-              groups={[
-                {
-                  id: 'status',
-                  title: 'Room Status',
-                  options: ['Available', 'Occupied', 'Reserved', 'Maintenance'],
-                  selectedValues: selectedRoomStatuses,
-                  onChange: (newVals) => setSelectedRoomStatuses(newVals as RoomStatus[]),
-                },
-                {
-                  id: 'type',
-                  title: 'Room Type',
-                  options: Array.from(new Set(buildings.flatMap(b => b.rooms.map(r => r.type)))).filter(Boolean).sort(),
-                  selectedValues: selectedRoomTypes,
-                  onChange: (newVals) => setSelectedRoomTypes(newVals),
-                },
-              ]}
-              onClearAll={() => {
-                setSelectedRoomStatuses([])
-                setSelectedRoomTypes([])
-              }}
-            />
+        <BuildingBrowser
+          buildings={buildings}
+          buildingOptions={Array.from(new Set(buildings.map(b => b.name))).sort()}
+          expandedBuildingIds={expandedBuildingIds}
+          onToggleBuilding={toggleBuilding}
+          onRoomClick={handleOpenRoomInfoModal}
+          isLoading={isInitialLoad.current}
+          actionButton={
+            <Button
+              variant="brand"
+              icon={<PlusIcon className="h-4 w-4" />}
+              onClick={() => handleOpenBuildingModal()}
+              className="w-full lg:w-auto"
+            >
+              Add Building
+            </Button>
           }
-          primaryButton={{
-            label: "Add Building",
-            onClick: () => handleOpenBuildingModal()
-          }}
-        />
-
-        {/* Buildings & Rooms Container */}
-        <div className="space-y-6">
-          {filteredBuildings.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-[color:rgba(98,133,62,0.25)] bg-white p-12 text-center shadow-xs">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-[var(--brand-color)] border border-emerald-100">
-                <BuildingIcon className="h-8 w-8" />
-              </div>
-              <p className="mt-4 text-lg font-bold text-slate-900">
-                No matching buildings or rooms found
-              </p>
-              <p className="mt-1 text-sm text-slate-500 max-w-md mx-auto font-medium">
-                Try searching for a different building name, room code, room type, or status filter.
-              </p>
-            </div>
-          ) : filteredBuildings.map((building) => {
-            const roomsByFloor = building.rooms.reduce((acc, room) => {
-              if (!acc[room.floor]) {
-                acc[room.floor] = []
-              }
-              acc[room.floor].push(room)
-              return acc
-            }, {} as Record<number, Room[]>)
-
-            const sortedFloors = Object.keys(roomsByFloor)
-              .map(Number)
-              .sort((a, b) => a - b)
-
-            const isExpanded = expandedBuildingIds.includes(building.id)
-
-            // Room status breakdown counts for this building
-            const availableCount = building.rooms.filter(r => r.status === 'Available').length
-            const occupiedCount = building.rooms.filter(r => r.status === 'Occupied').length
-            const reservedCount = building.rooms.filter(r => r.status === 'Reserved').length
-            const maintenanceCount = building.rooms.filter(r => r.status === 'Maintenance').length
-
-            return (
-              <article
-                key={building.id}
-                className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm hover:shadow-md transition-all duration-300 sm:p-8"
+          renderBuildingActions={(building) => (
+            <div className="relative">
+              <IconButton
+                label="Building options"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpenMenuId(openMenuId === building.id ? null : building.id)
+                }}
+                className="h-10 w-10 shrink-0 rounded-xl border border-gray-100 bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all duration-300"
               >
-                <div className="flex flex-col gap-6">
-                  {/* Building Header Bar */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <div className="flex items-center gap-3.5">
-                      <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-[var(--brand-color)] border border-emerald-200/60 flex items-center justify-center shrink-0 shadow-xs">
-                        <BuildingIcon className="h-6 w-6" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2.5">
-                          <h3 className="text-2xl font-extrabold tracking-tight text-slate-900">
-                            {building.name}
-                          </h3>
-                          <span className="inline-flex items-center justify-center rounded-full bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 px-3 py-0.5 text-xs font-black uppercase tracking-wider text-[var(--brand-color)] leading-none">
-                            {building.code}
-                          </span>
-                        </div>
-                        
-                        {/* Status Summary Pills */}
-                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                          {availableCount > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[0.65rem] font-extrabold text-emerald-800 bg-emerald-100/80 border border-emerald-200/60 px-2 py-0.5 rounded-full">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                              {availableCount} Available
-                            </span>
-                          )}
-                          {occupiedCount > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[0.65rem] font-extrabold text-amber-800 bg-amber-100/80 border border-amber-200/60 px-2 py-0.5 rounded-full">
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                              {occupiedCount} Occupied
-                            </span>
-                          )}
-                          {reservedCount > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[0.65rem] font-extrabold text-sky-800 bg-sky-100/80 border border-sky-200/60 px-2 py-0.5 rounded-full">
-                              <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
-                              {reservedCount} Reserved
-                            </span>
-                          )}
-                          {maintenanceCount > 0 && (
-                            <span className="inline-flex items-center gap-1 text-[0.65rem] font-extrabold text-rose-800 bg-rose-100/80 border border-rose-200/60 px-2 py-0.5 rounded-full">
-                              <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
-                              {maintenanceCount} Maintenance
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                <DotsVerticalIcon className="h-6 w-6" />
+              </IconButton>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center">
-                      <div className="relative">
-                        <IconButton
-                          label="Building options"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setOpenMenuId(openMenuId === building.id ? null : building.id)
-                          }}
-                          className="h-10 w-10 shrink-0 rounded-xl border border-slate-200 bg-white text-slate-500 shadow-xs hover:bg-slate-50 hover:text-slate-900 transition-all duration-200"
-                        >
-                          <DotsVerticalIcon className="h-5 w-5" />
-                        </IconButton>
-
-                        {openMenuId === building.id && (
-                          <div
-                            className="absolute right-0 top-full z-20 mt-2 w-48 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150 p-1"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
-                              onClick={() => {
-                                handleOpenRoomModal(building.id)
-                                setOpenMenuId(null)
-                              }}
-                            >
-                              <PlusIcon className="h-4 w-4 text-[var(--brand-color)]" />
-                              Add Room
-                            </button>
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
-                              onClick={() => {
-                                handleOpenBuildingModal(building)
-                                setOpenMenuId(null)
-                              }}
-                            >
-                              <EditIcon className="h-4 w-4 text-slate-400" />
-                              Edit Building
-                            </button>
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-rose-600 transition hover:bg-rose-50"
-                              onClick={() => {
-                                handleOpenDeleteBuilding(building)
-                                setOpenMenuId(null)
-                              }}
-                            >
-                              <TrashIcon className="h-4 w-4 text-rose-500" />
-                              Delete Building
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => toggleBuilding(building.id)}
-                        className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 hover:border-slate-300 transition-all duration-200"
-                      >
-                        <span>{isExpanded ? 'Collapse' : 'Expand'}</span>
-                        <ChevronDownIcon
-                          className={`h-4 w-4 text-slate-400 transition-transform duration-300 ${isExpanded ? 'rotate-180 text-[var(--brand-color)]' : ''}`}
-                        />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Building Stat Summary Badges */}
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    <div className="rounded-2xl bg-slate-50/80 border border-slate-200/60 p-4 flex items-center gap-4 hover:bg-white hover:border-amber-200 hover:shadow-xs transition-all">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100/70 border border-amber-200/60 text-amber-700 shrink-0">
-                        <LayersIcon className="h-6 w-6" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[0.65rem] font-black uppercase tracking-widest text-slate-400 truncate">
-                          Floors
-                        </p>
-                        <p className="mt-0.5 text-xl font-extrabold text-slate-900 leading-none">
-                          {building.floor}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-slate-50/80 border border-slate-200/60 p-4 flex items-center gap-4 hover:bg-white hover:border-emerald-200 hover:shadow-xs transition-all">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-100/70 border border-emerald-200/60 text-[var(--brand-color)] shrink-0">
-                        <DoorIcon className="h-6 w-6" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[0.65rem] font-black uppercase tracking-widest text-slate-400 truncate">
-                          Total Rooms
-                        </p>
-                        <p className="mt-0.5 text-xl font-extrabold text-slate-900 leading-none">
-                          {building.rooms.length}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl bg-slate-50/80 border border-slate-200/60 p-4 flex items-center gap-4 hover:bg-white hover:border-rose-200 hover:shadow-xs transition-all">
-                      <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-rose-100/70 border border-rose-200/60 text-rose-700 shrink-0">
-                        <UsersIcon className="h-6 w-6" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[0.65rem] font-black uppercase tracking-widest text-slate-400 truncate">
-                          Total Capacity
-                        </p>
-                        <p className="mt-0.5 text-xl font-extrabold text-slate-900 leading-none">
-                          {building.capacity} <span className="text-xs font-semibold text-slate-400">pax</span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+              {openMenuId === building.id && (
+                <div
+                  className="absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-md border border-gray-100 bg-white shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                    onClick={() => {
+                      handleOpenRoomModal(building.id)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    <PlusIcon className="h-4 w-4 text-gray-400" />
+                    Add Room
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                    onClick={() => {
+                      handleOpenBuildingModal(building)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    <EditIcon className="h-4 w-4 text-gray-400" />
+                    Edit Building
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                    onClick={() => {
+                      handleOpenDeleteBuilding(building)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    <TrashIcon className="h-4 w-4 text-red-400" />
+                    Delete Building
+                  </button>
                 </div>
+              )}
+            </div>
+          )}
+          renderRoomActions={(room, buildingId) => (
+            <div className="relative">
+              <IconButton
+                label="Room options"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setOpenMenuId(openMenuId === room.id ? null : room.id)
+                }}
+                className="h-8 w-8 shrink-0 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <DotsVerticalIcon className="h-5 w-5" />
+              </IconButton>
 
-                {/* Collapsible Floor & Rooms Grid */}
-                <div className={`grid transition-all duration-500 ease-in-out ${isExpanded ? 'grid-rows-[1fr] mt-8 opacity-100' : 'grid-rows-[0fr] mt-0 opacity-0'}`}>
-                  <div className="overflow-hidden">
-                    <div className="space-y-8 pt-2 pb-2">
-                      {building.rooms.length === 0 ? (
-                        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/50 p-8 text-center">
-                          <DoorIcon className="mx-auto h-10 w-10 text-slate-300" />
-                          <p className="mt-3 text-xs font-extrabold uppercase tracking-widest text-slate-400">
-                            No rooms added yet for this building
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenRoomModal(building.id)}
-                            className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-[var(--brand-color)] hover:underline"
-                          >
-                            <PlusIcon className="h-3.5 w-3.5" />
-                            Add First Room
-                          </button>
-                        </div>
-                      ) : (
-                        sortedFloors.map((floor) => (
-                          <div key={floor} className="space-y-4">
-                            <div className="flex items-center gap-3">
-                              <div className="inline-flex items-center gap-2 rounded-xl bg-slate-100 border border-slate-200/80 px-3 py-1 text-xs font-extrabold uppercase tracking-widest text-slate-600">
-                                <span className="h-2 w-2 rounded-full bg-[var(--brand-color)]" />
-                                Floor {floor}
-                              </div>
-                              <span className="text-xs font-bold text-slate-400">
-                                ({roomsByFloor[floor]?.length} {roomsByFloor[floor]?.length === 1 ? 'room' : 'rooms'})
-                              </span>
-                              <div className="h-px flex-1 bg-gradient-to-r from-slate-200 via-slate-100 to-transparent" />
-                            </div>
-
-                            <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,320px),1fr))]">
-                              {roomsByFloor[floor]
-                                ?.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
-                                .map((room) => (
-                                <div
-                                  key={room.id}
-                                  onClick={() => handleOpenRoomInfoModal(room)}
-                                  className="group/card rounded-2xl border border-slate-200/80 bg-white shadow-xs hover:shadow-xl hover:border-[var(--brand-color)]/40 hover:-translate-y-1 transition-all duration-300 flex flex-col sm:flex-row overflow-hidden cursor-pointer relative"
-                                >
-                                  {/* Room Photo */}
-                                  <div className="w-full sm:w-36 h-36 shrink-0 relative overflow-hidden bg-slate-100">
-                                    <img
-                                      src={room.image}
-                                      alt={room.name}
-                                      className="w-full h-full object-cover transition-transform duration-500 group-hover/card:scale-105"
-                                      onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
-                                    />
-                                    <span className="absolute top-2 left-2 px-2 py-0.5 rounded-lg bg-slate-900/80 backdrop-blur-md border border-white/20 text-[0.65rem] font-extrabold uppercase tracking-wider text-white shadow-xs">
-                                      {room.code}
-                                    </span>
-                                  </div>
-
-                                  {/* Room Information */}
-                                  <div className="flex-1 flex flex-col justify-between p-3.5 min-w-0">
-                                    <div>
-                                      <div className="flex items-start justify-between gap-1.5">
-                                        <h5 className="text-base font-extrabold leading-tight text-slate-900 truncate group-hover/card:text-[var(--brand-color)] transition-colors">
-                                          {room.name}
-                                        </h5>
-                                        
-                                        <div className="relative">
-                                          <IconButton
-                                            label="Room options"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              setOpenMenuId(openMenuId === room.id ? null : room.id)
-                                            }}
-                                            className="h-7 w-7 shrink-0 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-                                          >
-                                            <DotsVerticalIcon className="h-4 w-4" />
-                                          </IconButton>
-
-                                          {openMenuId === room.id && (
-                                            <div
-                                              className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150 p-1"
-                                              onClick={(e) => e.stopPropagation()}
-                                            >
-                                              <button
-                                                type="button"
-                                                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold text-slate-700 transition hover:bg-slate-50"
-                                                onClick={() => {
-                                                  handleOpenRoomModal(building.id, room)
-                                                  setOpenMenuId(null)
-                                                }}
-                                              >
-                                                <EditIcon className="h-3.5 w-3.5 text-slate-400" />
-                                                Edit Room
-                                              </button>
-                                              <button
-                                                type="button"
-                                                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold text-rose-600 transition hover:bg-rose-50"
-                                                onClick={() => {
-                                                  handleOpenDeleteRoom(room)
-                                                  setOpenMenuId(null)
-                                                }}
-                                              >
-                                                <TrashIcon className="h-3.5 w-3.5 text-rose-400" />
-                                                Delete Room
-                                              </button>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-
-                                      <p className="text-[0.68rem] font-extrabold uppercase tracking-wider text-slate-400 mt-0.5">
-                                        {room.type}
-                                      </p>
-
-                                      {/* Amenities Preview Chips */}
-                                      {room.amenities && room.amenities.length > 0 && (
-                                        <div className="flex flex-wrap gap-1 mt-2">
-                                          {room.amenities.slice(0, 2).map((amenity, idx) => (
-                                            <span 
-                                              key={idx} 
-                                              className="text-[0.625rem] font-bold text-slate-600 bg-slate-100 border border-slate-200/60 px-2 py-0.5 rounded-md truncate max-w-[90px]"
-                                            >
-                                              {amenity}
-                                            </span>
-                                          ))}
-                                          {room.amenities.length > 2 && (
-                                            <span className="text-[0.625rem] font-bold text-slate-400 bg-slate-50 border border-slate-200/60 px-1.5 py-0.5 rounded-md">
-                                              +{room.amenities.length - 2}
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-
-                                    {/* Footer details */}
-                                    <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-2">
-                                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
-                                        <UserIcon className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                                        <span>{room.capacity} pax</span>
-                                      </div>
-                                      
-                                      <span
-                                        className={`rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-wider flex items-center gap-1 ${roomStatusClasses[room.status]}`}
-                                      >
-                                        <span className={`h-1.5 w-1.5 rounded-full ${roomStatusDots[room.status]}`} />
-                                        {room.status}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
+              {openMenuId === room.id && (
+                <div
+                  className="absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-md border border-gray-100 bg-white shadow-2xl"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                    onClick={() => {
+                      handleOpenRoomModal(buildingId, room)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    <EditIcon className="h-4 w-4 text-gray-400" />
+                    Edit Room
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                    onClick={() => {
+                      handleOpenDeleteRoom(room)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    <TrashIcon className="h-4 w-4 text-red-400" />
+                    Delete Room
+                  </button>
                 </div>
-              </article>
-            )
-          })}
-        </div>
-      </div>
-
+              )}
+            </div>
+          )}
+        />    </div>
       {/* Crop Modal */}
       {cropModalData.isOpen && (
         <CropModal
@@ -2194,6 +1586,7 @@ function BuildingsRoomsPage() {
           cropShape="rect"
         />
       )}
+
     </section>
   )
 }

@@ -1,7 +1,7 @@
 import React from 'react'
 import { UserIcon, ClockIcon, BookIcon } from './Icons'
-import { roomStatusClasses, DAYS_OF_WEEK, DEFAULT_ROOM_IMAGE } from '../pages/tabs/ReserveRoomPage'
-import type { Room } from '../pages/tabs/ReserveRoomPage'
+import { roomStatusClasses, DAYS_OF_WEEK, DEFAULT_ROOM_IMAGE } from '../types/room'
+import type { Room } from '../types/room'
 import { Button } from './Button'
 import { RoomAmenities } from './RoomAmenities'
 
@@ -9,10 +9,10 @@ interface RoomInfoModalProps {
   isOpen: boolean
   room: Room | null
   onClose: () => void
-  onReserve: (room: Room) => void
+  actionButton?: React.ReactNode
 }
 
-export function RoomInfoModal({ isOpen, room, onClose, onReserve }: RoomInfoModalProps) {
+export function RoomInfoModal({ isOpen, room, onClose, actionButton }: RoomInfoModalProps) {
   if (!isOpen || !room) return null
 
   return (
@@ -133,14 +133,7 @@ export function RoomInfoModal({ isOpen, room, onClose, onReserve }: RoomInfoModa
               >
                 Close
               </Button>
-              <Button
-                variant="brand"
-                onClick={() => onReserve(room)}
-                icon={<BookIcon className="h-4 w-4" />}
-                className="flex-1"
-              >
-                Reserve Room
-              </Button>
+              {actionButton}
             </div>
           </div>
         </div>

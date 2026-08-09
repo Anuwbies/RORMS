@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { ChevronDownIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon } from './Icons'
+import { ChevronDownIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, SpinnerIcon } from './Icons'
 import { SearchInput } from './SearchInput'
 
 export interface ColumnDef<T> {
@@ -28,6 +28,9 @@ export interface DataTableProps<T> {
 
   // Row selection/interaction
   onRowClick?: (row: T) => void
+
+  // Loading State
+  isLoading?: boolean
 }
 
 export function DataTable<T>({
@@ -41,7 +44,8 @@ export function DataTable<T>({
   emptyTitle = 'No data found',
   emptyDescription = 'Try adjusting your filters or search terms.',
   emptyIcon,
-  onRowClick
+  onRowClick,
+  isLoading
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(15)
@@ -111,7 +115,17 @@ export function DataTable<T>({
             </tr>
           </thead>
           <tbody className="bg-white">
-            {currentData.length === 0 ? (
+            {isLoading ? (
+              <tr>
+                <td colSpan={columns.length} className="px-6 py-20 text-center text-slate-400">
+                  <div className="flex flex-col items-center justify-center gap-3">
+                    <SpinnerIcon className="h-8 w-8 text-[var(--brand-color)]" />
+                    <p className="text-base font-bold text-slate-700">Loading data...</p>
+                    <p className="text-xs text-slate-400">Please wait while information is retrieved.</p>
+                  </div>
+                </td>
+              </tr>
+            ) : currentData.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-6 py-20 text-center text-slate-400">
                   <div className="flex flex-col items-center justify-center">
