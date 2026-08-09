@@ -54,6 +54,7 @@ The primary brand color for RORMS is **`#62853e`** (PHINMA Olive Green). Use the
 - **Brand Gradient**: **Olive to Leaf Green Gradient** — `linear-gradient(135deg, #62853e, #7b9d4f)`
 - **Background Surface**: **Off-White Surface** — `#fcfcfc` (`var(--brand-surface)`)
 - **Card Surface**: **Pure White** — `#ffffff` (`var(--card-surface)`)
+- **Card Radius / Shape**: Use **`rounded-3xl`** for main dashboard cards and large containers to maintain a consistent, modern glassmorphic aesthetic. Nested inner components should use `rounded-2xl` or `rounded-xl` proportionally.
 
 ### Supporting Complementary & Functional Accent Colors
 Alongside the primary PHINMA Olive Green, use these supporting colors for status feedback, surfaces, and functional contrast:

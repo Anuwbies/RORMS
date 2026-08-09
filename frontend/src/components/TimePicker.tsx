@@ -6,9 +6,10 @@ interface TimePickerProps {
   onChange: (value: string) => void
   onToggle?: (isOpen: boolean) => void
   hasError?: boolean
+  minuteStep?: number
 }
 
-export function TimePicker({ value, onChange, onToggle, hasError }: TimePickerProps) {
+export function TimePicker({ value, onChange, onToggle, hasError, minuteStep = 1 }: TimePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const hourScrollRef = useRef<HTMLDivElement>(null)
@@ -64,7 +65,7 @@ export function TimePicker({ value, onChange, onToggle, hasError }: TimePickerPr
   }
 
   const hours = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, '0'))
-  const minutes = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'))
+  const minutes = Array.from({ length: Math.floor(60 / minuteStep) }, (_, i) => (i * minuteStep).toString().padStart(2, '0'))
   const periods = ['AM', 'PM']
 
   return (
@@ -72,16 +73,20 @@ export function TimePicker({ value, onChange, onToggle, hasError }: TimePickerPr
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex h-[2.875rem] w-full items-center justify-between gap-2 rounded-md border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm ${
-          hasError ? 'border-rose-500 ring-rose-50' : 'border-gray-200'
+        className={`flex h-12 w-full items-center gap-3 rounded-xl border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition-all shadow-sm cursor-pointer hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 active:scale-95 ${
+          hasError 
+            ? 'border-rose-500 focus:border-rose-500 ring-4 ring-rose-50' 
+            : isOpen
+              ? 'border-gray-300'
+              : 'border-gray-200 focus:border-gray-300'
         }`}
       >
-        <span className="text-sm font-normal">{`${hourStr}:${minuteStr} ${period}`}</span>
-        <ClockIcon className="h-4.5 w-4.5 text-gray-400" />
+        <ClockIcon className="h-4.5 w-4.5 text-gray-400 shrink-0" />
+        <span className="text-sm font-medium text-gray-900 flex-1 text-left">{`${hourStr}:${minuteStr} ${period}`}</span>
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 z-50 mt-2 flex w-full overflow-hidden rounded-md border border-gray-200 bg-white p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+        <div className="absolute left-0 z-50 mt-2 flex w-full overflow-hidden rounded-2xl border border-gray-200 bg-white p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
           {/* Hours */}
           <div ref={hourScrollRef} className="h-48 flex-1 overflow-y-auto no-scrollbar py-1">
             {hours.map((h) => (
@@ -89,7 +94,7 @@ export function TimePicker({ value, onChange, onToggle, hasError }: TimePickerPr
                 key={h}
                 type="button"
                 onClick={() => updateTime(h, minuteStr, period)}
-                className={`w-full rounded-md py-2.5 text-sm text-center transition-colors ${
+                className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
                   hourStr === h 
                     ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
@@ -107,7 +112,7 @@ export function TimePicker({ value, onChange, onToggle, hasError }: TimePickerPr
                 key={min}
                 type="button"
                 onClick={() => updateTime(hourStr, min, period)}
-                className={`w-full rounded-md py-2.5 text-sm text-center transition-colors ${
+                className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
                   minuteStr === min 
                     ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
@@ -125,7 +130,7 @@ export function TimePicker({ value, onChange, onToggle, hasError }: TimePickerPr
                 key={p}
                 type="button"
                 onClick={() => updateTime(hourStr, minuteStr, p)}
-                className={`w-full rounded-md py-2.5 text-sm text-center transition-colors ${
+                className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
                   period === p 
                     ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
                     : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'

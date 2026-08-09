@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
-import { SearchFilters } from '../../components/SearchFilters'
+import { DataTable, type ColumnDef } from '../../components/DataTable'
+import { FilterDropdown } from '../../components/FilterDropdown'
+import { Button } from '../../components/Button'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db } from '../../firebase'
 import { collection, doc, setDoc, deleteDoc, writeBatch, query, orderBy, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
@@ -44,6 +46,13 @@ const phaseClasses: Record<string, string> = {
 function AcademicCalendarPage() {
   const [years, setYears] = useState<AcademicYear[]>([])
   const [searchTerm, setSearchTerm] = useState('')
+  
+  // New Filters
+  const [statusFilters, setStatusFilters] = useState<string[]>([])
+  const [sem1PhaseFilters, setSem1PhaseFilters] = useState<string[]>([])
+  const [sem2PhaseFilters, setSem2PhaseFilters] = useState<string[]>([])
+  const [timingFilters, setTimingFilters] = useState<string[]>([])
+
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isPhaseModalOpen, setIsPhaseModalOpen] = useState(false)
   const [editingYearId, setEditingYearId] = useState<string | null>(null)
@@ -80,13 +89,84 @@ function AcademicCalendarPage() {
     return () => unsubscribe()
   }, [])
 
-  const filteredYears = years.filter(y => 
-    y.academicYear.toLowerCase().includes(searchTerm.toLowerCase())
-  ).sort((a, b) => {
+  const filteredYears = years.filter(y => {
+    const matchesSearch = y.academicYear.toLowerCase().includes(searchTerm.toLowerCase())
+    const matchesStatus = statusFilters.length === 0 || 
+      (statusFilters.includes('Active') && y.isActive) ||
+      (statusFilters.includes('Inactive') && !y.isActive)
+    const matchesSem1Phase = sem1PhaseFilters.length === 0 || sem1PhaseFilters.includes(y.sem1.phase || 'Closed')
+    const matchesSem2Phase = sem2PhaseFilters.length === 0 || sem2PhaseFilters.includes(y.sem2.phase || 'Closed')
+    const matchesTiming = timingFilters.length === 0 || timingFilters.some(timing => {
+       if (timing === 'Early Start') return ['January', 'February', 'March', 'April', 'May', 'June'].includes(y.sem1.startMonth)
+       if (timing === 'Regular Start') return ['July', 'August', 'September'].includes(y.sem1.startMonth)
+       if (timing === 'Late Start') return ['October', 'November', 'December'].includes(y.sem1.startMonth)
+       return false
+    })
+    return matchesSearch && matchesStatus && matchesSem1Phase && matchesSem2Phase && matchesTiming
+  }).sort((a, b) => {
     if (a.isActive && !b.isActive) return -1
     if (!a.isActive && b.isActive) return 1
     return b.academicYear.localeCompare(a.academicYear)
   })
+
+  const columns: ColumnDef<AcademicYear>[] = [
+    {
+      header: 'Academic Year',
+      render: (year) => (
+        <span className={`font-bold text-base ${year.isActive ? 'text-emerald-600' : 'text-gray-900'}`}>
+          {year.academicYear}
+        </span>
+      )
+    },
+    {
+      header: '1st Semester',
+      render: (year) => (
+        <div className="flex items-center gap-2.5">
+          <span className="text-sm font-semibold text-gray-700">
+            {formatShortMonth(year.sem1.startMonth)} - {formatShortMonth(year.sem1.endMonth)}
+          </span>
+          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider border ${phaseClasses[year.sem1.phase] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+            {year.sem1.phase || 'Closed'}
+          </span>
+        </div>
+      )
+    },
+    {
+      header: '2nd Semester',
+      render: (year) => (
+        <div className="flex items-center gap-2.5">
+          <span className="text-sm font-semibold text-gray-700">
+            {formatShortMonth(year.sem2.startMonth)} - {formatShortMonth(year.sem2.endMonth)}
+          </span>
+          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider border ${phaseClasses[year.sem2.phase] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
+            {year.sem2.phase || 'Closed'}
+          </span>
+        </div>
+      )
+    },
+    {
+      header: 'Actions',
+      align: 'right',
+      render: (year) => (
+        <div className="flex justify-end gap-2">
+          <button
+            title="Edit School Year"
+            onClick={(e) => { e.stopPropagation(); handleEditClick(year); }}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-700 shadow-sm border border-gray-200 transition-colors"
+          >
+            <EditIcon className="h-4 w-4" />
+          </button>
+          <button
+            title="Delete School Year"
+            onClick={(e) => { e.stopPropagation(); handleDeleteYear(year.id); }}
+            className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-rose-100 text-rose-400 shadow-sm transition hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+          >
+            <TrashIcon className="h-4.5 w-4.5" />
+          </button>
+        </div>
+      )
+    }
+  ]
 
   const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value
@@ -388,143 +468,82 @@ function AcademicCalendarPage() {
           title="Academic Calendar" 
           description="Manage academic years, historical records, and scheduling phases." 
         />
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
-                  <LayersIcon className="h-9 w-9 text-blue-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Total Years">Total Years</p>
-                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{years.length}</p>
-                </div>
-              </div>
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50 border border-emerald-100 shrink-0">
-                  <CalendarIcon className="h-9 w-9 text-emerald-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Active Year">Active Year</p>
-                  <p className="mt-0.5 text-xl font-bold text-gray-900 leading-none">{activeYear ? activeYear.academicYear : 'None'}</p>
-                </div>
-              </div>
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
-                  <DashboardIcon className="h-9 w-9 text-amber-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="1st Sem Phase">1st Sem Phase</p>
-                  <p className="mt-0.5 text-xl font-bold text-gray-900 leading-none">{activeYear ? activeYear.sem1.phase : 'None'}</p>
-                </div>
-              </div>
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-purple-50 border border-purple-100 shrink-0">
-                  <ClipboardIcon className="h-9 w-9 text-purple-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="2nd Sem Phase">2nd Sem Phase</p>
-                  <p className="mt-0.5 text-xl font-bold text-gray-900 leading-none">{activeYear ? activeYear.sem2.phase : 'None'}</p>
-                </div>
-              </div>
-            </div>
-
-        <SearchFilters
-          searchTerm={searchTerm}
+        <DataTable
+          data={filteredYears}
+          columns={columns}
+          searchPlaceholder="Search school years..."
+          searchValue={searchTerm}
           onSearchChange={setSearchTerm}
-          placeholder="Search school years..."
-          primaryButton={{
-            label: "New School Year",
-            onClick: () => {
-              setEditingYearId(null)
-              setNewYear('')
-              setSem1Start('July')
-              setSem1End('September')
-              setSem1Phase('Closed')
-              setSem2Start('November')
-              setSem2End('January')
-              setSem2Phase('Closed')
-              setCreateError('')
-              setIsModalOpen(true)
-            },
-            icon: <PlusIcon className="h-5 w-5" />
-          }}
-          secondaryButton={{
-            label: "Manage Active Year",
-            onClick: handleOpenPhaseModal,
-            icon: <CalendarIcon className="h-5 w-5" />
-          }}
+          filters={
+            <FilterDropdown 
+              groups={[
+                {
+                  id: 'status',
+                  title: 'Status',
+                  options: ['Active', 'Inactive'],
+                  selectedValues: statusFilters,
+                  onChange: setStatusFilters
+                },
+                {
+                  id: 'sem1Phase',
+                  title: '1st Sem Phase',
+                  options: ['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended'],
+                  selectedValues: sem1PhaseFilters,
+                  onChange: setSem1PhaseFilters
+                },
+                {
+                  id: 'sem2Phase',
+                  title: '2nd Sem Phase',
+                  options: ['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended'],
+                  selectedValues: sem2PhaseFilters,
+                  onChange: setSem2PhaseFilters
+                },
+                {
+                  id: 'timing',
+                  title: 'Sem 1 Start',
+                  options: ['Early Start', 'Regular Start', 'Late Start'],
+                  selectedValues: timingFilters,
+                  onChange: setTimingFilters
+                }
+              ]}
+              onClearAll={() => {
+                setStatusFilters([])
+                setSem1PhaseFilters([])
+                setSem2PhaseFilters([])
+                setTimingFilters([])
+              }}
+            />
+          }
+          primaryAction={
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <Button 
+                variant="outline" 
+                onClick={handleOpenPhaseModal} 
+                icon={<CalendarIcon className="h-4 w-4" />}
+              >
+                Manage Active Year
+              </Button>
+              <Button 
+                variant="brand" 
+                onClick={() => {
+                  setEditingYearId(null)
+                  setNewYear('')
+                  setSem1Start('July')
+                  setSem1End('September')
+                  setSem1Phase('Closed')
+                  setSem2Start('November')
+                  setSem2End('January')
+                  setSem2Phase('Closed')
+                  setCreateError('')
+                  setIsModalOpen(true)
+                }} 
+                icon={<PlusIcon className="h-4 w-4" />}
+              >
+                New School Year
+              </Button>
+            </div>
+          }
         />
-
-        <div className="overflow-hidden rounded-md border border-gray-200 bg-white shadow-md">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200 text-left">
-              <thead className="bg-gray-50/80">
-                <tr>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[33%]">Academic Year</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[33%]">1st Semester</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 w-[33%]">2nd Semester</th>
-                  <th className="px-6 py-4 text-xs font-bold uppercase tracking-widest text-gray-500 text-right w-1 whitespace-nowrap">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
-                {filteredYears.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-gray-500">
-                      {searchTerm ? 'No school years found matching your search.' : 'No school years found. Create a new year to get started.'}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredYears.map((year) => (
-                    <tr key={year.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex flex-col gap-1.5">
-                          <span className={`font-bold text-base ${year.isActive ? 'text-emerald-600' : 'text-gray-900'}`}>{year.academicYear}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 align-middle">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-sm font-semibold text-gray-700">
-                            {formatShortMonth(year.sem1.startMonth)} - {formatShortMonth(year.sem1.endMonth)}
-                          </span>
-                          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider border ${phaseClasses[year.sem1.phase] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                            {year.sem1.phase || 'Closed'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 align-middle">
-                        <div className="flex items-center gap-2.5">
-                          <span className="text-sm font-semibold text-gray-700">
-                            {formatShortMonth(year.sem2.startMonth)} - {formatShortMonth(year.sem2.endMonth)}
-                          </span>
-                          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider border ${phaseClasses[year.sem2.phase] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-                            {year.sem2.phase || 'Closed'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-right align-middle">
-                        <div className="flex justify-end gap-2">
-                          <button
-                            title="Edit School Year"
-                            onClick={() => handleEditClick(year)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-700 shadow-sm border border-gray-200 transition-colors"
-                          >
-                            <EditIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            title="Delete School Year"
-                            onClick={() => handleDeleteYear(year.id)}
-                            className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-rose-100 text-rose-400 shadow-sm transition hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
-                          >
-                            <TrashIcon className="h-4.5 w-4.5" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-          </div>
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 

@@ -7,6 +7,7 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { Button } from '../../components/Button'
 import { DashedButton } from '../../components/DashedButton'
 import { FilterDropdown } from '../../components/FilterDropdown'
+import { SummaryCard } from '../../components/SummaryCard'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, query, where, onSnapshot, doc, updateDoc, limit, addDoc, serverTimestamp, getDocs, deleteDoc } from 'firebase/firestore'
@@ -2547,12 +2548,12 @@ function MyDepartmentPage() {
                           <img 
                             src={departmentInfo.logo} 
                             alt={departmentInfo.name || 'Department'} 
-                            className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl object-cover shrink-0 shadow-md border-2 border-white/30 bg-white/10 p-0.5" 
+                            className="h-11 w-11 sm:h-12 sm:w-12 rounded-full object-cover shrink-0 drop-shadow-md" 
                             onError={() => setLogoError(true)} 
                           />
                         ) : (
-                          <div className="h-11 w-11 sm:h-12 sm:w-12 rounded-xl border-2 border-white/30 bg-white/15 flex items-center justify-center text-white shrink-0 shadow-md">
-                            <DepartmentIcon className="h-6 w-6" />
+                          <div className="h-10 w-10 sm:h-11 sm:w-11 flex items-center justify-center text-white/90 shrink-0 drop-shadow-md">
+                            <DepartmentIcon className="h-8 w-8 sm:h-9 sm:w-9" />
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
@@ -2568,58 +2569,61 @@ function MyDepartmentPage() {
                         </div>
                       </div>
 
-                      {/* Role Distribution Bar & Stat Badges */}
+                      {/* Key Leadership */}
                       <div className="relative z-10 mt-3 pt-2 border-t border-white/10">
-                        <div className="w-full h-2 rounded-full overflow-hidden bg-black/30 flex gap-0.5 p-0.5 border border-white/10 shadow-inner">
-                          {roleStats.filter(s => s.count > 0).map((stat) => (
-                            <div 
-                              key={stat.label} 
-                              className={`h-full ${stat.color} rounded-full transition-all duration-700`} 
-                              style={{ width: `${totalMembers > 0 ? (stat.count / totalMembers) * 100 : 0}%` }} 
-                              title={`${stat.label}: ${stat.count}`} 
-                            />
-                          ))}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                          {roleStats.map((stat) => {
-                            if (stat.count === 0) return null;
-                            const percentage = totalMembers > 0 ? Math.round((stat.count / totalMembers) * 100) : 0;
-                            return (
-                              <span key={stat.label} className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-black/25 backdrop-blur-xs border border-white/15 text-[0.625rem] font-extrabold text-white/95">
-                                <span className={`w-1.5 h-1.5 rounded-full ${stat.color}`} />
-                                <span>{stat.label}:</span>
-                                <span className="text-white font-black">{stat.count} <span className="text-white/70">({percentage}%)</span></span>
-                              </span>
-                            );
-                          })}
-                        </div>
+                        {(() => {
+                          const dean = members.find(m => m.role === 'Dean');
+                          const programHead = members.find(m => m.role === 'Program Head');
+                          
+                          return (
+                            <div className="grid grid-cols-2 gap-2">
+                              {/* Dean */}
+                              <div className="flex items-center gap-2 p-1.5 px-2 rounded-xl bg-black/20 border border-white/10 backdrop-blur-sm shadow-inner group-hover/hero:bg-black/30 transition-colors">
+                                <div className="h-7 w-7 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 border border-amber-400/50 overflow-hidden">
+                                  {dean?.avatar && !avatarErrors[dean.avatar] ? (
+                                    <img src={dean.avatar} alt="Dean" className="h-full w-full object-cover" onError={() => setAvatarErrors(prev => ({...prev, [dean.avatar]: true}))} />
+                                  ) : (
+                                    <UserIcon className="h-3.5 w-3.5 text-amber-300" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[0.55rem] font-black text-amber-300 uppercase tracking-wide leading-none mb-0.5">Dean</p>
+                                  <p className="text-xs font-bold text-white truncate leading-none">{dean?.name || 'Vacant'}</p>
+                                </div>
+                              </div>
+
+                              {/* Program Head */}
+                              <div className="flex items-center gap-2 p-1.5 px-2 rounded-xl bg-black/20 border border-white/10 backdrop-blur-sm shadow-inner group-hover/hero:bg-black/30 transition-colors">
+                                <div className="h-7 w-7 rounded-full bg-rose-500/20 flex items-center justify-center shrink-0 border border-rose-400/50 overflow-hidden">
+                                  {programHead?.avatar && !avatarErrors[programHead.avatar] ? (
+                                    <img src={programHead.avatar} alt="Head" className="h-full w-full object-cover" onError={() => setAvatarErrors(prev => ({...prev, [programHead.avatar]: true}))} />
+                                  ) : (
+                                    <UserIcon className="h-3.5 w-3.5 text-rose-300" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[0.55rem] font-black text-rose-300 uppercase tracking-wide leading-none mb-0.5">Prog. Head</p>
+                                  <p className="text-xs font-bold text-white truncate leading-none">{programHead?.name || 'Vacant'}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
 
                     {/* 2. Academic Term & Schedule Control (Spans 3 cols on lg) */}
-                    <div className="col-span-1 md:col-span-1 lg:col-span-3 bg-white/70 backdrop-blur-xl rounded-3xl border border-white/60 p-5 sm:p-6 min-h-[10.5rem] flex flex-col justify-between shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:bg-white/90 transition-all duration-300 relative overflow-hidden group/term ring-1 ring-black/[0.03]">
-                      {/* Diagonal Stripes Pattern Overlay */}
-                      <div className="absolute inset-0 pointer-events-none bg-[repeating-linear-gradient(45deg,transparent,transparent_4px,rgba(0,0,0,0.06)_4px,rgba(0,0,0,0.06)_8px)] opacity-60 group-hover/term:opacity-100 transition-opacity duration-500" />
-                      {/* Sweeping Top Glow */}
-                      <div className="absolute -top-16 -left-10 w-[120%] h-32 bg-amber-400/35 blur-3xl rounded-[100%] -rotate-6 group-hover/term:scale-110 transition-transform duration-700 pointer-events-none" />
-
-                      <div className="flex items-center justify-between mb-2 relative z-10">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-xs group-hover/term:scale-105 transition-transform shrink-0">
-                            <CalendarIcon className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h3 className="text-xs sm:text-sm font-black text-slate-900 leading-tight">Academic Term</h3>
-                          </div>
-                        </div>
-                        <span className="text-[0.625rem] font-black text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded-md tracking-wider">
-                          SY {(() => {
-                            const activeYear = academicYears.find((y: any) => y.isActive) || selectedAcademicYear;
-                            return activeYear?.academicYear || 'Not Set';
-                          })()}
-                        </span>
-                      </div>
-                      
+                    <SummaryCard
+                      title="Academic Term"
+                      subtitle={`SY ${(() => {
+                        const activeYear = academicYears.find((y: any) => y.isActive) || selectedAcademicYear;
+                        return activeYear?.academicYear || 'Not Set';
+                      })()}`}
+                      icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+                      gradientClasses="from-amber-400 to-orange-500"
+                      blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
+                      className="col-span-1 md:col-span-1 lg:col-span-3 min-h-[10.5rem]"
+                    >
                       <div className="relative z-10 space-y-2 my-1">
                         {(() => {
                           const activeYear = academicYears.find((y: any) => y.isActive) || selectedAcademicYear;
@@ -2638,14 +2642,14 @@ function MyDepartmentPage() {
                           
                           return (
                             <div className="grid grid-cols-2 gap-1.5">
-                              <div className="flex items-center justify-between p-2 sm:p-2.5 px-3 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-                                <span className="text-[0.6rem] font-bold text-slate-600 uppercase tracking-wide">1st Sem</span>
+                              <div className="flex items-center justify-between p-2 sm:p-2.5 px-3 rounded-xl bg-amber-50/80 border border-amber-200 shadow-2xs hover:border-amber-300 hover:shadow-xs transition-all duration-300">
+                                <span className="text-[0.6rem] font-bold text-amber-950 uppercase tracking-wide">1st Sem</span>
                                 <span className={`text-[0.6rem] font-black px-1.5 py-0.5 rounded-md border text-center truncate shadow-2xs ${getPhaseBadge(sem1Phase)}`}>
                                   {sem1Phase}
                                 </span>
                               </div>
-                              <div className="flex items-center justify-between p-2 sm:p-2.5 px-3 rounded-xl bg-slate-50 border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors">
-                                <span className="text-[0.6rem] font-bold text-slate-600 uppercase tracking-wide">2nd Sem</span>
+                              <div className="flex items-center justify-between p-2 sm:p-2.5 px-3 rounded-xl bg-amber-50/80 border border-amber-200 shadow-2xs hover:border-amber-300 hover:shadow-xs transition-all duration-300">
+                                <span className="text-[0.6rem] font-bold text-amber-950 uppercase tracking-wide">2nd Sem</span>
                                 <span className={`text-[0.6rem] font-black px-1.5 py-0.5 rounded-md border text-center truncate shadow-2xs ${getPhaseBadge(sem2Phase)}`}>
                                   {sem2Phase}
                                 </span>
@@ -2655,7 +2659,7 @@ function MyDepartmentPage() {
                         })()}
                       </div>
 
-                      <div className="relative z-10 pt-1">
+                      <div className="relative z-10 pt-1 mt-auto">
                         {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head') && (
                           <button
                             type="button"
@@ -2664,42 +2668,32 @@ function MyDepartmentPage() {
                               if (active) setSelectedAcademicYear(active)
                               setIsSchoolYearModalOpen(true)
                             }}
-                            className="w-full h-12 flex items-center justify-center gap-2 px-4 rounded-xl bg-[var(--brand-color)] hover:bg-[var(--brand-color-hover)] text-white text-sm font-bold transition-all shadow-md active:scale-95 cursor-pointer"
+                            className="w-full h-10 flex items-center justify-center gap-2 px-4 rounded-xl bg-[var(--brand-color)] hover:bg-[var(--brand-color-hover)] text-white text-sm font-bold transition-all shadow-md active:scale-95 cursor-pointer"
                           >
-                            <CalendarIcon className="w-5 h-5" />
+                            <CalendarIcon className="w-4 h-4" />
                             Manage Schedule
                           </button>
                         )}
                       </div>
-                    </div>
+                    </SummaryCard>
 
                     {/* 3. Department Class Days Card (Spans 2 cols on lg) */}
-                    <div className="col-span-1 md:col-span-1 lg:col-span-2 bg-white/70 backdrop-blur-xl rounded-3xl border border-white/60 p-5 sm:p-6 min-h-[10.5rem] flex flex-col justify-between shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:bg-white/90 transition-all duration-300 relative overflow-hidden group/scard ring-1 ring-black/[0.03]">
-                      {/* Orthogonal Grid Pattern Overlay */}
-                      <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_right,rgba(0,0,0,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.08)_1px,transparent_1px)] [background-size:24px_24px] opacity-70 group-hover/scard:opacity-100 transition-opacity duration-500" />
-                      {/* Bottom-Left Corner Glow */}
-                      <div className="absolute -bottom-20 -left-16 w-56 h-56 bg-emerald-400/40 blur-3xl rounded-full group-hover/scard:scale-110 transition-transform duration-700 pointer-events-none" />
-
-                      {/* Header */}
-                      <div className="flex items-center justify-between mb-1.5 relative z-10">
-                        <div className="flex items-center gap-1.5">
-                          <div className="p-1.5 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-xs group-hover/scard:scale-105 transition-transform shrink-0">
-                            <CalendarIcon className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h3 className="text-xs sm:text-sm font-black text-slate-900 leading-tight">Class Days</h3>
-                          </div>
-                        </div>
-                      </div>
-
+                    <SummaryCard
+                      title="Class Days"
+                      subtitle="Weekly Peak"
+                      icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+                      gradientClasses="from-emerald-400 to-teal-500"
+                      blobClasses="bg-emerald-400/8 group-hover:bg-emerald-400/14"
+                      className="col-span-1 md:col-span-1 lg:col-span-2 min-h-[10.5rem]"
+                    >
                       {/* 3 Vertical Day Pillar Cards (Letters stacked downwards M-O-N) */}
-                      <div className="relative z-10 grid grid-cols-3 gap-2 my-1">
+                      <div className="relative z-10 grid grid-cols-3 gap-2 my-1 flex-1">
                         {topScheduleDays.slice(0, 3).map((item, idx) => {
                           const dayChars = (item.day || 'MON').toUpperCase().split('');
                           return (
                             <div 
                               key={item.day || idx}
-                              className="flex flex-col items-center justify-between p-1.5 sm:p-2 rounded-xl bg-gradient-to-b from-emerald-50 via-teal-50 to-emerald-100 border border-emerald-200 shadow-2xs hover:border-emerald-300 hover:shadow-xs transition-all duration-300 group/pillar min-h-[5.25rem]"
+                              className="flex flex-col items-center justify-between p-1.5 sm:p-2 rounded-xl bg-emerald-50/80 border border-emerald-200 shadow-2xs hover:border-emerald-300 hover:shadow-xs transition-all duration-300 group/pillar min-h-[5.25rem]"
                               title={`${item.label}: ${item.count} classes`}
                             >
                               {/* Vertical Letter Stack */}
@@ -2714,40 +2708,31 @@ function MyDepartmentPage() {
                       </div>
 
                       {/* Footer */}
-                      <div className="relative z-10 pt-1 flex items-center justify-between border-t border-slate-100 text-[0.625rem] text-slate-500 font-semibold">
-                        <span>Class Frequency</span>
-                        <span className="text-emerald-600 font-bold">Schedule</span>
+                      <div className="relative z-10 pt-1 px-1 mt-auto flex items-center justify-between text-[0.625rem] text-slate-500 font-semibold">
+                        <span>Peak Schedule</span>
+                        <span className="text-emerald-600 font-bold">
+                          {topScheduleDays.reduce((sum, item) => sum + item.count, 0)} Sessions
+                        </span>
                       </div>
-                    </div>
+                    </SummaryCard>
 
                     {/* 4. Department Buildings Card (Spans 3 cols on lg) */}
-                    <div className="col-span-1 md:col-span-1 lg:col-span-3 bg-white/70 backdrop-blur-xl rounded-3xl border border-white/60 p-5 sm:p-6 min-h-[10.5rem] flex flex-col justify-between shadow-sm hover:shadow-md hover:-translate-y-0.5 hover:bg-white/90 transition-all duration-300 relative overflow-hidden group/bcard ring-1 ring-black/[0.03]">
-                      {/* Building Windows Pattern Overlay */}
-                      <div className="absolute inset-0 pointer-events-none opacity-60 group-hover/bcard:opacity-100 transition-opacity duration-500" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='32' viewBox='0 0 24 32'%3E%3Crect x='4' y='4' width='6' height='10' fill='%23000' opacity='0.08'/%3E%3Crect x='14' y='4' width='6' height='10' fill='%23000' opacity='0.08'/%3E%3Crect x='4' y='18' width='6' height='10' fill='%23000' opacity='0.08'/%3E%3Crect x='14' y='18' width='6' height='10' fill='%23000' opacity='0.08'/%3E%3C/svg%3E")` }} />
-                      {/* Dual Corner Glows */}
-                      <div className="absolute -top-12 -left-12 w-40 h-40 bg-blue-400/40 blur-3xl rounded-full group-hover/bcard:scale-110 transition-transform duration-700 pointer-events-none" />
-                      <div className="absolute -bottom-16 -right-12 w-48 h-48 bg-indigo-400/35 blur-3xl rounded-full group-hover/bcard:scale-110 transition-transform duration-700 delay-75 pointer-events-none" />
-
-                      {/* Header */}
-                      <div className="flex items-center justify-between mb-2 relative z-10">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1.5 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-xs group-hover/bcard:scale-105 transition-transform shrink-0">
-                            <BuildingIcon className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <h3 className="text-xs sm:text-sm font-black text-slate-900 leading-tight">Department Buildings</h3>
-                          </div>
-                        </div>
-                      </div>
-
+                    <SummaryCard
+                      title="Buildings"
+                      subtitle="Department Hubs"
+                      icon={<BuildingIcon className="w-4.5 h-4.5 text-white" />}
+                      gradientClasses="from-blue-400 to-indigo-500"
+                      blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
+                      className="col-span-1 md:col-span-1 lg:col-span-3 min-h-[10.5rem]"
+                    >
                       {/* Building Mini Cards */}
-                      <div className="relative z-10 space-y-1.5 my-1">
+                      <div className="relative z-10 flex-1 flex flex-col gap-1.5 my-1">
                         {displayBuildings.slice(0, 2).map((b, idx) => {
                           const bRooms = rooms.filter(r => r.buildingId === b.id);
                           const roomCount = bRooms.length > 0 ? bRooms.length : 2;
 
                           return (
-                            <div key={b.id || idx} className="flex items-center justify-between p-2 px-2.5 rounded-xl bg-gradient-to-r from-blue-50 via-indigo-50 to-blue-100 border border-blue-200 shadow-2xs hover:border-blue-300 hover:shadow-xs transition-all duration-300">
+                            <div key={b.id || idx} className="flex-1 flex items-center justify-between p-2 px-2.5 rounded-xl bg-blue-50/80 border border-blue-200 shadow-2xs hover:border-blue-300 hover:shadow-xs transition-all duration-300">
                               <div className="min-w-0 flex-1 pr-2">
                                 <p className="text-xs font-bold text-slate-900 truncate" title={b.name}>
                                   {b.name}
@@ -2767,11 +2752,13 @@ function MyDepartmentPage() {
                       </div>
 
                       {/* Footer Tag */}
-                      <div className="relative z-10 pt-1 flex items-center justify-between border-t border-slate-100 text-[0.625rem] text-slate-500 font-semibold">
-                        <span>Active Locations</span>
-                        <span className="text-blue-600 font-bold">Campus Hub</span>
+                      <div className="relative z-10 pt-1 px-1 mt-auto flex items-center justify-between text-[0.625rem] text-slate-500 font-semibold">
+                        <span>Facility Coverage</span>
+                        <span className="text-blue-600 font-bold">
+                          {displayBuildings.length} {displayBuildings.length === 1 ? 'Building' : 'Buildings'}
+                        </span>
                       </div>
-                    </div>
+                    </SummaryCard>
 
                   </div>
                 );

@@ -2,10 +2,16 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } fr
 import { SectionHeader } from '../../components/SectionHeader'
 import { DoorIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, ClockIcon, BookIcon, CheckIcon, CalendarIcon, ClipboardIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
-import { SearchFilters } from '../../components/SearchFilters'
-import { MultiSelectDropdown } from '../../components/MultiSelectDropdown'
+import { SearchInput } from '../../components/SearchInput'
+import { FilterDropdown } from '../../components/FilterDropdown'
+import { Button } from '../../components/Button'
+import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { TimePicker } from '../../components/TimePicker'
 import { DatePicker } from '../../components/DatePicker'
+import { NumberInput } from '../../components/NumberInput'
+import { TextAreaInput } from '../../components/TextAreaInput'
+import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
+import { RoomAmenities } from '../../components/RoomAmenities'
 import { db, auth } from '../../firebase'
 import { 
   collection, 
@@ -16,9 +22,9 @@ import {
   serverTimestamp
 } from 'firebase/firestore'
 
-type RoomStatus = 'Available' | 'Occupied' | 'Reserved' | 'Maintenance'
+export type RoomStatus = 'Available' | 'Occupied' | 'Reserved' | 'Maintenance'
 
-function createRoomImage() {
+export function createRoomImage() {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
       <rect width="640" height="360" rx="28" fill="#f3f4f6" />
@@ -34,9 +40,9 @@ function createRoomImage() {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`
 }
 
-const DEFAULT_ROOM_IMAGE = createRoomImage()
+export const DEFAULT_ROOM_IMAGE = createRoomImage()
 
-interface Room {
+export interface Room {
   id: string
   image: string
   code: string
@@ -54,7 +60,7 @@ interface Room {
   maxBookingMins: number
 }
 
-interface Building {
+export interface Building {
   id: string
   code: string
   name: string
@@ -63,14 +69,14 @@ interface Building {
   rooms: Room[]
 }
 
-const roomStatusClasses: Record<RoomStatus, string> = {
+export const roomStatusClasses: Record<RoomStatus, string> = {
   Available: 'bg-emerald-100 text-emerald-700',
   Occupied: 'bg-amber-100 text-amber-700',
   Reserved: 'bg-sky-100 text-sky-700',
   Maintenance: 'bg-rose-100 text-rose-700',
 }
 
-const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+export const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 function getLocalIsoDate(date: Date = new Date()) {
   const year = date.getFullYear()
@@ -108,6 +114,12 @@ function ReserveRoomPage() {
   const knownBuildingIds = useRef<Set<string>>(new Set())
   const [rooms, setRooms] = useState<Room[]>([])
   
+  const maxAllowedDate = useMemo(() => {
+    const today = new Date()
+    const nextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0)
+    return `${nextMonth.getFullYear()}-${String(nextMonth.getMonth() + 1).padStart(2, '0')}-${String(nextMonth.getDate()).padStart(2, '0')}`
+  }, [])
+
   const [selectedStatuses, setSelectedStatuses] = useState<RoomStatus[]>([])
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([])
   const [activeDropdowns, setActiveDropdowns] = useState(0)
@@ -125,15 +137,38 @@ function ReserveRoomPage() {
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
 
+  const durationOptions = useMemo(() => {
+    if (!selectedRoomInfo) return []
+    const options = []
+    const min = Math.max(30, selectedRoomInfo.minBookingMins || 30)
+    const max = selectedRoomInfo.maxBookingMins || 180
+    for (let i = min; i <= max; i += 30) {
+      options.push(i.toString())
+    }
+    return options
+  }, [selectedRoomInfo])
+
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [reservationData, setReservationData] = useState({
     date: getLocalIsoDate(),
     startTime: '07:30',
     duration: 60,
-    purpose: ''
+    purpose: '',
+    capacity: ''
   })
   const [formErrors, setFormErrors] = useState<Record<string, boolean>>({})
+
+  const [isFindRoomModalOpen, setIsFindRoomModalOpen] = useState(false)
+  const [findRoomData, setFindRoomData] = useState({
+    building: '',
+    capacity: '',
+    roomType: '',
+    amenities: [] as string[],
+    date: getLocalIsoDate(),
+    startTime: '07:30',
+    duration: 60 as number | ''
+  })
 
   useEffect(() => {
     if (isReservationModalOpen) {
@@ -219,17 +254,21 @@ function ReserveRoomPage() {
       date: getEarliestAvailableDate(room.availableDays),
       startTime: '07:30',
       duration: room.minBookingMins,
-      purpose: ''
+      purpose: '',
+      capacity: ''
     })
   }
 
   const handleCloseModals = () => {
     setIsRoomInfoModalOpen(false)
     setIsReservationModalOpen(false)
+    setIsFindRoomModalOpen(false)
     setSelectedRoomInfo(null)
   }
 
   const allRooms = buildings.flatMap((building) => building.rooms)
+  const roomTypes = useMemo(() => Array.from(new Set(allRooms.map(r => r.type))).sort(), [allRooms])
+  const allAmenities = useMemo(() => Array.from(new Set(allRooms.flatMap(r => r.amenities))).sort(), [allRooms])
   const availableRoomsCount = allRooms.filter(room => room.status === 'Available').length
   const totalCapacity = buildings.reduce((sum, building) => sum + building.capacity, 0)
   const totalFloors = buildings.reduce((sum, building) => sum + building.floor, 0)
@@ -298,182 +337,182 @@ function ReserveRoomPage() {
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
-      {/* Room Information Modal (Read-only) */}
-      {isRoomInfoModalOpen && selectedRoomInfo && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+      {/* Find Room Modal */}
+      {isFindRoomModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl"
+            className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
-              <h3 className="text-xl font-bold leading-tight">Room Information</h3>
-              <p className="text-xs text-white/80 font-medium mt-0.5">Comprehensive details and availability schedule</p>
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
+              <h3 className="text-xl font-bold leading-tight">Find a Room</h3>
+              <p className="text-xs text-white/80 font-medium mt-0.5">Specify your requirements to find the perfect room</p>
             </div>
 
-            <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
-              <div className="p-6 space-y-5">
-                <div className="flex gap-5">
-                  <div className="w-[9.5rem] h-[9.5rem] shrink-0 rounded-md border border-gray-200 bg-gray-100 overflow-hidden shadow-sm">
-                    <img 
-                      src={selectedRoomInfo.image} 
-                      alt={selectedRoomInfo.name} 
-                      className="h-full w-full object-cover grayscale-[0.2]" 
-                      onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
+            <div className="p-6 space-y-5">
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Building</label>
+                    <SingleSelectDropdown
+                      options={['Any Building', ...buildingOptions]}
+                      value={findRoomData.building || 'Any Building'}
+                      onChange={(val) => setFindRoomData({ ...findRoomData, building: val === 'Any Building' ? '' : val })}
                     />
                   </div>
-                  
-                  <div className="flex-1 flex flex-col justify-between py-0.5">
-                    <div>
-                      <div className="flex items-center justify-start gap-3">
-                        <h4 className="text-xl font-bold text-gray-900 leading-tight">{selectedRoomInfo.name}</h4>
-                        <span className="inline-flex items-center justify-center rounded-md bg-gray-100 px-2 py-0.5 text-xs font-bold uppercase tracking-widest text-gray-600 border border-gray-200">
-                          {selectedRoomInfo.code}
-                        </span>
-                      </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2.5 py-0.5 text-xs font-black uppercase tracking-widest ${roomStatusClasses[selectedRoomInfo.status]}`}>
-                          {selectedRoomInfo.status}
-                        </span>
-                        <span className="text-sm text-gray-500 font-semibold">
-                          {selectedRoomInfo.type} • Floor {selectedRoomInfo.floor}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="grid grid-cols-2 gap-3 mt-3">
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Capacity</p>
-                        <div className="rounded-md border border-gray-200 bg-gray-100 p-2.5 flex items-center gap-2">
-                          <UserIcon className="h-4 w-4 text-gray-500 shrink-0" />
-                          <p className="text-sm font-bold text-gray-700">{selectedRoomInfo.capacity} pax</p>
-                        </div>
-                      </div>
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Booking Limits</p>
-                        <div className="rounded-md border border-gray-200 bg-gray-100 p-2.5 flex items-center gap-2">
-                          <ClockIcon className="h-4 w-4 text-gray-500 shrink-0" />
-                          <p className="text-sm font-bold text-gray-700">
-                            {selectedRoomInfo.minBookingMins}m - {selectedRoomInfo.maxBookingMins}m
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Room Type</label>
+                    <SingleSelectDropdown
+                      options={['Any Type', ...roomTypes]}
+                      value={findRoomData.roomType || 'Any Type'}
+                      onChange={(val) => setFindRoomData({ ...findRoomData, roomType: val === 'Any Type' ? '' : val })}
+                    />
                   </div>
                 </div>
 
-                <div className="space-y-5">
-                  <div>
-                    <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Description</h5>
-                    <div className="rounded-md border border-gray-200 bg-gray-100 p-4">
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        {selectedRoomInfo.description || 'No description provided for this room.'}
-                      </p>
-                    </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Date</label>
+                    <DatePicker
+                      value={findRoomData.date}
+                      onChange={(date) => setFindRoomData({ ...findRoomData, date })}
+                      minDate={getLocalIsoDate()}
+                      maxDate={maxAllowedDate}
+                    />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Availability</h5>
-                      <div className="flex gap-1 h-[2.125rem]">
-                        {DAYS_OF_WEEK.map((day) => {
-                          const isAvailable = selectedRoomInfo.availableDays.includes(day)
-                          return (
-                            <div
-                              key={day}
-                              title={day}
-                              className={`flex-1 flex items-center justify-center rounded-sm text-[0.625rem] font-bold transition-colors ${
-                                isAvailable ? 'bg-[var(--brand-color)] text-white' : 'bg-gray-200 text-gray-500'
-                              }`}
-                            >
-                              {day.slice(0, 1)}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                    <div>
-                      <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Schedule</h5>
-                      <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-gray-700 bg-gray-100 h-[2.125rem] rounded-md border border-gray-200">
-                        <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
-                        <span>{selectedRoomInfo.startTime} - {selectedRoomInfo.endTime}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5">Room Amenities</h5>
-                    <div className="flex flex-wrap gap-1.5 max-h-[7.5rem] overflow-y-auto custom-scrollbar pr-1">
-                      {selectedRoomInfo.amenities.length > 0 ? (
-                        selectedRoomInfo.amenities.map((amenity, i) => (
-                          <span 
-                            key={i}
-                            className="flex-1 min-w-[fit-content] flex items-center justify-center gap-1 rounded-md border border-gray-200 bg-gray-100 px-3 py-1.5 text-sm font-bold text-gray-600 shadow-sm whitespace-nowrap"
-                          >
-                            {amenity}
-                          </span>
-                        ))
-                      ) : (
-                        <p className="text-sm italic text-gray-400">No amenities listed.</p>
-                      )}
-                    </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Capacity</label>
+                    <NumberInput
+                      min={1}
+                      value={findRoomData.capacity}
+                      onChange={(val) => setFindRoomData({ ...findRoomData, capacity: val })}
+                      icon={<UserIcon className="h-4.5 w-4.5 text-gray-400" />}
+                      placeholder="Min capacity"
+                    />
                   </div>
                 </div>
 
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={handleCloseModals}
-                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
-                  >
-                    Close
-                  </button>
-                  <button
-                    className="flex-1 flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)]"
-                    onClick={() => handleOpenReservationModal(selectedRoomInfo)}
-                  >
-                    <BookIcon className="h-4 w-4" />
-                    Reserve Room
-                  </button>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Start Time</label>
+                    <TimePicker 
+                      value={findRoomData.startTime}
+                      onChange={(time) => setFindRoomData({ ...findRoomData, startTime: time })}
+                      minuteStep={30}
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Duration (mins)</label>
+                    <SingleSelectDropdown
+                      options={['30', '60', '90', '120', '150', '180']}
+                      value={findRoomData.duration ? findRoomData.duration.toString() : '60'}
+                      onChange={(val) => setFindRoomData({ ...findRoomData, duration: Number(val) })}
+                    />
+                  </div>
                 </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5 block">Room Amenities</label>
+                  <RoomAmenities
+                    amenities={allAmenities}
+                    selectedAmenities={findRoomData.amenities}
+                    onToggleAmenity={(amenity) => {
+                      setFindRoomData(prev => ({
+                        ...prev,
+                        amenities: prev.amenities.includes(amenity)
+                          ? prev.amenities.filter(a => a !== amenity)
+                          : [...prev.amenities, amenity]
+                      }))
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={handleCloseModals}
+                  className="flex-1 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)]"
+                  onClick={() => {
+                    alert("Room search criteria applied. Integration with the main list is pending.")
+                    setIsFindRoomModalOpen(false)
+                  }}
+                >
+                  <SearchIcon className="h-4 w-4" />
+                  Find Room
+                </button>
               </div>
             </div>
           </div>
           <div 
             className="absolute inset-0 -z-10" 
-            onMouseDown={() => {
-              if (activeDropdowns > 0) return
-              handleCloseModals()
-            }} 
+            onMouseDown={handleCloseModals} 
           />
         </div>
       )}
+
+      {/* Room Information Modal */}
+      <RoomInfoModal
+        isOpen={isRoomInfoModalOpen}
+        room={selectedRoomInfo}
+        onClose={handleCloseModals}
+        onReserve={(room) => handleOpenReservationModal(room)}
+      />
 
       {/* Reservation Modal */}
       {isReservationModalOpen && selectedRoomInfo && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl"
+            className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
               <h3 className="text-xl font-bold leading-tight">Reserve {selectedRoomInfo.name}</h3>
               <p className="text-xs text-white/80 font-medium mt-0.5">Fill in the details to book this room</p>
             </div>
 
             <div className="p-6 space-y-5">
               <div className="space-y-4">
-                {/* Date Selection */}
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Date <span className="text-rose-500">*</span></label>
-                  <DatePicker
-                    value={reservationData.date}
-                    onChange={(date) => {
-                      setReservationData({ ...reservationData, date })
-                      if (date) setFormErrors(prev => ({ ...prev, date: false }))
-                    }}
-                    minDate={getLocalIsoDate()}
-                    allowedDays={selectedRoomInfo.availableDays}
-                    hasError={formErrors.date}
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Date Selection */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Date <span className="text-rose-500">*</span></label>
+                    <DatePicker
+                      value={reservationData.date}
+                      onChange={(date) => {
+                        setReservationData({ ...reservationData, date })
+                        if (date) setFormErrors(prev => ({ ...prev, date: false }))
+                      }}
+                      minDate={getLocalIsoDate()}
+                      maxDate={maxAllowedDate}
+                      allowedDays={selectedRoomInfo.availableDays}
+                      hasError={formErrors.date}
+                    />
+                  </div>
+
+                  {/* Capacity */}
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Capacity <span className="text-rose-500">*</span></label>
+                    <NumberInput
+                      min={1}
+                      max={selectedRoomInfo.capacity}
+                      value={reservationData.capacity}
+                      onChange={(val) => {
+                        setReservationData({ ...reservationData, capacity: val })
+                        if (val) setFormErrors(prev => ({ ...prev, capacity: false }))
+                      }}
+                      icon={<UserIcon className="h-4.5 w-4.5 text-gray-400" />}
+                      placeholder={`Max ${selectedRoomInfo.capacity} pax`}
+                      error={formErrors.capacity}
+                    />
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -487,32 +526,22 @@ function ReserveRoomPage() {
                         if (time) setFormErrors(prev => ({ ...prev, startTime: false }))
                       }}
                       hasError={formErrors.startTime}
+                      minuteStep={30}
                     />
                   </div>
 
                   {/* Duration */}
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Duration (minutes) <span className="text-rose-500">*</span></label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none">
-                        <ClockIcon className="h-4.5 w-4.5 text-gray-400" />
-                      </div>
-                      <input
-                        type="number"
-                        min={selectedRoomInfo.minBookingMins}
-                        max={selectedRoomInfo.maxBookingMins}
-                        step={15}
-                        value={reservationData.duration}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value)
-                          setReservationData({ ...reservationData, duration: val })
-                          if (!isNaN(val)) setFormErrors(prev => ({ ...prev, duration: false }))
-                        }}
-                        className={`h-[2.875rem] w-full rounded-md border bg-white pl-11 pr-4 text-sm text-gray-900 outline-none transition focus:ring-4 focus:ring-gray-50 shadow-sm ${
-                          formErrors.duration ? 'border-rose-500 focus:border-rose-500 ring-rose-50' : 'border-gray-200 focus:border-gray-300'
-                        }`}
-                      />
-                    </div>
+                    <SingleSelectDropdown
+                      options={durationOptions}
+                      value={reservationData.duration.toString()}
+                      onChange={(val) => {
+                        setReservationData({ ...reservationData, duration: parseInt(val, 10) })
+                        setFormErrors(prev => ({ ...prev, duration: false }))
+                      }}
+                      className={formErrors.duration ? '[&>button]:border-rose-500 [&>button]:ring-4 [&>button]:ring-rose-50' : ''}
+                    />
                   </div>
                 </div>
 
@@ -524,26 +553,19 @@ function ReserveRoomPage() {
                       {reservationData.purpose.length}/200
                     </span>
                   </div>
-                  <div className="relative">
-                    {!reservationData.purpose && (
-                      <div className="absolute top-3 left-4 flex items-center gap-2 pointer-events-none text-gray-400">
-                        <ClipboardIcon className="h-4 w-4" />
-                        <span className="text-sm">e.g., Team Meeting, Study Session...</span>
-                      </div>
-                    )}
-                    <textarea
-                      value={reservationData.purpose}
-                      onChange={(e) => {
-                        const val = e.target.value.slice(0, 200)
+                  <TextAreaInput
+                    value={reservationData.purpose}
+                    onChange={(val) => {
+                      if (val.length <= 200) {
                         setReservationData({ ...reservationData, purpose: val })
                         if (val.trim()) setFormErrors(prev => ({ ...prev, purpose: false }))
-                      }}
-                      rows={3}
-                      className={`w-full rounded-md border bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:ring-4 focus:ring-gray-50 shadow-sm resize-none ${
-                        formErrors.purpose ? 'border-rose-500 focus:border-rose-500 ring-rose-50' : 'border-gray-200 focus:border-gray-300'
-                      }`}
-                    />
-                  </div>
+                      }
+                    }}
+                    icon={<ClipboardIcon className="h-4 w-4" />}
+                    placeholder="e.g., Team Meeting, Study Session..."
+                    error={formErrors.purpose}
+                    rows={3}
+                  />
                 </div>
               </div>
 
@@ -554,7 +576,7 @@ function ReserveRoomPage() {
                     setIsRoomInfoModalOpen(true)
                   }}
                   disabled={isSubmitting}
-                  className={`flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm ${
+                  className={`flex-1 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm ${
                     isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
                   }`}
                 >
@@ -562,7 +584,7 @@ function ReserveRoomPage() {
                 </button>
                 <button
                   disabled={isSubmitting}
-                  className={`flex-1 flex items-center justify-center gap-2 rounded-md py-3 text-sm font-bold text-white shadow-md transition ${
+                  className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white shadow-md transition ${
                     isSubmitting ? 'bg-[var(--brand-color)]/70 cursor-not-allowed' : 'bg-[var(--brand-color)] hover:bg-[var(--brand-color-hover)]'
                   }`}
                   onClick={async () => {
@@ -570,6 +592,7 @@ function ReserveRoomPage() {
                     if (!reservationData.date) errors.date = true
                     if (!reservationData.startTime) errors.startTime = true
                     if (!reservationData.duration || isNaN(reservationData.duration)) errors.duration = true
+                    if (!reservationData.capacity || isNaN(Number(reservationData.capacity))) errors.capacity = true
                     if (!reservationData.purpose.trim()) errors.purpose = true
 
                     if (Object.keys(errors).length > 0) {
@@ -679,85 +702,69 @@ function ReserveRoomPage() {
           title="Reserve a Room" 
           description="Find and book available rooms for classes, meetings, or special events." 
         />
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-purple-50 border border-purple-100 shrink-0">
-                  <BookIcon className="h-9 w-9 text-purple-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Available Rooms">Available Rooms</p>
-                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{availableRoomsCount}</p>
-                </div>
-              </div>
 
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-blue-50 border border-blue-100 shrink-0">
-                  <BuildingIcon className="h-9 w-9 text-blue-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Total buildings">Total buildings</p>
-                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{buildings.length}</p>
-                </div>
+        <div className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-visible flex flex-col w-full animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
+          <div className="flex flex-col lg:flex-row items-center justify-between gap-4 w-full relative z-20 p-4 bg-white rounded-t-3xl border-b border-gray-200">
+            <div className="flex items-center gap-3 w-full flex-1 flex-col lg:flex-row">
+              <div className="relative w-full lg:max-w-md">
+                <SearchInput
+                  value={searchTerm}
+                  onChange={setSearchTerm}
+                  placeholder="Search by building name, room code, status, capacity..."
+                  className="w-full"
+                />
               </div>
-
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
-                  <LayersIcon className="h-9 w-9 text-amber-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Total floors">Total floors</p>
-                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{totalFloors}</p>
-                </div>
-              </div>
-
-              <div className="rounded-md border border-gray-200 bg-white p-5 shadow-sm flex items-center gap-4 transition-transform hover:scale-[1.02]">
-                <div className="flex h-14 w-14 items-center justify-center rounded-md bg-rose-50 border border-rose-100 shrink-0">
-                  <UsersIcon className="h-9 w-9 text-rose-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Total room pax">Total room pax</p>
-                  <p className="mt-0.5 text-2xl font-bold text-gray-900 leading-none">{totalCapacity}</p>
-                </div>
+              <div className="shrink-0 w-full sm:w-auto">
+                <FilterDropdown
+                  label="Filters"
+                  groups={[
+                    {
+                      id: 'building',
+                      title: 'Building',
+                      options: buildingOptions,
+                      selectedValues: selectedBuildings,
+                      onChange: setSelectedBuildings
+                    },
+                    {
+                      id: 'status',
+                      title: 'Status',
+                      options: ['Available', 'Occupied', 'Reserved', 'Maintenance'],
+                      selectedValues: selectedStatuses,
+                      onChange: (newSelected) => setSelectedStatuses(newSelected as RoomStatus[])
+                    }
+                  ]}
+                  onClearAll={() => {
+                    setSelectedBuildings([])
+                    setSelectedStatuses([])
+                  }}
+                  buttonClassName="w-full sm:w-auto"
+                />
               </div>
             </div>
-
-        <SearchFilters
-          searchTerm={searchTerm}
-          onSearchChange={setSearchTerm}
-          placeholder="Search by building name, room code, status, capacity..."
-          dropdowns={
-            <>
-              <MultiSelectDropdown
-                label="Building"
-                options={buildingOptions}
-                selectedValues={selectedBuildings}
-                onChange={setSelectedBuildings}
-                onToggle={handleDropdownToggle}
-                className="w-full sm:w-auto"
-              />
-              <MultiSelectDropdown
-                label="Status"
-                options={['Available', 'Occupied', 'Reserved', 'Maintenance']}
-                selectedValues={selectedStatuses}
-                onChange={setSelectedStatuses}
-                onToggle={handleDropdownToggle}
-                className="w-full sm:w-auto"
-              />
-            </>
-          }
-        />
-
-        <div className="space-y-6">
-          {filteredBuildings.length === 0 ? (
-            <div className="rounded-md border border-dashed border-[color:rgba(98,133,62,0.2)] bg-[var(--card-surface)] p-8 text-center shadow-[0_18px_45px_rgba(98,133,62,0.06)]">
-              <p className="text-lg font-semibold text-[var(--brand-color)]">
-                No matching buildings or rooms
-              </p>
-              <p className="mt-3 text-sm leading-7 text-[rgba(98,133,62,0.78)]">
-                Try a different building name, room code, status, or capacity.
-              </p>
+            <div className="shrink-0 w-full lg:w-auto">
+              <Button
+                variant="brand"
+                icon={<BookIcon className="h-4 w-4" />}
+                onClick={() => setIsFindRoomModalOpen(true)}
+                className="w-full lg:w-auto"
+              >
+                Reserve Room
+              </Button>
             </div>
-          ) : filteredBuildings.map((building) => {
+          </div>
+
+          <div className="flex flex-col">
+            {filteredBuildings.length === 0 ? (
+              <div className="p-16 text-center bg-gray-50/50 rounded-b-3xl">
+                <p className="text-lg font-semibold text-[var(--brand-color)]">
+                  No matching buildings or rooms
+                </p>
+                <p className="mt-3 text-sm leading-7 text-gray-500">
+                  Try a different building name, room code, status, or capacity.
+                </p>
+              </div>
+            ) : (
+              filteredBuildings.map((building, index) => {
             const roomsByFloor = building.rooms.reduce((acc, room) => {
               if (!acc[room.floor]) {
                 acc[room.floor] = []
@@ -775,7 +782,9 @@ function ReserveRoomPage() {
             return (
               <article
                 key={building.id}
-                className="rounded-lg border border-gray-200 bg-gray-50/50 p-6 shadow-md sm:p-8"
+                className={`p-6 sm:p-8 transition-colors ${
+                  index !== filteredBuildings.length - 1 ? 'border-b border-gray-200' : ''
+                } hover:bg-gray-50/50`}
               >
                 <div className="flex flex-col gap-6">
                   <div className="flex items-center justify-between">
@@ -793,7 +802,7 @@ function ReserveRoomPage() {
                       <IconButton
                         label={isExpanded ? 'Collapse building' : 'Expand building'}
                         onClick={() => toggleBuilding(building.id)}
-                        className="h-10 w-10 shrink-0 rounded-md border border-gray-100 bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all duration-300"
+                        className="h-10 w-10 shrink-0 rounded-xl border border-gray-100 bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all duration-300"
                       >
                         <ChevronDownIcon
                           className={`h-6 w-6 transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}
@@ -803,8 +812,8 @@ function ReserveRoomPage() {
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-amber-50 border border-amber-100 shrink-0">
+                    <div className="rounded-2xl bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-amber-50 border border-amber-100 shrink-0">
                         <LayersIcon className="h-9 w-9 text-amber-600" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -817,8 +826,8 @@ function ReserveRoomPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-emerald-50 border border-emerald-100 shrink-0">
+                    <div className="rounded-2xl bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-emerald-50 border border-emerald-100 shrink-0">
                         <DoorIcon className="h-9 w-9 text-emerald-600" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -831,8 +840,8 @@ function ReserveRoomPage() {
                       </div>
                     </div>
 
-                    <div className="rounded-md bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-rose-50 border border-rose-100 shrink-0">
+                    <div className="rounded-2xl bg-white border border-gray-200 p-4 flex items-center gap-4 shadow-sm transition-transform hover:scale-[1.02]">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-rose-50 border border-rose-100 shrink-0">
                         <UsersIcon className="h-9 w-9 text-rose-600" />
                       </div>
                       <div className="min-w-0 flex-1">
@@ -851,7 +860,7 @@ function ReserveRoomPage() {
                   <div className="overflow-hidden px-4 -mx-4">
                     <div className="space-y-12 pb-4">
                       {building.rooms.length === 0 ? (
-                        <div className="rounded-md border border-dashed border-gray-200 bg-gray-50/50 p-10 text-center">
+                        <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 p-10 text-center">
                           <DoorIcon className="mx-auto h-12 w-12 text-gray-300" />
                           <p className="mt-4 text-sm font-bold uppercase tracking-widest text-gray-400">
                             No rooms registered yet
@@ -877,12 +886,12 @@ function ReserveRoomPage() {
                                 <div
                                   key={room.id}
                                   onClick={() => handleOpenRoomInfoModal(room)}
-                                  className="flex rounded-md border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
+                                  className="flex rounded-2xl border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
                                 >
                                   <img
                                     src={room.image}
                                     alt={room.name}
-                                    className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-l-md sm:w-32 sm:h-32"
+                                    className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-l-2xl sm:w-32 sm:h-32"
                                     onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                                   />
 
@@ -901,7 +910,7 @@ function ReserveRoomPage() {
 
                                     <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
                                       <div className="flex items-center gap-2">
-                                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-gray-200 shrink-0">
+                                        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-gray-200 shrink-0">
                                           <UserIcon className="h-4 w-4 text-gray-500" />
                                         </div>
                                         <span className="text-sm font-bold text-gray-700">
@@ -926,7 +935,8 @@ function ReserveRoomPage() {
                 </div>
               </article>
             )
-          })}
+          }))}
+          </div>
         </div>
       </div>
     </section>

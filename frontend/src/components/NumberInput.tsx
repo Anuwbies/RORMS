@@ -1,7 +1,7 @@
 import React from 'react'
 
-export interface TextInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
-  value: string
+export interface NumberInputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'onChange'> {
+  value: string | number
   onChange: (value: string) => void
   error?: boolean
   icon?: React.ReactNode
@@ -9,7 +9,7 @@ export interface TextInputProps extends Omit<React.InputHTMLAttributes<HTMLInput
   inputClassName?: string
 }
 
-export function TextInput({ 
+export function NumberInput({ 
   value, 
   onChange, 
   error, 
@@ -17,7 +17,7 @@ export function TextInput({
   className = '', 
   inputClassName = '', 
   ...props 
-}: TextInputProps) {
+}: NumberInputProps) {
   return (
     <div className={`relative w-full ${className}`}>
       {icon && (
@@ -26,15 +26,12 @@ export function TextInput({
         </div>
       )}
       <input
-        type="text"
+        type="number"
         autoComplete="off"
-        autoCorrect="off"
-        autoCapitalize="none"
-        spellCheck="false"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full h-12 rounded-xl bg-white border text-sm font-medium outline-none transition-all shadow-sm ${
-          icon ? 'pl-12' : 'pl-4'
+        className={`w-full h-12 rounded-xl bg-white border text-sm font-medium outline-none transition-all shadow-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none ${
+          icon ? 'pl-11' : 'pl-4'
         } pr-4 ${
           error
             ? 'border-rose-500 text-gray-900 placeholder:text-rose-300 focus:border-rose-500 focus:ring-4 focus:ring-rose-50'

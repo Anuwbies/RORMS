@@ -6,6 +6,7 @@ interface DatePickerProps {
   onChange: (value: string) => void
   onToggle?: (isOpen: boolean) => void
   minDate?: string // Format: "YYYY-MM-DD"
+  maxDate?: string // Format: "YYYY-MM-DD"
   allowedDays?: string[] // e.g., ["Monday", "Tuesday"]
   hasError?: boolean
 }
@@ -20,7 +21,7 @@ const DAYS_MAP: Record<number, string> = {
   6: 'Saturday'
 }
 
-export function DatePicker({ value, onChange, onToggle, minDate, allowedDays, hasError }: DatePickerProps) {
+export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowedDays, hasError }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -72,6 +73,14 @@ export function DatePicker({ value, onChange, onToggle, minDate, allowedDays, ha
     date.setHours(0, 0, 0, 0)
     return date
   }, [minDate])
+
+  const parsedMaxDate = useMemo(() => {
+    if (!maxDate) return null
+    const [y, m, d] = maxDate.split('-').map(Number)
+    const date = new Date(y, m - 1, d)
+    date.setHours(23, 59, 59, 999)
+    return date
+  }, [maxDate])
 
   const handleSelectDay = (day: number) => {
     const year = viewDate.getFullYear()
@@ -130,6 +139,11 @@ export function DatePicker({ value, onChange, onToggle, minDate, allowedDays, ha
       return true
     }
 
+    // Check maxDate
+    if (parsedMaxDate && date > parsedMaxDate) {
+      return true
+    }
+
     // Check allowedDays
     if (allowedDays && allowedDays.length > 0) {
       const dayName = DAYS_MAP[date.getDay()]
@@ -138,6 +152,10 @@ export function DatePicker({ value, onChange, onToggle, minDate, allowedDays, ha
 
     return false
   }
+
+  const isPrevMonthDisabled = parsedMinDate ? new Date(viewDate.getFullYear(), viewDate.getMonth(), 0) < parsedMinDate : false
+  const isNextMonthDisabled = parsedMaxDate ? new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1) > parsedMaxDate : false
+
 
   const formattedDisplayDate = selectedDate.toLocaleDateString('en-US', {
     year: 'numeric',
@@ -150,24 +168,31 @@ export function DatePicker({ value, onChange, onToggle, minDate, allowedDays, ha
       <button
         type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex h-[2.875rem] w-full items-center justify-between gap-2 rounded-md border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition-all hover:border-gray-300 hover:shadow-md focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm ${
-          hasError ? 'border-rose-500 ring-rose-50' : 'border-gray-200'
+        className={`flex h-12 w-full items-center justify-between gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition-all shadow-sm cursor-pointer hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 active:scale-95 ${
+          hasError 
+            ? 'border-rose-500 focus:border-rose-500 ring-4 ring-rose-50' 
+            : isOpen
+              ? 'border-gray-300'
+              : 'border-gray-200 focus:border-gray-300'
         }`}
       >
         <div className="flex items-center gap-3">
           <CalendarIcon className="h-4.5 w-4.5 text-gray-400" />
-          <span className="text-sm font-normal text-gray-900">{formattedDisplayDate}</span>
+          <span className="text-sm font-medium text-gray-900">{formattedDisplayDate}</span>
         </div>
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 z-50 mt-2 w-72 overflow-hidden rounded-md border border-gray-200 bg-white p-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="absolute left-0 z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
           {/* Header */}
           <div className="mb-4 flex items-center justify-between">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              disabled={isPrevMonthDisabled}
+              className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+                isPrevMonthDisabled ? 'text-gray-200 cursor-default' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer'
+              }`}
             >
               <ChevronLeftIcon className="h-5 w-5" />
             </button>
@@ -177,7 +202,10 @@ export function DatePicker({ value, onChange, onToggle, minDate, allowedDays, ha
             <button
               type="button"
               onClick={handleNextMonth}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              disabled={isNextMonthDisabled}
+              className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
+                isNextMonthDisabled ? 'text-gray-200 cursor-default' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600 cursor-pointer'
+              }`}
             >
               <ChevronRightIcon className="h-5 w-5" />
             </button>
@@ -210,14 +238,14 @@ export function DatePicker({ value, onChange, onToggle, minDate, allowedDays, ha
                   type="button"
                   disabled={disabled}
                   onClick={() => handleSelectDay(day)}
-                  className={`flex h-8 w-8 items-center justify-center rounded-md text-sm font-bold transition-[background-color,color,box-shadow,transform] duration-200 ${
+                  className={`flex h-8 w-8 items-center justify-center rounded-xl text-sm font-bold transition-[background-color,color,box-shadow,transform] duration-200 ${
                     selected
-                      ? 'bg-[var(--brand-color)] text-white shadow-md'
+                      ? 'bg-[var(--brand-color)] text-white shadow-md cursor-pointer'
                       : disabled
-                        ? 'text-gray-200 cursor-not-allowed'
+                        ? 'text-gray-200 cursor-default'
                         : today
-                          ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] hover:bg-[var(--brand-color)]/20'
-                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                          ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] hover:bg-[var(--brand-color)]/20 cursor-pointer'
+                          : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 cursor-pointer'
                   }`}
                 >
                   {day}
@@ -234,7 +262,7 @@ export function DatePicker({ value, onChange, onToggle, minDate, allowedDays, ha
                 const now = new Date()
                 setViewDate(new Date(now.getFullYear(), now.getMonth(), 1))
               }}
-              className="w-full rounded-md py-1.5 text-xs font-bold text-[var(--brand-color)] hover:bg-[var(--brand-color)]/5 transition-colors"
+              className="w-full rounded-xl py-1.5 text-xs font-bold text-[var(--brand-color)] hover:bg-[var(--brand-color)]/5 transition-colors cursor-pointer"
             >
               Go to Today
             </button>

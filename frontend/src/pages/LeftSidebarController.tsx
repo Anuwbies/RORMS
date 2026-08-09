@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { MainLayout } from '../layouts/MainLayout'
 import {
   BuildingIcon,
@@ -110,6 +110,17 @@ interface LeftSidebarControllerProps {
 
 function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
   const [activeSection, setActiveSection] = useState<DashboardSection>('dashboard')
+
+  useEffect(() => {
+    const handleNavigation = (e: Event) => {
+      const customEvent = e as CustomEvent
+      if (customEvent.detail) {
+        setActiveSection(customEvent.detail as DashboardSection)
+      }
+    }
+    window.addEventListener('navigate-tab', handleNavigation)
+    return () => window.removeEventListener('navigate-tab', handleNavigation)
+  }, [])
 
   const renderSection = () => {
     switch (activeSection) {

@@ -12,6 +12,7 @@ import { collection, serverTimestamp, onSnapshot, query, orderBy, doc, writeBatc
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { CropModal } from '../../components/CropModal'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
+import { SummaryCard } from '../../components/SummaryCard'
 import type { Member } from '../../types/member'
 
 
@@ -907,21 +908,13 @@ function DepartmentsPage() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
 
                 {/* Card 0: Academic Departments */}
-                <div className="group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col justify-between">
-                  {/* Decorative gradient blob */}
-                  <div className="absolute -top-4 -right-4 h-20 w-20 rounded-full bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14 transition-colors duration-300" />
-                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-[var(--brand-color)] to-[#7b9d4f]" />
-
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-slate-400">Departments</p>
-                      <p className="text-[0.65rem] text-slate-400 font-medium mt-0.5">Total registered</p>
-                    </div>
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--brand-color)] to-[#7b9d4f] shadow-sm shrink-0">
-                      <DepartmentIcon className="h-4.5 w-4.5 text-white" />
-                    </div>
-                  </div>
-
+                <SummaryCard
+                  title="Departments"
+                  subtitle="Total registered"
+                  icon={<DepartmentIcon className="h-4.5 w-4.5 text-white" />}
+                  gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
+                  blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
+                >
                   <div className="flex items-end gap-1 my-3">
                     <span className="text-4xl font-black tabular-nums text-slate-900 leading-none">{totalDepartments}</span>
                     <span className="text-sm font-bold text-slate-400 mb-1">total</span>
@@ -970,23 +963,16 @@ function DepartmentsPage() {
                       <span className="text-[0.6rem] font-semibold text-slate-400 truncate">{departments[0]?.name?.split(' ').slice(-1)[0]}{departments.length > 1 ? ` & ${departments.length - 1} more` : ''}</span>
                     )}
                   </div>
-                </div>
+                </SummaryCard>
 
                 {/* Card 1: Total Faculty */}
-                <div className="group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col justify-between">
-                  <div className="absolute -top-4 -right-4 h-20 w-20 rounded-full bg-blue-400/8 group-hover:bg-blue-400/14 transition-colors duration-300" />
-                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-blue-400 to-sky-400" />
-
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-slate-400">Faculty</p>
-                      <p className="text-[0.65rem] text-slate-400 font-medium mt-0.5">Enrolled members</p>
-                    </div>
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-400 to-sky-400 shadow-sm shrink-0">
-                      <UsersIcon className="h-4.5 w-4.5 text-white" />
-                    </div>
-                  </div>
-
+                <SummaryCard
+                  title="Faculty"
+                  subtitle="Enrolled members"
+                  icon={<UsersIcon className="h-4.5 w-4.5 text-white" />}
+                  gradientClasses="from-blue-400 to-sky-400"
+                  blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
+                >
                   <div className="flex items-end gap-1 my-3">
                     <span className="text-4xl font-black tabular-nums text-slate-900 leading-none">{totalFacultyCount}</span>
                     <span className="text-sm font-bold text-slate-400 mb-1">members</span>
@@ -1025,23 +1011,16 @@ function DepartmentsPage() {
                       ))}
                     </div>
                   </div>
-                </div>
+                </SummaryCard>
 
                 {/* Card 2: Dean Coverage */}
-                <div className="group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col justify-between">
-                  <div className="absolute -top-4 -right-4 h-20 w-20 rounded-full bg-orange-400/8 group-hover:bg-orange-400/14 transition-colors duration-300" />
-                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-orange-400 to-amber-400" />
-
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-slate-400">Dean Coverage</p>
-                      <p className="text-[0.65rem] text-slate-400 font-medium mt-0.5">Assigned deans</p>
-                    </div>
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-amber-400 shadow-sm shrink-0">
-                      <UserIcon className="h-4.5 w-4.5 text-white" />
-                    </div>
-                  </div>
-
+                <SummaryCard
+                  title="Dean Coverage"
+                  subtitle="Assigned deans"
+                  icon={<UserIcon className="h-4.5 w-4.5 text-white" />}
+                  gradientClasses="from-orange-400 to-amber-400"
+                  blobClasses="bg-orange-400/8 group-hover:bg-orange-400/14"
+                >
                   <div className="flex items-end gap-1 my-3">
                     <span className="text-4xl font-black tabular-nums text-slate-900 leading-none">{deansPercentage}</span>
                     <span className="text-sm font-bold text-slate-400 mb-1">%</span>
@@ -1073,23 +1052,16 @@ function DepartmentsPage() {
                       {unassigned === 0 && totalDepartments > 0 ? 'Full Coverage' : `${deansPercentage}% department coverage`}
                     </p>
                   </div>
-                </div>
+                </SummaryCard>
 
                 {/* Card 3: Avg Dept Size */}
-                <div className="group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col justify-between">
-                  <div className="absolute -top-4 -right-4 h-20 w-20 rounded-full bg-purple-400/8 group-hover:bg-purple-400/14 transition-colors duration-300" />
-                  <div className="absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r from-purple-400 to-violet-400" />
-
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="text-[0.62rem] font-bold uppercase tracking-[0.2em] text-slate-400">Avg. Size</p>
-                      <p className="text-[0.65rem] text-slate-400 font-medium mt-0.5">Per department</p>
-                    </div>
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-purple-400 to-violet-400 shadow-sm shrink-0">
-                      <UserIcon className="h-4.5 w-4.5 text-white" />
-                    </div>
-                  </div>
-
+                <SummaryCard
+                  title="Avg. Size"
+                  subtitle="Per department"
+                  icon={<UserIcon className="h-4.5 w-4.5 text-white" />}
+                  gradientClasses="from-purple-400 to-violet-400"
+                  blobClasses="bg-purple-400/8 group-hover:bg-purple-400/14"
+                >
                   <div className="flex items-end gap-1 my-3">
                     <span className="text-4xl font-black tabular-nums text-slate-900 leading-none">{avgDeptSize}</span>
                     <span className="text-sm font-bold text-slate-400 mb-1">avg</span>
@@ -1119,7 +1091,7 @@ function DepartmentsPage() {
                   <div className="pt-2 mt-auto space-y-2">
                     <p className="text-[0.58rem] font-semibold text-slate-400 uppercase tracking-wider leading-none">Size distribution across departments</p>
                   </div>
-                </div>
+                </SummaryCard>
 
               </div>
             </div>

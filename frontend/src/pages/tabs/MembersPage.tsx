@@ -603,10 +603,10 @@ function MembersPage() {
       {editingMember && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
               <h3 className="text-xl font-bold">Edit Member</h3>
               <p className="mt-1 text-sm text-white/80">Update role and department for {editingMember.name || editingMember.email}.</p>
             </div>
@@ -817,7 +817,7 @@ function MembersPage() {
                     inputClassName={`border ${
                       inviteError && !inviteError.startsWith('Sent')
                         ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                        : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'}
+                        : 'border-gray-200 focus:border-gray-300'}
                     `}
                     className="w-full"
                     autoFocus
