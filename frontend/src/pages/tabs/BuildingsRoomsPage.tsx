@@ -474,6 +474,7 @@ function BuildingsRoomsPage() {
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
+  const [supermanKey, setSupermanKey] = useState<number>(0)
   const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('rorms_buildings_expanded')
     return saved ? JSON.parse(saved) : []
@@ -497,7 +498,7 @@ function BuildingsRoomsPage() {
   useEffect(() => {
     const fetchWeather = async () => {
       try {
-        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=14.5995&longitude=120.9842&current_weather=true');
+        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=16.0433&longitude=120.3333&current_weather=true');
         const data = await res.json();
         if (data && data.current_weather) {
           setWeatherData({
@@ -1898,7 +1899,7 @@ function BuildingsRoomsPage() {
                   </BarChart>
                 </ResponsiveContainer>
 
-                <WeatherOverlay weatherCode={weatherData?.code} layer="front" />
+                <WeatherOverlay weatherCode={weatherData?.code} layer="front" supermanKey={supermanKey} />
               </div>
             )}
           </SummaryCard>
@@ -1950,6 +1951,13 @@ function BuildingsRoomsPage() {
           isLoading={isInitialLoad.current}
           actionButton={
             <div className="flex gap-2 w-full lg:w-auto">
+              <Button
+                variant="outline"
+                onClick={() => setSupermanKey(prev => prev + 1)}
+                className="w-full lg:w-auto text-slate-500 hover:text-blue-600 border-slate-200 shadow-sm bg-white"
+              >
+                🦸‍♂️ Test Superman
+              </Button>
               <Button
                 variant="outline"
                 onClick={cycleWeather}
