@@ -204,6 +204,49 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
   const [hoveredBldgId, setHoveredBldgId] = useState<string | null>(null);
   
   const [localMapBuildings, setLocalMapBuildings] = useState<MapBuilding[]>([]);
+  const [travelers, setTravelers] = useState<{ id: number, startBldgId: string, endBldgId: string, duration: number, delay: number, color: string, curveX: number, curveY: number, startWanderX: number, startWanderY: number, endWanderX: number, endWanderY: number }[]>([]);
+
+  useEffect(() => {
+    if (localMapBuildings.length < 2) return;
+    
+    // Generate static travelers that bounce back and forth between two random buildings
+    const newTravelers = Array.from({ length: Math.min(15, localMapBuildings.length * 3) }).map((_, i) => {
+      const b1 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
+      let b2 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
+      while (b2 === b1) b2 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
+      
+      const curveX = (Math.random() - 0.5) * 60;
+      const curveY = (Math.random() - 0.5) * 60;
+      
+      const startWanderX = (Math.random() - 0.5) * 12; // wander up to 6% away from start
+      const startWanderY = (Math.random() - 0.5) * 12;
+      const endWanderX = (Math.random() - 0.5) * 12; // wander up to 6% away from end
+      const endWanderY = (Math.random() - 0.5) * 12;
+      
+      const midX = (b1.x + b2.x) / 2 + curveX;
+      const midY = (b1.y + b2.y) / 2 + curveY;
+      
+      const dist1 = Math.sqrt(Math.pow(midX - b1.x, 2) + Math.pow(midY - b1.y, 2));
+      const dist2 = Math.sqrt(Math.pow(b2.x - midX, 2) + Math.pow(b2.y - midY, 2));
+      const totalDist = dist1 + dist2;
+      
+      return {
+        id: i,
+        startBldgId: b1.buildingId,
+        endBldgId: b2.buildingId,
+        duration: Math.max(5, totalDist / 5), // Constant speed based on distance (min 5s to allow for wandering time)
+        delay: Math.random() * -15, // negative delay so they start at random points in their journey
+        color: ['bg-amber-400', 'bg-emerald-400', 'bg-blue-400', 'bg-rose-400', 'bg-purple-400'][Math.floor(Math.random() * 5)],
+        curveX,
+        curveY,
+        startWanderX,
+        startWanderY,
+        endWanderX,
+        endWanderY
+      };
+    });
+    setTravelers(newTravelers);
+  }, [localMapBuildings.length]); // Only regenerate if the number of buildings changes
 
   useEffect(() => {
     const savedBuildings = mapData?.type === 'freeform' ? mapData.buildings || [] : [];
@@ -395,7 +438,53 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
+      <style>{`
+        @keyframes campusTravel {
+          0% { left: var(--start-x); top: var(--start-y); opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+          15% { left: var(--start-w-x); top: var(--start-w-y); opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          50% { left: var(--mid-x); top: var(--mid-y); }
+          85% { left: var(--end-w-x); top: var(--end-w-y); opacity: 1; transform: translate(-50%, -50%) scale(1); }
+          100% { left: var(--end-x); top: var(--end-y); opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+        }
+      `}</style>
       <div className="absolute inset-0 overflow-hidden rounded-xl">
+      
+      {/* Travelers (Data Packets / People) */}
+      {(!draggingId && !resizingId) && (
+        <div className="absolute inset-0 pointer-events-none">
+          {travelers.map(t => {
+            const startBldg = localMapBuildings.find(b => b.buildingId === t.startBldgId);
+            const endBldg = localMapBuildings.find(b => b.buildingId === t.endBldgId);
+            if (!startBldg || !endBldg) return null;
+            
+            // Calculate a dynamic detour midpoint so they avoid going in a straight line
+            const midX = (startBldg.x + endBldg.x) / 2 + t.curveX;
+            const midY = (startBldg.y + endBldg.y) / 2 + t.curveY;
+            
+            return (
+              <div 
+                key={t.id}
+                className={`absolute w-1.5 h-1.5 rounded-full ${t.color} z-0 shadow-sm pointer-events-none`}
+                style={{
+                  '--start-x': `${startBldg.x}%`,
+                  '--start-y': `${startBldg.y}%`,
+                  '--start-w-x': `${Math.max(2, Math.min(98, startBldg.x + t.startWanderX))}%`,
+                  '--start-w-y': `${Math.max(2, Math.min(98, startBldg.y + t.startWanderY))}%`,
+                  '--mid-x': `${Math.max(2, Math.min(98, midX))}%`,
+                  '--mid-y': `${Math.max(2, Math.min(98, midY))}%`,
+                  '--end-w-x': `${Math.max(2, Math.min(98, endBldg.x + t.endWanderX))}%`,
+                  '--end-w-y': `${Math.max(2, Math.min(98, endBldg.y + t.endWanderY))}%`,
+                  '--end-x': `${endBldg.x}%`,
+                  '--end-y': `${endBldg.y}%`,
+                  animation: `campusTravel ${t.duration}s ease-in-out infinite alternate`,
+                  animationDelay: `${t.delay}s`
+                } as React.CSSProperties}
+              />
+            );
+          })}
+        </div>
+      )}
+
       {/* Buildings */}
       {localMapBuildings.map(mb => {
         const b = buildings.find(x => x.id === mb.buildingId);
@@ -475,6 +564,7 @@ function BuildingsRoomsPage() {
   const [buildings, setBuildings] = useState<Building[]>([])
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
   const [supermanKey, setSupermanKey] = useState<number>(0)
+  const [showTestButtons, setShowTestButtons] = useState(false)
   const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('rorms_buildings_expanded')
     return saved ? JSON.parse(saved) : []
@@ -1850,9 +1940,7 @@ function BuildingsRoomsPage() {
           <SummaryCard
             title="Total Buildings"
             icon={<BuildingIcon className="w-5 h-5" />}
-            value={buildings.length}
             subtitle={mapData?.type === 'freeform' ? 'Interactive campus map updated' : 'Campus map initialized'}
-            trend={{ value: 0, isPositive: true }}
             gradientClasses="from-[var(--brand-color)]/20 to-[var(--brand-color)]/10"
             blobClasses="bg-[var(--brand-color)]/5"
           >
@@ -1862,7 +1950,15 @@ function BuildingsRoomsPage() {
           <SummaryCard
             title="Total Rooms"
             subtitle={weatherData ? `${weatherData.temp}°C Manila Weather` : "All Managed Spaces"}
-            icon={<DoorIcon className="h-4 w-4 text-emerald-600" />}
+            icon={
+              <button 
+                onClick={() => setShowTestButtons(prev => !prev)} 
+                className="hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-sm p-0.5 -m-0.5"
+                title="Toggle Easter Eggs"
+              >
+                <DoorIcon className="h-4 w-4 text-emerald-600" />
+              </button>
+            }
             gradientClasses="from-emerald-200 to-emerald-100"
             blobClasses="bg-emerald-500/5"
           >
@@ -1911,30 +2007,51 @@ function BuildingsRoomsPage() {
             gradientClasses="from-amber-200 to-amber-100"
             blobClasses="bg-amber-500/5"
           >
-            <div className="flex items-baseline gap-2 mt-2">
-              <span className="text-3xl font-black text-slate-800 tracking-tight">
-                {buildings.reduce((acc, b) => acc + (b.capacity || 0), 0)}
-              </span>
-            </div>
             {buildings.length > 0 && (
-              <div className="h-16 w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={buildings.map(b => ({ name: b.code || b.name.substring(0,4), capacity: b.capacity || 0 }))}>
-                    <defs>
-                      <linearGradient id="colorCapacity" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#d97706" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#d97706" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <Tooltip 
-                      cursor={false}
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '10px', padding: '4px 8px' }}
-                      formatter={(value) => [`${value} seats`, '']}
-                      labelStyle={{ display: 'none' }}
-                    />
-                    <Area type="monotone" dataKey="capacity" stroke="#d97706" strokeWidth={2} fillOpacity={1} fill="url(#colorCapacity)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+              <div className="flex-1 w-full mt-2 relative min-h-[10rem] rounded-xl overflow-hidden bg-emerald-500/20">
+                <style>{`
+                  @keyframes conveyorMove {
+                    0% { background-position: 0 0; }
+                    100% { background-position: -30px 0; }
+                  }
+                `}</style>
+                <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
+                   <span className="text-sm font-black text-slate-800 leading-none">
+                     {buildings.reduce((acc, b) => acc + (b.capacity || 0), 0)}
+                   </span>
+                   <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
+                </div>
+                
+                {/* Conveyor Belt System */}
+                <div className="absolute bottom-6 -left-2 -right-2 h-3 border-b-2 border-slate-900 shadow-xl overflow-hidden bg-slate-800 flex">
+                  <div 
+                    className="w-full h-full"
+                    style={{
+                      background: 'repeating-linear-gradient(90deg, #94a3b8 0px, #94a3b8 10px, #334155 10px, #334155 30px)',
+                      backgroundSize: '30px 100%',
+                      animation: 'conveyorMove 1s linear infinite'
+                    }}
+                  />
+                </div>
+
+                {/* Diving Board */}
+                <div className="absolute bottom-[100px] right-0 w-20 z-10">
+                  <div className="w-full h-1.5 bg-amber-600 rounded-l-sm border-b-2 border-amber-800 shadow-sm relative">
+                    {/* Support bracket */}
+                    <div className="absolute right-0 top-1.5 w-3 h-6 bg-slate-700 rounded-bl-sm border-l-2 border-b-2 border-slate-900"></div>
+                  </div>
+                </div>
+
+                {/* Glass Jar */}
+                <div className="absolute bottom-9 right-17 w-16 h-20 z-10">
+                  {/* Jar Lid/Rim */}
+                  <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/40 border border-white/60 rounded-t-sm z-10" />
+                  {/* Jar Neck */}
+                  <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/30 border-l border-r border-white/50 z-10" />
+                  {/* Jar Body */}
+                  <div className="absolute top-[14px] inset-x-0 bottom-0 bg-white/20 border-2 border-white/50 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.7)] backdrop-blur-sm">
+                  </div>
+                </div>
               </div>
             )}
           </SummaryCard>
@@ -1951,20 +2068,24 @@ function BuildingsRoomsPage() {
           isLoading={isInitialLoad.current}
           actionButton={
             <div className="flex gap-2 w-full lg:w-auto">
-              <Button
-                variant="outline"
-                onClick={() => setSupermanKey(prev => prev + 1)}
-                className="w-full lg:w-auto text-slate-500 hover:text-blue-600 border-slate-200 shadow-sm bg-white"
-              >
-                🦸‍♂️ Test Superman
-              </Button>
-              <Button
-                variant="outline"
-                onClick={cycleWeather}
-                className="w-full lg:w-auto text-slate-500 hover:text-amber-500 border-slate-200 shadow-sm bg-white"
-              >
-                🌤️ Test Weather
-              </Button>
+              {showTestButtons && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => setSupermanKey(prev => prev + 1)}
+                    className="w-full lg:w-auto text-slate-500 hover:text-blue-600 border-slate-200 shadow-sm bg-white"
+                  >
+                    🦸‍♂️ Test Superman
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={cycleWeather}
+                    className="w-full lg:w-auto text-slate-500 hover:text-amber-500 border-slate-200 shadow-sm bg-white"
+                  >
+                    🌤️ Test Weather
+                  </Button>
+                </>
+              )}
               <Button
                 variant="brand"
                 icon={<PlusIcon className="h-4 w-4" />}
