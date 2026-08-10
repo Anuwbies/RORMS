@@ -20,7 +20,7 @@ export function SummaryCard({
   className = "",
 }: SummaryCardProps) {
   return (
-    <div className={`group relative bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 overflow-hidden p-4 flex flex-col h-full ${className}`}>
+    <div className={`group relative z-10 hover:z-50 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 p-4 flex flex-col h-full ${className}`}>
 
       <div
         className={`absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r ${gradientClasses}`}

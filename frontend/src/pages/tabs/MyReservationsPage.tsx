@@ -276,7 +276,7 @@ function MyReservationsPage() {
       )
     },
     {
-      header: 'Action',
+      header: 'Actions',
       width: '1%',
       align: 'right',
       render: (res) => {

@@ -1,6 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
+import { SummaryCard } from '../../components/SummaryCard'
+import { WeatherOverlay } from '../../components/WeatherOverlay'
+import { BarChart, Bar, PieChart, Pie, AreaChart, Area, Tooltip, ResponsiveContainer, Cell, YAxis } from 'recharts'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
+export interface MapBuilding {
+  id: string;
+  buildingId: string;
+  x: number;
+  y: number;
+  w?: number;
+  h?: number;
+}
+export interface MapData {
+  type: 'freeform';
+  buildings: MapBuilding[];
+}
 import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { Button } from '../../components/Button'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
@@ -20,6 +35,7 @@ import {
   updateDoc, 
   deleteDoc,
   doc, 
+  setDoc,
   writeBatch,
   serverTimestamp, 
   onSnapshot, 
@@ -112,11 +128,352 @@ for (let i = 0; i < maxGroups; i++) {
   if (i < longGroups.length) ROOM_AMENITIES_GROUPS.push(longGroups[i])
 }
 
+const BuildingBarShape = (props: any) => {
+  const { fill, x, y, width, height: originalHeight } = props;
+  
+  // Enforce a minimum height of 12 so even 0-room buildings have a base
+  const height = Math.max(12, originalHeight);
+  // Shift Y up by the difference so the bar stays anchored to the baseline
+  const diff = height - originalHeight;
+  const actualY = y - diff;
+
+  const windowSize = Math.max(2, width * 0.15);
+  const gap = windowSize;
+  const cols = Math.floor(width / (windowSize + gap));
+  const startX = x + (width - (cols * windowSize + (cols - 1) * gap)) / 2;
+  
+  const rows = Math.floor((height - gap) / (windowSize + gap));
+  const startY = actualY + gap * 2;
+
+  const windows = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      windows.push(
+        <rect
+          key={`${r}-${c}`}
+          x={startX + c * (windowSize + gap)}
+          y={startY + r * (windowSize + gap)}
+          width={windowSize}
+          height={windowSize}
+          fill="rgba(255,255,255,0.6)"
+        />
+      );
+    }
+  }
+
+  return (
+    <g style={{ outline: 'none' }} className="focus:outline-none outline-none">
+      {/* Roof */}
+      <path d={`M${x+width*0.2},${actualY} L${x+width*0.2},${actualY-4} L${x+width*0.8},${actualY-4} L${x+width*0.8},${actualY} Z`} fill={fill} opacity={0.9} />
+      {/* Body */}
+      <rect x={x} y={actualY} width={width} height={height} fill={fill} rx={2} />
+      {/* Windows */}
+      {windows}
+    </g>
+  );
+};
+
+const BUILDING_COLORS = [
+  { bg: 'bg-blue-100', border: 'border-blue-400', text: 'text-blue-700', top: 'bg-blue-500/20' },
+  { bg: 'bg-amber-100', border: 'border-amber-400', text: 'text-amber-700', top: 'bg-amber-500/20' },
+  { bg: 'bg-rose-100', border: 'border-rose-400', text: 'text-rose-700', top: 'bg-rose-500/20' },
+  { bg: 'bg-purple-100', border: 'border-purple-400', text: 'text-purple-700', top: 'bg-purple-500/20' },
+  { bg: 'bg-emerald-100', border: 'border-emerald-400', text: 'text-emerald-700', top: 'bg-emerald-500/20' },
+  { bg: 'bg-cyan-100', border: 'border-cyan-400', text: 'text-cyan-700', top: 'bg-cyan-500/20' },
+  { bg: 'bg-orange-100', border: 'border-orange-400', text: 'text-orange-700', top: 'bg-orange-500/20' },
+  { bg: 'bg-indigo-100', border: 'border-indigo-400', text: 'text-indigo-700', top: 'bg-indigo-500/20' },
+];
+
+const getBuildingColor = (id: string) => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return BUILDING_COLORS[Math.abs(hash) % BUILDING_COLORS.length];
+};
+
+const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: MapData | null }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [resizingId, setResizingId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [resizeAnchor, setResizeAnchor] = useState({ x: 0, y: 0 });
+  
+  const [pointerPos, setPointerPos] = useState({ x: 0, y: 0 });
+  const [hoveredBldgId, setHoveredBldgId] = useState<string | null>(null);
+  
+  const [localMapBuildings, setLocalMapBuildings] = useState<MapBuilding[]>([]);
+
+  useEffect(() => {
+    const savedBuildings = mapData?.type === 'freeform' ? mapData.buildings || [] : [];
+    
+    // Ensure all DB buildings exist in local state
+    const syncedBuildings = buildings.map((b, i) => {
+      const existing = savedBuildings.find(sb => sb.buildingId === b.id);
+      if (existing) return existing;
+      
+      // Default spawn position for unplaced buildings (stack them or jitter)
+      const w = 12;
+      const h = 15;
+      const halfW = w / 2;
+      const halfH = h / 2;
+      const spawnX = Math.max(halfW, Math.min(100 - halfW, 10 + (i * 2 % 80)));
+      const spawnY = Math.max(halfH, Math.min(100 - halfH, 10 + (i * 2 % 80)));
+      
+      return {
+        id: b.id, 
+        buildingId: b.id,
+        x: spawnX, 
+        y: spawnY,
+        w,
+        h
+      };
+    });
+    
+    setLocalMapBuildings(syncedBuildings);
+  }, [buildings, mapData]);
+
+  const saveToFirestore = async (newBuildings: MapBuilding[]) => {
+    await setDoc(doc(db, 'settings', 'campusMap'), {
+      type: 'freeform',
+      buildings: newBuildings,
+      paths: []
+    }, { merge: true });
+  };
+
+  const getPointerCoords = (e: React.PointerEvent) => {
+    if (!containerRef.current) return { x: 0, y: 0 };
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    return { x, y };
+  };
+
+  const handlePointerDown = (e: React.PointerEvent, id: string, isResize: boolean) => {
+    e.stopPropagation();
+    if (isResize) {
+      setResizingId(id);
+      const b = localMapBuildings.find(x => x.buildingId === id);
+      if (b) {
+        setResizeAnchor({
+          x: b.x - (b.w || 12) / 2,
+          y: b.y - (b.h || 15) / 2
+        });
+      }
+    } else {
+      setDraggingId(id);
+      const pointer = getPointerCoords(e);
+      const b = localMapBuildings.find(x => x.buildingId === id);
+      if (b) {
+        setDragOffset({ x: b.x - pointer.x, y: b.y - pointer.y });
+      }
+    }
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const checkCollision = (cx: number, cy: number, cw: number, ch: number, skipId: string) => {
+    const leftA = cx - cw / 2;
+    const rightA = cx + cw / 2;
+    const topA = cy - ch / 2;
+    const bottomA = cy + ch / 2;
+
+    for (const other of localMapBuildings) {
+      if (other.buildingId === skipId) continue;
+      
+      const ow = other.w || 12;
+      const oh = other.h || 15;
+      const leftB = other.x - ow / 2;
+      const rightB = other.x + ow / 2;
+      const topB = other.y - oh / 2;
+      const bottomB = other.y + oh / 2;
+
+      const margin = 0.1;
+      
+      if (
+        leftA < rightB - margin &&
+        rightA > leftB + margin &&
+        topA < bottomB - margin &&
+        bottomA > topB + margin
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const coords = getPointerCoords(e);
+    setPointerPos(coords);
+    
+    if (draggingId) {
+      const targetX = coords.x + dragOffset.x;
+      const targetY = coords.y + dragOffset.y;
+      
+      setLocalMapBuildings(prev => prev.map(b => {
+        if (b.buildingId === draggingId) {
+          const halfW = (b.w || 12) / 2;
+          const halfH = (b.h || 15) / 2;
+          
+          let clampedX = Math.max(halfW, Math.min(100 - halfW, targetX));
+          let clampedY = Math.max(halfH, Math.min(100 - halfH, targetY));
+          
+          // 1. Direct teleport check: if the absolute target is totally free, jump there immediately!
+          if (!checkCollision(clampedX, clampedY, b.w || 12, b.h || 15, b.buildingId)) {
+             return { ...b, x: clampedX, y: clampedY };
+          }
+          
+          // 2. Fallback to sliding against walls
+          let finalX = b.x;
+          let finalY = b.y;
+          
+          const canMoveX = !checkCollision(clampedX, b.y, b.w || 12, b.h || 15, b.buildingId);
+          const canMoveY = !checkCollision(b.x, clampedY, b.w || 12, b.h || 15, b.buildingId);
+          
+          if (canMoveX && canMoveY) {
+             // Blocked diagonally by a corner, pick dominant axis
+             if (Math.abs(clampedX - b.x) > Math.abs(clampedY - b.y)) {
+                finalX = clampedX;
+             } else {
+                finalY = clampedY;
+             }
+          } else if (canMoveX) {
+             finalX = clampedX;
+          } else if (canMoveY) {
+             finalY = clampedY;
+          }
+          
+          return { ...b, x: finalX, y: finalY };
+        }
+        return b;
+      }));
+    } else if (resizingId) {
+      const { x, y } = getPointerCoords(e);
+      setLocalMapBuildings(prev => prev.map(b => {
+        if (b.buildingId === resizingId) {
+          let newW = Math.max(3, Math.min(x - resizeAnchor.x, 100 - resizeAnchor.x));
+          let newH = Math.max(3, Math.min(y - resizeAnchor.y, 100 - resizeAnchor.y));
+          
+          let testW = newW;
+          let testX = resizeAnchor.x + testW / 2;
+          
+          if (checkCollision(testX, b.y, testW, b.h || 15, b.buildingId)) {
+             testW = b.w || 12;
+             testX = b.x;
+          }
+
+          let testH = newH;
+          let testY = resizeAnchor.y + testH / 2;
+          
+          if (checkCollision(testX, testY, testW, testH, b.buildingId)) {
+             testH = b.h || 15;
+             testY = b.y;
+          }
+          
+          return { ...b, x: testX, y: testY, w: testW, h: testH };
+        }
+        return b;
+      }));
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (draggingId || resizingId) {
+      setDraggingId(null);
+      setResizingId(null);
+      e.currentTarget.releasePointerCapture(e.pointerId);
+      // Save on release
+      saveToFirestore(localMapBuildings);
+    }
+  };
+
+  return (
+    <div 
+      ref={containerRef}
+      className="relative w-full aspect-[16/9] bg-[#f3f7ee] rounded-xl mt-2 border border-emerald-200 shadow-inner select-none touch-none @container"
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerLeave={handlePointerUp}
+    >
+      <div className="absolute inset-0 overflow-hidden rounded-xl">
+      {/* Buildings */}
+      {localMapBuildings.map(mb => {
+        const b = buildings.find(x => x.id === mb.buildingId);
+        if (!b) return null;
+        
+        const w = mb.w || 12;
+        const h = mb.h || 15;
+        const isDragging = draggingId === mb.buildingId;
+        const isResizing = resizingId === mb.buildingId;
+        const color = getBuildingColor(b.id);
+        
+        return (
+          <div
+            key={mb.buildingId}
+            onPointerDown={(e) => handlePointerDown(e, mb.buildingId, false)}
+            onPointerEnter={() => setHoveredBldgId(mb.buildingId)}
+            onPointerLeave={() => setHoveredBldgId(null)}
+            className={`absolute z-10 flex flex-col items-center justify-center ${color.bg} border-2 ${color.border} rounded-lg shadow-sm group/bldg pointer-events-auto transition-all ${isDragging || isResizing ? 'shadow-lg z-50 cursor-grabbing' : 'hover:shadow-md hover:z-50 cursor-grab'}`}
+            style={{ 
+              top: `${mb.y}%`, 
+              left: `${mb.x}%`,
+              width: `${w}%`,
+              height: `${h}%`,
+              transform: 'translate(-50%, -50%)'
+            }}
+          >
+            <div className={`absolute top-0 left-0 w-full h-1/2 ${color.top} rounded-t-sm border-b border-black/5 pointer-events-none`}></div>
+            <span 
+              className={`relative z-10 font-black ${color.text} uppercase line-clamp-1 break-all px-0.5 text-center pointer-events-none`}
+              style={{ fontSize: `max(0.45rem, ${Math.min(w, h * 1.77) * 0.2}cqw)` }}
+            >
+              {b.code || b.name.substring(0,3)}
+            </span>
+
+            {/* Resize Handle */}
+            <div 
+              className="absolute bottom-0 right-0 w-4 h-4 bg-white/70 cursor-se-resize rounded-tl-md rounded-br-sm border-t border-l border-white opacity-0 group-hover/bldg:opacity-100 z-50 flex items-center justify-center transition-opacity"
+              onPointerDown={(e) => handlePointerDown(e, mb.buildingId, true)}
+            >
+               <svg className="w-2 h-2 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+               </svg>
+            </div>
+          </div>
+        )
+      })}
+      </div>
+      
+      {/* Total Badge */}
+      <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
+        <span className="text-sm font-black text-slate-800 leading-none">{buildings.length}</span>
+        <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
+      </div>
+      {/* Global Cursor-tracking Tooltip */}
+      {hoveredBldgId && !draggingId && !resizingId && (
+        <div 
+           className="absolute z-[60] bg-slate-800 text-white text-xs sm:text-sm font-bold px-3 py-1.5 rounded-md pointer-events-none whitespace-nowrap shadow-lg transition-transform duration-75 ease-out"
+           style={{
+             left: `${pointerPos.x}%`,
+             top: `${pointerPos.y}%`,
+             transform: `translate(
+               -50%, 
+               ${pointerPos.y < 30 ? '15px' : pointerPos.y > 70 ? 'calc(-100% - 15px)' : '-150%'}
+             )`
+           }}
+        >
+          {buildings.find(b => b.id === hoveredBldgId)?.name}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function BuildingsRoomsPage() {
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
   const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('rorms_buildings_expanded')
     return saved ? JSON.parse(saved) : []
@@ -125,6 +482,46 @@ function BuildingsRoomsPage() {
   const knownBuildingIds = useRef<Set<string>>(new Set())
 
   const [rooms, setRooms] = useState<Room[]>([])
+  const [mapData, setMapData] = useState<MapData | null>(null)
+
+  const cycleWeather = () => {
+    setWeatherData(prev => {
+      if (!prev) return { temp: 28, code: 0 };
+      if (prev.code === 0) return { temp: 26, code: 2 }; // Sunny -> Cloudy
+      if (prev.code === 2) return { temp: 24, code: 61 }; // Cloudy -> Rain
+      if (prev.code === 61) return { temp: 22, code: 95 }; // Rain -> Thunder
+      return { temp: 32, code: 0 }; // Thunder -> Sunny
+    });
+  };
+
+  useEffect(() => {
+    const fetchWeather = async () => {
+      try {
+        const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=14.5995&longitude=120.9842&current_weather=true');
+        const data = await res.json();
+        if (data && data.current_weather) {
+          setWeatherData({
+            temp: data.current_weather.temperature,
+            code: data.current_weather.weathercode
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch weather", err);
+      }
+    };
+    fetchWeather();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, 'settings', 'campusMap'), (snap) => {
+      if (snap.exists()) {
+        setMapData(snap.data() as MapData)
+      } else {
+        setMapData(null)
+      }
+    })
+    return () => unsub()
+  }, [])
 
   useEffect(() => {
     localStorage.setItem('rorms_buildings_expanded', JSON.stringify(expandedBuildingIds))
@@ -836,18 +1233,18 @@ function BuildingsRoomsPage() {
               {roomModalStep === 1 && (
                 <div className="space-y-4 overflow-visible animate-in fade-in slide-in-from-right-4 duration-300">
                   {!editingRoom && (
-                    <div className="flex p-1 bg-gray-100 rounded-md mb-6">
+                    <div className="flex p-1 bg-gray-100 rounded-xl mb-6">
                       <button
                         type="button"
                         onClick={() => setIsMultipleRooms(false)}
-                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${!isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${!isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                       >
                         Single Room
                       </button>
                       <button
                         type="button"
                         onClick={() => setIsMultipleRooms(true)}
-                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-md transition-all ${isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                        className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider rounded-xl transition-all ${isMultipleRooms ? 'bg-white text-[var(--brand-color)] shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                       >
                         Multiple Rooms
                       </button>
@@ -952,12 +1349,11 @@ function BuildingsRoomsPage() {
                           <label htmlFor="room-start-number" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                             Start Number <span className="text-rose-500">*</span>
                           </label>
-                          <input
+                          <NumberInput
                             id="room-start-number"
-                            type="number"
                             value={roomStartNumber}
-                            onChange={(e) => {
-                              setRoomStartNumber(e.target.value)
+                            onChange={(val) => {
+                              setRoomStartNumber(val)
                               if (errors.start) setErrors(prev => ({ ...prev, start: false }))
                             }}
                             onKeyDown={(e) => {
@@ -966,23 +1362,18 @@ function BuildingsRoomsPage() {
                               }
                             }}
                             placeholder="e.g. 101"
-                            className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                              errors.start 
-                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                                : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                            }`}
+                            error={errors.start}
                           />
                         </div>
                         <div>
                           <label htmlFor="room-end-number" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                             End Number <span className="text-rose-500">*</span>
                           </label>
-                          <input
+                          <NumberInput
                             id="room-end-number"
-                            type="number"
                             value={roomEndNumber}
-                            onChange={(e) => {
-                              setRoomEndNumber(e.target.value)
+                            onChange={(val) => {
+                              setRoomEndNumber(val)
                               if (errors.end) setErrors(prev => ({ ...prev, end: false }))
                             }}
                             onKeyDown={(e) => {
@@ -991,11 +1382,7 @@ function BuildingsRoomsPage() {
                               }
                             }}
                             placeholder="e.g. 105"
-                            className={`w-full rounded-md border px-4 py-2.5 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:ring-4 shadow-sm ${
-                              errors.end 
-                                ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                                : 'border-gray-200 focus:border-gray-300 focus:ring-gray-50'
-                            }`}
+                            error={errors.end}
                           />
                         </div>
                       </div>
@@ -1457,6 +1844,103 @@ function BuildingsRoomsPage() {
           title="Buildings & Rooms" 
           description="Manage campus facilities, view room capacities, and track utilization." 
         />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
+          <SummaryCard
+            title="Total Buildings"
+            icon={<BuildingIcon className="w-5 h-5" />}
+            value={buildings.length}
+            subtitle={mapData?.type === 'freeform' ? 'Interactive campus map updated' : 'Campus map initialized'}
+            trend={{ value: 0, isPositive: true }}
+            gradientClasses="from-[var(--brand-color)]/20 to-[var(--brand-color)]/10"
+            blobClasses="bg-[var(--brand-color)]/5"
+          >
+            <CampusMap buildings={buildings} mapData={mapData} />
+          </SummaryCard>
+          
+          <SummaryCard
+            title="Total Rooms"
+            subtitle={weatherData ? `${weatherData.temp}°C Manila Weather` : "All Managed Spaces"}
+            icon={<DoorIcon className="h-4 w-4 text-emerald-600" />}
+            gradientClasses="from-emerald-200 to-emerald-100"
+            blobClasses="bg-emerald-500/5"
+          >
+
+            {rooms.length > 0 && (
+              <div className="flex-1 w-full mt-2 relative min-h-[4rem] rounded-md overflow-hidden">
+                <WeatherOverlay weatherCode={weatherData?.code} layer="back" />
+                
+                <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
+                   <span className="text-sm font-black text-slate-800 leading-none">{rooms.length}</span>
+                   <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
+                </div>
+                <ResponsiveContainer width="100%" height="100%" className="relative z-10 [&_*]:outline-none [&_*]:focus:outline-none">
+                  <BarChart data={buildings.map(b => ({ code: b.code || b.name, rooms: b.rooms?.length || 0 }))} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                    <YAxis hide domain={[0, 'dataMax']} />
+                    <Tooltip 
+                      cursor={{ fill: 'transparent' }}
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          return (
+                            <div className="bg-white px-2.5 py-1.5 rounded-lg shadow-md text-xs font-bold text-slate-800 border border-slate-100 relative z-[60]">
+                              {payload[0].payload.code}: {payload[0].value} Rooms
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Bar dataKey="rooms" shape={<BuildingBarShape />} activeBar={false}>
+                      {buildings.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#10b981' : '#34d399'} style={{ outline: 'none' }} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+
+                <WeatherOverlay weatherCode={weatherData?.code} layer="front" />
+              </div>
+            )}
+          </SummaryCard>
+          
+          <SummaryCard
+            title="Total Capacity"
+            subtitle="Campus-wide Seats"
+            icon={<UsersIcon className="h-4 w-4 text-amber-600" />}
+            gradientClasses="from-amber-200 to-amber-100"
+            blobClasses="bg-amber-500/5"
+          >
+            <div className="flex items-baseline gap-2 mt-2">
+              <span className="text-3xl font-black text-slate-800 tracking-tight">
+                {buildings.reduce((acc, b) => acc + (b.capacity || 0), 0)}
+              </span>
+            </div>
+            {buildings.length > 0 && (
+              <div className="h-16 w-full mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={buildings.map(b => ({ name: b.code || b.name.substring(0,4), capacity: b.capacity || 0 }))}>
+                    <defs>
+                      <linearGradient id="colorCapacity" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#d97706" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#d97706" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <Tooltip 
+                      cursor={false}
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '10px', padding: '4px 8px' }}
+                      formatter={(value) => [`${value} seats`, '']}
+                      labelStyle={{ display: 'none' }}
+                    />
+                    <Area type="monotone" dataKey="capacity" stroke="#d97706" strokeWidth={2} fillOpacity={1} fill="url(#colorCapacity)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </SummaryCard>
+        </div>
+
+
+
         <BuildingBrowser
           buildings={buildings}
           buildingOptions={Array.from(new Set(buildings.map(b => b.name))).sort()}
@@ -1465,14 +1949,23 @@ function BuildingsRoomsPage() {
           onRoomClick={handleOpenRoomInfoModal}
           isLoading={isInitialLoad.current}
           actionButton={
-            <Button
-              variant="brand"
-              icon={<PlusIcon className="h-4 w-4" />}
-              onClick={() => handleOpenBuildingModal()}
-              className="w-full lg:w-auto"
-            >
-              Add Building
-            </Button>
+            <div className="flex gap-2 w-full lg:w-auto">
+              <Button
+                variant="outline"
+                onClick={cycleWeather}
+                className="w-full lg:w-auto text-slate-500 hover:text-amber-500 border-slate-200 shadow-sm bg-white"
+              >
+                🌤️ Test Weather
+              </Button>
+              <Button
+                variant="brand"
+                icon={<PlusIcon className="h-4 w-4" />}
+                onClick={() => handleOpenBuildingModal()}
+                className="w-full lg:w-auto"
+              >
+                Add Building
+              </Button>
+            </div>
           }
           renderBuildingActions={(building) => (
             <div className="relative">

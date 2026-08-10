@@ -343,10 +343,10 @@ export const RightSidebar = memo(function RightSidebar({
       {isSignOutModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-md relative">
+            <div className="bg-rose-600 p-6 text-white rounded-t-3xl relative">
               <h3 className="text-xl font-bold">Sign Out</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to sign out?</p>
             </div>
@@ -356,7 +356,7 @@ export const RightSidebar = memo(function RightSidebar({
                 <button
                   type="button"
                   onClick={() => setIsSignOutModalOpen(false)}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                  className="flex-1 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
                 >
                   Cancel
                 </button>
@@ -366,7 +366,7 @@ export const RightSidebar = memo(function RightSidebar({
                     setIsSignOutModalOpen(false)
                     onSignOut()
                   }}
-                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg"
+                  className="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg"
                 >
                   Sign Out
                 </button>
@@ -381,10 +381,10 @@ export const RightSidebar = memo(function RightSidebar({
       {isClearNotificationsModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-sm rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-md relative">
+            <div className="bg-rose-600 p-6 text-white rounded-t-3xl relative">
               <h3 className="text-xl font-bold">Clear All</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to clear all notifications?</p>
             </div>
@@ -394,7 +394,7 @@ export const RightSidebar = memo(function RightSidebar({
                 <button
                   type="button"
                   onClick={() => setIsClearNotificationsModalOpen(false)}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+                  className="flex-1 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
                 >
                   Cancel
                 </button>
@@ -404,7 +404,7 @@ export const RightSidebar = memo(function RightSidebar({
                     clearNotifications()
                     setIsClearNotificationsModalOpen(false)
                   }}
-                  className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg"
+                  className="flex-1 rounded-xl bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition hover:bg-rose-700 hover:shadow-lg"
                 >
                   Clear All
                 </button>
@@ -452,7 +452,7 @@ export const RightSidebar = memo(function RightSidebar({
               <div className="absolute top-0 left-0">
                 <IconButton
                   label="Collapse right sidebar"
-                  className="h-8 w-8 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-100"
+                  className="h-8 w-8 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100"
                   onClick={() => onExpandChange(false)}
                 >
                   <ChevronRightIcon className="h-5 w-5" />
@@ -513,9 +513,9 @@ export const RightSidebar = memo(function RightSidebar({
                   type="button"
                   aria-pressed={notificationsEnabled}
                   className={joinClasses(
-                    'group flex h-9 flex-1 items-center justify-center rounded-md border px-2 transition-colors',
+                    'group flex h-9 flex-1 items-center justify-center rounded-xl border px-2 transition-colors',
                     notificationsEnabled
-                      ? 'border-gray-300 bg-[var(--brand-color)]/10 text-gray-600 hover:bg-[var(--brand-color)]/15'
+                      ? 'border-[var(--brand-color)]/30 bg-[var(--brand-color)]/20 text-[var(--brand-color)] hover:bg-[var(--brand-color)]/30'
                       : 'border-red-300 bg-red-50 text-red-600 hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-200 dark:hover:bg-red-500/15',
                   )}
                   onClick={toggleNotificationsEnabled}
@@ -525,11 +525,16 @@ export const RightSidebar = memo(function RightSidebar({
                       className={joinClasses(
                         'h-4 w-4 transition-colors',
                         notificationsEnabled
-                          ? 'text-gray-600'
+                          ? 'text-[var(--brand-color)]'
                           : 'text-red-500 group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200',
                       )}
                     />
-                    <span className="font-bold leading-none tracking-tight text-[0.8125rem] text-gray-600">
+                    <span className={joinClasses(
+                      'font-bold leading-none tracking-tight text-[0.8125rem]',
+                      notificationsEnabled
+                        ? 'text-[var(--brand-color)]'
+                        : 'text-red-500 group-hover:text-red-600 dark:text-red-300 dark:group-hover:text-red-200'
+                    )}>
                       Notifications
                     </span>
                   </div>
@@ -537,7 +542,7 @@ export const RightSidebar = memo(function RightSidebar({
 
                 <button
                   type="button"
-                  className="group flex h-9 flex-1 items-center justify-center rounded-md border border-gray-300 bg-white px-2 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100 dark:hover:border-red-500/20 dark:hover:bg-red-500/10 dark:hover:text-red-200"
+                  className="group flex h-9 flex-1 items-center justify-center rounded-xl border border-gray-300 bg-white px-2 transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 dark:border-secondary-700 dark:bg-secondary-900 dark:text-secondary-100 dark:hover:border-red-500/20 dark:hover:bg-red-500/10 dark:hover:text-red-200"
                   onClick={() => setIsSignOutModalOpen(true)}
                 >
                   <div className="flex items-center gap-1.5 scale-[1] origin-center">
@@ -553,7 +558,7 @@ export const RightSidebar = memo(function RightSidebar({
             <div className="flex flex-col items-center justify-center gap-4">
               <IconButton
                 label="Expand right sidebar"
-                className="order-1 h-8 w-8 rounded-md border border-gray-300 text-gray-600 hover:bg-gray-100"
+                className="order-1 h-8 w-8 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-100"
                 onClick={() => onExpandChange(true)}
               >
                 <ChevronLeftIcon className="h-5 w-5" />
@@ -580,7 +585,7 @@ export const RightSidebar = memo(function RightSidebar({
                 type="button"
                 aria-label="Open notifications"
                 className={joinClasses(
-                  'group relative flex h-12 w-full items-center justify-center rounded-md transition-all duration-200',
+                  'group relative flex h-12 w-full items-center justify-center rounded-xl transition-all duration-200',
                   'text-gray-500 hover:bg-[var(--brand-color)]/20 hover:text-[var(--brand-color)]',
                 )}
                 onClick={() => onExpandChange(true)}
@@ -599,7 +604,7 @@ export const RightSidebar = memo(function RightSidebar({
               <button
                 type="button"
                 aria-label="Sign out"
-                className="group flex h-12 w-full items-center justify-center rounded-md transition-all duration-200 hover:bg-red-500/10"
+                className="group flex h-12 w-full items-center justify-center rounded-xl transition-all duration-200 hover:bg-red-500/10"
                 onClick={() => setIsSignOutModalOpen(true)}
               >
                 <LogOutIcon className="h-6 w-6 text-red-500 transition-all duration-200 group-hover:scale-110 group-hover:text-red-600" />
@@ -694,7 +699,7 @@ export const RightSidebar = memo(function RightSidebar({
                           <button
                             type="button"
                             aria-label={`Delete ${notification.title}`}
-                            className="mb-[-4px] mr-[-4px] shrink-0 rounded-lg p-1.5 text-secondary-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
+                            className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-secondary-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
                             onClick={(event) => {
                               event.stopPropagation()
                               deleteNotification(notification.id)

@@ -195,8 +195,16 @@ function DepartmentsPage() {
     ? allUsers
         .filter(m => m.department === selectedDept.code)
         .sort((a, b) => {
-          if (a.role === 'Dean') return -1
-          if (b.role === 'Dean') return 1
+          const roleOrder: Record<string, number> = {
+            'Dean': 1,
+            'Program Head': 2,
+            'Instructor': 3,
+            'Registrar': 4,
+            'Admin': 5
+          }
+          const orderA = roleOrder[a.role] || 99
+          const orderB = roleOrder[b.role] || 99
+          if (orderA !== orderB) return orderA - orderB
           return a.name.localeCompare(b.name)
         })
     : []
@@ -447,7 +455,7 @@ function DepartmentsPage() {
   const deptMemberColumns: ColumnDef<Member>[] = [
     {
       header: 'Member Info',
-      width: '50%',
+      width: '48%',
       render: (member) => (
         <div className="flex items-center gap-4">
           {member.avatar && !avatarErrors[member.avatar] ? (
@@ -477,7 +485,7 @@ function DepartmentsPage() {
     },
     {
       header: 'Assigned Role',
-      width: '25%',
+      width: '27%',
       render: (member) => (
         <div className="flex items-center gap-2">
           <div className={`h-2 w-2 rounded-full ${roleClasses[member.role]?.split(' ')[0] || 'bg-gray-200'}`} />
@@ -488,8 +496,8 @@ function DepartmentsPage() {
       )
     },
     {
-      header: 'Current Status',
-      width: '25%',
+      header: 'Status',
+      width: '23%',
       render: (member) => (
         <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${
           member.status === 'Active' ? 'bg-emerald-100 text-emerald-700' :
@@ -498,6 +506,12 @@ function DepartmentsPage() {
           {member.status}
         </span>
       )
+    },
+    {
+      header: 'Joined Date',
+      width: '2%',
+      align: 'right',
+      render: (member) => <span className="text-sm font-medium text-gray-500 whitespace-nowrap">{member.joinedDate}</span>
     }
   ];
 
@@ -846,7 +860,7 @@ function DepartmentsPage() {
               </IconButton>
             </div>
             
-            <div className="p-6 overflow-y-auto custom-scrollbar bg-slate-50">
+            <div className="overflow-y-auto custom-scrollbar bg-slate-50">
               <DataTable
                 data={deptMembers}
                 columns={deptMemberColumns}

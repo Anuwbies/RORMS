@@ -952,24 +952,31 @@ function MyDepartmentPage() {
   const memberColumns: ColumnDef<Member>[] = useMemo(() => {
     const cols: ColumnDef<Member>[] = [
       {
-        header: 'Member',
+        header: 'Member Info',
         width: currentUserRole === 'Dean' ? '30%' : '31%',
         render: (member) => (
           <div className="flex items-center gap-4">
-            {member.avatar ? (
+            {member.avatar && !avatarErrors[member.avatar] ? (
               <img
                 src={member.avatar}
                 alt={member.name}
-                className="h-10 w-10 rounded-full border border-gray-300 object-cover"
+                className="h-10 w-10 rounded-full object-cover shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300"
+                onError={() => setAvatarErrors(prev => ({ ...prev, [member.avatar]: true }))}
               />
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-secondary-100 text-secondary-500 border border-gray-300">
-                <UserIcon className="h-6 w-6" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300">
+                <UserIcon className="h-5 w-5" />
               </div>
             )}
-            <div>
-              <p className="text-sm font-bold text-gray-900">{member.name}</p>
-              <p className="text-xs font-medium text-gray-500">{member.email}</p>
+            <div className="flex flex-col">
+              {member.name ? (
+                <>
+                  <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{member.name}</span>
+                  <span className="text-xs font-medium text-slate-500">{member.email}</span>
+                </>
+              ) : (
+                <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{member.email}</span>
+              )}
             </div>
           </div>
         )
@@ -2642,17 +2649,31 @@ function MyDepartmentPage() {
                           
                           return (
                             <div className="grid grid-cols-2 gap-1.5">
-                              <div className="flex items-center justify-between p-2 sm:p-2.5 px-3 rounded-xl bg-amber-50/80 border border-amber-200 shadow-2xs hover:border-amber-300 hover:shadow-xs transition-all duration-300">
-                                <span className="text-[0.6rem] font-bold text-amber-950 uppercase tracking-wide">1st Sem</span>
-                                <span className={`text-[0.6rem] font-black px-1.5 py-0.5 rounded-md border text-center truncate shadow-2xs ${getPhaseBadge(sem1Phase)}`}>
-                                  {sem1Phase}
-                                </span>
+                              <div className="flex flex-col justify-center p-2 sm:p-2.5 px-3 rounded-xl bg-amber-50/80 border border-amber-200 shadow-2xs hover:border-amber-300 hover:shadow-xs transition-all duration-300">
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-[0.6rem] font-bold text-amber-950 uppercase tracking-wide">1st Sem</span>
+                                  <span className={`text-[0.6rem] font-black px-1.5 py-0.5 rounded-md border text-center truncate shadow-2xs ${getPhaseBadge(sem1Phase)}`}>
+                                    {sem1Phase}
+                                  </span>
+                                </div>
+                                {(activeYear?.sem1?.startMonth && activeYear?.sem1?.endMonth) && (
+                                  <span className="text-[0.6rem] font-medium text-amber-700/80 mt-0.5">
+                                    {formatShortMonth(activeYear.sem1.startMonth)} - {formatShortMonth(activeYear.sem1.endMonth)}
+                                  </span>
+                                )}
                               </div>
-                              <div className="flex items-center justify-between p-2 sm:p-2.5 px-3 rounded-xl bg-amber-50/80 border border-amber-200 shadow-2xs hover:border-amber-300 hover:shadow-xs transition-all duration-300">
-                                <span className="text-[0.6rem] font-bold text-amber-950 uppercase tracking-wide">2nd Sem</span>
-                                <span className={`text-[0.6rem] font-black px-1.5 py-0.5 rounded-md border text-center truncate shadow-2xs ${getPhaseBadge(sem2Phase)}`}>
-                                  {sem2Phase}
-                                </span>
+                              <div className="flex flex-col justify-center p-2 sm:p-2.5 px-3 rounded-xl bg-amber-50/80 border border-amber-200 shadow-2xs hover:border-amber-300 hover:shadow-xs transition-all duration-300">
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-[0.6rem] font-bold text-amber-950 uppercase tracking-wide">2nd Sem</span>
+                                  <span className={`text-[0.6rem] font-black px-1.5 py-0.5 rounded-md border text-center truncate shadow-2xs ${getPhaseBadge(sem2Phase)}`}>
+                                    {sem2Phase}
+                                  </span>
+                                </div>
+                                {(activeYear?.sem2?.startMonth && activeYear?.sem2?.endMonth) && (
+                                  <span className="text-[0.6rem] font-medium text-amber-700/80 mt-0.5">
+                                    {formatShortMonth(activeYear.sem2.startMonth)} - {formatShortMonth(activeYear.sem2.endMonth)}
+                                  </span>
+                                )}
                               </div>
                             </div>
                           );

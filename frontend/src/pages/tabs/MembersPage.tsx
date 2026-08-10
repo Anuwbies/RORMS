@@ -100,36 +100,35 @@ function MembersPage() {
       }
 
       // 2. Fetch memberships and join with users
-      if (!unsubscribeMemberships) {
-        unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
-          const membersData = mSnap.docs.map(mDoc => {
-            const mData = mDoc.data()
-            const userData = usersMap.get(mData.userId) || {}
-            
-            return {
-              id: mData.userId,
-              membershipId: mDoc.id,
-              name: userData.fullName || '',
-              email: userData.email || '',
-              role: (mData.role as MemberRole) || 'Instructor',
-              status: (userData.isActive !== false) ? 'Active' : 'Inactive',
-              department: mData.departmentCode || '',
-              joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
-                month: 'short',
-                day: '2-digit',
-                year: 'numeric'
-              }) : '—',
-              avatar: userData.profilePicture || '',
-            }
-          }) as Member[]
-          setUsers(membersData)
-          membershipsLoaded = true
-          checkFinishedLoading()
-        }, () => {
-          membershipsLoaded = true
-          checkFinishedLoading()
-        })
-      }
+      if (unsubscribeMemberships) unsubscribeMemberships()
+      unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
+        const membersData = mSnap.docs.map(mDoc => {
+          const mData = mDoc.data()
+          const userData = usersMap.get(mData.userId) || {}
+          
+          return {
+            id: mData.userId,
+            membershipId: mDoc.id,
+            name: userData.fullName || '',
+            email: userData.email || '',
+            role: (mData.role as MemberRole) || 'Instructor',
+            status: (userData.isActive !== false) ? 'Active' : 'Inactive',
+            department: mData.departmentCode || '',
+            joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
+              month: 'short',
+              day: '2-digit',
+              year: 'numeric'
+            }) : '—',
+            avatar: userData.profilePicture || '',
+          }
+        }) as Member[]
+        setUsers(membersData)
+        membershipsLoaded = true
+        checkFinishedLoading()
+      }, () => {
+        membershipsLoaded = true
+        checkFinishedLoading()
+      })
     }, () => {
       usersLoaded = true
       checkFinishedLoading()
@@ -1079,7 +1078,7 @@ function MembersPage() {
                 )
               },
               {
-                header: 'Current Status',
+                header: 'Status',
                 width: '16%',
                 render: (member) => (
                   <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[member.status]}`}>
@@ -1097,7 +1096,7 @@ function MembersPage() {
                 )
               },
               {
-                header: 'Manage',
+                header: 'Actions',
                 width: '2%',
                 align: 'right',
                 render: (member) => (

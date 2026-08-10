@@ -745,7 +745,7 @@ function ManageReservationsPage() {
   const columns: ColumnDef<typeof enrichedReservations[0]>[] = [
     {
       header: 'Requester',
-      width: '25%',
+      width: '30%',
       render: (res) => (
         <div className="flex items-center gap-4">
           <img
@@ -762,7 +762,7 @@ function ManageReservationsPage() {
     },
     {
       header: 'Room',
-      width: '25%',
+      width: '20%',
       render: (res) => {
         const room = rooms.find(r => r.id === res.roomId)
         return (

@@ -472,23 +472,21 @@ function ReserveRoomPage() {
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setIsReservationModalOpen(false)
                     setIsRoomInfoModalOpen(true)
                   }}
                   disabled={isSubmitting}
-                  className={`flex-1 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm ${
-                    isSubmitting ? 'opacity-50 cursor-not-allowed' : ''
-                  }`}
+                  className="flex-1"
                 >
                   Back
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="brand"
                   disabled={isSubmitting}
-                  className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white shadow-md transition ${
-                    isSubmitting ? 'bg-[var(--brand-color)]/70 cursor-not-allowed' : 'bg-[var(--brand-color)] hover:bg-[var(--brand-color-hover)]'
-                  }`}
+                  className="flex-1"
                   onClick={async () => {
                     const errors: Record<string, boolean> = {}
                     if (!reservationData.date) errors.date = true
@@ -587,7 +585,7 @@ function ReserveRoomPage() {
                       Confirm Reservation
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </div>
           </div>
