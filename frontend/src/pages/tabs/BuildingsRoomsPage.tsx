@@ -562,6 +562,19 @@ function BuildingsRoomsPage() {
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [waterKey, setWaterKey] = useState(0)
+  const [dismissedJars, setDismissedJars] = useState<Set<number>>(new Set())
+  const [isJarFull, setIsJarFull] = useState(false)
+
+  useEffect(() => {
+    if (waterKey > 0) {
+      setIsJarFull(false);
+      const timer = setTimeout(() => {
+        setIsJarFull(true);
+      }, 13500);
+      return () => clearTimeout(timer);
+    }
+  }, [waterKey]);
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
   const [supermanKey, setSupermanKey] = useState<number>(0)
   const [showTestButtons, setShowTestButtons] = useState(false)
@@ -2014,6 +2027,33 @@ function BuildingsRoomsPage() {
                     0% { background-position: 0 0; }
                     100% { background-position: -30px 0; }
                   }
+                  @keyframes waterStreamFlow {
+                    0% { background-position: 0 0; }
+                    100% { background-position: 0 20px; }
+                  }
+                  @keyframes jarFill {
+                    0% { height: 0%; }
+                    8% { height: 0%; }
+                    90% { height: 90%; }
+                    100% { height: 90%; }
+                  }
+                  @keyframes pipeStreamClip {
+                    0% { clip-path: inset(0 0 100% 0); opacity: 1; }
+                    8% { clip-path: inset(0 0 0 0); opacity: 1; }
+                    82% { clip-path: inset(0 0 0 0); opacity: 1; }
+                    90% { clip-path: inset(100% 0 0 0); opacity: 1; }
+                    91% { clip-path: inset(100% 0 0 0); opacity: 0; }
+                    100% { clip-path: inset(100% 0 0 0); opacity: 0; }
+                  }
+                  @keyframes jarDismiss {
+                    0% { transform: translateX(0); opacity: 1; }
+                    99.9% { transform: translateX(-14.5rem); opacity: 1; }
+                    100% { transform: translateX(-14.5rem); opacity: 0; }
+                  }
+                  @keyframes jarAdvance {
+                    0% { transform: translateX(0); }
+                    100% { transform: translateX(-5rem); }
+                  }
                 `}</style>
                 <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
                    <span className="text-sm font-black text-slate-800 leading-none">
@@ -2034,25 +2074,94 @@ function BuildingsRoomsPage() {
                   />
                 </div>
 
-                {/* Diving Board */}
-                <div className="absolute bottom-[100px] right-0 w-20 z-10">
-                  <div className="w-full h-1.5 bg-amber-600 rounded-l-sm border-b-2 border-amber-800 shadow-sm relative">
-                    {/* Support bracket */}
-                    <div className="absolute right-0 top-1.5 w-3 h-6 bg-slate-700 rounded-bl-sm border-l-2 border-b-2 border-slate-900"></div>
+                {/* Water Pipe */}
+                <div 
+                  className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-10 z-0 flex flex-col items-center cursor-pointer hover:scale-105 active:scale-95 transition-transform"
+                  onClick={() => {
+                    setWaterKey(prev => prev + 1);
+                    setDismissedJars(new Set());
+                  }}
+                >
+                  <div className="w-6 h-full shrink-0 bg-slate-400 border-x-2 border-b-2 border-slate-600 rounded-b-sm bg-gradient-to-r from-slate-400 via-slate-300 to-slate-500 shadow-md relative z-10">
+                    {/* Pipe Rim */}
+                    <div className="absolute -bottom-1 -left-1 -right-1 h-2 bg-slate-500 border-2 border-slate-700 rounded-sm"></div>
+                  </div>
+                  {/* Continuous water stream */}
+                  <div 
+                    key={`stream-${waterKey}`}
+                    className={`absolute top-8 w-2 h-[104px] bg-blue-400 blur-[0.5px] z-0 ${waterKey === 0 ? 'hidden' : ''}`}
+                    style={{ 
+                      backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 10px, rgba(255,255,255,0.4) 10px, rgba(255,255,255,0.4) 20px)',
+                      backgroundSize: '100% 20px',
+                      animation: waterKey > 0 ? 'waterStreamFlow 0.3s linear infinite, pipeStreamClip 15s linear forwards' : 'none',
+                    }}
+                  ></div>
+                </div>
+
+                {/* Glass Jar 1 (Center) */}
+                <div 
+                  className={`absolute bottom-9 right-42.5 w-16 h-20 z-10 ${isJarFull ? 'cursor-pointer transition-transform hover:scale-105 active:scale-95' : ''} ${dismissedJars.has(1) ? 'pointer-events-none' : ''}`}
+                  onClick={() => {
+                    if (isJarFull) setDismissedJars(prev => new Set(prev).add(1));
+                  }}
+                >
+                  <div className="relative w-full h-full" style={dismissedJars.has(1) ? { animation: 'jarDismiss 7.733s linear forwards' } : {}}>
+                    {/* Jar Lid/Rim */}
+                    <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/40 border border-white/60 rounded-t-sm z-10" />
+                    {/* Jar Neck */}
+                    <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/30 border-l border-r border-white/50 z-10" />
+                    {/* Jar Body */}
+                    <div className="absolute top-[14px] inset-x-0 bottom-0 bg-transparent border-2 border-white/50 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.7)]">
+                      {/* Liquid Fill */}
+                      <div 
+                        key={`jar-${waterKey}`}
+                        className="absolute bottom-0 left-0 right-0 bg-blue-400"
+                        style={{ 
+                          animation: waterKey > 0 ? 'jarFill 15s linear forwards' : 'none',
+                          height: waterKey === 0 ? '0%' : undefined
+                        }}
+                      >
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-blue-300"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Glass Jar */}
-                <div className="absolute bottom-9 right-17 w-16 h-20 z-10">
-                  {/* Jar Lid/Rim */}
-                  <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/40 border border-white/60 rounded-t-sm z-10" />
-                  {/* Jar Neck */}
-                  <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/30 border-l border-r border-white/50 z-10" />
-                  {/* Jar Body */}
-                  <div className="absolute top-[14px] inset-x-0 bottom-0 bg-white/20 border-2 border-white/50 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.7)] backdrop-blur-sm">
+                {/* Glass Jar 2 (Right side) */}
+                <div className="absolute bottom-9 right-22.5 w-16 h-20 z-10">
+                  <div className="relative w-full h-full" style={dismissedJars.has(1) ? { animation: 'jarAdvance 2.666s linear forwards' } : {}}>
+                    {/* Jar Lid/Rim */}
+                    <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/40 border border-white/60 rounded-t-sm z-10" />
+                    {/* Jar Neck */}
+                    <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/30 border-l border-r border-white/50 z-10" />
+                    {/* Jar Body */}
+                    <div className="absolute top-[14px] inset-x-0 bottom-0 bg-transparent border-2 border-white/50 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.7)]">
+                      {/* Liquid Fill */}
+                      <div className="absolute bottom-0 left-0 right-0 bg-blue-400" style={{ height: '0%' }}>
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-blue-300"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Glass Jar 3 (Right side) */}
+                <div className="absolute bottom-9 right-2.5 w-16 h-20 z-10">
+                  <div className="relative w-full h-full" style={dismissedJars.has(1) ? { animation: 'jarAdvance 2.666s linear forwards' } : {}}>
+                    {/* Jar Lid/Rim */}
+                    <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/40 border border-white/60 rounded-t-sm z-10" />
+                    {/* Jar Neck */}
+                    <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/30 border-l border-r border-white/50 z-10" />
+                    {/* Jar Body */}
+                    <div className="absolute top-[14px] inset-x-0 bottom-0 bg-transparent border-2 border-white/50 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.7)]">
+                      {/* Liquid Fill */}
+                      <div className="absolute bottom-0 left-0 right-0 bg-blue-400" style={{ height: '0%' }}>
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-blue-300"></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
+              
             )}
           </SummaryCard>
         </div>
