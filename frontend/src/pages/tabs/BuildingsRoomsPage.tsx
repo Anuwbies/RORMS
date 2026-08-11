@@ -564,15 +564,15 @@ function BuildingsRoomsPage() {
   const [buildings, setBuildings] = useState<Building[]>([])
   const [waterKey, setWaterKey] = useState(0)
   const [dismissedJars, setDismissedJars] = useState<Set<number>>(new Set())
-  const [jars, setJars] = useState<Array<{id: number, position: number | 'dismissed', fillStatus: 'empty'|'filling'|'full', buildingIndex: number}>>(
-    Array.from({ length: 20 }).map((_, i) => ({
+  const [jars, setJars] = useState<Array<{id: number, position: number | 'dismissed', fillStatus: 'empty'|'filling'|'full'|'labeled', buildingIndex: number}>>(
+    Array.from({ length: 40 }).map((_, i) => ({
       id: i + 1,
       position: i,
       fillStatus: 'empty',
       buildingIndex: i
     }))
   );
-  const [nextBuildingIndex, setNextBuildingIndex] = useState(20);
+  const [nextBuildingIndex, setNextBuildingIndex] = useState(40);
   const [isJarsMoving, setIsJarsMoving] = useState(false);
   const [hoveredJarId, setHoveredJarId] = useState<number | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2051,6 +2051,10 @@ function BuildingsRoomsPage() {
                     0% { transform: translateX(0); }
                     100% { transform: translateX(-5rem); }
                   }
+                  @keyframes labelWipe {
+                    0% { clip-path: inset(0 100% 0 0); }
+                    100% { clip-path: inset(0 0 0 0); }
+                  }
                 `}</style>
                 <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
                    <span className="text-sm font-black text-slate-800 leading-none">
@@ -2058,8 +2062,70 @@ function BuildingsRoomsPage() {
                    </span>
                    <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
                 </div>
+                {/* Background Conveyor Belt System */}
+                <div className="absolute bottom-19.5 -left-4 -right-4 h-2 border-b-2 border-slate-700/50 shadow-inner overflow-hidden bg-slate-700/80 flex z-0 opacity-70">
+                  <div 
+                    className="w-full h-full opacity-60"
+                    style={{
+                      background: 'repeating-linear-gradient(90deg, #64748b 0px, #64748b 10px, #334155 10px, #334155 30px)',
+                      backgroundSize: '30px 100%',
+                      animation: 'conveyorMove 1.5s linear infinite reverse'
+                    }}
+                  />
+                </div>
+
+                {/* Background Infinite Jars */}
+                {jars.map(jar => {
+                  let leftVal = '';
+                  if (jar.position === 'dismissed') {
+                    leftVal = 'calc(50% + 100rem)';
+                  } else {
+                    leftVal = `calc(50% + ${(20 - jar.position) * 3.5}rem)`; 
+                  }
+
+                  const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
+                  const displayCode = building ? building.code : 'JAR';
+                  const displayCap = building ? building.capacity || 0 : 0;
+
+                  return (
+                    <div 
+                      key={`bg-${jar.id}`}
+                      className="group/bgjar absolute bottom-[5.2rem] w-12 h-16 z-0 opacity-60 scale-90"
+                      style={{
+                        left: leftVal,
+                        transition: jar.position === 'dismissed' ? 'left 52s linear' : 'left 2.8s linear',
+                      }}
+                      onMouseEnter={() => {
+                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                        setHoveredJarId(-jar.id);
+                      }}
+                      onMouseLeave={() => {
+                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                        hoverTimeoutRef.current = setTimeout(() => {
+                          setHoveredJarId(null);
+                        }, 1000);
+                      }}
+                    >
+                      <div className="relative w-full h-full">
+                        {/* Distant Tooltip */}
+                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 transition-all duration-300 z-20 whitespace-nowrap bg-slate-700/80 text-white/90 text-[0.55rem] font-medium px-1.5 py-0.5 rounded shadow-sm invisible opacity-0 group-hover/bgjar:visible group-hover/bgjar:opacity-100 backdrop-blur-sm pointer-events-none">
+                          {displayCode}: {displayCap}
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[3px] border-transparent border-t-slate-700/80"></div>
+                        </div>
+
+                        {/* Jar Lid/Rim */}
+                        <div className="absolute top-1 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/60 border border-white/80 rounded-t-sm" />
+                        {/* Jar Neck */}
+                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-6 h-1 bg-white/50 border-l border-r border-white/70" />
+                        {/* Jar Body */}
+                        <div className="absolute top-3.5 inset-x-0 bottom-0 bg-white/10 border-2 border-white/70 rounded-b-lg rounded-t-md overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.9)] backdrop-blur-[1px]">
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
                 
-                {/* Conveyor Belt System */}
+                {/* Main Conveyor Belt System */}
                 <div className="absolute bottom-6 -left-2 -right-2 h-3 border-b-2 border-slate-900 shadow-xl overflow-hidden bg-slate-800 flex">
                   <div 
                     className="w-full h-full"
@@ -2150,33 +2216,38 @@ function BuildingsRoomsPage() {
                       onClick={() => {
                         if (isCenter && isFull && !isJarsMoving) {
                           setIsJarsMoving(true);
-                          setTimeout(() => setIsJarsMoving(false), 2666);
                           
-                          const newId = Date.now();
-                          setJars(prev => {
-                            const nextJars = prev.map(j => {
-                              if (j.id === jar.id) return { ...j, position: 'dismissed' as const };
-                              if (typeof j.position === 'number') {
-                                return { ...j, position: j.position - 1 };
-                              }
-                              return j;
-                            });
-                            
-                            nextJars.push({ 
-                              id: newId, 
-                              position: 19, 
-                              fillStatus: 'empty',
-                              buildingIndex: nextBuildingIndex
-                            });
-                            
-                            setNextBuildingIndex(prev => prev + 1);
-                            
-                            return nextJars;
-                          });
+                          setJars(prev => prev.map(j => j.id === jar.id ? { ...j, fillStatus: 'labeled' } : j));
                           
                           setTimeout(() => {
-                            setJars(current => current.filter(cj => cj.id !== jar.id));
-                          }, 40000);
+                            setTimeout(() => setIsJarsMoving(false), 2666);
+                            
+                            const newId = Date.now();
+                            setJars(prev => {
+                              const nextJars = prev.map(j => {
+                                if (j.id === jar.id) return { ...j, position: 'dismissed' as const };
+                                if (typeof j.position === 'number') {
+                                  return { ...j, position: j.position - 1 };
+                                }
+                                return j;
+                              });
+                              
+                              nextJars.push({ 
+                                id: newId, 
+                                position: 39, 
+                                fillStatus: 'empty',
+                                buildingIndex: nextBuildingIndex
+                              });
+                              
+                              setNextBuildingIndex(prev => prev + 1);
+                              
+                              return nextJars;
+                            });
+                            
+                            setTimeout(() => {
+                              setJars(current => current.filter(cj => cj.id !== jar.id));
+                            }, 40000);
+                          }, 1000);
                         }
                       }}
                     >
@@ -2193,21 +2264,33 @@ function BuildingsRoomsPage() {
                         </div>
 
                         {/* Jar Lid/Rim */}
-                        <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/40 border border-white/60 rounded-t-sm z-10" />
+                        <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/60 border border-white/80 rounded-t-sm z-10" />
                         {/* Jar Neck */}
-                        <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/30 border-l border-r border-white/50 z-10" />
+                        <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/50 border-l border-r border-white/70 z-10" />
                         {/* Jar Body */}
-                        <div className="absolute top-[14px] inset-x-0 bottom-0 bg-transparent border-2 border-white/50 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.7)]">
+                        <div className="absolute top-[14px] inset-x-0 bottom-0 bg-white/10 border-2 border-white/70 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_16px_rgba(255,255,255,0.9)] backdrop-blur-[1px]">
                           {/* Liquid Fill */}
                           <div 
                             className="absolute bottom-0 left-0 right-0 bg-blue-400"
                             style={{ 
                               animation: jar.fillStatus === 'filling' ? 'jarFill 15s linear forwards' : 'none',
-                              height: jar.fillStatus === 'full' ? '90%' : (jar.fillStatus === 'empty' ? '0%' : undefined)
+                              height: (jar.fillStatus === 'full' || jar.fillStatus === 'labeled') ? '90%' : (jar.fillStatus === 'empty' ? '0%' : undefined)
                             }}
                           >
                             <div className="absolute top-0 left-0 right-0 h-1 bg-blue-300"></div>
                           </div>
+                          
+                          {/* Bottle Label */}
+                          {jar.fillStatus === 'labeled' && (
+                            <div 
+                              className="absolute top-[45%] inset-x-0 -translate-y-1/2 h-7 bg-white/95 border-y border-emerald-400/50 shadow-[0_0_8px_rgba(16,185,129,0.2)] flex items-center justify-center overflow-hidden transition-all duration-300 z-10"
+                              style={{ animation: 'labelWipe 1s ease-out forwards' }}
+                            >
+                              <span className="text-xs font-bold text-slate-800 tracking-tighter truncate w-full text-center px-0.5">
+                                {displayCode}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
