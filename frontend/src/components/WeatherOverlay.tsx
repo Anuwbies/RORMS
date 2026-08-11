@@ -78,14 +78,14 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
 
   const rainDrops = useMemo(() => Array.from({ length: 100 }).map((_, i) => ({
     left: `${(i / 100) * 100}%`,
-    animationDuration: `${0.3 + Math.random() * 0.5}s`,
-    animationDelay: `-${Math.random() * 2}s`
+    animationDuration: `${0.6 + Math.random() * 1.0}s`,
+    animationDelay: `-${Math.random() * 4}s`
   })), []);
 
   const clouds = useMemo(() => Array.from({ length: 12 }).map(() => ({
     top: `${Math.random() * 50}%`,
-    animationDuration: `${15 + Math.random() * 20}s`,
-    animationDelay: `-${Math.random() * 20}s`,
+    animationDuration: `${30 + Math.random() * 40}s`,
+    animationDelay: `-${Math.random() * 70}s`,
     scale: 0.5 + Math.random() * 0.8
   })), []);
 
@@ -103,11 +103,11 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
           0% { transform: translateY(-20px); opacity: 0; }
           10% { opacity: 1; }
           80% { opacity: 1; }
-          100% { transform: translateY(150px); opacity: 0; }
+          100% { transform: translateY(300px); opacity: 0; }
         }
         @keyframes weatherFloat {
-          0% { transform: translateX(-100px); }
-          100% { transform: translateX(500px); }
+          0% { transform: translateX(-200px); }
+          100% { transform: translateX(1000px); }
         }
         @keyframes weatherLightning {
           0%, 95%, 98% { opacity: 0; }
@@ -195,7 +195,7 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
       )}
 
       {/* Clouds */}
-      {(isCloudy || isRainy || isThunderstorm) && clouds.slice(0, isThunderstorm ? 12 : isCloudy ? 8 : 6).map((c, i) => (
+      {(isSunny || isCloudy || isRainy || isThunderstorm) && clouds.slice(0, (isCloudy || isThunderstorm) ? 12 : isRainy ? 8 : 4).map((c, i) => (
         <div 
           key={i} 
           className={`absolute w-16 h-5 ${cloudColor} rounded-full blur-[1px]`}

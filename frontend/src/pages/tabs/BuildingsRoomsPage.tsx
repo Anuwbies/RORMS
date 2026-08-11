@@ -653,9 +653,6 @@ function BuildingsRoomsPage() {
   // Auto Mode Logic
   useEffect(() => {
     if (!isAutoMode) {
-      if (autoTimeoutsRef.current.fill) clearTimeout(autoTimeoutsRef.current.fill);
-      if (autoTimeoutsRef.current.move) clearTimeout(autoTimeoutsRef.current.move);
-      if (autoTimeoutsRef.current.stop) clearTimeout(autoTimeoutsRef.current.stop);
       return;
     }
     
@@ -2088,7 +2085,10 @@ function BuildingsRoomsPage() {
             subtitle={weatherData ? `${weatherData.temp}°C Manila Weather` : "All Managed Spaces"}
             icon={
               <button 
-                onClick={() => setShowTestButtons(prev => !prev)} 
+                onClick={() => {
+                  setShowTestButtons(prev => !prev);
+                  setShowFactoryControls(false);
+                }} 
                 className="hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-sm p-0.5 -m-0.5"
                 title="Toggle Easter Eggs"
               >
@@ -2141,7 +2141,10 @@ function BuildingsRoomsPage() {
             subtitle="Campus-wide Seats"
             icon={
               <button 
-                onClick={() => setShowFactoryControls(prev => !prev)} 
+                onClick={() => {
+                  setShowFactoryControls(prev => !prev);
+                  setShowTestButtons(false);
+                }} 
                 className="hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-sm p-0.5 -m-0.5"
                 title="Toggle Factory Controls"
               >
@@ -2152,7 +2155,46 @@ function BuildingsRoomsPage() {
             blobClasses="bg-amber-500/5"
           >
             {buildings.length > 0 && (
-              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-xl overflow-hidden bg-emerald-500/20">
+              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-xl border-[4px] border-slate-600 shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]">
+                <div className="absolute inset-0 rounded-lg overflow-hidden bg-slate-700">
+                  {/* Factory Environment Background */}
+                <div className="absolute inset-0 pointer-events-none z-0">
+                  {/* Subtle Grid / Tile Pattern */}
+                  <div className="absolute inset-0 opacity-[0.15]" style={{ backgroundImage: 'linear-gradient(#000000 1px, transparent 1px), linear-gradient(90deg, #000000 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
+                  
+                  {/* Support Beams (Vertical) */}
+                  <div className="absolute top-0 bottom-0 left-[12%] w-16 bg-gradient-to-r from-slate-800 via-slate-600 to-slate-800 border-x border-slate-900 shadow-2xl flex justify-center">
+                    <div className="w-1/2 h-full bg-[repeating-linear-gradient(0deg,transparent,transparent_40px,rgba(0,0,0,0.3)_40px,rgba(0,0,0,0.3)_44px)]"></div>
+                  </div>
+                  <div className="absolute top-0 bottom-0 right-[18%] w-20 bg-gradient-to-r from-slate-800 via-slate-600 to-slate-800 border-x border-slate-900 shadow-2xl flex justify-center">
+                    <div className="w-1/2 h-full bg-[repeating-linear-gradient(0deg,transparent,transparent_40px,rgba(0,0,0,0.3)_40px,rgba(0,0,0,0.3)_44px)]"></div>
+                  </div>
+
+                  {/* Ceiling Structural Beam */}
+                  <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-slate-800 to-slate-700 border-b-[3px] border-slate-900 shadow-xl flex items-center justify-between px-8 z-10">
+                    {/* Vents */}
+                    <div className="flex gap-4">
+                      {[1, 2, 3].map(i => (
+                        <div key={i} className="w-12 h-6 bg-slate-900 rounded-sm border border-slate-700 shadow-inner flex flex-col justify-around p-1">
+                          <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
+                          <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
+                          <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Industrial Indicator Lights */}
+                    <div className="flex gap-4 p-2 bg-slate-900 rounded-lg border border-slate-800 shadow-[inset_0_0_8px_rgba(0,0,0,0.8)]">
+                      <div className={`w-3 h-3 rounded-full border border-black ${jars.find(j => j.position === 0)?.fillStatus !== 'filling' && !isJarsMoving ? 'bg-red-500 shadow-[0_0_12px_#ef4444]' : 'bg-red-950 opacity-40'}`} title="Idle / Stopped"></div>
+                      <div className={`w-3 h-3 rounded-full border border-black ${jars.find(j => j.position === 0)?.fillStatus === 'filling' ? 'bg-amber-400 shadow-[0_0_12px_#fbbf24]' : 'bg-amber-950 opacity-40'}`} title="Filling"></div>
+                      <div className={`w-3 h-3 rounded-full border border-black ${isJarsMoving ? 'bg-emerald-400 shadow-[0_0_12px_#34d399]' : 'bg-emerald-950 opacity-40'}`} title="Moving"></div>
+                    </div>
+                  </div>
+
+                  {/* Hazard Tape along bottom */}
+                  <div className="absolute bottom-0 left-0 right-0 h-2.5 bg-[repeating-linear-gradient(45deg,#fbbf24,#fbbf24_15px,#000_15px,#000_30px)] opacity-70 z-10"></div>
+                </div>
+
                 <style>{`
                   @keyframes conveyorMoveMain {
                     0% { background-position: 0 0; }
@@ -2194,11 +2236,11 @@ function BuildingsRoomsPage() {
                    <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
                 </div>
                 {/* Background Conveyor Belt System */}
-                <div className="absolute bottom-19.5 -left-4 -right-4 h-2 border-b-2 border-slate-700/50 shadow-inner overflow-hidden bg-slate-700/80 flex z-0 opacity-70">
+                <div className="absolute bottom-19.5 -left-4 -right-4 h-2.5 border-b-[3px] border-black/80 shadow-xl overflow-hidden bg-black flex z-0 opacity-80">
                   <div 
-                    className="w-full h-full opacity-60"
+                    className="w-full h-full"
                     style={{
-                      background: 'repeating-linear-gradient(90deg, #64748b 0rem, #64748b 0.6rem, #334155 0.6rem, #334155 2rem)',
+                      background: 'repeating-linear-gradient(90deg, #94a3b8 0rem, #94a3b8 0.3rem, #262626 0.3rem, #262626 2rem)',
                       backgroundSize: '2rem 100%',
                       animation: 'conveyorMoveBg 1.524s linear infinite reverse',
                       animationPlayState: isJarsMoving ? 'running' : 'paused'
@@ -2235,12 +2277,6 @@ function BuildingsRoomsPage() {
                       }}
                     >
                       <div className="relative w-full h-full">
-                        {/* Distant Tooltip */}
-                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 transition-all duration-300 z-20 whitespace-nowrap bg-slate-700/80 text-white/90 text-[0.55rem] font-medium px-1.5 py-0.5 rounded shadow-sm invisible opacity-0 group-hover/bgjar:visible group-hover/bgjar:opacity-100 backdrop-blur-sm pointer-events-none">
-                          {displayCode}: {displayCap}
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[3px] border-transparent border-t-slate-700/80"></div>
-                        </div>
-
                         {/* Jar Lid/Rim */}
                         <div className="absolute top-1 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/60 border border-white/80 rounded-t-sm" />
                         {/* Jar Neck */}
@@ -2254,11 +2290,11 @@ function BuildingsRoomsPage() {
                 })}
                 
                 {/* Main Conveyor Belt System */}
-                <div className="absolute bottom-6 -left-2 -right-2 h-3 border-b-2 border-slate-900 shadow-xl overflow-hidden bg-slate-800 flex">
+                <div className="absolute bottom-6 -left-2 -right-2 h-4 border-b-[4px] border-black shadow-[0_10px_20px_rgba(0,0,0,0.8)] overflow-hidden bg-black flex">
                   <div 
                     className="w-full h-full"
                     style={{
-                      background: 'repeating-linear-gradient(90deg, #94a3b8 0rem, #94a3b8 1rem, #334155 1rem, #334155 3rem)',
+                      background: 'repeating-linear-gradient(90deg, #cbd5e1 0rem, #cbd5e1 0.5rem, #171717 0.5rem, #171717 3rem)',
                       backgroundSize: '3rem 100%',
                       animation: 'conveyorMoveMain 1.6s linear infinite',
                       animationPlayState: isJarsMoving ? 'running' : 'paused'
@@ -2378,15 +2414,6 @@ function BuildingsRoomsPage() {
                       <div 
                         className="relative w-full h-full" 
                       >
-                        {/* Custom Tooltip */}
-                        <div className={`absolute -top-10 left-1/2 -translate-x-1/2 transition-all duration-200 pointer-events-none z-20 whitespace-nowrap bg-slate-800 text-white text-xs font-bold px-2 py-1 rounded shadow-lg ${
-                          hoveredJarId !== null && hoveredJarId !== jar.id ? 'invisible opacity-0' :
-                          (isWaitingForAction ? 'visible opacity-100' : 'invisible opacity-0 group-hover/jar:visible group-hover/jar:opacity-100')
-                        }`}>
-                          {displayCode}: {displayCap} Capacity
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-slate-800"></div>
-                        </div>
-
                         {/* Jar Lid/Rim */}
                         <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/60 border border-white/80 rounded-t-sm z-10" />
                         {/* Jar Neck */}
@@ -2420,8 +2447,65 @@ function BuildingsRoomsPage() {
                     </div>
                   );
                 })}
+                </div> {/* End Factory Inner Container */}
+
+                {/* Global Tooltips Layer (Outside overflow-hidden) */}
+                <div className="absolute inset-0 pointer-events-none z-[100]">
+                  {jars.map(jar => {
+                    const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
+                    const displayCode = building ? building.code : 'JAR';
+                    const displayCap = building ? building.capacity || 0 : 0;
+                    
+                    // Background Jar Tooltip
+                    if (jar.position >= 0 && jar.position <= 19) {
+                      const bgLeftVal = `calc(50% + ${(9 - jar.position) * 3.5}rem)`;
+                      return (
+                        <div 
+                          key={`bg-tooltip-${jar.id}`}
+                          className={`absolute bottom-[5.2rem] w-12 h-16 scale-90 transition-all duration-300 pointer-events-none ${
+                            hoveredJarId === -jar.id ? 'opacity-100' : 'opacity-0'
+                          }`}
+                          style={{ left: bgLeftVal, transition: 'left 2.667s linear' }}
+                        >
+                          <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/95 text-slate-800 text-[0.55rem] font-bold px-1.5 py-0.5 rounded shadow-md">
+                            {displayCode}: {displayCap}
+                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-[4px] border-transparent border-t-white/95"></div>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+
+                  {jars.map(jar => {
+                    if (jar.position > 7 || jar.position < -7) return null;
+                    
+                    const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
+                    const displayCode = building ? building.code : 'JAR';
+                    const displayCap = building ? building.capacity || 0 : 0;
+                    
+                    const isCenter = jar.position === 0;
+                    const fgLeftVal = `calc(50% + ${jar.position * 5 - 2}rem)`;
+                    const isWaitingForAction = isCenter && !isJarsMoving && (isAutoMode || jar.fillStatus === 'empty' || jar.fillStatus === 'full');
+                    
+                    return (
+                      <div 
+                        key={`fg-tooltip-${jar.id}`}
+                        className={`absolute bottom-9 w-16 h-20 transition-all duration-200 pointer-events-none ${
+                          hoveredJarId !== null && hoveredJarId !== jar.id ? 'opacity-0' :
+                          (isWaitingForAction ? 'opacity-100' : (hoveredJarId === jar.id ? 'opacity-100' : 'opacity-0'))
+                        }`}
+                        style={{ left: fgLeftVal, transition: 'left 2.667s linear' }}
+                      >
+                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white text-slate-800 text-xs font-bold px-2 py-1 rounded shadow-lg">
+                          {displayCode}: {displayCap} Capacity
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-white"></div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              
             )}
           </SummaryCard>
         </div>
