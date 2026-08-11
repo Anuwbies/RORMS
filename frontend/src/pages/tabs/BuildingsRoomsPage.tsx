@@ -564,14 +564,14 @@ function BuildingsRoomsPage() {
   const [buildings, setBuildings] = useState<Building[]>([])
   const [waterKey, setWaterKey] = useState(0)
   const [dismissedJars, setDismissedJars] = useState<Set<number>>(new Set())
-  const [jars, setJars] = useState<Array<{id: number, position: number | 'dismissed', fillStatus: 'empty'|'filling'|'full'|'labeled', buildingIndex: number}>>(
-    Array.from({ length: 40 }).map((_, i) => ({
+  const [jars, setJars] = useState<Array<{id: number, position: number, fillStatus: 'empty'|'filling'|'full'|'labeled', buildingIndex: number}>>(
+    Array.from({ length: 20 }).map((_, i) => ({
       id: i + 1,
       position: i,
       fillStatus: 'empty',
-      buildingIndex: i
+      buildingIndex: i + 20
     }))
-  );
+  )
   const [nextBuildingIndex, setNextBuildingIndex] = useState(40);
   const [isJarsMoving, setIsJarsMoving] = useState(false);
   const [hoveredJarId, setHoveredJarId] = useState<number | null>(null);
@@ -579,6 +579,48 @@ function BuildingsRoomsPage() {
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
   const [supermanKey, setSupermanKey] = useState<number>(0)
   const [showTestButtons, setShowTestButtons] = useState(false)
+  const [isAutoMode, setIsAutoMode] = useState(false)
+
+  // Auto Mode Logic
+  useEffect(() => {
+    if (!isAutoMode || isJarsMoving) return;
+
+    const centerJar = jars.find(j => j.position === 0);
+    if (!centerJar) return;
+
+    if (centerJar.fillStatus === 'empty') {
+      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling' } : j));
+      setWaterKey(prev => prev + 1);
+      
+      setTimeout(() => {
+        setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'full' } : j));
+      }, 13500);
+    } 
+    else if (centerJar.fillStatus === 'full') {
+      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'labeled' } : j));
+      
+      setTimeout(() => {
+        setIsJarsMoving(true);
+        setTimeout(() => setIsJarsMoving(false), 2667);
+        
+        const newId = Date.now();
+        setJars(prev => {
+          const nextJars = prev.map(j => ({ ...j, position: j.position - 1 }));
+          
+          nextJars.push({ 
+            id: newId, 
+            position: 19, 
+            fillStatus: 'empty',
+            buildingIndex: nextBuildingIndex
+          });
+          
+          setNextBuildingIndex(prev => prev + 1);
+          
+          return nextJars.filter(j => j.position >= -15);
+        });
+      }, 1000);
+    }
+  }, [isAutoMode, jars, isJarsMoving, nextBuildingIndex]);
   const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('rorms_buildings_expanded')
     return saved ? JSON.parse(saved) : []
@@ -2024,9 +2066,13 @@ function BuildingsRoomsPage() {
             {buildings.length > 0 && (
               <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-xl overflow-hidden bg-emerald-500/20">
                 <style>{`
-                  @keyframes conveyorMove {
+                  @keyframes conveyorMoveMain {
                     0% { background-position: 0 0; }
-                    100% { background-position: -30px 0; }
+                    100% { background-position: -3rem 0; }
+                  }
+                  @keyframes conveyorMoveBg {
+                    0% { background-position: 0 0; }
+                    100% { background-position: -2rem 0; }
                   }
                   @keyframes waterStreamFlow {
                     0% { background-position: 0 0; }
@@ -2047,10 +2093,7 @@ function BuildingsRoomsPage() {
                     100% { clip-path: inset(100% 0 0 0); opacity: 0; }
                   }
 
-                  @keyframes jarAdvance {
-                    0% { transform: translateX(0); }
-                    100% { transform: translateX(-5rem); }
-                  }
+
                   @keyframes labelWipe {
                     0% { clip-path: inset(0 100% 0 0); }
                     100% { clip-path: inset(0 0 0 0); }
@@ -2067,21 +2110,18 @@ function BuildingsRoomsPage() {
                   <div 
                     className="w-full h-full opacity-60"
                     style={{
-                      background: 'repeating-linear-gradient(90deg, #64748b 0px, #64748b 10px, #334155 10px, #334155 30px)',
-                      backgroundSize: '30px 100%',
-                      animation: 'conveyorMove 1.5s linear infinite reverse'
+                      background: 'repeating-linear-gradient(90deg, #64748b 0rem, #64748b 0.6rem, #334155 0.6rem, #334155 2rem)',
+                      backgroundSize: '2rem 100%',
+                      animation: 'conveyorMoveBg 1.524s linear infinite reverse',
+                      animationPlayState: isJarsMoving ? 'running' : 'paused'
                     }}
                   />
                 </div>
 
                 {/* Background Infinite Jars */}
                 {jars.map(jar => {
-                  let leftVal = '';
-                  if (jar.position === 'dismissed') {
-                    leftVal = 'calc(50% + 100rem)';
-                  } else {
-                    leftVal = `calc(50% + ${(20 - jar.position) * 3.5}rem)`; 
-                  }
+                  if (jar.position > 19 || jar.position < 0) return null;
+                  const leftVal = `calc(50% + ${(9 - jar.position) * 3.5}rem)`;
 
                   const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
                   const displayCode = building ? building.code : 'JAR';
@@ -2093,7 +2133,7 @@ function BuildingsRoomsPage() {
                       className="group/bgjar absolute bottom-[5.2rem] w-12 h-16 z-0 opacity-60 scale-90"
                       style={{
                         left: leftVal,
-                        transition: jar.position === 'dismissed' ? 'left 52s linear' : 'left 2.8s linear',
+                        transition: 'left 2.667s linear',
                       }}
                       onMouseEnter={() => {
                         if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
@@ -2130,9 +2170,10 @@ function BuildingsRoomsPage() {
                   <div 
                     className="w-full h-full"
                     style={{
-                      background: 'repeating-linear-gradient(90deg, #94a3b8 0px, #94a3b8 10px, #334155 10px, #334155 30px)',
-                      backgroundSize: '30px 100%',
-                      animation: 'conveyorMove 1s linear infinite'
+                      background: 'repeating-linear-gradient(90deg, #94a3b8 0rem, #94a3b8 1rem, #334155 1rem, #334155 3rem)',
+                      backgroundSize: '3rem 100%',
+                      animation: 'conveyorMoveMain 1.6s linear infinite',
+                      animationPlayState: isJarsMoving ? 'running' : 'paused'
                     }}
                   />
                 </div>
@@ -2175,14 +2216,9 @@ function BuildingsRoomsPage() {
                   ></div>
                 </div>
 
-                {/* Infinite Jars */}
                 {jars.map(jar => {
-                  let leftVal = '';
-                  if (jar.position === 'dismissed') {
-                    leftVal = 'calc(50% - 102rem)';
-                  } else {
-                    leftVal = `calc(50% + ${jar.position * 5 - 2}rem)`;
-                  }
+                  if (jar.position > 7 || jar.position < -7) return null;
+                  const leftVal = `calc(50% + ${jar.position * 5 - 2}rem)`;
 
                   const isCenter = jar.position === 0;
                   const isFull = jar.fillStatus === 'full';
@@ -2198,10 +2234,10 @@ function BuildingsRoomsPage() {
                       key={jar.id}
                       className={`group/jar absolute bottom-9 w-16 h-20 z-10 ${
                         (isCenter && isFull) ? 'cursor-pointer transition-transform hover:scale-105 active:scale-95' : ''
-                      } ${jar.position === 'dismissed' ? 'pointer-events-none' : ''}`}
+                      }`}
                       style={{
                         left: leftVal,
-                        transition: jar.position === 'dismissed' ? 'left 53.333s linear' : 'left 2.666s linear',
+                        transition: 'left 2.667s linear',
                       }}
                       onMouseEnter={() => {
                         if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
@@ -2215,38 +2251,27 @@ function BuildingsRoomsPage() {
                       }}
                       onClick={() => {
                         if (isCenter && isFull && !isJarsMoving) {
-                          setIsJarsMoving(true);
-                          
                           setJars(prev => prev.map(j => j.id === jar.id ? { ...j, fillStatus: 'labeled' } : j));
                           
                           setTimeout(() => {
-                            setTimeout(() => setIsJarsMoving(false), 2666);
+                            setIsJarsMoving(true);
+                            setTimeout(() => setIsJarsMoving(false), 2667);
                             
                             const newId = Date.now();
                             setJars(prev => {
-                              const nextJars = prev.map(j => {
-                                if (j.id === jar.id) return { ...j, position: 'dismissed' as const };
-                                if (typeof j.position === 'number') {
-                                  return { ...j, position: j.position - 1 };
-                                }
-                                return j;
-                              });
+                              const nextJars = prev.map(j => ({ ...j, position: j.position - 1 }));
                               
                               nextJars.push({ 
                                 id: newId, 
-                                position: 39, 
+                                position: 19, 
                                 fillStatus: 'empty',
                                 buildingIndex: nextBuildingIndex
                               });
                               
                               setNextBuildingIndex(prev => prev + 1);
                               
-                              return nextJars;
+                              return nextJars.filter(j => j.position >= -7);
                             });
-                            
-                            setTimeout(() => {
-                              setJars(current => current.filter(cj => cj.id !== jar.id));
-                            }, 40000);
                           }, 1000);
                         }
                       }}
@@ -2331,6 +2356,13 @@ function BuildingsRoomsPage() {
                   </Button>
                 </>
               )}
+              <Button
+                variant={isAutoMode ? "brand" : "outline"}
+                onClick={() => setIsAutoMode(!isAutoMode)}
+                className={`w-full lg:w-auto shadow-sm ${isAutoMode ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-white text-slate-500 hover:text-emerald-600'}`}
+              >
+                {isAutoMode ? '⏸️ Stop Auto' : '▶️ Auto Fill'}
+              </Button>
               <Button
                 variant="brand"
                 icon={<PlusIcon className="h-4 w-4" />}
