@@ -732,13 +732,13 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
   return (
     <div 
       ref={containerRef}
-      className="relative w-full aspect-[16/9] bg-[#f3f7ee] rounded-xl mt-2 border border-emerald-200/80 shadow-[inset_0_2px_8px_rgba(0,0,0,0.06),0_4px_16px_rgba(0,0,0,0.05)] select-none touch-none @container"
+      className="relative w-full aspect-[16/9] bg-[#f3f7ee] rounded-2xl mt-2 border border-emerald-200/80 shadow-[inset_0_2px_8px_rgba(0,0,0,0.06),0_4px_16px_rgba(0,0,0,0.05)] select-none touch-none @container"
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
       {/* Background Texture Container (Clipped to Rounded Card Corners) */}
-      <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none z-0">
+      <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none z-0">
         {/* Rich Campus Blueprint & Lawn Ground Texture Overlay */}
         <div 
           className="absolute inset-0 opacity-85"
@@ -756,7 +756,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         />
         {/* Perimeter Vignette Depth Layer */}
         <div 
-          className="absolute inset-0 rounded-xl shadow-[inset_0_0_50px_rgba(41,54,28,0.12),inset_0_0_15px_rgba(0,0,0,0.06)]" 
+          className="absolute inset-0 rounded-2xl shadow-[inset_0_0_50px_rgba(41,54,28,0.12),inset_0_0_15px_rgba(0,0,0,0.06)]" 
         />
       </div>
 
@@ -789,7 +789,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         kf += `}\n`;
         return kf;
       }).join('')}</style>
-      <div className="absolute inset-0 overflow-visible">
+      <div className="absolute inset-0 overflow-hidden rounded-2xl">
       
       {/* Travelers walking between buildings via obstacle-free paths */}
       <div className={`absolute inset-0 pointer-events-none transition-opacity duration-200 ${draggingId || resizingId ? 'opacity-0' : 'opacity-100'}`}>
@@ -965,7 +965,10 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         const currentPos = targetBldg.entrancePosition ?? 50;
 
         const clampX = Math.min(78, Math.max(22, targetBldg.x));
-        const modalTopY = targetBldg.y + (targetBldg.h || 15) / 2 + 1.5;
+        const isNearBottom = targetBldg.y > 55;
+        const modalTopY = isNearBottom 
+          ? targetBldg.y - (targetBldg.h || 15) / 2 - 1.5 
+          : targetBldg.y + (targetBldg.h || 15) / 2 + 1.5;
 
         return (
           <div 
@@ -973,7 +976,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
             style={{
               left: `${clampX}%`,
               top: `${modalTopY}%`,
-              transform: 'translate(-50%, 0%)'
+              transform: isNearBottom ? 'translate(-50%, -100%)' : 'translate(-50%, 0%)'
             }}
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
@@ -2674,7 +2677,7 @@ function BuildingsRoomsPage() {
           >
 
             {rooms.length > 0 && (
-              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-md overflow-hidden">
+              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-2xl overflow-hidden">
                 <WeatherOverlay weatherCode={weatherData?.code} layer="back" />
                 
                 <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
@@ -2725,7 +2728,7 @@ function BuildingsRoomsPage() {
             blobClasses="bg-amber-500/5"
           >
             {buildings.length > 0 && (
-              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-xl border-[4px] border-slate-600 shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]">
+              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-2xl border-[4px] border-slate-600 shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]">
                 <div className="absolute inset-0 rounded-lg overflow-hidden bg-slate-700">
                   {/* Factory Environment Background */}
                 <div className="absolute inset-0 pointer-events-none z-0">
