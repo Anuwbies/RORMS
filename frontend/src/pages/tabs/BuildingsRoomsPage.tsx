@@ -2180,26 +2180,28 @@ function BuildingsRoomsPage() {
 
                 {/* Water Pipe */}
                 <div 
-                  className={`absolute top-0 bottom-[30px] left-1/2 -ml-4 w-8 z-0 transition-transform origin-top ${
-                    jars.some(j => j.position === 0 && j.fillStatus === 'empty') && !isJarsMoving
-                      ? 'cursor-pointer hover:scale-105 active:scale-95' 
-                      : ''
-                  }`}
-                  onClick={() => {
-                    if (isJarsMoving) return;
-                    const centerJar = jars.find(j => j.position === 0);
-                    if (!centerJar || centerJar.fillStatus !== 'empty') return;
-
-                    setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling' } : j));
-                    setWaterKey(prev => prev + 1);
-                    
-                    setTimeout(() => {
-                      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'full' } : j));
-                    }, 13500);
-                  }}
+                  className={`absolute top-0 bottom-[30px] left-1/2 -ml-4 w-8 z-0 pointer-events-none`}
                 >
                   {/* Visual Pipe (Fixed Height) */}
-                  <div className="absolute top-0 left-1 right-1 h-10 bg-slate-400 border-x-2 border-b-2 border-slate-600 rounded-b-sm bg-gradient-to-r from-slate-400 via-slate-300 to-slate-500 shadow-md z-10">
+                  <div 
+                    className={`absolute top-0 left-1 right-1 h-10 bg-slate-400 border-x-2 border-b-2 border-slate-600 rounded-b-sm bg-gradient-to-r from-slate-400 via-slate-300 to-slate-500 shadow-md z-10 pointer-events-auto transition-transform origin-top ${
+                      jars.some(j => j.position === 0 && j.fillStatus === 'empty') && !isJarsMoving
+                        ? 'cursor-pointer hover:scale-110 active:scale-95' 
+                        : ''
+                    }`}
+                    onClick={() => {
+                      if (isJarsMoving) return;
+                      const centerJar = jars.find(j => j.position === 0);
+                      if (!centerJar || centerJar.fillStatus !== 'empty') return;
+
+                      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling' } : j));
+                      setWaterKey(prev => prev + 1);
+                      
+                      setTimeout(() => {
+                        setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'full' } : j));
+                      }, 13500);
+                    }}
+                  >
                     {/* Pipe Rim */}
                     <div className="absolute -bottom-1 -left-1 -right-1 h-2 bg-slate-500 border-2 border-slate-700 rounded-sm"></div>
                   </div>
@@ -2227,7 +2229,7 @@ function BuildingsRoomsPage() {
                   const displayCode = building ? building.code : 'JAR';
                   const displayCap = building ? building.capacity || 0 : 0;
                   
-                  const isReadyForFill = isCenter && jar.fillStatus === 'empty' && !isJarsMoving;
+                  const isWaitingForAction = isCenter && !isJarsMoving && (isAutoMode || jar.fillStatus === 'empty' || jar.fillStatus === 'full');
 
                   return (
                     <div 
@@ -2282,7 +2284,7 @@ function BuildingsRoomsPage() {
                         {/* Custom Tooltip */}
                         <div className={`absolute -top-10 left-1/2 -translate-x-1/2 transition-all duration-200 pointer-events-none z-20 whitespace-nowrap bg-slate-800 text-white text-xs font-bold px-2 py-1 rounded shadow-lg ${
                           hoveredJarId !== null && hoveredJarId !== jar.id ? 'invisible opacity-0' :
-                          (isReadyForFill ? 'visible opacity-100' : 'invisible opacity-0 group-hover/jar:visible group-hover/jar:opacity-100')
+                          (isWaitingForAction ? 'visible opacity-100' : 'invisible opacity-0 group-hover/jar:visible group-hover/jar:opacity-100')
                         }`}>
                           {displayCode}: {displayCap} Capacity
                           <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-slate-800"></div>
