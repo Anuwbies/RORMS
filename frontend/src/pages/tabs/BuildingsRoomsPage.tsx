@@ -64,6 +64,17 @@ function createRoomImage() {
 
 const DEFAULT_ROOM_IMAGE = createRoomImage()
 
+const LIQUID_OPTIONS = ['Water', 'Coffee', 'Blood', 'Mud', 'Slime', 'Random'] as const;
+type DropdownLiquidType = typeof LIQUID_OPTIONS[number];
+type LiquidType = Exclude<DropdownLiquidType, 'Random'>;
+const liquidColors: Record<LiquidType, { main: string, light: string }> = {
+  Water: { main: 'bg-blue-400', light: 'bg-blue-300' },
+  Coffee: { main: 'bg-red-950', light: 'bg-red-900' },
+  Blood: { main: 'bg-red-600', light: 'bg-red-500' },
+  Mud: { main: 'bg-stone-700', light: 'bg-stone-600' },
+  Slime: { main: 'bg-lime-500', light: 'bg-lime-400' }
+};
+
 interface Room {
   id: string
   image: string
@@ -564,46 +575,115 @@ function BuildingsRoomsPage() {
   const [buildings, setBuildings] = useState<Building[]>([])
   const [waterKey, setWaterKey] = useState(0)
   const [dismissedJars, setDismissedJars] = useState<Set<number>>(new Set())
-  const [jars, setJars] = useState<Array<{id: number, position: number, fillStatus: 'empty'|'filling'|'full'|'labeled', buildingIndex: number}>>(
-    Array.from({ length: 20 }).map((_, i) => ({
+  const [jars, setJars] = useState<Array<{id: number, position: number, fillStatus: 'empty'|'filling'|'full'|'labeled', buildingIndex: number, liquidType?: LiquidType}>>(() => {
+    const saved = sessionStorage.getItem('rorms-jars');
+    if (saved) {
+      let parsed = JSON.parse(saved);
+      let needsShift = false;
+      
+      parsed = parsed.map((j: any) => {
+        if (j.fillStatus === 'filling') return { ...j, fillStatus: 'full' }; // instantly finish filling
+        if (j.fillStatus === 'labeled' && j.position === 0) {
+          needsShift = true; // instantly finish labeling/moving
+        }
+        return j;
+      });
+
+      if (needsShift) {
+        parsed = parsed.map((j: any) => ({ ...j, position: j.position - 1 }));
+        
+        let buildingIdx = 40;
+        const savedIdx = sessionStorage.getItem('rorms-nextBuildingIndex');
+        if (savedIdx) buildingIdx = parseInt(savedIdx, 10);
+
+        parsed.push({
+          id: Date.now() + Math.random(),
+          position: 19,
+          fillStatus: 'empty',
+          buildingIndex: buildingIdx
+        });
+        
+        // Update sessionStorage so nextBuildingIndex initializes correctly on the next line
+        sessionStorage.setItem('rorms-nextBuildingIndex', (buildingIdx + 1).toString());
+      }
+      
+      return parsed;
+    }
+    return Array.from({ length: 20 }).map((_, i) => ({
       id: i + 1,
       position: i,
       fillStatus: 'empty',
       buildingIndex: i + 20
-    }))
-  )
-  const [nextBuildingIndex, setNextBuildingIndex] = useState(40);
+    }));
+  });
+  
+  const [nextBuildingIndex, setNextBuildingIndex] = useState(() => {
+    const saved = sessionStorage.getItem('rorms-nextBuildingIndex');
+    return saved ? parseInt(saved, 10) : 40;
+  });
+  
   const [isJarsMoving, setIsJarsMoving] = useState(false);
   const [hoveredJarId, setHoveredJarId] = useState<number | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoTimeoutsRef = useRef<{ fill?: ReturnType<typeof setTimeout>, move?: ReturnType<typeof setTimeout>, stop?: ReturnType<typeof setTimeout> }>({});
+  
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
   const [supermanKey, setSupermanKey] = useState<number>(0)
   const [showTestButtons, setShowTestButtons] = useState(false)
-  const [isAutoMode, setIsAutoMode] = useState(false)
+  const [showFactoryControls, setShowFactoryControls] = useState<boolean>(() => JSON.parse(sessionStorage.getItem('rorms-factoryControls') || 'false'))
+  const [isAutoMode, setIsAutoMode] = useState<boolean>(() => JSON.parse(sessionStorage.getItem('rorms-autoMode') || 'false'))
+  const [selectedLiquid, setSelectedLiquid] = useState<DropdownLiquidType>(() => (sessionStorage.getItem('rorms-selectedLiquid') as DropdownLiquidType) || 'Water')
+
+  // Save state to sessionStorage
+  useEffect(() => { sessionStorage.setItem('rorms-jars', JSON.stringify(jars)); }, [jars]);
+  useEffect(() => { sessionStorage.setItem('rorms-nextBuildingIndex', nextBuildingIndex.toString()); }, [nextBuildingIndex]);
+  useEffect(() => { sessionStorage.setItem('rorms-factoryControls', JSON.stringify(showFactoryControls)); }, [showFactoryControls]);
+  useEffect(() => { sessionStorage.setItem('rorms-autoMode', JSON.stringify(isAutoMode)); }, [isAutoMode]);
+  useEffect(() => { sessionStorage.setItem('rorms-selectedLiquid', selectedLiquid); }, [selectedLiquid]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (autoTimeoutsRef.current.fill) clearTimeout(autoTimeoutsRef.current.fill);
+      if (autoTimeoutsRef.current.move) clearTimeout(autoTimeoutsRef.current.move);
+      if (autoTimeoutsRef.current.stop) clearTimeout(autoTimeoutsRef.current.stop);
+    };
+  }, []);
 
   // Auto Mode Logic
   useEffect(() => {
-    if (!isAutoMode || isJarsMoving) return;
+    if (!isAutoMode) {
+      if (autoTimeoutsRef.current.fill) clearTimeout(autoTimeoutsRef.current.fill);
+      if (autoTimeoutsRef.current.move) clearTimeout(autoTimeoutsRef.current.move);
+      if (autoTimeoutsRef.current.stop) clearTimeout(autoTimeoutsRef.current.stop);
+      return;
+    }
+    
+    if (isJarsMoving) return;
 
     const centerJar = jars.find(j => j.position === 0);
     if (!centerJar) return;
 
     if (centerJar.fillStatus === 'empty') {
-      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling' } : j));
+      const actualLiquid: LiquidType = selectedLiquid === 'Random' 
+        ? ['Water', 'Coffee', 'Blood', 'Mud', 'Slime'][Math.floor(Math.random() * 5)] as LiquidType
+        : selectedLiquid as LiquidType;
+
+      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling', liquidType: actualLiquid } : j));
       setWaterKey(prev => prev + 1);
       
-      setTimeout(() => {
+      autoTimeoutsRef.current.fill = setTimeout(() => {
         setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'full' } : j));
       }, 13500);
     } 
     else if (centerJar.fillStatus === 'full') {
       setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'labeled' } : j));
       
-      setTimeout(() => {
+      autoTimeoutsRef.current.move = setTimeout(() => {
         setIsJarsMoving(true);
-        setTimeout(() => setIsJarsMoving(false), 2667);
+        autoTimeoutsRef.current.stop = setTimeout(() => setIsJarsMoving(false), 2667);
         
-        const newId = Date.now();
+        const newId = Date.now() + Math.random();
         setJars(prev => {
           const nextJars = prev.map(j => ({ ...j, position: j.position - 1 }));
           
@@ -620,7 +700,7 @@ function BuildingsRoomsPage() {
         });
       }, 1000);
     }
-  }, [isAutoMode, jars, isJarsMoving, nextBuildingIndex]);
+  }, [isAutoMode, jars, isJarsMoving, nextBuildingIndex, selectedLiquid]);
   const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('rorms_buildings_expanded')
     return saved ? JSON.parse(saved) : []
@@ -2059,7 +2139,15 @@ function BuildingsRoomsPage() {
           <SummaryCard
             title="Total Capacity"
             subtitle="Campus-wide Seats"
-            icon={<UsersIcon className="h-4 w-4 text-amber-600" />}
+            icon={
+              <button 
+                onClick={() => setShowFactoryControls(prev => !prev)} 
+                className="hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-sm p-0.5 -m-0.5"
+                title="Toggle Factory Controls"
+              >
+                <UsersIcon className="h-4 w-4 text-amber-600" />
+              </button>
+            }
             gradientClasses="from-amber-200 to-amber-100"
             blobClasses="bg-amber-500/5"
           >
@@ -2194,7 +2282,11 @@ function BuildingsRoomsPage() {
                       const centerJar = jars.find(j => j.position === 0);
                       if (!centerJar || centerJar.fillStatus !== 'empty') return;
 
-                      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling' } : j));
+                      const actualLiquid: LiquidType = selectedLiquid === 'Random' 
+                        ? ['Water', 'Coffee', 'Blood', 'Mud', 'Slime'][Math.floor(Math.random() * 5)] as LiquidType
+                        : selectedLiquid as LiquidType;
+
+                      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling', liquidType: actualLiquid } : j));
                       setWaterKey(prev => prev + 1);
                       
                       setTimeout(() => {
@@ -2209,7 +2301,11 @@ function BuildingsRoomsPage() {
                   {/* Continuous water stream (Stretches from pipe to jar) */}
                   <div 
                     key={`stream-${waterKey}`}
-                    className={`absolute top-8 bottom-0 left-3 right-3 bg-blue-400 blur-[0.5px] z-0 ${waterKey === 0 ? 'hidden' : ''}`}
+                    className={`absolute top-8 bottom-0 left-3 right-3 blur-[0.5px] z-0 ${
+                      waterKey === 0 
+                        ? 'hidden' 
+                        : liquidColors[(jars.find(j => j.position === 0)?.liquidType as LiquidType) || 'Water'].main
+                    }`}
                     style={{ 
                       backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 10px, rgba(255,255,255,0.4) 10px, rgba(255,255,255,0.4) 20px)',
                       backgroundSize: '100% 20px',
@@ -2252,6 +2348,7 @@ function BuildingsRoomsPage() {
                         }, 1000);
                       }}
                       onClick={() => {
+                        if (isAutoMode) return;
                         if (isCenter && isFull && !isJarsMoving) {
                           setJars(prev => prev.map(j => j.id === jar.id ? { ...j, fillStatus: 'labeled' } : j));
                           
@@ -2259,7 +2356,7 @@ function BuildingsRoomsPage() {
                             setIsJarsMoving(true);
                             setTimeout(() => setIsJarsMoving(false), 2667);
                             
-                            const newId = Date.now();
+                            const newId = Date.now() + Math.random();
                             setJars(prev => {
                               const nextJars = prev.map(j => ({ ...j, position: j.position - 1 }));
                               
@@ -2298,20 +2395,20 @@ function BuildingsRoomsPage() {
                         <div className="absolute top-[14px] inset-x-0 bottom-0 bg-white/10 border-2 border-white/70 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_16px_rgba(255,255,255,0.9)] backdrop-blur-[1px]">
                           {/* Liquid Fill */}
                           <div 
-                            className="absolute bottom-0 left-0 right-0 bg-blue-400"
+                            className={`absolute bottom-0 left-0 right-0 ${jar.liquidType ? liquidColors[jar.liquidType].main : 'bg-transparent'}`}
                             style={{ 
                               animation: jar.fillStatus === 'filling' ? 'jarFill 15s linear forwards' : 'none',
                               height: (jar.fillStatus === 'full' || jar.fillStatus === 'labeled') ? '90%' : (jar.fillStatus === 'empty' ? '0%' : undefined)
                             }}
                           >
-                            <div className="absolute top-0 left-0 right-0 h-1 bg-blue-300"></div>
+                            <div className={`absolute top-0 left-0 right-0 h-1 ${jar.liquidType ? liquidColors[jar.liquidType].light : 'bg-transparent'}`}></div>
                           </div>
                           
                           {/* Bottle Label */}
                           {jar.fillStatus === 'labeled' && (
                             <div 
                               className="absolute top-[45%] inset-x-0 -translate-y-1/2 h-7 bg-white/95 border-y border-emerald-400/50 shadow-[0_0_8px_rgba(16,185,129,0.2)] flex items-center justify-center overflow-hidden transition-all duration-300 z-10"
-                              style={{ animation: 'labelWipe 1s ease-out forwards' }}
+                              style={jar.position === 0 ? { animation: 'labelWipe 1s ease-out forwards' } : { clipPath: 'inset(0 0 0 0)' }}
                             >
                               <span className="text-xs font-bold text-slate-800 tracking-tighter truncate w-full text-center px-0.5">
                                 {displayCode}
@@ -2358,13 +2455,23 @@ function BuildingsRoomsPage() {
                   </Button>
                 </>
               )}
-              <Button
-                variant={isAutoMode ? "brand" : "outline"}
-                onClick={() => setIsAutoMode(!isAutoMode)}
-                className={`w-full lg:w-auto shadow-sm ${isAutoMode ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-white text-slate-500 hover:text-emerald-600'}`}
-              >
-                {isAutoMode ? '⏸️ Stop Auto' : '▶️ Auto Fill'}
-              </Button>
+              {showFactoryControls && (
+                <>
+                  <SingleSelectDropdown
+                    options={LIQUID_OPTIONS}
+                    value={selectedLiquid}
+                    onChange={setSelectedLiquid}
+                    className="w-full lg:w-32 z-20"
+                  />
+                  <Button
+                    variant={isAutoMode ? "brand" : "outline"}
+                    onClick={() => setIsAutoMode(!isAutoMode)}
+                    className={`w-full lg:w-auto shadow-sm ${isAutoMode ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-white text-slate-500 hover:text-emerald-600'}`}
+                  >
+                    {isAutoMode ? '⏸️ Stop Auto' : '▶️ Auto Fill'}
+                  </Button>
+                </>
+              )}
               <Button
                 variant="brand"
                 icon={<PlusIcon className="h-4 w-4" />}
