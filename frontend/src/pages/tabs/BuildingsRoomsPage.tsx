@@ -624,6 +624,7 @@ function BuildingsRoomsPage() {
   
   const [isJarsMoving, setIsJarsMoving] = useState(false);
   const [hoveredJarId, setHoveredJarId] = useState<number | null>(null);
+  const [isHoveringTooltipBlock, setIsHoveringTooltipBlock] = useState(false);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoTimeoutsRef = useRef<{ fill?: ReturnType<typeof setTimeout>, move?: ReturnType<typeof setTimeout>, stop?: ReturnType<typeof setTimeout> }>({});
   
@@ -1342,7 +1343,7 @@ function BuildingsRoomsPage() {
 
   return (
     <section 
-      className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8"
+      className="h-screen overflow-y-scroll overflow-x-hidden custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8"
       onClick={() => setOpenMenuId(null)}
     >
       {/* Create/Edit Building Modal */}
@@ -2268,12 +2269,14 @@ function BuildingsRoomsPage() {
                       onMouseEnter={() => {
                         if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
                         setHoveredJarId(-jar.id);
+                        setIsHoveringTooltipBlock(true);
                       }}
                       onMouseLeave={() => {
                         if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                        setHoveredJarId(null);
                         hoverTimeoutRef.current = setTimeout(() => {
-                          setHoveredJarId(null);
-                        }, 1000);
+                          setIsHoveringTooltipBlock(false);
+                        }, 1500);
                       }}
                     >
                       <div className="relative w-full h-full">
@@ -2376,12 +2379,14 @@ function BuildingsRoomsPage() {
                       onMouseEnter={() => {
                         if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
                         setHoveredJarId(jar.id);
+                        setIsHoveringTooltipBlock(true);
                       }}
                       onMouseLeave={() => {
                         if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                        setHoveredJarId(null);
                         hoverTimeoutRef.current = setTimeout(() => {
-                          setHoveredJarId(null);
-                        }, 1000);
+                          setIsHoveringTooltipBlock(false);
+                        }, 1500);
                       }}
                       onClick={() => {
                         if (isAutoMode) return;
@@ -2492,8 +2497,9 @@ function BuildingsRoomsPage() {
                       <div 
                         key={`fg-tooltip-${jar.id}`}
                         className={`absolute bottom-9 w-16 h-20 transition-all duration-200 pointer-events-none ${
-                          hoveredJarId !== null && hoveredJarId !== jar.id ? 'opacity-0' :
-                          (isWaitingForAction ? 'opacity-100' : (hoveredJarId === jar.id ? 'opacity-100' : 'opacity-0'))
+                          hoveredJarId === jar.id ? 'opacity-100' :
+                          (isHoveringTooltipBlock ? 'opacity-0' :
+                          (isWaitingForAction ? 'opacity-100' : 'opacity-0'))
                         }`}
                         style={{ left: fgLeftVal, transition: 'left 2.667s linear' }}
                       >
