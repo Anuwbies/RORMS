@@ -2073,7 +2073,7 @@ function BuildingsRoomsPage() {
 
                 {/* Water Pipe */}
                 <div 
-                  className={`absolute top-0 right-46.5 w-8 h-10 z-0 flex flex-col items-center transition-transform ${
+                  className={`absolute top-0 bottom-[30px] right-46.5 w-8 z-0 transition-transform origin-top ${
                     jars.some(j => j.position === 'center' && j.fillStatus === 'empty') && !isJarsMoving
                       ? 'cursor-pointer hover:scale-105 active:scale-95' 
                       : ''
@@ -2091,14 +2091,16 @@ function BuildingsRoomsPage() {
                     }, 13500);
                   }}
                 >
-                  <div className="w-6 h-full shrink-0 bg-slate-400 border-x-2 border-b-2 border-slate-600 rounded-b-sm bg-gradient-to-r from-slate-400 via-slate-300 to-slate-500 shadow-md relative z-10">
+                  {/* Visual Pipe (Fixed Height) */}
+                  <div className="absolute top-0 left-1 right-1 h-10 bg-slate-400 border-x-2 border-b-2 border-slate-600 rounded-b-sm bg-gradient-to-r from-slate-400 via-slate-300 to-slate-500 shadow-md z-10">
                     {/* Pipe Rim */}
                     <div className="absolute -bottom-1 -left-1 -right-1 h-2 bg-slate-500 border-2 border-slate-700 rounded-sm"></div>
                   </div>
-                  {/* Continuous water stream */}
+                  
+                  {/* Continuous water stream (Stretches from pipe to jar) */}
                   <div 
                     key={`stream-${waterKey}`}
-                    className={`absolute top-8 w-2 h-[104px] bg-blue-400 blur-[0.5px] z-0 ${waterKey === 0 ? 'hidden' : ''}`}
+                    className={`absolute top-8 bottom-0 left-3 right-3 bg-blue-400 blur-[0.5px] z-0 ${waterKey === 0 ? 'hidden' : ''}`}
                     style={{ 
                       backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 10px, rgba(255,255,255,0.4) 10px, rgba(255,255,255,0.4) 20px)',
                       backgroundSize: '100% 20px',
