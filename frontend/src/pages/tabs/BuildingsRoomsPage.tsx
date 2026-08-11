@@ -564,14 +564,18 @@ function BuildingsRoomsPage() {
   const [buildings, setBuildings] = useState<Building[]>([])
   const [waterKey, setWaterKey] = useState(0)
   const [dismissedJars, setDismissedJars] = useState<Set<number>>(new Set())
-  const [jars, setJars] = useState<Array<{id: number, position: 'center'|'queue1'|'queue2'|'queue3'|'dismissed', fillStatus: 'empty'|'filling'|'full', buildingIndex: number}>>([
-    { id: 1, position: 'center', fillStatus: 'empty', buildingIndex: 0 },
-    { id: 2, position: 'queue1', fillStatus: 'empty', buildingIndex: 1 },
-    { id: 3, position: 'queue2', fillStatus: 'empty', buildingIndex: 2 },
-    { id: 4, position: 'queue3', fillStatus: 'empty', buildingIndex: 3 },
-  ]);
-  const [nextBuildingIndex, setNextBuildingIndex] = useState(4);
+  const [jars, setJars] = useState<Array<{id: number, position: number | 'dismissed', fillStatus: 'empty'|'filling'|'full', buildingIndex: number}>>(
+    Array.from({ length: 20 }).map((_, i) => ({
+      id: i + 1,
+      position: i,
+      fillStatus: 'empty',
+      buildingIndex: i
+    }))
+  );
+  const [nextBuildingIndex, setNextBuildingIndex] = useState(20);
   const [isJarsMoving, setIsJarsMoving] = useState(false);
+  const [hoveredJarId, setHoveredJarId] = useState<number | null>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
   const [supermanKey, setSupermanKey] = useState<number>(0)
   const [showTestButtons, setShowTestButtons] = useState(false)
@@ -1974,7 +1978,7 @@ function BuildingsRoomsPage() {
           >
 
             {rooms.length > 0 && (
-              <div className="flex-1 w-full mt-2 relative min-h-[4rem] rounded-md overflow-hidden">
+              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-md overflow-hidden">
                 <WeatherOverlay weatherCode={weatherData?.code} layer="back" />
                 
                 <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
@@ -2018,7 +2022,7 @@ function BuildingsRoomsPage() {
             blobClasses="bg-amber-500/5"
           >
             {buildings.length > 0 && (
-              <div className="flex-1 w-full mt-2 relative min-h-[10rem] rounded-xl overflow-hidden bg-emerald-500/20">
+              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-xl overflow-hidden bg-emerald-500/20">
                 <style>{`
                   @keyframes conveyorMove {
                     0% { background-position: 0 0; }
@@ -2042,11 +2046,7 @@ function BuildingsRoomsPage() {
                     91% { clip-path: inset(100% 0 0 0); opacity: 0; }
                     100% { clip-path: inset(100% 0 0 0); opacity: 0; }
                   }
-                  @keyframes jarDismiss {
-                    0% { transform: translateX(0); opacity: 1; }
-                    99.9% { transform: translateX(-14.5rem); opacity: 1; }
-                    100% { transform: translateX(-14.5rem); opacity: 0; }
-                  }
+
                   @keyframes jarAdvance {
                     0% { transform: translateX(0); }
                     100% { transform: translateX(-5rem); }
@@ -2073,14 +2073,14 @@ function BuildingsRoomsPage() {
 
                 {/* Water Pipe */}
                 <div 
-                  className={`absolute top-0 bottom-[30px] right-46.5 w-8 z-0 transition-transform origin-top ${
-                    jars.some(j => j.position === 'center' && j.fillStatus === 'empty') && !isJarsMoving
+                  className={`absolute top-0 bottom-[30px] left-1/2 -ml-4 w-8 z-0 transition-transform origin-top ${
+                    jars.some(j => j.position === 0 && j.fillStatus === 'empty') && !isJarsMoving
                       ? 'cursor-pointer hover:scale-105 active:scale-95' 
                       : ''
                   }`}
                   onClick={() => {
                     if (isJarsMoving) return;
-                    const centerJar = jars.find(j => j.position === 'center');
+                    const centerJar = jars.find(j => j.position === 0);
                     if (!centerJar || centerJar.fillStatus !== 'empty') return;
 
                     setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling' } : j));
@@ -2111,12 +2111,14 @@ function BuildingsRoomsPage() {
 
                 {/* Infinite Jars */}
                 {jars.map(jar => {
-                  let rightVal = '-4.375rem'; // queue3
-                  if (jar.position === 'center' || jar.position === 'dismissed') rightVal = '10.625rem';
-                  if (jar.position === 'queue1') rightVal = '5.625rem';
-                  if (jar.position === 'queue2') rightVal = '0.625rem';
+                  let leftVal = '';
+                  if (jar.position === 'dismissed') {
+                    leftVal = 'calc(50% - 102rem)';
+                  } else {
+                    leftVal = `calc(50% + ${jar.position * 5 - 2}rem)`;
+                  }
 
-                  const isCenter = jar.position === 'center';
+                  const isCenter = jar.position === 0;
                   const isFull = jar.fillStatus === 'full';
                   
                   const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
@@ -2132,8 +2134,18 @@ function BuildingsRoomsPage() {
                         (isCenter && isFull) ? 'cursor-pointer transition-transform hover:scale-105 active:scale-95' : ''
                       } ${jar.position === 'dismissed' ? 'pointer-events-none' : ''}`}
                       style={{
-                        right: rightVal,
-                        transition: jar.position === 'dismissed' ? 'none' : 'right 2.666s linear',
+                        left: leftVal,
+                        transition: jar.position === 'dismissed' ? 'left 53.333s linear' : 'left 2.666s linear',
+                      }}
+                      onMouseEnter={() => {
+                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                        setHoveredJarId(jar.id);
+                      }}
+                      onMouseLeave={() => {
+                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                        hoverTimeoutRef.current = setTimeout(() => {
+                          setHoveredJarId(null);
+                        }, 1000);
                       }}
                       onClick={() => {
                         if (isCenter && isFull && !isJarsMoving) {
@@ -2144,15 +2156,15 @@ function BuildingsRoomsPage() {
                           setJars(prev => {
                             const nextJars = prev.map(j => {
                               if (j.id === jar.id) return { ...j, position: 'dismissed' as const };
-                              if (j.position === 'queue1') return { ...j, position: 'center' as const };
-                              if (j.position === 'queue2') return { ...j, position: 'queue1' as const };
-                              if (j.position === 'queue3') return { ...j, position: 'queue2' as const };
+                              if (typeof j.position === 'number') {
+                                return { ...j, position: j.position - 1 };
+                              }
                               return j;
                             });
                             
                             nextJars.push({ 
                               id: newId, 
-                              position: 'queue3', 
+                              position: 19, 
                               fillStatus: 'empty',
                               buildingIndex: nextBuildingIndex
                             });
@@ -2164,17 +2176,17 @@ function BuildingsRoomsPage() {
                           
                           setTimeout(() => {
                             setJars(current => current.filter(cj => cj.id !== jar.id));
-                          }, 8000);
+                          }, 40000);
                         }
                       }}
                     >
                       <div 
                         className="relative w-full h-full" 
-                        style={jar.position === 'dismissed' ? { animation: 'jarDismiss 7.733s linear forwards' } : {}}
                       >
                         {/* Custom Tooltip */}
                         <div className={`absolute -top-10 left-1/2 -translate-x-1/2 transition-all duration-200 pointer-events-none z-20 whitespace-nowrap bg-slate-800 text-white text-xs font-bold px-2 py-1 rounded shadow-lg ${
-                          isReadyForFill ? 'visible opacity-100' : 'invisible opacity-0 group-hover/jar:visible group-hover/jar:opacity-100'
+                          hoveredJarId !== null && hoveredJarId !== jar.id ? 'invisible opacity-0' :
+                          (isReadyForFill ? 'visible opacity-100' : 'invisible opacity-0 group-hover/jar:visible group-hover/jar:opacity-100')
                         }`}>
                           {displayCode}: {displayCap} Capacity
                           <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-slate-800"></div>
