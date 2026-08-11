@@ -2,8 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
 import { WeatherOverlay } from '../../components/WeatherOverlay'
-import { BarChart, Bar, PieChart, Pie, AreaChart, Area, Tooltip, ResponsiveContainer, Cell, YAxis } from 'recharts'
+import { BarChart, Bar, Tooltip, ResponsiveContainer, YAxis } from 'recharts'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
+export type EntranceSide = 'top' | 'bottom' | 'left' | 'right';
+
 export interface MapBuilding {
   id: string;
   buildingId: string;
@@ -11,6 +13,10 @@ export interface MapBuilding {
   y: number;
   w?: number;
   h?: number;
+  entranceSide?: EntranceSide;
+  entranceSize?: number;
+  entrancePosition?: number;
+  colorIndex?: number;
 }
 export interface MapData {
   type: 'freeform';
@@ -23,7 +29,7 @@ import { NumberInput } from '../../components/NumberInput'
 import { TextInput } from '../../components/TextInput'
 import { TextAreaInput } from '../../components/TextAreaInput'
 import { RoomAmenities } from '../../components/RoomAmenities'
-import { DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
+import { SettingsIcon, DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
 
@@ -140,7 +146,8 @@ for (let i = 0; i < maxGroups; i++) {
 }
 
 const BuildingBarShape = (props: any) => {
-  const { fill, x, y, width, height: originalHeight } = props;
+  const { x, y, width, height: originalHeight, index } = props;
+  const fill = index % 2 === 0 ? '#10b981' : '#34d399';
   
   // Enforce a minimum height of 12 so even 0-room buildings have a base
   const height = Math.max(12, originalHeight);
@@ -185,17 +192,90 @@ const BuildingBarShape = (props: any) => {
 };
 
 const BUILDING_COLORS = [
-  { bg: 'bg-blue-100', border: 'border-blue-400', text: 'text-blue-700', top: 'bg-blue-500/20' },
-  { bg: 'bg-amber-100', border: 'border-amber-400', text: 'text-amber-700', top: 'bg-amber-500/20' },
-  { bg: 'bg-rose-100', border: 'border-rose-400', text: 'text-rose-700', top: 'bg-rose-500/20' },
-  { bg: 'bg-purple-100', border: 'border-purple-400', text: 'text-purple-700', top: 'bg-purple-500/20' },
-  { bg: 'bg-emerald-100', border: 'border-emerald-400', text: 'text-emerald-700', top: 'bg-emerald-500/20' },
-  { bg: 'bg-cyan-100', border: 'border-cyan-400', text: 'text-cyan-700', top: 'bg-cyan-500/20' },
-  { bg: 'bg-orange-100', border: 'border-orange-400', text: 'text-orange-700', top: 'bg-orange-500/20' },
-  { bg: 'bg-indigo-100', border: 'border-indigo-400', text: 'text-indigo-700', top: 'bg-indigo-500/20' },
+  { 
+    bg: 'bg-blue-100', border: 'border-blue-400', text: 'text-blue-700', top: 'bg-blue-500/20',
+    doorBg: 'bg-blue-600', doorBorder: 'border-blue-800', doorInner: 'bg-blue-200',
+    btnBg: 'bg-blue-600/30 hover:bg-blue-600', btnActive: 'bg-blue-600 text-white ring-2 ring-blue-400',
+    modalBorder: 'border-blue-300', modalAccent: 'text-blue-600', sliderAccent: 'accent-blue-600',
+    btnSideActive: 'bg-blue-600 text-white', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200'
+  },
+  { 
+    bg: 'bg-amber-100', border: 'border-amber-400', text: 'text-amber-700', top: 'bg-amber-500/20',
+    doorBg: 'bg-amber-600', doorBorder: 'border-amber-800', doorInner: 'bg-amber-200',
+    btnBg: 'bg-amber-600/30 hover:bg-amber-600', btnActive: 'bg-amber-600 text-white ring-2 ring-amber-400',
+    modalBorder: 'border-amber-300', modalAccent: 'text-amber-600', sliderAccent: 'accent-amber-600',
+    btnSideActive: 'bg-amber-600 text-white', badgeBg: 'bg-amber-50 text-amber-700 border-amber-200'
+  },
+  { 
+    bg: 'bg-rose-100', border: 'border-rose-400', text: 'text-rose-700', top: 'bg-rose-500/20',
+    doorBg: 'bg-rose-600', doorBorder: 'border-rose-800', doorInner: 'bg-rose-200',
+    btnBg: 'bg-rose-600/30 hover:bg-rose-600', btnActive: 'bg-rose-600 text-white ring-2 ring-rose-400',
+    modalBorder: 'border-rose-300', modalAccent: 'text-rose-600', sliderAccent: 'accent-rose-600',
+    btnSideActive: 'bg-rose-600 text-white', badgeBg: 'bg-rose-50 text-rose-700 border-rose-200'
+  },
+  { 
+    bg: 'bg-purple-100', border: 'border-purple-400', text: 'text-purple-700', top: 'bg-purple-500/20',
+    doorBg: 'bg-purple-600', doorBorder: 'border-purple-800', doorInner: 'bg-purple-200',
+    btnBg: 'bg-purple-600/30 hover:bg-purple-600', btnActive: 'bg-purple-600 text-white ring-2 ring-purple-400',
+    modalBorder: 'border-purple-300', modalAccent: 'text-purple-600', sliderAccent: 'accent-purple-600',
+    btnSideActive: 'bg-purple-600 text-white', badgeBg: 'bg-purple-50 text-purple-700 border-purple-200'
+  },
+  { 
+    bg: 'bg-emerald-100', border: 'border-emerald-400', text: 'text-emerald-700', top: 'bg-emerald-500/20',
+    doorBg: 'bg-emerald-600', doorBorder: 'border-emerald-800', doorInner: 'bg-emerald-200',
+    btnBg: 'bg-emerald-600/30 hover:bg-emerald-600', btnActive: 'bg-emerald-600 text-white ring-2 ring-emerald-400',
+    modalBorder: 'border-emerald-300', modalAccent: 'text-emerald-600', sliderAccent: 'accent-emerald-600',
+    btnSideActive: 'bg-emerald-600 text-white', badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200'
+  },
+  { 
+    bg: 'bg-cyan-100', border: 'border-cyan-400', text: 'text-cyan-700', top: 'bg-cyan-500/20',
+    doorBg: 'bg-cyan-600', doorBorder: 'border-cyan-800', doorInner: 'bg-cyan-200',
+    btnBg: 'bg-cyan-600/30 hover:bg-cyan-600', btnActive: 'bg-cyan-600 text-white ring-2 ring-cyan-400',
+    modalBorder: 'border-cyan-300', modalAccent: 'text-cyan-600', sliderAccent: 'accent-cyan-600',
+    btnSideActive: 'bg-cyan-600 text-white', badgeBg: 'bg-cyan-50 text-cyan-700 border-cyan-200'
+  },
+  { 
+    bg: 'bg-orange-100', border: 'border-orange-400', text: 'text-orange-700', top: 'bg-orange-500/20',
+    doorBg: 'bg-orange-600', doorBorder: 'border-orange-800', doorInner: 'bg-orange-200',
+    btnBg: 'bg-orange-600/30 hover:bg-orange-600', btnActive: 'bg-orange-600 text-white ring-2 ring-orange-400',
+    modalBorder: 'border-orange-300', modalAccent: 'text-orange-600', sliderAccent: 'accent-orange-600',
+    btnSideActive: 'bg-orange-600 text-white', badgeBg: 'bg-orange-50 text-orange-700 border-orange-200'
+  },
+  { 
+    bg: 'bg-indigo-100', border: 'border-indigo-400', text: 'text-indigo-700', top: 'bg-indigo-500/20',
+    doorBg: 'bg-indigo-600', doorBorder: 'border-indigo-800', doorInner: 'bg-indigo-200',
+    btnBg: 'bg-indigo-600/30 hover:bg-indigo-600', btnActive: 'bg-indigo-600 text-white ring-2 ring-indigo-400',
+    modalBorder: 'border-indigo-300', modalAccent: 'text-indigo-600', sliderAccent: 'accent-indigo-600',
+    btnSideActive: 'bg-indigo-600 text-white', badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200'
+  },
+  { 
+    bg: 'bg-pink-100', border: 'border-pink-400', text: 'text-pink-700', top: 'bg-pink-500/20',
+    doorBg: 'bg-pink-600', doorBorder: 'border-pink-800', doorInner: 'bg-pink-200',
+    btnBg: 'bg-pink-600/30 hover:bg-pink-600', btnActive: 'bg-pink-600 text-white ring-2 ring-pink-400',
+    modalBorder: 'border-pink-300', modalAccent: 'text-pink-600', sliderAccent: 'accent-pink-600',
+    btnSideActive: 'bg-pink-600 text-white', badgeBg: 'bg-pink-50 text-pink-700 border-pink-200'
+  },
+  { 
+    bg: 'bg-slate-800', border: 'border-slate-950', text: 'text-slate-900', top: 'bg-slate-700/40',
+    doorBg: 'bg-slate-600', doorBorder: 'border-slate-400', doorInner: 'bg-slate-200',
+    btnBg: 'bg-slate-700/50 hover:bg-slate-700', btnActive: 'bg-slate-900 text-white ring-2 ring-slate-400',
+    modalBorder: 'border-slate-700', modalAccent: 'text-slate-700', sliderAccent: 'accent-slate-800',
+    btnSideActive: 'bg-slate-800 text-white font-black', badgeBg: 'bg-slate-100 text-slate-900 border-slate-300'
+  },
+  { 
+    bg: 'bg-[#f4f1ea]', border: 'border-[#c8c0b0]', text: 'text-[#4a4438]', top: 'bg-stone-400/20',
+    doorBg: 'bg-[#5c5446]', doorBorder: 'border-[#3d372e]', doorInner: 'bg-[#e8e2d5]',
+    btnBg: 'bg-[#5c5446]/30 hover:bg-[#5c5446]', btnActive: 'bg-[#5c5446] text-white ring-2 ring-[#a89d89]',
+    modalBorder: 'border-[#c8c0b0]', modalAccent: 'text-[#5c5446]', sliderAccent: 'accent-[#5c5446]',
+    btnSideActive: 'bg-[#5c5446] text-white', badgeBg: 'bg-[#f8f6f0] text-[#4a4438] border-[#c8c0b0]'
+  },
 ];
 
-const getBuildingColor = (id: string) => {
+const getBuildingColor = (mb: MapBuilding | string) => {
+  if (typeof mb === 'object' && mb.colorIndex !== undefined) {
+    return BUILDING_COLORS[mb.colorIndex % BUILDING_COLORS.length];
+  }
+  const id = typeof mb === 'string' ? mb : mb.buildingId;
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
     hash = id.charCodeAt(i) + ((hash << 5) - hash);
@@ -203,11 +283,225 @@ const getBuildingColor = (id: string) => {
   return BUILDING_COLORS[Math.abs(hash) % BUILDING_COLORS.length];
 };
 
+const getBuildingEntranceCoord = (mb: MapBuilding, offsetRatio: number = 0) => {
+  const w = mb.w || 12;
+  const h = mb.h || 15;
+  const side: EntranceSide = mb.entranceSide || 'bottom';
+  const sizeRatio = ((mb.entranceSize ?? 40) / 100);
+  const posRatio = ((mb.entrancePosition ?? 50) / 100);
+  
+  let x = mb.x;
+  let y = mb.y;
+
+  if (side === 'bottom' || side === 'top') {
+    const doorCenterX = (posRatio * (1 - sizeRatio) + sizeRatio / 2 - 0.5) * w;
+    const finalDoorX = doorCenterX + offsetRatio * (w * sizeRatio);
+    x = mb.x + finalDoorX;
+    y = side === 'bottom' ? mb.y + h / 2 : mb.y - h / 2;
+  } else if (side === 'left' || side === 'right') {
+    const doorCenterY = (posRatio * (1 - sizeRatio) + sizeRatio / 2 - 0.5) * h;
+    const finalDoorY = doorCenterY + offsetRatio * (h * sizeRatio);
+    x = side === 'right' ? mb.x + w / 2 : mb.x - w / 2;
+    y = mb.y + finalDoorY;
+  }
+
+  return { x, y };
+};
+
+const getBuildingStandoffCoord = (mb: MapBuilding, offsetRatio: number = 0) => {
+  const door = getBuildingEntranceCoord(mb, offsetRatio);
+  const side: EntranceSide = mb.entranceSide || 'bottom';
+  const margin = 3.5;
+
+  let x = door.x;
+  let y = door.y;
+
+  if (side === 'bottom') y += margin;
+  else if (side === 'top') y -= margin;
+  else if (side === 'left') x -= margin;
+  else if (side === 'right') x += margin;
+
+  return { x, y };
+};
+
+const isPointInBox = (p: { x: number, y: number }, box: { xmin: number, xmax: number, ymin: number, ymax: number }) => {
+  return p.x >= box.xmin && p.x <= box.xmax && p.y >= box.ymin && p.y <= box.ymax;
+};
+
+const lineIntersectsSegment = (p1: {x:number, y:number}, p2: {x:number, y:number}, p3: {x:number, y:number}, p4: {x:number, y:number}) => {
+  const ccw = (A: {x:number, y:number}, B: {x:number, y:number}, C: {x:number, y:number}) => {
+    return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+  };
+  return (ccw(p1, p3, p4) !== ccw(p2, p3, p4)) && (ccw(p1, p2, p3) !== ccw(p1, p2, p4));
+};
+
+const lineIntersectsBox = (p1: { x: number, y: number }, p2: { x: number, y: number }, box: { xmin: number, xmax: number, ymin: number, ymax: number }) => {
+  if (isPointInBox(p1, box) || isPointInBox(p2, box)) return true;
+
+  const c1 = { x: box.xmin, y: box.ymin };
+  const c2 = { x: box.xmax, y: box.ymin };
+  const c3 = { x: box.xmax, y: box.ymax };
+  const c4 = { x: box.xmin, y: box.ymax };
+
+  return lineIntersectsSegment(p1, p2, c1, c2) ||
+         lineIntersectsSegment(p1, p2, c2, c3) ||
+         lineIntersectsSegment(p1, p2, c3, c4) ||
+         lineIntersectsSegment(p1, p2, c4, c1);
+};
+
+type Pt = { x: number; y: number };
+
+// Core Dijkstra pathfinding between any two outdoor points, avoiding all buildings
+const findOutdoorPath = (
+  start: Pt,
+  end: Pt,
+  allBuildings: MapBuilding[]
+): Pt[] => {
+  // Obstacle bounding boxes with padding
+  const obstacles = allBuildings.map(mb => {
+    const w = mb.w || 12;
+    const h = mb.h || 15;
+    const pad = 1.5;
+    return {
+      xmin: mb.x - w / 2 - pad,
+      xmax: mb.x + w / 2 + pad,
+      ymin: mb.y - h / 2 - pad,
+      ymax: mb.y + h / 2 + pad,
+    };
+  });
+
+  const isSegmentClear = (p1: Pt, p2: Pt) =>
+    !obstacles.some(box => lineIntersectsBox(p1, p2, box));
+
+  // Direct line clear? Skip graph construction
+  if (isSegmentClear(start, end)) return [start, end];
+
+  // Build visibility graph nodes: start + end + all building corners
+  const margin = 3.5;
+  const cornerNodes: Pt[] = [];
+  allBuildings.forEach(mb => {
+    const w = mb.w || 12;
+    const h = mb.h || 15;
+    const pts: Pt[] = [
+      { x: mb.x - w / 2 - margin, y: mb.y - h / 2 - margin },
+      { x: mb.x + w / 2 + margin, y: mb.y - h / 2 - margin },
+      { x: mb.x - w / 2 - margin, y: mb.y + h / 2 + margin },
+      { x: mb.x + w / 2 + margin, y: mb.y + h / 2 + margin },
+    ];
+    pts.forEach(pt => {
+      if (pt.x >= 1 && pt.x <= 99 && pt.y >= 1 && pt.y <= 99) {
+        if (!obstacles.some(b => isPointInBox(pt, b))) {
+          cornerNodes.push(pt);
+        }
+      }
+    });
+  });
+
+  // [0]=start, [1]=end, [2..N]=corners
+  const nodes: Pt[] = [start, end, ...cornerNodes];
+  const n = nodes.length;
+
+  // Build adjacency
+  const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
+  const adj: number[][] = Array.from({ length: n }, () => new Array(n).fill(Infinity));
+  for (let i = 0; i < n; i++) {
+    adj[i][i] = 0;
+    for (let j = i + 1; j < n; j++) {
+      if (isSegmentClear(nodes[i], nodes[j])) {
+        const d = dist(nodes[i], nodes[j]);
+        adj[i][j] = d;
+        adj[j][i] = d;
+      }
+    }
+  }
+
+  // Dijkstra from node 0 to node 1
+  const visited = new Array(n).fill(false);
+  const best = new Array(n).fill(Infinity);
+  const prev = new Array(n).fill(-1);
+  best[0] = 0;
+
+  for (let iter = 0; iter < n; iter++) {
+    let u = -1;
+    for (let i = 0; i < n; i++) {
+      if (!visited[i] && (u === -1 || best[i] < best[u])) u = i;
+    }
+    if (u === -1 || best[u] === Infinity) break;
+    visited[u] = true;
+    if (u === 1) break;
+    for (let v = 0; v < n; v++) {
+      if (!visited[v] && adj[u][v] < Infinity) {
+        const alt = best[u] + adj[u][v];
+        if (alt < best[v]) {
+          best[v] = alt;
+          prev[v] = u;
+        }
+      }
+    }
+  }
+
+  // Reconstruct
+  const waypoints: Pt[] = [];
+  if (best[1] < Infinity) {
+    let cur = 1;
+    while (cur !== -1) {
+      waypoints.unshift(nodes[cur]);
+      cur = prev[cur];
+    }
+  } else {
+    waypoints.push(start, end);
+  }
+  return waypoints;
+};
+
+// Generate a random outdoor point that's not inside any building
+const randomOutdoorPoint = (allBuildings: MapBuilding[]): Pt => {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const pt: Pt = { x: 8 + Math.random() * 84, y: 8 + Math.random() * 84 };
+    const inside = allBuildings.some(mb => {
+      const w = (mb.w || 12) / 2 + 2;
+      const h = (mb.h || 15) / 2 + 2;
+      return pt.x >= mb.x - w && pt.x <= mb.x + w && pt.y >= mb.y - h && pt.y <= mb.y + h;
+    });
+    if (!inside) return pt;
+  }
+  return { x: 50, y: 5 };
+};
+
+// Building-to-building pathfinding with optional outdoor stops along the way
+const findWalkablePath = (
+  startBldg: MapBuilding,
+  endBldg: MapBuilding,
+  startOffset: number,
+  endOffset: number,
+  allBuildings: MapBuilding[],
+  outdoorStops: Pt[] = []
+): Pt[] => {
+  const startDoor = getBuildingEntranceCoord(startBldg, startOffset);
+  const startStandoff = getBuildingStandoffCoord(startBldg, startOffset);
+  const endDoor = getBuildingEntranceCoord(endBldg, endOffset);
+  const endStandoff = getBuildingStandoffCoord(endBldg, endOffset);
+
+  // Chain path through all stops: startStandoff → stop1 → stop2 → ... → endStandoff
+  const stops = [startStandoff, ...outdoorStops, endStandoff];
+  const fullPath: Pt[] = [startDoor];
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    const segment = findOutdoorPath(stops[i], stops[i + 1], allBuildings);
+    // Avoid duplicating the junction point between segments
+    fullPath.push(...(i === 0 ? segment : segment.slice(1)));
+  }
+
+  fullPath.push(endDoor);
+  return fullPath;
+};
+
 const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: MapData | null }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
+  const [editingEntranceBldgId, setEditingEntranceBldgId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [resizeAnchor, setResizeAnchor] = useState({ x: 0, y: 0 });
   
@@ -215,45 +509,39 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
   const [hoveredBldgId, setHoveredBldgId] = useState<string | null>(null);
   
   const [localMapBuildings, setLocalMapBuildings] = useState<MapBuilding[]>([]);
-  const [travelers, setTravelers] = useState<{ id: number, startBldgId: string, endBldgId: string, duration: number, delay: number, color: string, curveX: number, curveY: number, startWanderX: number, startWanderY: number, endWanderX: number, endWanderY: number }[]>([]);
+  const [travelers, setTravelers] = useState<{ id: number, startBldgId: string, endBldgId: string, delay: number, color: string, startOffset: number, endOffset: number, outdoorStops: Pt[] }[]>([]);
 
   useEffect(() => {
     if (localMapBuildings.length < 2) return;
     
-    // Generate static travelers that bounce back and forth between two random buildings
-    const newTravelers = Array.from({ length: Math.min(15, localMapBuildings.length * 3) }).map((_, i) => {
+    // Generate travelers that walk between buildings through doors
+    // ~40% take outdoor detours through random campus waypoints
+    const count = Math.min(30, localMapBuildings.length * 5);
+    const newTravelers = Array.from({ length: count }).map((_, i) => {
       const b1 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
       let b2 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
       while (b2 === b1) b2 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
       
-      const curveX = (Math.random() - 0.5) * 60;
-      const curveY = (Math.random() - 0.5) * 60;
-      
-      const startWanderX = (Math.random() - 0.5) * 12; // wander up to 6% away from start
-      const startWanderY = (Math.random() - 0.5) * 12;
-      const endWanderX = (Math.random() - 0.5) * 12; // wander up to 6% away from end
-      const endWanderY = (Math.random() - 0.5) * 12;
-      
-      const midX = (b1.x + b2.x) / 2 + curveX;
-      const midY = (b1.y + b2.y) / 2 + curveY;
-      
-      const dist1 = Math.sqrt(Math.pow(midX - b1.x, 2) + Math.pow(midY - b1.y, 2));
-      const dist2 = Math.sqrt(Math.pow(b2.x - midX, 2) + Math.pow(b2.y - midY, 2));
-      const totalDist = dist1 + dist2;
-      
+      // Some travelers wander through outdoor points before reaching destination
+      // ~34% direct, ~33% one stop, ~33% two stops
+      const outdoorStops: Pt[] = [];
+      const rand = Math.random();
+      if (rand > 0.34) {
+        outdoorStops.push(randomOutdoorPoint(localMapBuildings));
+      }
+      if (rand > 0.67) {
+        outdoorStops.push(randomOutdoorPoint(localMapBuildings));
+      }
+
       return {
         id: i,
         startBldgId: b1.buildingId,
         endBldgId: b2.buildingId,
-        duration: Math.max(5, totalDist / 5), // Constant speed based on distance (min 5s to allow for wandering time)
-        delay: Math.random() * -15, // negative delay so they start at random points in their journey
+        delay: Math.random() * -15,
         color: ['bg-amber-400', 'bg-emerald-400', 'bg-blue-400', 'bg-rose-400', 'bg-purple-400'][Math.floor(Math.random() * 5)],
-        curveX,
-        curveY,
-        startWanderX,
-        startWanderY,
-        endWanderX,
-        endWanderY
+        startOffset: (Math.random() - 0.5) * 0.8,
+        endOffset: (Math.random() - 0.5) * 0.8,
+        outdoorStops,
       };
     });
     setTravelers(newTravelers);
@@ -444,57 +732,95 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
   return (
     <div 
       ref={containerRef}
-      className="relative w-full aspect-[16/9] bg-[#f3f7ee] rounded-xl mt-2 border border-emerald-200 shadow-inner select-none touch-none @container"
+      className="relative w-full aspect-[16/9] bg-[#f3f7ee] rounded-xl mt-2 border border-emerald-200/80 shadow-[inset_0_2px_8px_rgba(0,0,0,0.06),0_4px_16px_rgba(0,0,0,0.05)] select-none touch-none @container"
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      <style>{`
-        @keyframes campusTravel {
-          0% { left: var(--start-x); top: var(--start-y); opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
-          15% { left: var(--start-w-x); top: var(--start-w-y); opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          50% { left: var(--mid-x); top: var(--mid-y); }
-          85% { left: var(--end-w-x); top: var(--end-w-y); opacity: 1; transform: translate(-50%, -50%) scale(1); }
-          100% { left: var(--end-x); top: var(--end-y); opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+      {/* Background Texture Container (Clipped to Rounded Card Corners) */}
+      <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none z-0">
+        {/* Rich Campus Blueprint & Lawn Ground Texture Overlay */}
+        <div 
+          className="absolute inset-0 opacity-85"
+          style={{
+            backgroundImage: `
+              radial-gradient(circle at 50% 50%, rgba(98, 133, 62, 0.05) 0%, transparent 80%),
+              radial-gradient(circle at 12px 12px, rgba(98, 133, 62, 0.14) 1px, transparent 1px),
+              radial-gradient(circle at 24px 24px, rgba(98, 133, 62, 0.09) 1.5px, transparent 1.5px),
+              linear-gradient(0deg, rgba(98, 133, 62, 0.07) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(98, 133, 62, 0.07) 1px, transparent 1px)
+            `,
+            backgroundSize: '100% 100%, 24px 24px, 48px 48px, 24px 24px, 24px 24px',
+            backgroundPosition: '0 0, 0 0, 12px 12px, 0 0, 0 0'
+          }}
+        />
+        {/* Perimeter Vignette Depth Layer */}
+        <div 
+          className="absolute inset-0 rounded-xl shadow-[inset_0_0_50px_rgba(41,54,28,0.12),inset_0_0_15px_rgba(0,0,0,0.06)]" 
+        />
+      </div>
+
+      {/* Per-traveler dynamic keyframes generated from Dijkstra paths */}
+      <style>{travelers.map(t => {
+        const startBldg = localMapBuildings.find(b => b.buildingId === t.startBldgId);
+        const endBldg = localMapBuildings.find(b => b.buildingId === t.endBldgId);
+        if (!startBldg || !endBldg) return '';
+        const path = findWalkablePath(startBldg, endBldg, t.startOffset, t.endOffset, localMapBuildings, t.outdoorStops);
+        if (path.length < 2) return '';
+
+        // Cumulative distances for proportional timing
+        const segs = [0];
+        for (let i = 1; i < path.length; i++) {
+          segs.push(segs[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y));
         }
-      `}</style>
-      <div className="absolute inset-0 overflow-hidden rounded-xl">
+        const totalDist = segs[segs.length - 1] || 1;
+
+        // Build keyframes: 0% spawn, 3% appear, path waypoints from 5%-95%, 97% arrive, 100% despawn
+        let kf = `@keyframes trav_${t.id} {\n`;
+        kf += `  0% { left:${path[0].x}%; top:${path[0].y}%; opacity:0; transform:translate(-50%,-50%) scale(0.4); }\n`;
+        kf += `  3% { left:${path[0].x}%; top:${path[0].y}%; opacity:1; transform:translate(-50%,-50%) scale(1); }\n`;
+        path.forEach((pt, i) => {
+          const pct = 5 + (segs[i] / totalDist) * 90;
+          kf += `  ${pct.toFixed(2)}% { left:${Math.max(1, Math.min(99, pt.x))}%; top:${Math.max(1, Math.min(99, pt.y))}%; opacity:1; transform:translate(-50%,-50%) scale(1); }\n`;
+        });
+        const last = path[path.length - 1];
+        kf += `  97% { left:${last.x}%; top:${last.y}%; opacity:1; transform:translate(-50%,-50%) scale(1); }\n`;
+        kf += `  100% { left:${last.x}%; top:${last.y}%; opacity:0; transform:translate(-50%,-50%) scale(0.4); }\n`;
+        kf += `}\n`;
+        return kf;
+      }).join('')}</style>
+      <div className="absolute inset-0 overflow-visible">
       
-      {/* Travelers (Data Packets / People) */}
-      {(!draggingId && !resizingId) && (
-        <div className="absolute inset-0 pointer-events-none">
-          {travelers.map(t => {
-            const startBldg = localMapBuildings.find(b => b.buildingId === t.startBldgId);
-            const endBldg = localMapBuildings.find(b => b.buildingId === t.endBldgId);
-            if (!startBldg || !endBldg) return null;
-            
-            // Calculate a dynamic detour midpoint so they avoid going in a straight line
-            const midX = (startBldg.x + endBldg.x) / 2 + t.curveX;
-            const midY = (startBldg.y + endBldg.y) / 2 + t.curveY;
-            
-            return (
-              <div 
-                key={t.id}
-                className={`absolute w-1.5 h-1.5 rounded-full ${t.color} z-0 shadow-sm pointer-events-none`}
-                style={{
-                  '--start-x': `${startBldg.x}%`,
-                  '--start-y': `${startBldg.y}%`,
-                  '--start-w-x': `${Math.max(2, Math.min(98, startBldg.x + t.startWanderX))}%`,
-                  '--start-w-y': `${Math.max(2, Math.min(98, startBldg.y + t.startWanderY))}%`,
-                  '--mid-x': `${Math.max(2, Math.min(98, midX))}%`,
-                  '--mid-y': `${Math.max(2, Math.min(98, midY))}%`,
-                  '--end-w-x': `${Math.max(2, Math.min(98, endBldg.x + t.endWanderX))}%`,
-                  '--end-w-y': `${Math.max(2, Math.min(98, endBldg.y + t.endWanderY))}%`,
-                  '--end-x': `${endBldg.x}%`,
-                  '--end-y': `${endBldg.y}%`,
-                  animation: `campusTravel ${t.duration}s ease-in-out infinite alternate`,
-                  animationDelay: `${t.delay}s`
-                } as React.CSSProperties}
-              />
-            );
-          })}
-        </div>
-      )}
+      {/* Travelers walking between buildings via obstacle-free paths */}
+      <div className={`absolute inset-0 pointer-events-none transition-opacity duration-200 ${draggingId || resizingId ? 'opacity-0' : 'opacity-100'}`}>
+        {travelers.map(t => {
+          const startBldg = localMapBuildings.find(b => b.buildingId === t.startBldgId);
+          const endBldg = localMapBuildings.find(b => b.buildingId === t.endBldgId);
+          if (!startBldg || !endBldg) return null;
+          const path = findWalkablePath(startBldg, endBldg, t.startOffset, t.endOffset, localMapBuildings, t.outdoorStops);
+          if (path.length < 2) return null;
+
+          // Duration proportional to path length for consistent walk speed
+          let totalDist = 0;
+          for (let i = 1; i < path.length; i++) totalDist += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+          const duration = Math.max(6, totalDist / 4);
+
+          return (
+            <div 
+              key={t.id}
+              className={`absolute w-1.5 h-1.5 rounded-full ${t.color} z-0 shadow-sm pointer-events-none`}
+              style={{
+                animationName: `trav_${t.id}`,
+                animationDuration: `${duration}s`,
+                animationTimingFunction: 'linear',
+                animationIterationCount: 'infinite',
+                animationDirection: 'alternate',
+                animationDelay: `${t.delay}s`
+              }}
+            />
+          );
+        })}
+      </div>
 
       {/* Buildings */}
       {localMapBuildings.map(mb => {
@@ -505,44 +831,291 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         const h = mb.h || 15;
         const isDragging = draggingId === mb.buildingId;
         const isResizing = resizingId === mb.buildingId;
-        const color = getBuildingColor(b.id);
+        const color = getBuildingColor(mb);
         
+        const side = mb.entranceSide || 'bottom';
+        const entSize = mb.entranceSize || 40;
+        const entPos = mb.entrancePosition ?? 50;
+        const offsetPct = (entPos / 100) * (100 - entSize);
+
         return (
           <div
             key={mb.buildingId}
             onPointerDown={(e) => handlePointerDown(e, mb.buildingId, false)}
             onPointerEnter={() => setHoveredBldgId(mb.buildingId)}
             onPointerLeave={() => setHoveredBldgId(null)}
-            className={`absolute z-10 flex flex-col items-center justify-center ${color.bg} border-2 ${color.border} rounded-lg shadow-sm group/bldg pointer-events-auto transition-all ${isDragging || isResizing ? 'shadow-lg z-50 cursor-grabbing' : 'hover:shadow-md hover:z-50 cursor-grab'}`}
+            className={`absolute z-10 flex flex-col items-center justify-center ${color.bg} border-2 ${color.border} rounded-lg shadow-[3px_4px_10px_rgba(0,0,0,0.18)] group/bldg pointer-events-auto ${
+              isDragging || isResizing 
+                ? 'transition-none shadow-2xl z-50 cursor-grabbing scale-[1.03]' 
+                : 'transition-shadow duration-150 hover:shadow-xl hover:z-50 cursor-grab'
+            }`}
             style={{ 
               top: `${mb.y}%`, 
               left: `${mb.x}%`,
               width: `${w}%`,
               height: `${h}%`,
-              transform: 'translate(-50%, -50%)'
+              transform: 'translate(-50%, -50%)',
+              willChange: isDragging || isResizing ? 'top, left, width, height' : 'auto'
             }}
           >
-            <div className={`absolute top-0 left-0 w-full h-1/2 ${color.top} rounded-t-sm border-b border-black/5 pointer-events-none`}></div>
-            <span 
-              className={`relative z-10 font-black ${color.text} uppercase line-clamp-1 break-all px-0.5 text-center pointer-events-none`}
-              style={{ fontSize: `max(0.45rem, ${Math.min(w, h * 1.77) * 0.2}cqw)` }}
+            {/* Visual Entrance Doorway Cutout Threshold */}
+            {side === 'bottom' && (
+              <div 
+                className={`absolute -bottom-[2px] ${color.doorBg} border-t border-x ${color.doorBorder} rounded-t-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
+                style={{ left: `${offsetPct}%`, width: `${entSize}%`, height: '5px' }}
+              >
+                <div className={`w-1/2 h-[1px] ${color.doorInner} rounded-full`} />
+              </div>
+            )}
+            {side === 'top' && (
+              <div 
+                className={`absolute -top-[2px] ${color.doorBg} border-b border-x ${color.doorBorder} rounded-b-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
+                style={{ left: `${offsetPct}%`, width: `${entSize}%`, height: '5px' }}
+              >
+                <div className={`w-1/2 h-[1px] ${color.doorInner} rounded-full`} />
+              </div>
+            )}
+            {side === 'left' && (
+              <div 
+                className={`absolute -left-[2px] ${color.doorBg} border-r border-y ${color.doorBorder} rounded-r-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
+                style={{ top: `${offsetPct}%`, height: `${entSize}%`, width: '5px' }}
+              >
+                <div className={`h-1/2 w-[1px] ${color.doorInner} rounded-full`} />
+              </div>
+            )}
+            {side === 'right' && (
+              <div 
+                className={`absolute -right-[2px] ${color.doorBg} border-l border-y ${color.doorBorder} rounded-l-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
+                style={{ top: `${offsetPct}%`, height: `${entSize}%`, width: '5px' }}
+              >
+                <div className={`h-1/2 w-[1px] ${color.doorInner} rounded-full`} />
+              </div>
+            )}
+
+            {/* Top-Down Roof Deck Surface */}
+            <div className="absolute inset-[3px] rounded-[5px] border border-black/10 bg-white/20 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.12)] pointer-events-none flex flex-col items-center justify-center overflow-hidden">
+              {/* Roof Architectural Hatch Grid Pattern */}
+              <div 
+                className="absolute inset-0 opacity-20 pointer-events-none"
+                style={{
+                  backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px)',
+                  backgroundSize: '8px 8px'
+                }}
+              />
+              
+              {/* Rooftop Penthouse / HVAC Mechanical Unit */}
+              <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-black/10 border border-black/20 rounded-[1px] shadow-[inset_0_0_2px_rgba(0,0,0,0.2)] pointer-events-none flex items-center justify-center">
+                <div className="w-1 h-1 bg-black/20 rounded-full" />
+              </div>
+              
+              {/* Secondary Vent Unit */}
+              <div className="absolute bottom-1 left-1 w-2 h-2 bg-black/10 border border-black/15 rounded-[1px] pointer-events-none" />
+
+              {/* Building Code Roof Plaque */}
+              <div className="relative z-10 px-1 py-0.5 rounded bg-white/90 shadow-sm border border-slate-200/80 flex items-center justify-center max-w-[85%]">
+                <span 
+                  className={`font-black ${color.text} uppercase line-clamp-1 break-all text-center leading-none pointer-events-none tracking-tight`}
+                  style={{ fontSize: `max(0.42rem, ${Math.min(w, h * 1.77) * 0.18}cqw)` }}
+                >
+                  {b.code || b.name.substring(0,3)}
+                </span>
+              </div>
+            </div>
+
+            {/* Building Settings Trigger Button */}
+            <button
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                setEditingEntranceBldgId(prev => prev === mb.buildingId ? null : mb.buildingId);
+              }}
+              className={`absolute top-1 left-1 w-4 h-4 rounded transition-all flex items-center justify-center z-40 shadow-sm ${
+                editingEntranceBldgId === mb.buildingId
+                  ? `${color.btnActive} opacity-100 pointer-events-auto`
+                  : `opacity-0 group-hover/bldg:opacity-100 ${color.btnBg} text-slate-900 hover:text-white pointer-events-none group-hover/bldg:pointer-events-auto`
+              }`}
+              title="Configure Building Settings & Entrance"
             >
-              {b.code || b.name.substring(0,3)}
-            </span>
+              <SettingsIcon className="w-2.5 h-2.5" />
+            </button>
 
             {/* Resize Handle */}
             <div 
-              className="absolute bottom-0 right-0 w-4 h-4 bg-white/70 cursor-se-resize rounded-tl-md rounded-br-sm border-t border-l border-white opacity-0 group-hover/bldg:opacity-100 z-50 flex items-center justify-center transition-opacity"
+              className="absolute bottom-0 right-0 w-4 h-4 bg-white/80 cursor-se-resize rounded-tl-md rounded-br-sm border-t border-l border-slate-300 opacity-0 group-hover/bldg:opacity-100 z-50 flex items-center justify-center transition-opacity shadow-sm"
               onPointerDown={(e) => handlePointerDown(e, mb.buildingId, true)}
             >
-               <svg className="w-2 h-2 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+               <svg className="w-2.5 h-2.5 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
                </svg>
             </div>
           </div>
         )
       })}
       </div>
+      
+      {/* Floating Building Settings Config Modal */}
+      {editingEntranceBldgId && (() => {
+        const targetBldg = localMapBuildings.find(b => b.buildingId === editingEntranceBldgId);
+        const targetInfo = buildings.find(b => b.id === editingEntranceBldgId);
+        if (!targetBldg) return null;
+
+        const targetColor = getBuildingColor(targetBldg);
+        const currentSide = targetBldg.entranceSide || 'bottom';
+        const currentSize = targetBldg.entranceSize || 40;
+        const currentPos = targetBldg.entrancePosition ?? 50;
+
+        const clampX = Math.min(78, Math.max(22, targetBldg.x));
+        const modalTopY = targetBldg.y + (targetBldg.h || 15) / 2 + 1.5;
+
+        return (
+          <div 
+            className={`absolute z-[90] bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border ${targetColor.modalBorder} p-3 w-64 pointer-events-auto transition-all select-none`}
+            style={{
+              left: `${clampX}%`,
+              top: `${modalTopY}%`,
+              transform: 'translate(-50%, 0%)'
+            }}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
+              <div className="flex items-center gap-1.5">
+                <SettingsIcon className={`w-4 h-4 ${targetColor.modalAccent}`} />
+                <span className="text-xs font-black text-slate-800 uppercase tracking-wide truncate max-w-[140px]">
+                  {targetInfo?.code || targetInfo?.name} Settings
+                </span>
+              </div>
+              <button 
+                onClick={() => setEditingEntranceBldgId(null)}
+                className="text-slate-400 hover:text-slate-700 text-xs font-bold leading-none p-1 rounded hover:bg-slate-100"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Building Color Theme Picker */}
+            <div className="mb-2.5">
+              <label className="block text-[0.6rem] font-extrabold text-slate-500 uppercase tracking-widest mb-1.5">
+                Building Theme Color
+              </label>
+              <div className="grid grid-cols-6 gap-1.5">
+                {BUILDING_COLORS.map((c, idx) => {
+                  const defaultIdx = Math.abs(targetBldg.buildingId.split('').reduce((acc, char) => char.charCodeAt(0) + ((acc << 5) - acc), 0)) % BUILDING_COLORS.length;
+                  const isSelected = (targetBldg.colorIndex ?? defaultIdx) === idx;
+                  
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        const updated = localMapBuildings.map(b => b.buildingId === editingEntranceBldgId ? { ...b, colorIndex: idx } : b);
+                        setLocalMapBuildings(updated);
+                        saveToFirestore(updated);
+                      }}
+                      className={`w-5 h-5 rounded-full ${c.bg} border-2 ${c.border} transition-all flex items-center justify-center ${
+                        isSelected ? 'ring-2 ring-slate-800 scale-110 shadow-sm' : 'hover:scale-105 opacity-80 hover:opacity-100'
+                      }`}
+                      title={`Theme Color ${idx + 1}`}
+                    >
+                      {isSelected && <div className={`w-1.5 h-1.5 rounded-full ${c.doorBg}`} />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Entrance Side Buttons */}
+            <div className="mb-2.5">
+              <label className="block text-[0.6rem] font-extrabold text-slate-500 uppercase tracking-widest mb-1">
+                Entrance Side
+              </label>
+              <div className="grid grid-cols-4 gap-1">
+                {(['top', 'bottom', 'left', 'right'] as EntranceSide[]).map(s => {
+                  const isSelected = currentSide === s;
+                  const arrows: Record<EntranceSide, string> = { top: '↑', bottom: '↓', left: '←', right: '→' };
+                  const titles: Record<EntranceSide, string> = { top: 'Top Side', bottom: 'Bottom Side', left: 'Left Side', right: 'Right Side' };
+                  
+                  return (
+                    <button
+                      key={s}
+                      title={titles[s]}
+                      onClick={() => {
+                        const updated = localMapBuildings.map(b => b.buildingId === editingEntranceBldgId ? { ...b, entranceSide: s } : b);
+                        setLocalMapBuildings(updated);
+                        saveToFirestore(updated);
+                      }}
+                      className={`py-1 text-[0.8rem] font-black rounded transition-all flex items-center justify-center ${
+                        isSelected 
+                          ? targetColor.btnSideActive + ' shadow-sm scale-105' 
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                      }`}
+                    >
+                      {arrows[s]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Slider 1: Entrance Size / Area Slider */}
+            <div className="mb-2.5">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[0.6rem] font-extrabold text-slate-500 uppercase tracking-widest">
+                  Entrance Area Size
+                </label>
+                <span className={`text-[0.65rem] font-black ${targetColor.badgeBg} px-1.5 py-0.5 rounded border`}>
+                  {currentSize}%
+                </span>
+              </div>
+              <input 
+                type="range"
+                min="15"
+                max="85"
+                step="5"
+                value={currentSize}
+                onChange={(e) => {
+                  const newSize = parseInt(e.target.value, 10);
+                  const updated = localMapBuildings.map(b => b.buildingId === editingEntranceBldgId ? { ...b, entranceSize: newSize } : b);
+                  setLocalMapBuildings(updated);
+                  saveToFirestore(updated);
+                }}
+                className={`w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer ${targetColor.sliderAccent}`}
+              />
+              <div className="flex justify-between text-[0.52rem] font-bold text-slate-400 mt-0.5">
+                <span>Narrow (15%)</span>
+                <span>Wide (85%)</span>
+              </div>
+            </div>
+
+            {/* Slider 2: Door Position on Side Slider */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[0.6rem] font-extrabold text-slate-500 uppercase tracking-widest">
+                  Door Position on Side
+                </label>
+                <span className={`text-[0.65rem] font-black ${targetColor.badgeBg} px-1.5 py-0.5 rounded border`}>
+                  {currentPos === 50 ? 'Center (50%)' : currentPos < 50 ? `Start (${currentPos}%)` : `End (${currentPos}%)`}
+                </span>
+              </div>
+              <input 
+                type="range"
+                min="0"
+                max="100"
+                step="5"
+                value={currentPos}
+                onChange={(e) => {
+                  const newPos = parseInt(e.target.value, 10);
+                  const updated = localMapBuildings.map(b => b.buildingId === editingEntranceBldgId ? { ...b, entrancePosition: newPos } : b);
+                  setLocalMapBuildings(updated);
+                  saveToFirestore(updated);
+                }}
+                className={`w-full h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer ${targetColor.sliderAccent}`}
+              />
+              <div className="flex justify-between text-[0.52rem] font-bold text-slate-400 mt-0.5">
+                <span>{currentSide === 'top' || currentSide === 'bottom' ? 'Left (0%)' : 'Top (0%)'}</span>
+                <span>{currentSide === 'top' || currentSide === 'bottom' ? 'Right (100%)' : 'Bottom (100%)'}</span>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       
       {/* Total Badge */}
       <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
@@ -552,13 +1125,13 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
       {/* Global Cursor-tracking Tooltip */}
       {hoveredBldgId && !draggingId && !resizingId && (
         <div 
-           className="absolute z-[60] bg-slate-800 text-white text-xs sm:text-sm font-bold px-3 py-1.5 rounded-md pointer-events-none whitespace-nowrap shadow-lg transition-transform duration-75 ease-out"
+           className="absolute z-[100] bg-slate-900 text-white text-xs sm:text-sm font-bold px-3 py-1.5 rounded-lg pointer-events-none whitespace-nowrap shadow-2xl border border-slate-700/60 transition-transform duration-75 ease-out"
            style={{
-             left: `${pointerPos.x}%`,
+             left: `${Math.min(90, Math.max(10, pointerPos.x))}%`,
              top: `${pointerPos.y}%`,
              transform: `translate(
                -50%, 
-               ${pointerPos.y < 30 ? '15px' : pointerPos.y > 70 ? 'calc(-100% - 15px)' : '-150%'}
+               ${pointerPos.y < 25 ? '20px' : pointerPos.y > 75 ? 'calc(-100% - 20px)' : '-150%'}
              )`
            }}
         >
@@ -633,7 +1206,7 @@ function BuildingsRoomsPage() {
   const [showTestButtons, setShowTestButtons] = useState(false)
   const [showFactoryControls, setShowFactoryControls] = useState<boolean>(() => JSON.parse(sessionStorage.getItem('rorms-factoryControls') || 'false'))
   const [isAutoMode, setIsAutoMode] = useState<boolean>(() => JSON.parse(sessionStorage.getItem('rorms-autoMode') || 'false'))
-  const [selectedLiquid, setSelectedLiquid] = useState<DropdownLiquidType>(() => (sessionStorage.getItem('rorms-selectedLiquid') as DropdownLiquidType) || 'Water')
+  const [selectedLiquid, setSelectedLiquid] = useState<DropdownLiquidType>(() => (sessionStorage.getItem('rorms-selectedLiquid') as DropdownLiquidType) || 'Random')
 
   // Save state to sessionStorage
   useEffect(() => { sessionStorage.setItem('rorms-jars', JSON.stringify(jars)); }, [jars]);
@@ -2124,11 +2697,7 @@ function BuildingsRoomsPage() {
                         return null;
                       }}
                     />
-                    <Bar dataKey="rooms" shape={<BuildingBarShape />} activeBar={false}>
-                      {buildings.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={index % 2 === 0 ? '#10b981' : '#34d399'} style={{ outline: 'none' }} />
-                      ))}
-                    </Bar>
+                    <Bar dataKey="rooms" shape={(props: any) => <BuildingBarShape {...props} />} activeBar={false} />
                   </BarChart>
                 </ResponsiveContainer>
 
@@ -2439,12 +3008,35 @@ function BuildingsRoomsPage() {
                           {/* Bottle Label */}
                           {jar.fillStatus === 'labeled' && (
                             <div 
-                              className="absolute top-[45%] inset-x-0 -translate-y-1/2 h-7 bg-white/95 border-y border-emerald-400/50 shadow-[0_0_8px_rgba(16,185,129,0.2)] flex items-center justify-center overflow-hidden transition-all duration-300 z-10"
-                              style={jar.position === 0 ? { animation: 'labelWipe 1s ease-out forwards' } : { clipPath: 'inset(0 0 0 0)' }}
+                              className="absolute top-[45%] inset-x-0 -translate-y-1/2 h-7 rounded-[1px] border-y-[1.5px] border-[#62853e]/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9),inset_0_-1px_2px_rgba(0,0,0,0.2),0_2px_5px_rgba(0,0,0,0.3)] flex items-center justify-between px-1 overflow-hidden transition-all duration-300 z-10 select-none"
+                              style={{
+                                background: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 3px), repeating-linear-gradient(-45deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 3px), linear-gradient(to bottom, #fefcf8 0%, #f4eee2 50%, #e7decb 100%)',
+                                ...(jar.position === 0 ? { animation: 'labelWipe 1s ease-out forwards' } : { clipPath: 'inset(0 0 0 0)' })
+                              }}
                             >
-                              <span className="text-xs font-bold text-slate-800 tracking-tighter truncate w-full text-center px-0.5">
-                                {displayCode}
-                              </span>
+                              {/* Cylindrical Curve Reflection & Highlight Overlay */}
+                              <div 
+                                className="absolute inset-0 pointer-events-none z-10"
+                                style={{
+                                  background: 'linear-gradient(90deg, rgba(0,0,0,0.22) 0%, rgba(255,255,255,0.45) 15%, transparent 40%, transparent 60%, rgba(255,255,255,0.45) 85%, rgba(0,0,0,0.22) 100%)'
+                                }}
+                              />
+
+                              {/* Micro Barcode Texture (Left) */}
+                              <div className="flex items-center gap-[1px] h-3.5 opacity-50 shrink-0 pointer-events-none">
+                                <div className="w-[1.5px] h-full bg-slate-900" />
+                                <div className="w-[0.75px] h-full bg-slate-900" />
+                                <div className="w-[2px] h-full bg-slate-900" />
+                                <div className="w-[0.75px] h-full bg-slate-900" />
+                                <div className="w-[1px] h-full bg-slate-900" />
+                              </div>
+
+                              {/* Micro Building Code Batch Stamp Texture (Center & Right) */}
+                              <div className="flex-1 ml-0.5 h-5 my-auto flex items-center justify-center border border-amber-800/60 rounded-[2px] px-0.5 bg-amber-700/10 shadow-[0_0_2px_rgba(146,64,14,0.2)] pointer-events-none z-10 opacity-90 overflow-hidden">
+                                <span className="text-[0.7rem] font-black text-amber-950 tracking-tighter truncate w-full text-center leading-none uppercase drop-shadow-[0_0.5px_0_rgba(255,255,255,0.7)] flex items-center justify-center h-full">
+                                  {displayCode}
+                                </span>
+                              </div>
                             </div>
                           )}
                         </div>

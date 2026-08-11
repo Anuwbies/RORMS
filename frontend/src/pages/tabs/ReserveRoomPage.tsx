@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
-import { UserIcon, SearchIcon, CheckIcon, ClipboardIcon, BookIcon } from '../../components/Icons'
+import { UserIcon, SearchIcon, CheckIcon, ClipboardIcon, BookIcon, BuildingIcon, DoorIcon, UsersIcon } from '../../components/Icons'
 import { Button } from '../../components/Button'
+import { SummaryCard } from '../../components/SummaryCard'
 import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
 import { TimePicker } from '../../components/TimePicker'
@@ -240,34 +241,22 @@ function ReserveRoomPage() {
 
             <div className="p-6 space-y-5">
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Building</label>
-                    <SingleSelectDropdown
-                      options={['Any Building', ...buildingOptions]}
-                      value={findRoomData.building || 'Any Building'}
-                      onChange={(val) => setFindRoomData({ ...findRoomData, building: val === 'Any Building' ? '' : val })}
-                    />
-                  </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Building</label>
+                  <SingleSelectDropdown
+                    options={['Any Building', ...buildingOptions]}
+                    value={findRoomData.building || 'Any Building'}
+                    onChange={(val) => setFindRoomData({ ...findRoomData, building: val === 'Any Building' ? '' : val })}
+                  />
+                </div>
 
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Room Type</label>
                     <SingleSelectDropdown
                       options={['Any Type', ...roomTypes]}
                       value={findRoomData.roomType || 'Any Type'}
                       onChange={(val) => setFindRoomData({ ...findRoomData, roomType: val === 'Any Type' ? '' : val })}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Date</label>
-                    <DatePicker
-                      value={findRoomData.date}
-                      onChange={(date) => setFindRoomData({ ...findRoomData, date })}
-                      minDate={getLocalIsoDate()}
-                      maxDate={maxAllowedDate}
                     />
                   </div>
 
@@ -603,6 +592,44 @@ function ReserveRoomPage() {
           title="Reserve a Room" 
           description="Find and book available rooms for classes, meetings, or special events." 
         />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <SummaryCard
+            title="Available Rooms"
+            subtitle="Currently ready to book"
+            icon={<DoorIcon className="w-5 h-5 text-emerald-600" />}
+            gradientClasses="from-emerald-200 to-emerald-100"
+            blobClasses="bg-emerald-500/5"
+          >
+            <div className="flex-1 flex flex-col items-center justify-center py-3">
+              <span className="text-4xl font-black text-slate-800 tracking-tight">{availableRoomsCount}</span>
+            </div>
+          </SummaryCard>
+
+          <SummaryCard
+            title="Total Buildings"
+            subtitle="Campus facilities managed"
+            icon={<BuildingIcon className="w-5 h-5 text-amber-600" />}
+            gradientClasses="from-amber-200 to-amber-100"
+            blobClasses="bg-amber-500/5"
+          >
+            <div className="flex-1 flex flex-col items-center justify-center py-3">
+              <span className="text-4xl font-black text-slate-800 tracking-tight">{buildings.length}</span>
+            </div>
+          </SummaryCard>
+
+          <SummaryCard
+            title="Total Capacity"
+            subtitle="Maximum campus occupancy"
+            icon={<UsersIcon className="w-5 h-5 text-sky-600" />}
+            gradientClasses="from-sky-200 to-sky-100"
+            blobClasses="bg-sky-500/5"
+          >
+            <div className="flex-1 flex flex-col items-center justify-center py-3">
+              <span className="text-4xl font-black text-slate-800 tracking-tight">{totalCapacity}</span>
+            </div>
+          </SummaryCard>
+        </div>
 
         <BuildingBrowser
           buildings={buildings}

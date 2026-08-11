@@ -1,13 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 
 export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: { weatherCode?: number, layer?: 'front' | 'back' | 'all', supermanKey?: number }) {
-  if (weatherCode === undefined) return null;
-
-  const isSunny = weatherCode === 0;
-  const isCloudy = weatherCode >= 1 && weatherCode <= 3;
-  const isRainy = (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82);
-  const isThunderstorm = weatherCode >= 95;
-
   const isBack = layer === 'back' || layer === 'all';
   const isFront = layer === 'front' || layer === 'all';
 
@@ -88,6 +81,14 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
     animationDelay: `-${Math.random() * 70}s`,
     scale: 0.5 + Math.random() * 0.8
   })), []);
+
+  // Early return AFTER all hooks to satisfy Rules of Hooks
+  if (weatherCode === undefined) return null;
+
+  const isSunny = weatherCode === 0;
+  const isCloudy = weatherCode >= 1 && weatherCode <= 3;
+  const isRainy = (weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82);
+  const isThunderstorm = weatherCode >= 95;
 
   const getCloudColor = () => {
     if (isThunderstorm) return 'bg-slate-700';
