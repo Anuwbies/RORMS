@@ -108,7 +108,7 @@ export function BuildingBrowser({
     <div className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-visible flex flex-col w-full animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
       <div className="flex flex-col lg:flex-row items-center justify-between gap-4 w-full relative z-20 p-4 bg-white rounded-t-3xl border-b border-gray-200">
         <div className="flex items-center gap-3 w-full flex-1 flex-col lg:flex-row">
-          <div className="relative w-full lg:max-w-md">
+          <div className="relative w-full lg:max-w-xl">
             <SearchInput
               value={searchTerm}
               onChange={setSearchTerm}
@@ -259,7 +259,7 @@ export function BuildingBrowser({
                 </div>
 
                 <div className={`grid transition-all duration-500 ease-in-out ${isExpanded ? 'grid-rows-[1fr] mt-10 opacity-100' : 'grid-rows-[0fr] mt-0 opacity-0'}`}>
-                  <div className="overflow-hidden px-4 -mx-4">
+                  <div className={`${isExpanded ? 'overflow-visible' : 'overflow-hidden'} px-4 -mx-4`}>
                     <div className="space-y-12 pb-4">
                       {building.rooms.length === 0 ? (
                         <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 p-10 text-center">
@@ -288,7 +288,7 @@ export function BuildingBrowser({
                                 <div
                                   key={room.id}
                                   onClick={() => onRoomClick(room)}
-                                  className="flex rounded-2xl border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
+                                  className="relative flex rounded-2xl border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] hover:z-50 focus-within:z-50 cursor-pointer"
                                 >
                                   <img
                                     src={room.image}

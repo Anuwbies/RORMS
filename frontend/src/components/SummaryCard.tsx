@@ -5,9 +5,11 @@ export interface SummaryCardProps {
   subtitle: string;
   icon: ReactNode;
   gradientClasses: string; // e.g., "from-[var(--brand-color)] to-[#7b9d4f]"
+  outlineClasses?: string; // Optional specific classes for the top line (to make it solid/opaque)
   blobClasses: string; // e.g., "bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
   children?: ReactNode;
   className?: string;
+  contentAspectRatio?: string; // e.g., "aspect-[16/9]"
 }
 
 export function SummaryCard({
@@ -15,15 +17,17 @@ export function SummaryCard({
   subtitle,
   icon,
   gradientClasses,
+  outlineClasses,
   blobClasses,
   children,
   className = "",
+  contentAspectRatio = "aspect-[16/9]",
 }: SummaryCardProps) {
   return (
     <div className={`group relative z-10 hover:z-50 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 p-4 flex flex-col h-full ${className}`}>
 
       <div
-        className={`absolute top-0 left-0 right-0 h-[3px] rounded-t-2xl bg-gradient-to-r ${gradientClasses}`}
+        className={`absolute top-0 left-[1%] right-[1%] h-[3px] rounded-t-sm ${outlineClasses || `bg-gradient-to-r ${gradientClasses}`}`}
       />
 
       <div className="flex items-start justify-between">
@@ -42,7 +46,15 @@ export function SummaryCard({
         </div>
       </div>
 
-      {children && <div className="flex-1 flex flex-col mt-2">{children}</div>}
+      <div className={`flex-1 flex flex-col mt-4 w-full relative ${contentAspectRatio}`}>
+        {children ? (
+          children
+        ) : (
+          <div className="w-full h-full rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center">
+            <span className="text-xs font-bold text-slate-400">Empty 16:9 Container</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -78,7 +78,7 @@ export function SingleSelectDropdown<T extends string>({
       </button>
 
       {isOpen && !isDisabled && (
-        <div className="absolute left-0 top-full z-20 mt-2 min-w-full rounded-2xl border border-gray-100 bg-white p-2 shadow-[0_10px_40px_rgb(0,0,0,0.1)] animate-in fade-in zoom-in-95 duration-200 overflow-visible">
+        <div className="absolute left-0 top-full z-20 mt-2 min-w-full rounded-2xl border border-gray-200 bg-white p-2 shadow-xl ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
           <div className="space-y-1 max-h-55 overflow-y-auto custom-scrollbar pr-1 overflow-visible">
             {options.map((option) => {
               const isSelected = value === option

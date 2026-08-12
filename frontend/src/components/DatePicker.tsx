@@ -118,6 +118,7 @@ export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowe
   }, [viewDate])
 
   const isSelected = (day: number) => {
+    if (!value) return false
     return selectedDate.getDate() === day &&
            selectedDate.getMonth() === viewDate.getMonth() &&
            selectedDate.getFullYear() === viewDate.getFullYear()
@@ -157,11 +158,11 @@ export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowe
   const isNextMonthDisabled = parsedMaxDate ? new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1) > parsedMaxDate : false
 
 
-  const formattedDisplayDate = selectedDate.toLocaleDateString('en-US', {
+  const formattedDisplayDate = value ? selectedDate.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
     day: 'numeric'
-  })
+  }) : 'Any Date'
 
   return (
     <div className="relative" ref={containerRef}>
@@ -255,14 +256,24 @@ export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowe
           </div>
 
           {/* Footer / Today button */}
-          <div className="mt-4 border-t border-gray-100 pt-3">
+          <div className="mt-4 border-t border-gray-100 pt-3 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onChange('')
+                setIsOpen(false)
+              }}
+              className="flex-1 rounded-xl py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              Clear
+            </button>
             <button
               type="button"
               onClick={() => {
                 const now = new Date()
                 setViewDate(new Date(now.getFullYear(), now.getMonth(), 1))
               }}
-              className="w-full rounded-xl py-1.5 text-xs font-bold text-[var(--brand-color)] hover:bg-[var(--brand-color)]/5 transition-colors cursor-pointer"
+              className="flex-1 rounded-xl py-1.5 text-xs font-bold text-[var(--brand-color)] hover:bg-[var(--brand-color)]/5 transition-colors cursor-pointer"
             >
               Go to Today
             </button>

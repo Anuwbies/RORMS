@@ -76,7 +76,7 @@ export function FilterDropdown({
       
       {isOpen && (
         <div 
-          className="absolute top-full mt-2 left-0 w-80 bg-white rounded-2xl shadow-[0_10px_40px_rgb(0,0,0,0.1)] border border-gray-100 p-4 z-50 animate-in fade-in zoom-in-95 duration-200"
+          className="absolute top-full mt-2 left-0 w-80 bg-white rounded-2xl border border-gray-200 shadow-xl ring-1 ring-black/5 p-4 z-50 animate-in fade-in zoom-in-95 duration-200"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-200">

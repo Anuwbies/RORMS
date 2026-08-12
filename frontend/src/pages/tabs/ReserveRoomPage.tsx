@@ -85,6 +85,7 @@ function ReserveRoomPage() {
   }, [selectedRoomInfo])
 
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
+  const [roomInfoSource, setRoomInfoSource] = useState<'main' | 'searchResults'>('main')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [reservationData, setReservationData] = useState({
     date: getLocalIsoDate(),
@@ -96,14 +97,17 @@ function ReserveRoomPage() {
   const [formErrors, setFormErrors] = useState<Record<string, boolean>>({})
 
   const [isFindRoomModalOpen, setIsFindRoomModalOpen] = useState(false)
+  const [isSearchResultsModalOpen, setIsSearchResultsModalOpen] = useState(false)
+  const [searchResults, setSearchResults] = useState<Room[]>([])
   const [findRoomData, setFindRoomData] = useState({
     building: '',
+    floor: '',
     capacity: '',
     roomType: '',
     amenities: [] as string[],
-    date: getLocalIsoDate(),
-    startTime: '07:30',
-    duration: 60 as number | ''
+    date: '',
+    startTime: '',
+    duration: '' as number | ''
   })
 
   useEffect(() => {
@@ -215,12 +219,20 @@ function ReserveRoomPage() {
     setIsRoomInfoModalOpen(false)
     setIsReservationModalOpen(false)
     setIsFindRoomModalOpen(false)
+    setIsSearchResultsModalOpen(false)
     setSelectedRoomInfo(null)
   }
 
   const allRooms = buildings.flatMap((building) => building.rooms)
   const roomTypes = useMemo(() => Array.from(new Set(allRooms.map(r => r.type))).sort(), [allRooms])
   const allAmenities = useMemo(() => Array.from(new Set(allRooms.flatMap(r => r.amenities))).sort(), [allRooms])
+  
+  const selectedBuildingObj = useMemo(() => buildings.find(b => b.name === findRoomData.building), [buildings, findRoomData.building])
+  const floorOptions = useMemo(() => {
+    if (!selectedBuildingObj) return []
+    const floors = new Set(selectedBuildingObj.rooms.map(r => r.floor))
+    return Array.from(floors).sort((a, b) => a - b).map(String)
+  }, [selectedBuildingObj])
   const availableRoomsCount = allRooms.filter(room => room.status === 'Available').length
   const totalCapacity = buildings.reduce((sum, building) => sum + building.capacity, 0)
   const totalFloors = buildings.reduce((sum, building) => sum + building.floor, 0)
@@ -246,11 +258,27 @@ function ReserveRoomPage() {
                   <SingleSelectDropdown
                     options={['Any Building', ...buildingOptions]}
                     value={findRoomData.building || 'Any Building'}
-                    onChange={(val) => setFindRoomData({ ...findRoomData, building: val === 'Any Building' ? '' : val })}
+                    onChange={(val) => setFindRoomData({ 
+                      ...findRoomData, 
+                      building: val === 'Any Building' ? '' : val,
+                      floor: ''
+                    })}
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Floor</label>
+                    <SingleSelectDropdown
+                      options={selectedBuildingObj ? ['Any Floor', ...floorOptions] : ['Select Building First']}
+                      value={!selectedBuildingObj ? 'Select Building First' : (findRoomData.floor || 'Any Floor')}
+                      onChange={(val) => {
+                        if (val !== 'Select Building First') {
+                          setFindRoomData({ ...findRoomData, floor: val === 'Any Floor' ? '' : val })
+                        }
+                      }}
+                    />
+                  </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Room Type</label>
                     <SingleSelectDropdown
@@ -259,7 +287,37 @@ function ReserveRoomPage() {
                       onChange={(val) => setFindRoomData({ ...findRoomData, roomType: val === 'Any Type' ? '' : val })}
                     />
                   </div>
+                </div>
 
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Date</label>
+                    <DatePicker
+                      value={findRoomData.date}
+                      onChange={(date) => setFindRoomData({ ...findRoomData, date })}
+                      minDate={getLocalIsoDate()}
+                      maxDate={maxAllowedDate}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Start Time</label>
+                    <TimePicker 
+                      value={findRoomData.startTime}
+                      onChange={(time) => setFindRoomData({ ...findRoomData, startTime: time })}
+                      minuteStep={30}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Duration (mins)</label>
+                    <SingleSelectDropdown
+                      options={['Any Duration', '30', '60', '90', '120', '150', '180']}
+                      value={findRoomData.duration ? findRoomData.duration.toString() : 'Any Duration'}
+                      onChange={(val) => setFindRoomData({ ...findRoomData, duration: val === 'Any Duration' ? '' : Number(val) })}
+                    />
+                  </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Capacity</label>
                     <NumberInput
@@ -272,28 +330,15 @@ function ReserveRoomPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Start Time</label>
-                    <TimePicker 
-                      value={findRoomData.startTime}
-                      onChange={(time) => setFindRoomData({ ...findRoomData, startTime: time })}
-                      minuteStep={30}
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Duration (mins)</label>
-                    <SingleSelectDropdown
-                      options={['30', '60', '90', '120', '150', '180']}
-                      value={findRoomData.duration ? findRoomData.duration.toString() : '60'}
-                      onChange={(val) => setFindRoomData({ ...findRoomData, duration: Number(val) })}
-                    />
-                  </div>
-                </div>
-
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2.5 block">Room Amenities</label>
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Room Amenities</label>
+                    {findRoomData.amenities.length > 0 && (
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[var(--brand-color)] text-[0.625rem] font-bold text-white">
+                        {findRoomData.amenities.length}
+                      </span>
+                    )}
+                  </div>
                   <RoomAmenities
                     amenities={allAmenities}
                     selectedAmenities={findRoomData.amenities}
@@ -310,22 +355,47 @@ function ReserveRoomPage() {
               </div>
 
               <div className="flex gap-3 pt-2">
-                <button
+                <Button
+                  variant="outline"
                   onClick={handleCloseModals}
-                  className="flex-1 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 shadow-sm"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
-                  className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)]"
+                </Button>
+                <Button
+                  variant="brand"
+                  className="flex-1"
+                  icon={<SearchIcon className="h-4 w-4" />}
                   onClick={() => {
-                    alert("Room search criteria applied. Integration with the main list is pending.")
+                    const capacityReq = parseInt(findRoomData.capacity) || 0
+                    const buildingReq = findRoomData.building ? buildings.find(b => b.name === findRoomData.building)?.id : null
+                    
+                    const filtered = allRooms.filter(room => {
+                      if (buildingReq && room.buildingId !== buildingReq) return false
+                      if (capacityReq && (room.capacity || 0) < capacityReq) return false
+                      if (findRoomData.roomType && room.type !== findRoomData.roomType) return false
+                      if (findRoomData.floor && room.floor !== parseInt(findRoomData.floor)) return false
+                      if (findRoomData.amenities.length > 0) {
+                        const hasAll = findRoomData.amenities.every(a => room.amenities?.includes(a))
+                        if (!hasAll) return false
+                      }
+                      if (findRoomData.date) {
+                        const [y, m, d] = findRoomData.date.split('-').map(Number)
+                        const dateObj = new Date(y, m - 1, d)
+                        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+                        const dayName = dayNames[dateObj.getDay()]
+                        if (room.availableDays && !room.availableDays.includes(dayName)) return false
+                      }
+                      return true
+                    })
+                    
+                    setSearchResults(filtered)
                     setIsFindRoomModalOpen(false)
+                    setIsSearchResultsModalOpen(true)
                   }}
                 >
-                  <SearchIcon className="h-4 w-4" />
                   Find Room
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -336,11 +406,144 @@ function ReserveRoomPage() {
         </div>
       )}
 
+      {/* Search Results Modal */}
+      {isSearchResultsModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+          <div 
+            className="w-[80vw] h-[80vh] flex flex-col rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white shrink-0">
+              <h3 className="text-xl font-bold leading-tight">Search Results</h3>
+              <p className="text-xs text-white/80 font-medium mt-0.5">Found {searchResults.length} {searchResults.length === 1 ? 'room' : 'rooms'} matching your criteria</p>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 bg-slate-50">
+              {searchResults.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="bg-white h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-slate-100">
+                    <SearchIcon className="h-8 w-8 text-slate-300" />
+                  </div>
+                  <h4 className="text-lg font-bold text-slate-700">No rooms found</h4>
+                  <p className="text-sm text-slate-500 mt-1">Try adjusting your search criteria</p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {Object.entries(
+                    searchResults.reduce((acc, room) => {
+                      if (!acc[room.buildingId]) {
+                        acc[room.buildingId] = []
+                      }
+                      acc[room.buildingId].push(room)
+                      return acc
+                    }, {} as Record<string, Room[]>)
+                  ).map(([buildingId, buildingRooms]) => {
+                    const building = buildings.find(b => b.id === buildingId)
+                    return (
+                      <div key={buildingId} className="space-y-4">
+                        <div className="flex items-center gap-4">
+                          <h4 className="text-sm font-black uppercase tracking-[0.25em] text-gray-500">
+                            {building?.name || 'Unknown Building'}
+                          </h4>
+                          <div className="h-1 flex-1 bg-gray-200" />
+                        </div>
+                        <div className="grid gap-4 grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))]">
+                          {buildingRooms.map(room => (
+                            <div
+                              key={room.id}
+                              onClick={() => {
+                                setIsSearchResultsModalOpen(false)
+                                setRoomInfoSource('searchResults')
+                                handleOpenRoomInfoModal(room)
+                              }}
+                              className="flex rounded-2xl border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] cursor-pointer"
+                            >
+                              <img
+                                src={room.image}
+                                alt={room.name}
+                                className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-l-2xl sm:w-32 sm:h-32"
+                                onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
+                              />
+
+                              <div className="flex flex-1 flex-col justify-between p-3.5 min-w-0">
+                                <div>
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex items-center gap-2 mt-1 truncate">
+                                      <h5 className="text-base font-bold leading-tight text-gray-900 truncate">
+                                        {room.name}
+                                      </h5>
+                                      {room.floor && (
+                                        <span className="shrink-0 text-xs font-bold uppercase tracking-wider text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-md">
+                                          Flr {room.floor}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <p className="mt-1 text-xs font-bold uppercase tracking-wider text-gray-400">
+                                    {room.type}
+                                  </p>
+                                </div>
+
+                                <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-gray-200 shrink-0">
+                                      <UserIcon className="h-4 w-4 text-gray-500" />
+                                    </div>
+                                    <span className="text-sm font-bold text-gray-700">
+                                      {room.capacity} pax
+                                    </span>
+                                  </div>
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-[0.5625rem] font-black uppercase tracking-widest ${roomStatusClasses[room.status || 'Available']}`}
+                                  >
+                                    {room.status || 'Available'}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+            
+            <div className="p-4 border-t border-gray-100 bg-white shrink-0 flex gap-3 justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setIsSearchResultsModalOpen(false)
+                  setIsFindRoomModalOpen(true)
+                }}
+              >
+                Back to Search
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setIsSearchResultsModalOpen(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+          <div 
+            className="absolute inset-0 -z-10" 
+            onMouseDown={() => setIsSearchResultsModalOpen(false)} 
+          />
+        </div>
+      )}
+
       {/* Room Information Modal */}
       <RoomInfoModal
         isOpen={isRoomInfoModalOpen}
         room={selectedRoomInfo}
         onClose={handleCloseModals}
+        onBack={roomInfoSource === 'searchResults' ? () => {
+          setIsRoomInfoModalOpen(false)
+          setIsSearchResultsModalOpen(true)
+        } : undefined}
         actionButton={
           <Button
             variant="brand"
@@ -599,6 +802,7 @@ function ReserveRoomPage() {
             subtitle="Currently ready to book"
             icon={<DoorIcon className="w-5 h-5 text-emerald-600" />}
             gradientClasses="from-emerald-200 to-emerald-100"
+            outlineClasses="bg-emerald-500"
             blobClasses="bg-emerald-500/5"
           >
             <div className="flex-1 flex flex-col items-center justify-center py-3">
@@ -611,6 +815,7 @@ function ReserveRoomPage() {
             subtitle="Campus facilities managed"
             icon={<BuildingIcon className="w-5 h-5 text-amber-600" />}
             gradientClasses="from-amber-200 to-amber-100"
+            outlineClasses="bg-amber-500"
             blobClasses="bg-amber-500/5"
           >
             <div className="flex-1 flex flex-col items-center justify-center py-3">
@@ -623,6 +828,7 @@ function ReserveRoomPage() {
             subtitle="Maximum campus occupancy"
             icon={<UsersIcon className="w-5 h-5 text-sky-600" />}
             gradientClasses="from-sky-200 to-sky-100"
+            outlineClasses="bg-sky-500"
             blobClasses="bg-sky-500/5"
           >
             <div className="flex-1 flex flex-col items-center justify-center py-3">
@@ -636,7 +842,10 @@ function ReserveRoomPage() {
           buildingOptions={buildingOptions}
           expandedBuildingIds={expandedBuildingIds}
           onToggleBuilding={toggleBuilding}
-          onRoomClick={handleOpenRoomInfoModal}
+          onRoomClick={(room) => {
+            setRoomInfoSource('main')
+            handleOpenRoomInfoModal(room)
+          }}
           isLoading={isLoading}
           actionButton={
             <Button

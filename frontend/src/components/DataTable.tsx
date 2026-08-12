@@ -81,7 +81,7 @@ export function DataTable<T>({
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4 w-full relative z-20 p-4 bg-white rounded-t-2xl">
           <div className="flex items-center gap-3 w-full lg:w-auto flex-1">
             {searchPlaceholder && onSearchChange && (
-              <div className="relative w-full lg:max-w-md">
+              <div className="relative w-full lg:max-w-xl">
                 <SearchInput
                   value={searchValue || ''}
                   onChange={onSearchChange}

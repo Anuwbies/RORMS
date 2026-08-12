@@ -82,63 +82,78 @@ export function TimePicker({ value, onChange, onToggle, hasError, minuteStep = 1
         }`}
       >
         <ClockIcon className="h-4.5 w-4.5 text-gray-400 shrink-0" />
-        <span className="text-sm font-medium text-gray-900 flex-1 text-left">{`${hourStr}:${minuteStr} ${period}`}</span>
+        <span className="text-sm font-medium text-gray-900 flex-1 text-left">{value ? `${hourStr}:${minuteStr} ${period}` : 'Any Time'}</span>
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 z-50 mt-2 flex w-full overflow-hidden rounded-2xl border border-gray-200 bg-white p-1 shadow-2xl animate-in fade-in zoom-in-95 duration-100">
-          {/* Hours */}
-          <div ref={hourScrollRef} className="h-48 flex-1 overflow-y-auto no-scrollbar py-1">
-            {hours.map((h) => (
-              <button
-                key={h}
-                type="button"
-                onClick={() => updateTime(h, minuteStr, period)}
-                className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
-                  hourStr === h 
-                    ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                {h}
-              </button>
-            ))}
-          </div>
+        <div className="absolute left-0 z-50 mt-2 w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-100">
+          <div className="flex p-1">
+            {/* Hours */}
+            <div ref={hourScrollRef} className="h-48 flex-1 overflow-y-auto no-scrollbar py-1">
+              {hours.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  onClick={() => updateTime(h, minuteStr, period)}
+                  className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
+                    hourStr === h && value
+                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
 
-          {/* Minutes */}
-          <div ref={minScrollRef} className="h-48 flex-1 overflow-y-auto no-scrollbar border-l border-gray-100 py-1">
-            {minutes.map((min) => (
-              <button
-                key={min}
-                type="button"
-                onClick={() => updateTime(hourStr, min, period)}
-                className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
-                  minuteStr === min 
-                    ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                {min}
-              </button>
-            ))}
-          </div>
+            {/* Minutes */}
+            <div ref={minScrollRef} className="h-48 flex-1 overflow-y-auto no-scrollbar border-l border-gray-100 py-1">
+              {minutes.map((min) => (
+                <button
+                  key={min}
+                  type="button"
+                  onClick={() => updateTime(hourStr, min, period)}
+                  className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
+                    minuteStr === min && value
+                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  {min}
+                </button>
+              ))}
+            </div>
 
-          {/* AM/PM */}
-          <div ref={periodScrollRef} className="h-48 flex-1 overflow-y-auto no-scrollbar border-l border-gray-100 py-1">
-            {periods.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => updateTime(hourStr, minuteStr, p)}
-                className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
-                  period === p 
-                    ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                {p}
-              </button>
-            ))}
+            {/* AM/PM */}
+            <div ref={periodScrollRef} className="h-48 flex-1 overflow-y-auto no-scrollbar border-l border-gray-100 py-1">
+              {periods.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => updateTime(hourStr, minuteStr, p)}
+                  className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
+                    period === p && value
+                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* Footer */}
+          <div className="border-t border-gray-100 p-2">
+            <button
+              type="button"
+              onClick={() => {
+                onChange('')
+                setIsOpen(false)
+              }}
+              className="w-full rounded-xl py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              Clear
+            </button>
           </div>
         </div>
       )}

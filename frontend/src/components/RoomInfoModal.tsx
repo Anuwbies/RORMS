@@ -9,10 +9,11 @@ interface RoomInfoModalProps {
   isOpen: boolean
   room: Room | null
   onClose: () => void
+  onBack?: () => void
   actionButton?: React.ReactNode
 }
 
-export function RoomInfoModal({ isOpen, room, onClose, actionButton }: RoomInfoModalProps) {
+export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton }: RoomInfoModalProps) {
   if (!isOpen || !room) return null
 
   return (
@@ -128,10 +129,10 @@ export function RoomInfoModal({ isOpen, room, onClose, actionButton }: RoomInfoM
             <div className="flex gap-3 pt-2">
               <Button
                 variant="outline"
-                onClick={onClose}
+                onClick={onBack || onClose}
                 className="flex-1"
               >
-                Close
+                {onBack ? 'Back' : 'Close'}
               </Button>
               {actionButton}
             </div>
@@ -140,7 +141,7 @@ export function RoomInfoModal({ isOpen, room, onClose, actionButton }: RoomInfoM
       </div>
       <div 
         className="absolute inset-0 -z-10" 
-        onMouseDown={onClose} 
+        onMouseDown={onBack || onClose} 
       />
     </div>
   )

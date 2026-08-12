@@ -24,6 +24,7 @@ export interface MapData {
 }
 import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { Button } from '../../components/Button'
+import { IconOnlyButton } from '../../components/IconOnlyButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { NumberInput } from '../../components/NumberInput'
 import { TextInput } from '../../components/TextInput'
@@ -72,6 +73,14 @@ const DEFAULT_ROOM_IMAGE = createRoomImage()
 
 const LIQUID_OPTIONS = ['Water', 'Coffee', 'Blood', 'Mud', 'Slime', 'Random'] as const;
 type DropdownLiquidType = typeof LIQUID_OPTIONS[number];
+const LIQUID_ICONS: Record<DropdownLiquidType, string> = {
+  Water: '💧',
+  Coffee: '☕',
+  Blood: '🩸',
+  Mud: '🟤',
+  Slime: '🦠',
+  Random: '🎲'
+};
 type LiquidType = Exclude<DropdownLiquidType, 'Random'>;
 const liquidColors: Record<LiquidType, { main: string, light: string }> = {
   Water: { main: 'bg-blue-400', light: 'bg-blue-300' },
@@ -732,13 +741,13 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
   return (
     <div 
       ref={containerRef}
-      className="relative w-full aspect-[16/9] bg-[#f3f7ee] rounded-2xl mt-2 border border-emerald-200/80 shadow-[inset_0_2px_8px_rgba(0,0,0,0.06),0_4px_16px_rgba(0,0,0,0.05)] select-none touch-none @container"
+      className="relative w-full aspect-[16/9] bg-[#f3f7ee] rounded-xl border border-emerald-200/80 shadow-[inset_0_2px_8px_rgba(0,0,0,0.06),0_4px_16px_rgba(0,0,0,0.05)] select-none touch-none @container"
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
       {/* Background Texture Container (Clipped to Rounded Card Corners) */}
-      <div className="absolute inset-0 overflow-hidden rounded-2xl pointer-events-none z-0">
+      <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none z-0">
         {/* Rich Campus Blueprint & Lawn Ground Texture Overlay */}
         <div 
           className="absolute inset-0 opacity-85"
@@ -756,7 +765,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         />
         {/* Perimeter Vignette Depth Layer */}
         <div 
-          className="absolute inset-0 rounded-2xl shadow-[inset_0_0_50px_rgba(41,54,28,0.12),inset_0_0_15px_rgba(0,0,0,0.06)]" 
+          className="absolute inset-0 shadow-[inset_0_0_50px_rgba(41,54,28,0.12),inset_0_0_15px_rgba(0,0,0,0.06)]" 
         />
       </div>
 
@@ -789,7 +798,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         kf += `}\n`;
         return kf;
       }).join('')}</style>
-      <div className="absolute inset-0 overflow-hidden rounded-2xl">
+      <div className="absolute inset-0 overflow-hidden rounded-xl">
       
       {/* Travelers walking between buildings via obstacle-free paths */}
       <div className={`absolute inset-0 pointer-events-none transition-opacity duration-200 ${draggingId || resizingId ? 'opacity-0' : 'opacity-100'}`}>
@@ -964,7 +973,6 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         const currentSize = targetBldg.entranceSize || 40;
         const currentPos = targetBldg.entrancePosition ?? 50;
 
-        const clampX = Math.min(78, Math.max(22, targetBldg.x));
         const isNearBottom = targetBldg.y > 55;
         const modalTopY = isNearBottom 
           ? targetBldg.y - (targetBldg.h || 15) / 2 - 1.5 
@@ -974,9 +982,9 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
           <div 
             className={`absolute z-[90] bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border ${targetColor.modalBorder} p-3 w-64 pointer-events-auto transition-all select-none`}
             style={{
-              left: `${clampX}%`,
+              left: `${targetBldg.x}%`,
               top: `${modalTopY}%`,
-              transform: isNearBottom ? 'translate(-50%, -100%)' : 'translate(-50%, 0%)'
+              transform: `translate(-${targetBldg.x}%, ${isNearBottom ? '-100%' : '0%'})`
             }}
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
@@ -1130,12 +1138,9 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         <div 
            className="absolute z-[100] bg-slate-900 text-white text-xs sm:text-sm font-bold px-3 py-1.5 rounded-lg pointer-events-none whitespace-nowrap shadow-2xl border border-slate-700/60 transition-transform duration-75 ease-out"
            style={{
-             left: `${Math.min(90, Math.max(10, pointerPos.x))}%`,
+             left: `${pointerPos.x}%`,
              top: `${pointerPos.y}%`,
-             transform: `translate(
-               -50%, 
-               ${pointerPos.y < 25 ? '20px' : pointerPos.y > 75 ? 'calc(-100% - 20px)' : '-150%'}
-             )`
+             transform: `translate(-${pointerPos.x}%, ${pointerPos.y < 50 ? '15px' : 'calc(-100% - 15px)'})`
            }}
         >
           {buildings.find(b => b.id === hoveredBldgId)?.name}
@@ -2652,6 +2657,7 @@ function BuildingsRoomsPage() {
             icon={<BuildingIcon className="w-5 h-5" />}
             subtitle={mapData?.type === 'freeform' ? 'Interactive campus map updated' : 'Campus map initialized'}
             gradientClasses="from-[var(--brand-color)]/20 to-[var(--brand-color)]/10"
+            outlineClasses="bg-[var(--brand-color)]"
             blobClasses="bg-[var(--brand-color)]/5"
           >
             <CampusMap buildings={buildings} mapData={mapData} />
@@ -2673,11 +2679,12 @@ function BuildingsRoomsPage() {
               </button>
             }
             gradientClasses="from-emerald-200 to-emerald-100"
+            outlineClasses="bg-emerald-500"
             blobClasses="bg-emerald-500/5"
           >
 
             {rooms.length > 0 && (
-              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-2xl overflow-hidden">
+              <div className="flex-1 w-full relative aspect-[16/9] rounded-xl overflow-hidden">
                 <WeatherOverlay weatherCode={weatherData?.code} layer="back" />
                 
                 <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
@@ -2725,11 +2732,13 @@ function BuildingsRoomsPage() {
               </button>
             }
             gradientClasses="from-amber-200 to-amber-100"
+            outlineClasses="bg-amber-500"
             blobClasses="bg-amber-500/5"
           >
             {buildings.length > 0 && (
-              <div className="flex-1 w-full mt-2 relative aspect-[16/9] rounded-2xl border-[4px] border-slate-600 shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]">
-                <div className="absolute inset-0 rounded-lg overflow-hidden bg-slate-700">
+              <div className="flex-1 w-full relative aspect-[16/9]">
+              <div className="absolute inset-0 rounded-xl border-[4px] border-slate-600 bg-slate-700 overflow-hidden">
+                <div className="absolute inset-0 overflow-hidden shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]">
                   {/* Factory Environment Background */}
                 <div className="absolute inset-0 pointer-events-none z-0">
                   {/* Subtle Grid / Tile Pattern */}
@@ -3048,6 +3057,7 @@ function BuildingsRoomsPage() {
                   );
                 })}
                 </div> {/* End Factory Inner Container */}
+              </div> {/* End overflow-hidden factory visual */}
 
                 {/* Global Tooltips Layer (Outside overflow-hidden) */}
                 <div className="absolute inset-0 pointer-events-none z-[100]">
@@ -3124,37 +3134,46 @@ function BuildingsRoomsPage() {
             <div className="flex gap-2 w-full lg:w-auto">
               {showTestButtons && (
                 <>
-                  <Button
+                  <IconOnlyButton
                     variant="outline"
                     onClick={() => setSupermanKey(prev => prev + 1)}
-                    className="w-full lg:w-auto text-slate-500 hover:text-blue-600 border-slate-200 shadow-sm bg-white"
-                  >
-                    🦸‍♂️ Test Superman
-                  </Button>
-                  <Button
+                    className="shrink-0 text-slate-500 hover:text-blue-600 border-slate-200 shadow-sm bg-white"
+                    icon={<span className="text-xl leading-none">🦸‍♂️</span>}
+                    label="Test Superman"
+                    title="Test Superman"
+                  />
+                  <IconOnlyButton
                     variant="outline"
                     onClick={cycleWeather}
-                    className="w-full lg:w-auto text-slate-500 hover:text-amber-500 border-slate-200 shadow-sm bg-white"
-                  >
-                    🌤️ Test Weather
-                  </Button>
+                    className="shrink-0 text-slate-500 hover:text-amber-500 border-slate-200 shadow-sm bg-white"
+                    icon={<span className="text-xl leading-none">🌤️</span>}
+                    label="Test Weather"
+                    title="Test Weather"
+                  />
                 </>
               )}
               {showFactoryControls && (
                 <>
-                  <SingleSelectDropdown
-                    options={LIQUID_OPTIONS}
-                    value={selectedLiquid}
-                    onChange={setSelectedLiquid}
-                    className="w-full lg:w-32 z-20"
+                  <IconOnlyButton
+                    variant="outline"
+                    onClick={() => {
+                      const currentIndex = LIQUID_OPTIONS.indexOf(selectedLiquid);
+                      const nextIndex = (currentIndex + 1) % LIQUID_OPTIONS.length;
+                      setSelectedLiquid(LIQUID_OPTIONS[nextIndex]);
+                    }}
+                    className="shrink-0 text-slate-500 hover:text-slate-700 border-slate-200 shadow-sm bg-white z-20"
+                    icon={<span className="text-xl leading-none">{LIQUID_ICONS[selectedLiquid]}</span>}
+                    label={`Liquid: ${selectedLiquid}`}
+                    title={`Selected Liquid: ${selectedLiquid}`}
                   />
-                  <Button
+                  <IconOnlyButton
                     variant={isAutoMode ? "brand" : "outline"}
                     onClick={() => setIsAutoMode(!isAutoMode)}
-                    className={`w-full lg:w-auto shadow-sm ${isAutoMode ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-white text-slate-500 hover:text-emerald-600'}`}
-                  >
-                    {isAutoMode ? '⏸️ Stop Auto' : '▶️ Auto Fill'}
-                  </Button>
+                    className={`shrink-0 shadow-sm ${isAutoMode ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-white text-slate-500 hover:text-emerald-600'}`}
+                    icon={<span className="text-xl leading-none">{isAutoMode ? '⏸️' : '▶️'}</span>}
+                    label={isAutoMode ? 'Stop Auto' : 'Auto Fill'}
+                    title={isAutoMode ? 'Stop Auto' : 'Auto Fill'}
+                  />
                 </>
               )}
               <Button
@@ -3182,7 +3201,7 @@ function BuildingsRoomsPage() {
 
               {openMenuId === building.id && (
                 <div
-                  className="absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-md border border-gray-100 bg-white shadow-2xl"
+                  className="absolute right-0 top-full z-10 mt-2 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
@@ -3230,14 +3249,14 @@ function BuildingsRoomsPage() {
                   e.stopPropagation()
                   setOpenMenuId(openMenuId === room.id ? null : room.id)
                 }}
-                className="h-8 w-8 shrink-0 rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                className="h-8 w-8 shrink-0 rounded-xl text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-all duration-200"
               >
                 <DotsVerticalIcon className="h-5 w-5" />
               </IconButton>
 
               {openMenuId === room.id && (
                 <div
-                  className="absolute right-0 top-full z-10 mt-1 w-44 overflow-hidden rounded-md border border-gray-100 bg-white shadow-2xl"
+                  className="absolute right-0 top-full z-10 mt-2 w-48 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <button
