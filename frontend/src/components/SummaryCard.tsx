@@ -10,6 +10,7 @@ export interface SummaryCardProps {
   children?: ReactNode;
   className?: string;
   contentAspectRatio?: string; // e.g., "aspect-[16/9]"
+  onIconClick?: () => void;
 }
 
 export function SummaryCard({
@@ -22,6 +23,7 @@ export function SummaryCard({
   children,
   className = "",
   contentAspectRatio = "aspect-[16/9]",
+  onIconClick,
 }: SummaryCardProps) {
   return (
     <div className={`group relative z-10 hover:z-50 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 p-4 flex flex-col h-full ${className}`}>
@@ -41,6 +43,7 @@ export function SummaryCard({
         </div>
         <div
           className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm shrink-0 ${gradientClasses}`}
+          onClick={onIconClick}
         >
           {icon}
         </div>

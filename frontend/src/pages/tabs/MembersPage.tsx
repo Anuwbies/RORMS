@@ -7,6 +7,7 @@ import { TextInput } from '../../components/TextInput'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 
 import { SectionHeader } from '../../components/SectionHeader'
+import { SummaryCard } from '../../components/SummaryCard'
 import type { MemberRole, MemberStatus, Department, Member } from '../../types/member'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -937,87 +938,13 @@ function MembersPage() {
           description="Manage system access, roles, and department assignments for all users in a centralized hub."
         />
 
-        {(() => {
-          const totalMembers = members.length
-          const adminCount = members.filter(m => m.role === 'Admin').length
-          const registrarCount = members.filter(m => m.role === 'Registrar').length
-          const deanCount = members.filter(m => m.role === 'Dean').length
-          const programHeadCount = members.filter(m => m.role === 'Program Head').length
-          const instructorCount = members.filter(m => m.role === 'Instructor').length
-          const activeCount = members.filter(m => m.status === 'Active').length
-          
-          const roleStats = [
-            { label: 'Admin', count: adminCount, color: 'bg-purple-500' },
-            { label: 'Registrar', count: registrarCount, color: 'bg-blue-500' },
-            { label: 'Dean', count: deanCount, color: 'bg-amber-500' },
-            { label: 'Prog. Head', count: programHeadCount, color: 'bg-rose-500' },
-            { label: 'Instructor', count: instructorCount, color: 'bg-emerald-500' },
-          ]
-
-          return (
-            <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-              {/* Completely Custom User Distribution Visualization */}
-              <div className="p-5 sm:p-6 bg-slate-50/80 rounded-2xl border border-slate-200 shadow-sm mb-6">
-                <div className="flex flex-col lg:flex-row lg:items-stretch justify-between gap-6">
-                  {/* Left Column: Header & Progress Bar */}
-                  <div className="flex-1 flex flex-col justify-between gap-3">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <h2 className="text-lg font-bold text-gray-900 tracking-tight">User Distribution</h2>
-                        <p className="text-xs sm:text-sm font-medium text-gray-500">
-                          <span className="text-emerald-600 font-bold">{activeCount} Active</span> out of {totalMembers} total members
-                        </p>
-                      </div>
-                      <div className="flex -space-x-2">
-                        {members.slice(0, 4).map(m => (
-                          <div key={m.id} className="h-8 w-8 rounded-full border-2 border-white overflow-hidden bg-gray-100 shadow-xs">
-                            {m.avatar && !avatarErrors[m.avatar] ? (
-                              <img src={m.avatar} alt={m.name} className="h-full w-full object-cover" onError={() => setAvatarErrors(prev => ({...prev, [m.avatar]: true}))} />
-                            ) : (
-                              <div className="h-full w-full flex items-center justify-center text-gray-400 bg-white"><UserIcon className="h-4 w-4" /></div>
-                            )}
-                          </div>
-                        ))}
-                        {members.length > 4 && (
-                          <div className="h-8 w-8 rounded-full border-2 border-white bg-gray-100 flex items-center justify-center shadow-xs">
-                            <span className="text-[0.6875rem] font-bold text-gray-600">+{members.length - 4}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="w-full flex h-3 rounded-full overflow-hidden shadow-inner gap-0.5 bg-gray-200/80">
-                      {roleStats.filter(s => s.count > 0).map((stat) => (
-                        <div 
-                          key={stat.label} 
-                          className={`h-full ${stat.color} transition-all duration-700 ease-out`}
-                          style={{ width: `${totalMembers > 0 ? (stat.count / totalMembers) * 100 : 0}%` }}
-                          title={`${stat.label}: ${stat.count}`}
-                        />
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Right Column: Compact Role Stat Cards */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 shrink-0 lg:self-stretch">
-                    {roleStats.map((stat) => {
-                      const percentage = totalMembers > 0 ? Math.round((stat.count / totalMembers) * 100) : 0
-                      return (
-                        <div key={stat.label} className="flex items-center gap-3.5 px-4 py-3 bg-white rounded-xl border border-slate-200/80 shadow-xs h-full min-w-[9.25rem]">
-                          <div className={`w-1.5 h-8 rounded-full ${stat.color} shrink-0`} />
-                          <div className="flex flex-col min-w-0">
-                            <span className="text-base font-bold text-gray-900 truncate">{stat.label}</span>
-                            <span className="text-sm font-bold text-gray-600">{stat.count} ({percentage}%)</span>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )
-        })()}        {/* Unified Table Container */}
+        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <SummaryCard title="Card 1" subtitle="Subtitle 1" icon={<UsersIcon className="h-4.5 w-4.5 text-blue-600" />} />
+            <SummaryCard title="Card 2" subtitle="Subtitle 2" icon={<UsersIcon className="h-4.5 w-4.5 text-green-600" />} />
+            <SummaryCard title="Card 3" subtitle="Subtitle 3" icon={<UsersIcon className="h-4.5 w-4.5 text-red-600" />} />
+          </div>
+        </div>        {/* Unified Table Container */}
         <div className="relative z-10">
           <DataTable
             isLoading={isLoading}

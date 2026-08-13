@@ -6,7 +6,8 @@ import { Button } from '../../components/Button'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db } from '../../firebase'
 import { collection, doc, setDoc, deleteDoc, writeBatch, query, orderBy, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { PlusIcon, CheckCircleIcon, CalendarIcon, LayersIcon, ClipboardIcon, DashboardIcon, TrashIcon, EditIcon, SpinnerIcon, CloseIcon } from '../../components/Icons'
+import { PlusIcon, CheckCircleIcon, CalendarIcon, LayersIcon, ClipboardIcon, DashboardIcon, TrashIcon, EditIcon, SpinnerIcon, CloseIcon, UserIcon, ClockIcon, BuildingIcon } from '../../components/Icons'
+import { SummaryCard } from '../../components/SummaryCard'
 
 interface SemesterDetails {
   startMonth: string
@@ -468,6 +469,29 @@ function AcademicCalendarPage() {
           title="Academic Calendar" 
           description="Manage academic years, historical records, and scheduling phases." 
         />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
+          <SummaryCard
+            title="Card 1"
+            subtitle="Subtitle 1"
+            icon={<UserIcon className="w-4.5 h-4.5 text-white" />}
+            gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
+            blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
+          />
+          <SummaryCard
+            title="Card 2"
+            subtitle="Subtitle 2"
+            icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+            gradientClasses="from-amber-400 to-orange-500"
+            blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
+          />
+          <SummaryCard
+            title="Card 3"
+            subtitle="Subtitle 3"
+            icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
+            gradientClasses="from-blue-400 to-indigo-500"
+            blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
+          />
+        </div>
         <DataTable
           data={filteredYears}
           columns={columns}

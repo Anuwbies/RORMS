@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { CalendarIcon, ClockIcon, BuildingIcon, LayersIcon, SearchIcon } from '../../components/Icons'
+import { CalendarIcon, ClockIcon, BuildingIcon, LayersIcon, SearchIcon, UserIcon } from '../../components/Icons'
 import { SectionHeader } from '../../components/SectionHeader'
+import { SummaryCard } from '../../components/SummaryCard'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, query, where, onSnapshot, limit } from 'firebase/firestore'
@@ -95,50 +96,31 @@ function MySchedulePage() {
           description="View and manage your upcoming room bookings and scheduled activities." 
         />
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              
-              <div className="rounded-3xl border border-gray-200 bg-white p-5 sm:p-6 shadow-sm flex items-center gap-4 transition-transform hover:-translate-y-0.5 hover:shadow-md">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 border border-blue-100 shrink-0">
-                  <LayersIcon className="h-8 w-8 text-blue-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Total Sessions">Total Sessions</p>
-                  <p className="mt-0.5 text-2xl font-black text-gray-900 leading-none">{totalSessions}</p>
-                </div>
-              </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
+          <SummaryCard
+            title="Card 1"
+            subtitle="Subtitle 1"
+            icon={<UserIcon className="w-4.5 h-4.5 text-white" />}
+            gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
+            blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
+          />
+          <SummaryCard
+            title="Card 2"
+            subtitle="Subtitle 2"
+            icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+            gradientClasses="from-amber-400 to-orange-500"
+            blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
+          />
+          <SummaryCard
+            title="Card 3"
+            subtitle="Subtitle 3"
+            icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
+            gradientClasses="from-blue-400 to-indigo-500"
+            blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
+          />
+        </div>
 
-              <div className="rounded-3xl border border-gray-200 bg-white p-5 sm:p-6 shadow-sm flex items-center gap-4 transition-transform hover:-translate-y-0.5 hover:shadow-md">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 border border-emerald-100 shrink-0">
-                  <CalendarIcon className="h-8 w-8 text-emerald-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Days Active">Days Active</p>
-                  <p className="mt-0.5 text-2xl font-black text-gray-900 leading-none">{daysActive.size}</p>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-gray-200 bg-white p-5 sm:p-6 shadow-sm flex items-center gap-4 transition-transform hover:-translate-y-0.5 hover:shadow-md">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 border border-amber-100 shrink-0">
-                  <BuildingIcon className="h-8 w-8 text-amber-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Rooms Utilized">Rooms Utilized</p>
-                  <p className="mt-0.5 text-2xl font-black text-gray-900 leading-none">{roomsUtilized.size}</p>
-                </div>
-              </div>
-
-              <div className="rounded-3xl border border-gray-200 bg-white p-5 sm:p-6 shadow-sm flex items-center gap-4 transition-transform hover:-translate-y-0.5 hover:shadow-md">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-50 border border-purple-100 shrink-0">
-                  <ClockIcon className="h-8 w-8 text-purple-600" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold uppercase tracking-widest text-gray-500 truncate" title="Weekly Hours">Weekly Hours</p>
-                  <p className="mt-0.5 text-2xl font-black text-gray-900 leading-none">{totalWeeklyHours}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+        <div className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
               <div className="flex-1 overflow-auto bg-gray-50/50 overscroll-none flex flex-col [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
                 {isLoading ? (
                   <div className="flex items-center justify-center py-20 text-gray-500">Loading schedule...</div>
