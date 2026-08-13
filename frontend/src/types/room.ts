@@ -19,6 +19,7 @@ export const DEFAULT_ROOM_IMAGE = createRoomImage()
 
 export interface Room {
   id: string
+  buildingId?: string
   image: string
   code: string
   name: string
