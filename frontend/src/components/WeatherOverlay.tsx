@@ -1,6 +1,154 @@
 import { useMemo, useState, useEffect } from 'react';
 
-export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: { weatherCode?: number, layer?: 'front' | 'back' | 'all', supermanKey?: number }) {
+export type TimeOfDay = 'auto' | 'dawn' | 'day' | 'sunset' | 'night';
+
+export type MoonPhaseKey = 
+  | 'auto' 
+  | 'new' 
+  | 'waxing_crescent' 
+  | 'first_quarter' 
+  | 'waxing_gibbous' 
+  | 'full' 
+  | 'waning_gibbous' 
+  | 'last_quarter' 
+  | 'waning_crescent';
+
+export interface MoonPhaseInfo {
+  fraction: number; // 0.0 to 1.0
+  phaseKey: MoonPhaseKey;
+  phaseName: string;
+  emoji: string;
+}
+
+export function getAstronomicalMoonPhase(date: Date = new Date()): MoonPhaseInfo {
+  // Reference known New Moon: Jan 11, 2024, 11:57 UTC
+  const knownNewMoon = new Date('2024-01-11T11:57:00Z').getTime();
+  const synodicMonthMs = 29.53058867 * 24 * 60 * 60 * 1000;
+  const diff = date.getTime() - knownNewMoon;
+  const fraction = (((diff % synodicMonthMs) + synodicMonthMs) % synodicMonthMs) / synodicMonthMs;
+
+  if (fraction < 0.03 || fraction >= 0.97) {
+    return { fraction, phaseKey: 'new', phaseName: 'New Moon', emoji: '🌑' };
+  } else if (fraction < 0.22) {
+    return { fraction, phaseKey: 'waxing_crescent', phaseName: 'Waxing Crescent', emoji: '🌒' };
+  } else if (fraction < 0.28) {
+    return { fraction, phaseKey: 'first_quarter', phaseName: 'First Quarter', emoji: '🌓' };
+  } else if (fraction < 0.47) {
+    return { fraction, phaseKey: 'waxing_gibbous', phaseName: 'Waxing Gibbous', emoji: '🌔' };
+  } else if (fraction < 0.53) {
+    return { fraction, phaseKey: 'full', phaseName: 'Full Moon', emoji: '🌕' };
+  } else if (fraction < 0.72) {
+    return { fraction, phaseKey: 'waning_gibbous', phaseName: 'Waning Gibbous', emoji: '🌖' };
+  } else if (fraction < 0.78) {
+    return { fraction, phaseKey: 'last_quarter', phaseName: 'Last Quarter', emoji: '🌗' };
+  } else {
+    return { fraction, phaseKey: 'waning_crescent', phaseName: 'Waning Crescent', emoji: '🌘' };
+  }
+}
+
+export function MoonGraphic({ fraction, size = 32 }: { fraction: number; size?: number }) {
+  const R = 13;
+  const cx = 16;
+  const cy = 16;
+
+  const phi = fraction * 2 * Math.PI;
+  const cosPhi = Math.cos(phi);
+  const rx = Math.max(0.01, Math.abs(cosPhi) * R);
+  const isWaxing = fraction <= 0.5;
+
+  let litPath = '';
+  if (fraction < 0.025 || fraction > 0.975) {
+    litPath = ''; // New moon (unlit)
+  } else if (Math.abs(fraction - 0.5) < 0.025) {
+    litPath = `M ${cx} ${cy - R} A ${R} ${R} 0 1 0 ${cx} ${cy + R} A ${R} ${R} 0 1 0 ${cx} ${cy - R}`; // Full moon
+  } else if (isWaxing) {
+    // Waxing: Outer right semi-circle, inner terminator
+    const sweep = fraction < 0.25 ? 1 : 0;
+    litPath = `M ${cx} ${cy - R} A ${R} ${R} 0 0 1 ${cx} ${cy + R} A ${rx} ${R} 0 0 ${sweep} ${cx} ${cy - R}`;
+  } else {
+    // Waning: Outer left semi-circle, inner terminator
+    const sweep = fraction < 0.75 ? 1 : 0;
+    litPath = `M ${cx} ${cy - R} A ${R} ${R} 0 0 0 ${cx} ${cy + R} A ${rx} ${R} 0 0 ${sweep} ${cx} ${cy - R}`;
+  }
+
+  const glowIntensity = Math.sin(fraction * Math.PI); // 0 at new, 1 at full
+
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" className="overflow-visible select-none">
+      <defs>
+        <filter id="moonSoftGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation={1.5 + glowIntensity * 2} result="blur" />
+          <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+        <clipPath id="moonDiscClip">
+          <circle cx={cx} cy={cy} r={R} />
+        </clipPath>
+      </defs>
+
+      {/* Atmospheric Halo (Stronger near full moon) */}
+      <circle 
+        cx={cx} 
+        cy={cy} 
+        r={R + 2} 
+        fill="rgba(254, 243, 199, 0.15)" 
+        className="animate-pulse"
+        style={{ opacity: 0.2 + glowIntensity * 0.6 }}
+      />
+
+      {/* Dark Lunar Disc with subtle rim border */}
+      <circle 
+        cx={cx} 
+        cy={cy} 
+        r={R} 
+        fill="#0b1329" 
+        stroke="rgba(255, 255, 255, 0.25)" 
+        strokeWidth="0.75" 
+      />
+
+      {/* Base Craters on dark side */}
+      <g clipPath="url(#moonDiscClip)" opacity="0.3">
+        <circle cx="11.5" cy="11.5" r="2.2" fill="#1e293b" />
+        <circle cx="19.5" cy="20.5" r="3.2" fill="#1e293b" />
+        <circle cx="21.5" cy="11" r="1.6" fill="#1e293b" />
+        <circle cx="13" cy="22" r="1.4" fill="#1e293b" />
+      </g>
+
+      {/* Illuminated Phase Area */}
+      {litPath && (
+        <path 
+          d={litPath} 
+          fill="#fef3c7" 
+          filter="url(#moonSoftGlow)" 
+        />
+      )}
+
+      {/* Illuminated Surface Texture / Craters */}
+      {litPath && (
+        <g clipPath="url(#moonDiscClip)" opacity={0.35 * (0.3 + glowIntensity * 0.7)}>
+          <circle cx="11.5" cy="11.5" r="2.2" fill="#d97706" />
+          <circle cx="19.5" cy="20.5" r="3.2" fill="#d97706" />
+          <circle cx="21.5" cy="11" r="1.6" fill="#d97706" />
+          <circle cx="13" cy="22" r="1.4" fill="#d97706" />
+          <circle cx="16" cy="16" r="1.2" fill="#d97706" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+export function WeatherOverlay({ 
+  weatherCode, 
+  layer = 'all', 
+  supermanKey = 0,
+  timeOfDay = 'auto',
+  moonPhaseOverride = 'auto'
+}: { 
+  weatherCode?: number;
+  layer?: 'front' | 'back' | 'all';
+  supermanKey?: number;
+  timeOfDay?: TimeOfDay;
+  moonPhaseOverride?: MoonPhaseKey;
+}) {
   const isBack = layer === 'back' || layer === 'all';
   const isFront = layer === 'front' || layer === 'all';
 
@@ -12,6 +160,29 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
     behavior: 'normal',
     stopPos: '50%'
   });
+
+  // Calculate actual time period if auto
+  const effectiveTimeOfDay: 'dawn' | 'day' | 'sunset' | 'night' = useMemo(() => {
+    if (timeOfDay && timeOfDay !== 'auto') return timeOfDay;
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 7) return 'dawn';
+    if (hour >= 7 && hour < 17) return 'day';
+    if (hour >= 17 && hour < 19) return 'sunset';
+    return 'night';
+  }, [timeOfDay]);
+
+  // Calculate real astronomical moon phase or use override
+  const effectiveMoonFraction = useMemo(() => {
+    if (moonPhaseOverride === 'new') return 0.0;
+    if (moonPhaseOverride === 'waxing_crescent') return 0.125;
+    if (moonPhaseOverride === 'first_quarter') return 0.25;
+    if (moonPhaseOverride === 'waxing_gibbous') return 0.375;
+    if (moonPhaseOverride === 'full') return 0.5;
+    if (moonPhaseOverride === 'waning_gibbous') return 0.625;
+    if (moonPhaseOverride === 'last_quarter') return 0.75;
+    if (moonPhaseOverride === 'waning_crescent') return 0.875;
+    return getAstronomicalMoonPhase().fraction;
+  }, [moonPhaseOverride]);
 
   useEffect(() => {
     if (supermanKey > 0) {
@@ -82,6 +253,14 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
     scale: 0.5 + Math.random() * 0.8
   })), []);
 
+  const stars = useMemo(() => Array.from({ length: 30 }).map(() => ({
+    top: `${Math.random() * 65}%`,
+    left: `${Math.random() * 98}%`,
+    size: Math.random() > 0.8 ? 2 : 1,
+    animationDuration: `${2 + Math.random() * 3}s`,
+    animationDelay: `-${Math.random() * 4}s`
+  })), []);
+
   // Early return AFTER all hooks to satisfy Rules of Hooks
   if (weatherCode === undefined) return null;
 
@@ -93,6 +272,10 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
   const getCloudColor = () => {
     if (isThunderstorm) return 'bg-slate-700';
     if (isRainy) return 'bg-slate-500';
+    if (effectiveTimeOfDay === 'night') return 'bg-slate-700/60';
+    if (effectiveTimeOfDay === 'sunset') return 'bg-orange-200/50';
+    if (effectiveTimeOfDay === 'dawn') return 'bg-amber-100/60';
+    if (isCloudy) return 'bg-slate-200';
     return 'bg-slate-100';
   };
   const cloudColor = getCloudColor();
@@ -118,6 +301,14 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
         @keyframes weatherSun {
           0%, 100% { transform: scale(1); opacity: 0.6; }
           50% { transform: scale(1.2); opacity: 1; }
+        }
+        @keyframes starTwinkle {
+          0%, 100% { opacity: 0.2; transform: scale(0.8); }
+          50% { opacity: 1; transform: scale(1.2); }
+        }
+        @keyframes moonFloat {
+          0%, 100% { transform: translateY(0px); }
+          50% { transform: translateY(-3px); }
         }
         @keyframes supermanFlyLTR {
           0% { left: -50px; }
@@ -172,7 +363,7 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
           50% { transform: rotate(90deg); }
           54% { transform: rotate(105deg); }
           58% { transform: rotate(85deg); }
-          80% { transform: rotate(85deg); }
+          75% { transform: rotate(85deg); }
           85% { transform: rotate(0deg); }
           100% { transform: rotate(0deg); }
         }
@@ -184,18 +375,80 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
         }
       `}</style>
       
-      {/* Background tint based on weather (only in back) */}
-      {isBack && isCloudy && <div className="absolute inset-0 bg-gradient-to-b from-slate-500/40 to-slate-400/10" />}
-      {isBack && isRainy && <div className="absolute inset-0 bg-gradient-to-b from-slate-800/60 to-slate-700/10" />}
-      {isBack && isThunderstorm && <div className="absolute inset-0 bg-gradient-to-b from-slate-950/90 to-slate-800/40" />}
-      {isBack && isSunny && <div className="absolute inset-0 bg-gradient-to-b from-amber-500/15 to-transparent" />}
-
-      {/* Sun (only in back) */}
-      {isBack && isSunny && (
-        <div className="absolute -top-4 -right-4 w-24 h-24 bg-amber-300 rounded-full blur-xl" style={{ animation: 'weatherSun 4s ease-in-out infinite' }} />
+      {/* 1. Time-of-Day Base Sky Tint (only in back layer) */}
+      {isBack && (
+        <>
+          {effectiveTimeOfDay === 'dawn' && (
+            <div className="absolute inset-0 bg-gradient-to-b from-amber-500/25 via-rose-400/15 to-orange-100/10" />
+          )}
+          {effectiveTimeOfDay === 'day' && isSunny && (
+            <div className="absolute inset-0 bg-gradient-to-b from-amber-500/15 to-transparent" />
+          )}
+          {effectiveTimeOfDay === 'sunset' && (
+            <div className="absolute inset-0 bg-gradient-to-b from-purple-900/35 via-orange-600/25 to-amber-500/15" />
+          )}
+          {effectiveTimeOfDay === 'night' && (
+            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 via-indigo-950/60 to-slate-900/40" />
+          )}
+        </>
       )}
 
-      {/* Clouds */}
+      {/* 2. Weather Overcast Tints (only in back layer) */}
+      {isBack && isCloudy && <div className="absolute inset-0 bg-gradient-to-b from-slate-500/30 to-slate-400/10" />}
+      {isBack && isRainy && <div className="absolute inset-0 bg-gradient-to-b from-slate-800/50 to-slate-700/10" />}
+      {isBack && isThunderstorm && <div className="absolute inset-0 bg-gradient-to-b from-slate-950/80 to-slate-800/40" />}
+
+      {/* 3. Twinkling Stars (Night only, in back layer) */}
+      {isBack && effectiveTimeOfDay === 'night' && !isThunderstorm && (
+        <div className="absolute inset-0 pointer-events-none">
+          {stars.map((s, idx) => (
+            <div
+              key={idx}
+              className="absolute rounded-full bg-amber-100"
+              style={{
+                top: s.top,
+                left: s.left,
+                width: `${s.size}px`,
+                height: `${s.size}px`,
+                animation: `starTwinkle ${s.animationDuration} ease-in-out infinite`,
+                animationDelay: s.animationDelay
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* 4. Celestial Bodies (Sun / Moon) in back layer */}
+      {isBack && (
+        <>
+          {/* Day / Sun */}
+          {effectiveTimeOfDay === 'day' && isSunny && (
+            <div className="absolute -top-4 -right-4 w-24 h-24 bg-amber-300 rounded-full blur-xl" style={{ animation: 'weatherSun 4s ease-in-out infinite' }} />
+          )}
+
+          {/* Dawn Sun */}
+          {effectiveTimeOfDay === 'dawn' && !isThunderstorm && (
+            <div className="absolute -bottom-4 right-8 w-20 h-20 bg-amber-400/70 rounded-full blur-lg" style={{ animation: 'weatherSun 5s ease-in-out infinite' }} />
+          )}
+
+          {/* Sunset Sun */}
+          {effectiveTimeOfDay === 'sunset' && !isThunderstorm && (
+            <div className="absolute top-6 right-8 w-16 h-16 bg-orange-500/70 rounded-full blur-md" style={{ animation: 'weatherSun 4s ease-in-out infinite' }} />
+          )}
+
+          {/* Night Astronomical Moon Phase */}
+          {effectiveTimeOfDay === 'night' && (
+            <div 
+              className="absolute top-2.5 right-4.5 w-8 h-8 flex items-center justify-center pointer-events-none drop-shadow-[0_0_12px_rgba(254,243,199,0.7)]" 
+              style={{ animation: 'moonFloat 6s ease-in-out infinite' }}
+            >
+              <MoonGraphic fraction={effectiveMoonFraction} size={30} />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 5. Moving Clouds */}
       {(isSunny || isCloudy || isRainy || isThunderstorm) && clouds.slice(0, (isCloudy || isThunderstorm) ? 12 : isRainy ? 8 : 4).map((c, i) => (
         <div 
           key={i} 
@@ -214,7 +467,7 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
         </div>
       ))}
 
-      {/* Rain */}
+      {/* 6. Raindrops */}
       {(isRainy || isThunderstorm) && rainDrops.filter((_, i) => isThunderstorm || i % 2 === 0).map((r, i) => (
         <div
           key={i}
@@ -227,12 +480,12 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
         />
       ))}
 
-      {/* Lightning Flash (Back only) */}
+      {/* 7. Lightning Flash (Back only) */}
       {isBack && isThunderstorm && (
         <div className="absolute inset-0 bg-amber-100/60" style={{ animation: 'weatherLightning 6s infinite' }} />
       )}
 
-      {/* Lightning Bolts (Front only) */}
+      {/* 8. Lightning Bolts (Front only) */}
       {isFront && isThunderstorm && (
         <div className="absolute inset-0 pointer-events-none" style={{ animation: 'weatherLightning 6s infinite' }}>
           <svg className="absolute top-2 right-12 w-24 h-24 text-amber-300 drop-shadow-[0_0_15px_rgba(252,211,77,0.9)] transform -rotate-12" viewBox="0 0 24 24" fill="currentColor">
@@ -244,7 +497,7 @@ export function WeatherOverlay({ weatherCode, layer = 'all', supermanKey = 0 }: 
         </div>
       )}
 
-      {/* Superman Easter Egg (Front only) */}
+      {/* 9. Superman Easter Egg (Front only) */}
       {isFront && supermanFlight.id > 0 && (
         <div 
           key={supermanFlight.id}

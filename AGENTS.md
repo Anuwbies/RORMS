@@ -4,7 +4,8 @@ This document provides essential guidelines and standards for developers and AI 
 
 ## 🤖 Agent-Specific Instructions
 - **Context First**: Always consult `FIRESTORE_COLLECTIONS.md` for database schema and `SYSTEM_ROLES.md` for business logic before implementing features.
-- **Surgical Edits**: When modifying React components, keep changes localized to the requested functionality.
+- **Surgical Edits**: When modifying React components, keep changes localized strictly to the requested functionality.
+- **Preserve User Styling & Dimensions**: **NEVER** alter, reset, or overwrite styling and layout values (such as `height`, `min-height`, `max-height`, `width`, `padding`, `margin`, `gap`, font sizing, alignment, or dimensions) that the user has already set or customized, unless the user explicitly asks to modify those specific styles/dimensions.
 - **Verification**: After UI changes, ensure the project still builds using `npm run build` in the `frontend/` directory.
 
 ## 📂 Project Structure & Modules
@@ -26,6 +27,7 @@ This document provides essential guidelines and standards for developers and AI 
   - Hooks: `camelCase.ts` (e.g., `useAuth.ts`).
   - Utils/Services: `camelCase.ts`.
 - **CSS**: Exclusively use **Tailwind CSS v4** utility classes. Avoid custom CSS files or inline styles unless absolutely necessary for dynamic calculations.
+- **Layout & Spacing Integrity**: Do not modify existing spacing, padding, height, width, margins, or sizing classes on components modified by the user unless explicitly instructed.
 - **Indentation**: 2-space indentation.
 
 ## 🎨 Brand & Design System Color Palette
@@ -89,6 +91,3 @@ Alongside the primary PHINMA Olive Green, use these supporting colors for status
 ## 📝 Commit Practices
 - **Style**: Use conventional, present-tense messages (e.g., `feat: add instructor dashboard`, `fix: resolve overlap in schedule logic`).
 - **Scope**: Keep commits atomic and focused on a single logical change.
-
----
-*Refer to README.md for the high-level project overview.*

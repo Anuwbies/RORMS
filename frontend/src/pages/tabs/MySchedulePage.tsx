@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CalendarIcon, ClockIcon, BuildingIcon, LayersIcon, SearchIcon, UserIcon } from '../../components/Icons'
+import { CalendarIcon, ClockIcon, BuildingIcon, LayersIcon, SearchIcon, UserIcon, SpinnerIcon } from '../../components/Icons'
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
 import { auth, db } from '../../firebase'
@@ -9,6 +9,7 @@ import { collection, query, where, onSnapshot, limit } from 'firebase/firestore'
 function MySchedulePage() {
   const [memberSchedules, setMemberSchedules] = useState<any[]>([])
   const [rooms, setRooms] = useState<{id: string, code: string, name: string}[]>([])
+  const [userRole, setUserRole] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
 
   // Stats Calculation
@@ -62,7 +63,9 @@ function MySchedulePage() {
         const membershipQuery = query(collection(db, 'memberships'), where('userId', '==', user.uid), limit(1))
         unsubscribeMemberships = onSnapshot(membershipQuery, (mSnap) => {
           if (!mSnap.empty) {
+            const memData = mSnap.docs[0].data()
             const mId = mSnap.docs[0].id
+            setUserRole(memData.role || '')
             const q = query(collection(db, 'schedule'), where('instructorId', '==', mId))
             unsubscribeSchedule = onSnapshot(q, (snapshot) => {
               const fetchedSchedules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
@@ -71,11 +74,13 @@ function MySchedulePage() {
               setIsLoading(false)
             })
           } else {
+            setUserRole('')
             setMemberSchedules([])
             setIsLoading(false)
           }
         })
       } else {
+        setUserRole('')
         setMemberSchedules([])
         setIsLoading(false)
       }
@@ -120,18 +125,36 @@ function MySchedulePage() {
           />
         </div>
 
-        <div className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+        <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
               <div className="flex-1 overflow-auto bg-gray-50/50 overscroll-none flex flex-col [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
                 {isLoading ? (
-                  <div className="flex items-center justify-center py-20 text-gray-500">Loading schedule...</div>
-                ) : memberSchedules.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 text-center gap-3">
+                    <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
+                    <p className="text-sm font-bold text-slate-700">Loading schedule...</p>
+                  </div>
+                ) : userRole === 'Dean' ? (
                   <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                    <div className="h-16 w-16 rounded-full bg-gray-50 flex items-center justify-center border border-gray-300">
-                      <SearchIcon className="h-8 w-8 text-gray-300" />
+                    <div className="h-16 w-16 rounded-2xl bg-amber-50 flex items-center justify-center border border-amber-200 shadow-sm">
+                      <CalendarIcon className="h-8 w-8 text-amber-600" />
                     </div>
                     <div>
-                      <h4 className="text-lg font-bold text-gray-900">No Schedule Data</h4>
-                      <p className="text-sm text-gray-500 max-w-xs mx-auto">
+                      <h4 className="text-lg font-bold text-gray-900">Dean Scheduling Not Handled</h4>
+                      <p className="text-sm text-gray-500 max-w-sm mx-auto mt-1 leading-relaxed">
+                        The system does not handle Dean scheduling at this time. This feature is coming soon.
+                      </p>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 mt-3.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold border border-amber-200">
+                        Coming Soon
+                      </span>
+                    </div>
+                  </div>
+                ) : memberSchedules.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                    <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center border border-slate-200 shadow-sm">
+                      <CalendarIcon className="h-8 w-8 text-slate-400" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-bold text-gray-900">No Assigned Classes</h4>
+                      <p className="text-sm text-gray-500 max-w-xs mx-auto mt-1 leading-relaxed">
                         You are not currently assigned to any classes.
                       </p>
                     </div>
@@ -254,9 +277,9 @@ function MySchedulePage() {
                                                 <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30">
                                                   <div className="flex flex-col gap-0.5 text-gray-500">
                                                     <span>Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                                    <span className="text-[var(--brand-color)] font-medium truncate" title={item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}>
+                                                    <span>Room: <span className="text-[var(--brand-color)] font-medium truncate" title={item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}>
                                                       {item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}
-                                                    </span>
+                                                    </span></span>
                                                   </div>
                                                 </div>
                                               ))}
@@ -272,9 +295,9 @@ function MySchedulePage() {
                                             </div>
                                             <div className="mt-1 flex flex-col gap-0.5 text-gray-500">
                                               <span>Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                              <span className="text-[var(--brand-color)] font-medium truncate" title={group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}>
+                                              <span>Room: <span className="text-[var(--brand-color)] font-medium truncate" title={group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}>
                                                 {group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}
-                                              </span>
+                                              </span></span>
                                             </div>
                                             <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2">
                                               {group.children.map((child, cIdx) => (
@@ -282,9 +305,9 @@ function MySchedulePage() {
                                                   <span className="font-bold text-gray-900 uppercase">{child.subjectCode || 'TBA'}</span>
                                                   <div className="mt-0.5 flex flex-col gap-0.5 text-gray-500">
                                                     <span>Sec: <span className="font-medium text-gray-700 uppercase">{child.classSection || 'TBA'}</span></span>
-                                                    <span className="text-[var(--brand-color)] font-medium truncate" title={child.roomId ? rooms.find(r => r.id === child.roomId)?.code || 'TBA' : 'TBA'}>
+                                                    <span>Room: <span className="text-[var(--brand-color)] font-medium truncate" title={child.roomId ? rooms.find(r => r.id === child.roomId)?.code || 'TBA' : 'TBA'}>
                                                       {child.roomId ? rooms.find(r => r.id === child.roomId)?.code || 'TBA' : 'TBA'}
-                                                    </span>
+                                                    </span></span>
                                                   </div>
                                                 </div>
                                               ))}
@@ -300,9 +323,9 @@ function MySchedulePage() {
                                             </div>
                                             <div className="mt-1.5 flex flex-col gap-0.5 text-gray-500">
                                               <span>Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                              <span className="text-[var(--brand-color)] font-medium truncate" title={group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}>
+                                              <span>Room: <span className="text-[var(--brand-color)] font-medium truncate" title={group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}>
                                                 {group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}
-                                              </span>
+                                              </span></span>
                                             </div>
                                           </div>
                                         )

@@ -1276,10 +1276,11 @@ const DeanBook = ({ departments, allUsers, isEasterEggsEnabled, selectedAnomalie
       return text;
     };
 
-    const availableEggs = Array.from({ length: 52 }, (_, i) => i + 1).filter(e => !selectedAnomalies.includes(e));
+    const validSelected = selectedAnomalies.filter(e => typeof e === 'number' && e >= 1 && e <= ANOMALY_NAMES.length);
+    const availableEggs = Array.from({ length: ANOMALY_NAMES.length }, (_, i) => i + 1).filter(e => !validSelected.includes(e));
     
     // Shuffle selected anomalies so they get distributed randomly across departments
-    const forcedEggs = [...selectedAnomalies];
+    const forcedEggs = [...validSelected];
     for (let i = forcedEggs.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [forcedEggs[i], forcedEggs[j]] = [forcedEggs[j], forcedEggs[i]];
@@ -1799,7 +1800,10 @@ function DepartmentsPage() {
   const [selectedAnomalies, setSelectedAnomalies] = useState<number[]>(() => {
     try {
       const stored = localStorage.getItem('rorms_selected_anomalies');
-      return stored ? JSON.parse(stored) : [];
+      if (!stored) return [];
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((id): id is number => typeof id === 'number' && id >= 1 && id <= ANOMALY_NAMES.length);
     } catch {
       return [];
     }
@@ -2498,10 +2502,10 @@ function DepartmentsPage() {
       {(isCreateModalOpen || editingDept) && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+            className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl overflow-hidden">
               <h3 className="text-xl font-bold">{editingDept ? 'Edit Department' : 'Create Department'}</h3>
               <p className="mt-1 text-sm text-white/80">
                 {editingDept ? 'Update the details of this university department.' : 'Add a new university department to the system.'}
@@ -3563,18 +3567,28 @@ function DepartmentsPage() {
                 <h3 className="text-2xl font-bold leading-tight flex items-center gap-2"><span className="text-3xl">👻</span> Easter Egg Gallery</h3>
                 <p className="mt-1 text-sm text-white/80">Selected: <strong className="text-white">{selectedAnomalies.length} / {departments.length}</strong> (Forced Spawns)</p>
               </div>
-              <IconOnlyButton 
-                label="Close gallery" 
-                onClick={() => setIsGalleryModalOpen(false)} 
-                icon={<CloseIcon className="h-6 w-6 text-white" />} 
-                variant="ghost"
-                className="hover:bg-white/20 text-white"
-              />
+              <div className="flex items-center gap-2">
+                {selectedAnomalies.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedAnomalies([])}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors border border-white/20 cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                )}
+                <IconOnlyButton 
+                  label="Close gallery" 
+                  onClick={() => setIsGalleryModalOpen(false)} 
+                  icon={<CloseIcon className="h-6 w-6 text-white" />} 
+                  className="hover:bg-white/20 text-white"
+                />
+              </div>
             </div>
             
             <div className="p-6 overflow-y-auto flex-1 bg-transparent">
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                {Array.from({ length: 52 }, (_, i) => i + 1).map(eggNum => {
+                {Array.from({ length: ANOMALY_NAMES.length }, (_, i) => i + 1).map(eggNum => {
                   const isSelected = selectedAnomalies.includes(eggNum);
                   return (
                     <div 

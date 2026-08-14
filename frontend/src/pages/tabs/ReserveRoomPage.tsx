@@ -431,10 +431,11 @@ function ReserveRoomPage() {
                 <div className="space-y-8">
                   {Object.entries(
                     searchResults.reduce((acc, room) => {
-                      if (!acc[room.buildingId]) {
-                        acc[room.buildingId] = []
+                      const bId = room.buildingId || 'unknown';
+                      if (!acc[bId]) {
+                        acc[bId] = []
                       }
-                      acc[room.buildingId].push(room)
+                      acc[bId].push(room)
                       return acc
                     }, {} as Record<string, Room[]>)
                   ).map(([buildingId, buildingRooms]) => {

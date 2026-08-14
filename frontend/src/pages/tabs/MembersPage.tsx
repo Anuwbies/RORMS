@@ -940,9 +940,9 @@ function MembersPage() {
 
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <SummaryCard title="Card 1" subtitle="Subtitle 1" icon={<UsersIcon className="h-4.5 w-4.5 text-blue-600" />} />
-            <SummaryCard title="Card 2" subtitle="Subtitle 2" icon={<UsersIcon className="h-4.5 w-4.5 text-green-600" />} />
-            <SummaryCard title="Card 3" subtitle="Subtitle 3" icon={<UsersIcon className="h-4.5 w-4.5 text-red-600" />} />
+            <SummaryCard title="Card 1" subtitle="Subtitle 1" icon={<UsersIcon className="h-4.5 w-4.5 text-blue-600" />} gradientClasses="from-blue-600 to-blue-500" blobClasses="bg-blue-600/10" />
+            <SummaryCard title="Card 2" subtitle="Subtitle 2" icon={<UsersIcon className="h-4.5 w-4.5 text-green-600" />} gradientClasses="from-green-600 to-green-500" blobClasses="bg-green-600/10" />
+            <SummaryCard title="Card 3" subtitle="Subtitle 3" icon={<UsersIcon className="h-4.5 w-4.5 text-red-600" />} gradientClasses="from-red-600 to-red-500" blobClasses="bg-red-600/10" />
           </div>
         </div>        {/* Unified Table Container */}
         <div className="relative z-10">

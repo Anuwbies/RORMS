@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
-import { WeatherOverlay } from '../../components/WeatherOverlay'
+import { WeatherOverlay, type TimeOfDay, type MoonPhaseKey, getAstronomicalMoonPhase } from '../../components/WeatherOverlay'
 import { BarChart, Bar, Tooltip, ResponsiveContainer, YAxis } from 'recharts'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
 export type EntranceSide = 'top' | 'bottom' | 'left' | 'right';
@@ -1210,11 +1210,62 @@ function BuildingsRoomsPage() {
   const autoTimeoutsRef = useRef<{ fill?: ReturnType<typeof setTimeout>, move?: ReturnType<typeof setTimeout>, stop?: ReturnType<typeof setTimeout> }>({});
   
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
+  const [timeOfDayOverride, setTimeOfDayOverride] = useState<TimeOfDay>('auto')
+  const [moonPhaseOverride, setMoonPhaseOverride] = useState<MoonPhaseKey>('auto')
   const [supermanKey, setSupermanKey] = useState<number>(0)
   const [showTestButtons, setShowTestButtons] = useState(false)
   const [showFactoryControls, setShowFactoryControls] = useState<boolean>(() => JSON.parse(sessionStorage.getItem('rorms-factoryControls') || 'false'))
   const [isAutoMode, setIsAutoMode] = useState<boolean>(() => JSON.parse(sessionStorage.getItem('rorms-autoMode') || 'false'))
   const [selectedLiquid, setSelectedLiquid] = useState<DropdownLiquidType>(() => (sessionStorage.getItem('rorms-selectedLiquid') as DropdownLiquidType) || 'Random')
+
+  const cycleTimeOfDay = () => {
+    setTimeOfDayOverride(prev => {
+      if (prev === 'auto') return 'dawn';
+      if (prev === 'dawn') return 'day';
+      if (prev === 'day') return 'sunset';
+      if (prev === 'sunset') return 'night';
+      return 'auto';
+    });
+  };
+
+  const MOON_PHASE_SEQUENCE: MoonPhaseKey[] = [
+    'auto', 
+    'new', 
+    'waxing_crescent', 
+    'first_quarter', 
+    'waxing_gibbous', 
+    'full', 
+    'waning_gibbous', 
+    'last_quarter', 
+    'waning_crescent'
+  ];
+
+  const cycleMoonPhase = () => {
+    setMoonPhaseOverride(prev => {
+      const idx = MOON_PHASE_SEQUENCE.indexOf(prev);
+      const nextIdx = (idx + 1) % MOON_PHASE_SEQUENCE.length;
+      return MOON_PHASE_SEQUENCE[nextIdx];
+    });
+  };
+
+  const currentMoonInfo = useMemo(() => {
+    const realMoon = getAstronomicalMoonPhase();
+    if (moonPhaseOverride === 'auto') {
+      return { name: realMoon.phaseName, emoji: realMoon.emoji };
+    }
+    const names: Record<MoonPhaseKey, { name: string; emoji: string }> = {
+      auto: { name: realMoon.phaseName, emoji: realMoon.emoji },
+      new: { name: 'New Moon', emoji: '🌑' },
+      waxing_crescent: { name: 'Waxing Crescent', emoji: '🌒' },
+      first_quarter: { name: 'First Quarter', emoji: '🌓' },
+      waxing_gibbous: { name: 'Waxing Gibbous', emoji: '🌔' },
+      full: { name: 'Full Moon', emoji: '🌕' },
+      waning_gibbous: { name: 'Waning Gibbous', emoji: '🌖' },
+      last_quarter: { name: 'Last Quarter', emoji: '🌗' },
+      waning_crescent: { name: 'Waning Crescent', emoji: '🌘' }
+    };
+    return names[moonPhaseOverride];
+  }, [moonPhaseOverride]);
 
   // Save state to sessionStorage
   useEffect(() => { sessionStorage.setItem('rorms-jars', JSON.stringify(jars)); }, [jars]);
@@ -2665,7 +2716,7 @@ function BuildingsRoomsPage() {
           
           <SummaryCard
             title="Total Rooms"
-            subtitle={weatherData ? `${weatherData.temp}°C Manila Weather` : "All Managed Spaces"}
+            subtitle={weatherData ? `${weatherData.temp}°C Manila Weather${timeOfDayOverride !== 'auto' ? ` (${timeOfDayOverride.toUpperCase()})` : ''}` : "All Managed Spaces"}
             icon={
               <button 
                 onClick={() => {
@@ -2683,37 +2734,35 @@ function BuildingsRoomsPage() {
             blobClasses="bg-emerald-500/5"
           >
 
-            {rooms.length > 0 && (
-              <div className="flex-1 w-full relative aspect-[16/9] rounded-xl overflow-hidden">
-                <WeatherOverlay weatherCode={weatherData?.code} layer="back" />
-                
-                <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
-                   <span className="text-sm font-black text-slate-800 leading-none">{rooms.length}</span>
-                   <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
-                </div>
-                <ResponsiveContainer width="100%" height="100%" className="relative z-10 [&_*]:outline-none [&_*]:focus:outline-none">
-                  <BarChart data={buildings.map(b => ({ code: b.code || b.name, rooms: b.rooms?.length || 0 }))} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
-                    <YAxis hide domain={[0, 'dataMax']} />
-                    <Tooltip 
-                      cursor={{ fill: 'transparent' }}
-                      content={({ active, payload }) => {
-                        if (active && payload && payload.length) {
-                          return (
-                            <div className="bg-white px-2.5 py-1.5 rounded-lg shadow-md text-xs font-bold text-slate-800 border border-slate-100 relative z-[60]">
-                              {payload[0].payload.code}: {payload[0].value} Rooms
-                            </div>
-                          );
-                        }
-                        return null;
-                      }}
-                    />
-                    <Bar dataKey="rooms" shape={(props: any) => <BuildingBarShape {...props} />} activeBar={false} />
-                  </BarChart>
-                </ResponsiveContainer>
-
-                <WeatherOverlay weatherCode={weatherData?.code} layer="front" supermanKey={supermanKey} />
+            <div className="flex-1 w-full relative aspect-[16/9] rounded-xl overflow-hidden">
+              <WeatherOverlay weatherCode={weatherData?.code} timeOfDay={timeOfDayOverride} moonPhaseOverride={moonPhaseOverride} layer="back" />
+              
+              <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
+                 <span className="text-sm font-black text-slate-800 leading-none">{rooms.length}</span>
+                 <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
               </div>
-            )}
+              <ResponsiveContainer width="100%" height="100%" className="relative z-10 [&_*]:outline-none [&_*]:focus:outline-none">
+                <BarChart data={buildings.map(b => ({ code: b.code || b.name, rooms: b.rooms?.length || 0 }))} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+                  <YAxis hide domain={[0, 'dataMax']} />
+                  <Tooltip 
+                    cursor={{ fill: 'transparent' }}
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-white px-2.5 py-1.5 rounded-lg shadow-md text-xs font-bold text-slate-800 border border-slate-100 relative z-[60]">
+                            {payload[0].payload.code}: {payload[0].value} Rooms
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Bar dataKey="rooms" shape={(props: any) => <BuildingBarShape {...props} />} activeBar={false} />
+                </BarChart>
+              </ResponsiveContainer>
+
+              <WeatherOverlay weatherCode={weatherData?.code} timeOfDay={timeOfDayOverride} moonPhaseOverride={moonPhaseOverride} layer="front" supermanKey={supermanKey} />
+            </div>
           </SummaryCard>
           
           <SummaryCard
@@ -2735,8 +2784,7 @@ function BuildingsRoomsPage() {
             outlineClasses="bg-amber-500"
             blobClasses="bg-amber-500/5"
           >
-            {buildings.length > 0 && (
-              <div className="flex-1 w-full relative aspect-[16/9]">
+            <div className="flex-1 w-full relative aspect-[16/9]">
               <div className="absolute inset-0 rounded-xl border-[4px] border-slate-600 bg-slate-700 overflow-hidden">
                 <div className="absolute inset-0 overflow-hidden shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]">
                   {/* Factory Environment Background */}
@@ -3117,7 +3165,6 @@ function BuildingsRoomsPage() {
                   })}
                 </div>
               </div>
-            )}
           </SummaryCard>
         </div>
 
@@ -3149,6 +3196,22 @@ function BuildingsRoomsPage() {
                     icon={<span className="text-xl leading-none">🌤️</span>}
                     label="Test Weather"
                     title="Test Weather"
+                  />
+                  <IconOnlyButton
+                    variant="outline"
+                    onClick={cycleTimeOfDay}
+                    className="shrink-0 text-slate-500 hover:text-indigo-600 border-slate-200 shadow-sm bg-white"
+                    icon={<span className="text-xl leading-none">{timeOfDayOverride === 'night' ? '🌙' : timeOfDayOverride === 'sunset' ? '🌇' : timeOfDayOverride === 'dawn' ? '🌅' : timeOfDayOverride === 'day' ? '☀️' : '🕒'}</span>}
+                    label={`Time: ${timeOfDayOverride}`}
+                    title={`Cycle Time of Day (Current: ${timeOfDayOverride})`}
+                  />
+                  <IconOnlyButton
+                    variant="outline"
+                    onClick={cycleMoonPhase}
+                    className="shrink-0 text-slate-500 hover:text-amber-500 border-slate-200 shadow-sm bg-white"
+                    icon={<span className="text-xl leading-none">{currentMoonInfo.emoji}</span>}
+                    label={`Moon: ${currentMoonInfo.name}`}
+                    title={`Cycle Moon Phase (Current: ${currentMoonInfo.name}${moonPhaseOverride === 'auto' ? ' [Real Date]' : ''})`}
                   />
                 </>
               )}

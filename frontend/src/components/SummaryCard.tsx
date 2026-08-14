@@ -53,9 +53,7 @@ export function SummaryCard({
         {children ? (
           children
         ) : (
-          <div className="w-full h-full rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex items-center justify-center">
-            <span className="text-xs font-bold text-slate-400">Empty 16:9 Container</span>
-          </div>
+          <div className="w-full h-full rounded-xl bg-slate-100 animate-pulse" />
         )}
       </div>
     </div>
