@@ -23,6 +23,7 @@ import ManageReservationsPage from './tabs/ManageReservationsPage'
 import ReserveRoomPage from './tabs/ReserveRoomPage'
 import MyReservationsPage from './tabs/MyReservationsPage'
 import AcademicCalendarPage from './tabs/AcademicCalendarPage'
+import DepartmentSchedulesPage from './tabs/DepartmentSchedulesPage'
 
 const navItems: NavItem[] = [
   {
@@ -102,6 +103,13 @@ const navItems: NavItem[] = [
     description: 'View department leads, workstreams, and operating coverage.',
     icon: LayersIcon,
   },
+  {
+    id: 'departmentSchedules',
+    label: 'Department Schedules',
+    eyebrow: 'Room Plotting',
+    description: 'View department schedules and plot them into rooms.',
+    icon: CalendarIcon,
+  },
 ]
 
 interface LeftSidebarControllerProps {
@@ -146,6 +154,8 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
         return <ReportsPage />
       case 'myDepartment':
         return <MyDepartmentPage />
+      case 'departmentSchedules':
+        return <DepartmentSchedulesPage />
       default:
         return <DashboardPage />
     }

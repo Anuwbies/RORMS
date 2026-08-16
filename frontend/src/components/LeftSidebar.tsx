@@ -13,6 +13,7 @@ export type DashboardSection =
   | 'buildingsRooms'
   | 'members'
   | 'departments'
+  | 'departmentSchedules'
   | 'myDepartment'
   | 'reports'
   | 'mySchedule'

@@ -78,7 +78,7 @@ export function SingleSelectDropdown<T extends string>({
       </button>
 
       {isOpen && !isDisabled && (
-        <div className="absolute left-0 top-full z-20 mt-2 min-w-full rounded-2xl border border-gray-200 bg-white p-2 shadow-xl ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
+        <div className="absolute left-0 top-full z-20 mt-2 w-full rounded-2xl border border-gray-200 bg-white p-2 shadow-xl ring-1 ring-black/5 animate-in fade-in zoom-in-95 duration-200 overflow-visible">
           <div className="space-y-1 max-h-55 overflow-y-auto custom-scrollbar pr-1 overflow-visible">
             {options.map((option) => {
               const isSelected = value === option
@@ -93,8 +93,8 @@ export function SingleSelectDropdown<T extends string>({
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 active:bg-gray-100'
                   }`}
                 >
-                  <span className="whitespace-nowrap">{option || 'None'}</span>
-                  {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)]" strokeWidth={3} />}
+                  <span className="truncate">{option || 'None'}</span>
+                  {isSelected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)] shrink-0" strokeWidth={3} />}
                 </button>
               )
             })}

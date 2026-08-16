@@ -4,6 +4,7 @@ import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, CheckIcon, 
 import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
+import { ScheduleModal } from '../../components/ScheduleModal'
 import { Button } from '../../components/Button'
 import { DashedButton } from '../../components/DashedButton'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -307,7 +308,8 @@ function MyDepartmentPage() {
     roomId: '',
     roomId2: '',
     parentId: undefined as string | undefined,
-    orderIndex: 0
+    orderIndex: 0,
+    status: 'Drafted'
   })
   const [schedules, setSchedules] = useState([createDefaultSchedule()])
   const [isLoadingSchedules, setIsLoadingSchedules] = useState(false)
@@ -1360,33 +1362,9 @@ function MyDepartmentPage() {
     }
   }
 
-  const handleRowClick = async (member: Member) => {
+  const handleRowClick = (member: Member) => {
     setSelectedMember(member)
     setIsScheduleModalOpen(true)
-    setIsMemberScheduleLoading(true)
-
-    try {
-      let q;
-      if (selectedAcademicYear?.academicYear && selectedSemesterPhase?.name) {
-        q = query(
-          collection(db, 'schedule'),
-          where('academicYear', '==', selectedAcademicYear.academicYear),
-          where('semester', '==', selectedSemesterPhase.name),
-          where('instructorId', '==', member.membershipId)
-        )
-      } else {
-        q = query(collection(db, 'schedule'), where('instructorId', '==', member.membershipId))
-      }
-      const snapshot = await getDocs(q)
-      const fetchedSchedules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      fetchedSchedules.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
-      setMemberSchedules(fetchedSchedules)
-    } catch (e) {
-      console.error('Error fetching member schedule:', e)
-      setMemberSchedules([])
-    } finally {
-      setIsMemberScheduleLoading(false)
-    }
   }
 
   const handleScheduleChange = (index: number, field: string, value: any) => {
@@ -1533,7 +1511,7 @@ function MyDepartmentPage() {
         let childrenToInsert: any[];
 
         if (cachedChildren && cachedChildren.length > 0) {
-          childrenToInsert = cachedChildren.map((cachedChild, cIdx) => ({
+          childrenToInsert = cachedChildren.map((cachedChild) => ({
             ...cachedChild,
             parentId: current.id,
             type: 'parallel',
@@ -1550,7 +1528,7 @@ function MyDepartmentPage() {
             days: current.days,
             buildingId: current.buildingId,
             buildingId2: (current as any).buildingId2 || '',
-            classSection: cachedChild.classSection || (current.classSection ? `${current.classSection}-${cIdx + 2}` : `${cIdx + 2}`)
+            classSection: cachedChild.classSection || ''
           }));
 
           // Un-stage restored children docIds from deletedScheduleIds
@@ -1561,22 +1539,11 @@ function MyDepartmentPage() {
             setDeletedScheduleIds(dPrev => dPrev.filter(id => !restoredDocIds.has(id)));
           }
         } else {
-          const getChildSection = (pSec: string, offset: number) => {
-            if (!pSec) return `${offset + 1}`;
-            const match = pSec.match(/^(.*?)(\d+)$/);
-            if (match) {
-              const prefix = match[1];
-              const baseNum = parseInt(match[2], 10);
-              return `${prefix}${baseNum + offset}`;
-            }
-            return `${pSec}-${offset + 1}`;
-          };
-
-          childrenToInsert = Array.from({ length: 3 }).map((_, cIdx) => ({
+          childrenToInsert = Array.from({ length: 3 }).map(() => ({
             ...createDefaultSchedule(),
             parentId: current.id,
             type: 'parallel',
-            classSection: getChildSection(current.classSection || '', cIdx + 1),
+            classSection: '',
             instructorId: current.instructorId,
             instructorId2: (current as any).instructorId2 || '',
             subjectCode: current.subjectCode,
@@ -1710,7 +1677,7 @@ function MyDepartmentPage() {
           orderIndex: index,
           academicYear: selectedAcademicYear?.academicYear || '2026 - 2027',
           semester: selectedSemesterPhase?.name || '1st Semester',
-          status: 'Proposed',
+          status: (schedule as any).status || 'Drafted',
           updatedAt: serverTimestamp()
         };
 
@@ -1744,7 +1711,7 @@ function MyDepartmentPage() {
             orderIndex: index,
             academicYear: selectedAcademicYear?.academicYear || '2026 - 2027',
             semester: selectedSemesterPhase?.name || '1st Semester',
-            status: 'Proposed',
+            status: (schedule as any).status || 'Drafted',
             updatedAt: serverTimestamp()
           };
 
@@ -1947,260 +1914,17 @@ function MyDepartmentPage() {
         </div>
       )}
 
-      {/* Schedule Modal */}
-      {isScheduleModalOpen && selectedMember && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div
-            className="w-fit min-w-[50rem] max-w-[85vw] min-h-[32rem] max-h-[88vh] flex flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] px-7 py-5 text-white rounded-t-2xl shrink-0 flex items-center justify-between gap-4">
-              <div>
-                <h3 className="text-xl font-bold tracking-tight text-white">{selectedMember.name}'s Schedule</h3>
-                <p className="mt-0.5 text-xs text-white/80 font-medium">{selectedMember.role} • {selectedMember.email}</p>
-              </div>
-              <div className="flex items-center gap-3 shrink-0">
-                <span className="inline-flex items-center rounded-full bg-white/20 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-white border border-white/30 backdrop-blur-sm">
-                  {selectedAcademicYear?.academicYear || '2026 - 2027'} - {selectedSemesterPhase?.name || '1st Semester'}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsScheduleModalOpen(false)}
-                  className="rounded-full p-1.5 text-white/80 hover:text-white hover:bg-white/20 transition-all cursor-pointer"
-                  title="Close"
-                >
-                  <CloseIcon className="h-5 w-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-auto bg-gray-50/50 overscroll-none flex flex-col [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
-              {isMemberScheduleLoading ? (
-                <div className="flex-1 min-h-[22rem] flex flex-col items-center justify-center p-8 text-center">
-                  <div className="flex flex-col items-center justify-center gap-3 max-w-md mx-auto">
-                    <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
-                    <p className="text-sm font-bold text-slate-700">Loading Instructor Schedule...</p>
-                    <p className="text-xs text-slate-400">Retrieving timetable assignments.</p>
-                  </div>
-                </div>
-              ) : selectedMember.role === 'Dean' ? (
-                <div className="flex-1 min-h-[22rem] flex flex-col items-center justify-center p-8 text-center">
-                  <div className="flex flex-col items-center justify-center max-w-md mx-auto">
-                    <div className="h-14 w-14 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 mb-3.5 border border-amber-200 shadow-sm">
-                      <CalendarIcon className="h-7 w-7 text-amber-600" />
-                    </div>
-                    <h4 className="text-base font-extrabold text-slate-800 tracking-tight">
-                      Dean Scheduling Not Handled
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
-                      The system does not handle Dean scheduling at this time. This feature is coming soon.
-                    </p>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 mt-3.5 rounded-full bg-amber-100 text-amber-800 text-xs font-bold border border-amber-200">
-                      Coming Soon
-                    </span>
-                  </div>
-                </div>
-              ) : memberSchedules.length === 0 ? (
-                <div className="flex-1 min-h-[22rem] flex flex-col items-center justify-center p-8 text-center">
-                  <div className="flex flex-col items-center justify-center max-w-md mx-auto">
-                    <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mb-3.5 border border-slate-200 shadow-sm">
-                      <CalendarIcon className="h-7 w-7 text-slate-400" />
-                    </div>
-                    <h4 className="text-base font-extrabold text-slate-700 tracking-tight">
-                      No Assigned Classes
-                    </h4>
-                    <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
-                      {selectedMember.name} has no scheduled class sessions for {selectedAcademicYear?.academicYear} - {selectedSemesterPhase?.name}.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <table className="grid w-full text-left text-sm whitespace-nowrap min-w-max" style={{ gridTemplateColumns: '6rem repeat(7, minmax(11.25rem, 1fr))' }}>
-                  <thead className="contents text-gray-700 font-bold text-base">
-                    <tr className="contents">
-                      <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 sticky top-0 z-20">Time</th>
-                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-                        <th key={day} className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 last:border-r-0 sticky top-0 z-20">{day}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="contents">
-                    {(() => {
-                      const timeSlotSet = new Set<string>();
-                      memberSchedules.forEach(schedule => {
-                        if (schedule.startTime && schedule.endTime && schedule.days && schedule.days.length > 0) {
-                          timeSlotSet.add(`${schedule.startTime}-${schedule.endTime}`);
-                        }
-                      });
-
-                      const timeSlots = Array.from(timeSlotSet).sort((a, b) => {
-                        const startA = a.split('-')[0];
-                        const startB = b.split('-')[0];
-                        if (startA !== startB) return startA.localeCompare(startB);
-                        return a.split('-')[1].localeCompare(b.split('-')[1]);
-                      });
-
-                      const grid: Record<string, Record<string, any[]>> = {};
-                      timeSlots.forEach(slot => {
-                        grid[slot] = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [], Sat: [], Sun: [] };
-                      });
-
-                      memberSchedules.forEach(schedule => {
-                        if (schedule.startTime && schedule.endTime && schedule.days) {
-                          const slot = `${schedule.startTime}-${schedule.endTime}`;
-                          schedule.days.forEach((day: string) => {
-                            if (grid[slot] && grid[slot][day]) {
-                              grid[slot][day].push(schedule);
-                            }
-                          });
-                        }
-                      });
-
-                      const formatTime = (time: string) => {
-                        if (!time) return '';
-                        const [h, m] = time.split(':');
-                        const hours = parseInt(h, 10);
-                        const suffix = hours >= 12 ? 'PM' : 'AM';
-                        const displayHours = hours % 12 || 12;
-                        return `${displayHours}:${m} ${suffix}`;
-                      };
-
-                      if (timeSlots.length === 0) {
-                        return (
-                          <tr>
-                            <td colSpan={8} className="px-6 py-12 text-center text-gray-500 text-sm">
-                              Schedules found but missing time or day data.
-                            </td>
-                          </tr>
-                        );
-                      }
-
-                      return timeSlots.map(slot => {
-                        const [start, end] = slot.split('-');
-                        return (
-                          <tr key={slot} className="contents group">
-                            <td className="px-3 py-3 text-sm font-bold text-gray-700 border-b border-r border-gray-300 align-top whitespace-nowrap bg-gray-50/30 group-hover:bg-gray-50/50 transition-colors">
-                              <div className="flex flex-col items-center justify-center h-full gap-1 pt-2">
-                                <span>{formatTime(start)}</span>
-                                <span>{formatTime(end)}</span>
-                              </div>
-                            </td>
-                            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => {
-                              const daySchedules = grid[slot][day];
-                              const grouped: { parent: any, children: any[] }[] = [];
-
-                              daySchedules.forEach(cls => {
-                                if (cls.type === 'parallel') {
-                                  if (cls.groupId) {
-                                    const existingGroup = grouped.find(g => g.parent.groupId === cls.groupId);
-                                    if (existingGroup) {
-                                      existingGroup.children.push(cls);
-                                    } else {
-                                      grouped.push({ parent: cls, children: [] });
-                                    }
-                                  } else {
-                                    grouped.push({ parent: cls, children: [] });
-                                  }
-                                } else if (cls.parentId) {
-                                  const parentGroup = grouped.find(g => g.parent.id === cls.parentId || g.parent.docId === cls.parentId);
-                                  if (parentGroup) {
-                                    parentGroup.children.push(cls);
-                                  } else {
-                                    grouped.push({ parent: cls, children: [] });
-                                  }
-                                } else {
-                                  grouped.push({ parent: cls, children: [] });
-                                }
-                              });
-
-                              return (
-                                <td key={day} className="px-2 py-2 border-b border-r border-gray-300 last:border-r-0 align-top bg-white group-hover:bg-gray-50/50 transition-colors">
-                                  <div className="flex flex-col gap-2">
-                                    {grouped.map((group, idx) => (
-                                      group.parent.type === 'parallel' ? (
-                                        <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm transition-all">
-                                          <div className="flex flex-col focus:outline-none">
-                                            <div className="flex flex-row items-center gap-1.5">
-                                              <span className="font-bold text-gray-900 uppercase">{group.parent.subjectCode || 'TBA'}</span>
-                                              <span className="font-bold text-gray-600 uppercase tracking-wider">
-                                                {group.parent.format || 'N/A'}
-                                              </span>
-                                            </div>
-                                          </div>
-                                          <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 cursor-default" onClick={e => e.stopPropagation()}>
-                                            {[group.parent, ...group.children].map((item, iIdx) => (
-                                              <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30">
-                                                <div className="flex flex-col gap-0.5 text-gray-500">
-                                                  <span>Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                                  <span>Room: <span className="text-[var(--brand-color)] font-medium truncate" title={item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}>
-                                                    {item.roomId ? rooms.find(r => r.id === item.roomId)?.code || 'TBA' : 'TBA'}
-                                                  </span></span>
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      ) : group.children.length > 0 ? (
-                                        <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm">
-                                          <div className="flex flex-row items-center gap-1.5">
-                                            <span className="font-bold text-gray-900 uppercase">{group.parent.subjectCode || 'TBA'}</span>
-                                            <span className="font-bold text-gray-600 uppercase tracking-wider">
-                                              {group.parent.format || 'N/A'}
-                                            </span>
-                                          </div>
-                                          <div className="mt-1 flex flex-col gap-0.5 text-gray-500">
-                                            <span>Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                            <span>Room: <span className="text-[var(--brand-color)] font-medium truncate" title={group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}>
-                                              {group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}
-                                            </span></span>
-                                          </div>
-                                          <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2">
-                                            {group.children.map((child, cIdx) => (
-                                              <div key={cIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30">
-                                                <span className="font-bold text-gray-900 uppercase">{child.subjectCode || 'TBA'}</span>
-                                                <div className="mt-0.5 flex flex-col gap-0.5 text-gray-500">
-                                                  <span>Sec: <span className="font-medium text-gray-700 uppercase">{child.classSection || 'TBA'}</span></span>
-                                                  <span>Room: <span className="text-[var(--brand-color)] font-medium truncate" title={child.roomId ? rooms.find(r => r.id === child.roomId)?.code || 'TBA' : 'TBA'}>
-                                                    {child.roomId ? rooms.find(r => r.id === child.roomId)?.code || 'TBA' : 'TBA'}
-                                                  </span></span>
-                                                </div>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm">
-                                          <div className="flex flex-row items-center gap-1.5">
-                                            <span className="font-bold text-gray-900 uppercase">{group.parent.subjectCode || 'TBA'}</span>
-                                            <span className="font-bold text-gray-600 uppercase tracking-wider">
-                                              {group.parent.format || 'N/A'}
-                                            </span>
-                                          </div>
-                                          <div className="mt-1.5 flex flex-col gap-0.5 text-gray-500">
-                                            <span>Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                            <span>Room: <span className="text-[var(--brand-color)] font-medium truncate" title={group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}>
-                                              {group.parent.roomId ? rooms.find(r => r.id === group.parent.roomId)?.code || 'TBA' : 'TBA'}
-                                            </span></span>
-                                          </div>
-                                        </div>
-                                      )
-                                    ))}
-                                  </div>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      });
-                    })()}
-                  </tbody>
-                </table>
-              )}
-            </div>
-          </div>
-          <div className="absolute inset-0 -z-10" onClick={() => setIsScheduleModalOpen(false)} />
-        </div>
-      )}
+      {/* Instructor Schedule Modal */}
+      <ScheduleModal
+        isOpen={isScheduleModalOpen}
+        member={selectedMember}
+        initialAcademicYear={selectedAcademicYear?.academicYear}
+        initialSemester={selectedSemesterPhase?.name}
+        onClose={() => {
+          setIsScheduleModalOpen(false)
+          setSelectedMember(null)
+        }}
+      />
 
       {/* Confirm Type Change Modal */}
       {pendingTypeChange && (

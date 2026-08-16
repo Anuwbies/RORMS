@@ -137,7 +137,7 @@ Manages schedule allocations for subjects, rooms, and instructors.
   - `groupId`: string (Unique ID used to group parallel schedules together)
   - `parentId`: string (Reference to the main schedule's locally generated `id` if this is a child row)
   - `orderIndex`: number (Visual top-to-bottom sorting index)
-  - `status`: string (`"Draft"`, `"Proposed"`, `"Conflict"`, `"Approved"`) | **Default: "Draft"**
+  - `status`: string (`"Drafted"`, `"Plotted"`, `"Rejected"`, `"Revised"`) | **Default: "Drafted"**
   - `academicTerm`: string (e.g., `"1st Sem 2024-2025"`)
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**

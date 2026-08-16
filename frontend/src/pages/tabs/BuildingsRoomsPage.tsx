@@ -23,6 +23,7 @@ export interface MapData {
   buildings: MapBuilding[];
 }
 import { RoomInfoModal } from '../../components/RoomInfoModal'
+import { ScheduleModal } from '../../components/ScheduleModal'
 import { Button } from '../../components/Button'
 import { IconOnlyButton } from '../../components/IconOnlyButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
@@ -30,7 +31,7 @@ import { NumberInput } from '../../components/NumberInput'
 import { TextInput } from '../../components/TextInput'
 import { TextAreaInput } from '../../components/TextAreaInput'
 import { RoomAmenities } from '../../components/RoomAmenities'
-import { SettingsIcon, DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon } from '../../components/Icons'
+import { SettingsIcon, DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon, CalendarIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
 
@@ -70,6 +71,8 @@ function createRoomImage() {
 }
 
 const DEFAULT_ROOM_IMAGE = createRoomImage()
+
+const BOOKING_MINUTES_OPTIONS = ['30', '60', '90', '120', '150', '180'] as const;
 
 const LIQUID_OPTIONS = ['Water', 'Coffee', 'Blood', 'Mud', 'Slime', 'Random'] as const;
 type DropdownLiquidType = typeof LIQUID_OPTIONS[number];
@@ -1449,7 +1452,9 @@ function BuildingsRoomsPage() {
 
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false)
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
+  const [isRoomScheduleModalOpen, setIsRoomScheduleModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
+  const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<Room | null>(null)
   const [isMultipleRooms, setIsMultipleRooms] = useState(false)
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [activeBuildingId, setActiveBuildingId] = useState<string | null>(null)
@@ -1599,8 +1604,10 @@ function BuildingsRoomsPage() {
       setNewRoomAvailableDays(room.availableDays || ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'])
       setNewRoomStartTime(room.startTime || '07:30')
       setNewRoomEndTime(room.endTime || '18:00')
-      setNewRoomMinBookingMins(String(room.minBookingMins || '30'))
-      setNewRoomMaxBookingMins(String(room.maxBookingMins || '90'))
+      const initialMin = String(room.minBookingMins || '30')
+      setNewRoomMinBookingMins(BOOKING_MINUTES_OPTIONS.includes(initialMin as any) ? initialMin : '30')
+      const initialMax = String(room.maxBookingMins || '90')
+      setNewRoomMaxBookingMins(BOOKING_MINUTES_OPTIONS.includes(initialMax as any) ? initialMax : '90')
     } else {
       setEditingRoom(null)
       setIsMultipleRooms(false)
@@ -1631,9 +1638,11 @@ function BuildingsRoomsPage() {
     setIsBuildingModalOpen(false)
     setIsRoomModalOpen(false)
     setIsRoomInfoModalOpen(false)
+    setIsRoomScheduleModalOpen(false)
     setEditingBuilding(null)
     setEditingRoom(null)
     setSelectedRoomInfo(null)
+    setSelectedRoomForSchedule(null)
     setActiveBuildingId(null)
     setRoomModalStep(1)
     setPendingRoomImageBlob(null)
@@ -2457,29 +2466,29 @@ function BuildingsRoomsPage() {
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label htmlFor="room-min-mins" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                  <div className="grid grid-cols-2 gap-4 overflow-visible">
+                    <div className="overflow-visible">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                         Min Booking (Mins)
                       </label>
-                      <NumberInput
-                        id="room-min-mins"
-                        min="0"
-                        step="15"
+                      <SingleSelectDropdown
+                        options={BOOKING_MINUTES_OPTIONS}
                         value={newRoomMinBookingMins}
                         onChange={setNewRoomMinBookingMins}
+                        onToggle={handleDropdownToggle}
+                        className="w-full"
                       />
                     </div>
-                    <div>
-                      <label htmlFor="room-max-mins" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                    <div className="overflow-visible">
+                      <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                         Max Booking (Mins)
                       </label>
-                      <NumberInput
-                        id="room-max-mins"
-                        min="0"
-                        step="15"
+                      <SingleSelectDropdown
+                        options={BOOKING_MINUTES_OPTIONS}
                         value={newRoomMaxBookingMins}
                         onChange={setNewRoomMaxBookingMins}
+                        onToggle={handleDropdownToggle}
+                        className="w-full"
                       />
                     </div>
                   </div>
@@ -2542,20 +2551,35 @@ function BuildingsRoomsPage() {
         actionButton={
           <Button
             variant="brand"
-            icon={<EditIcon className="h-4 w-4" />}
+            icon={<CalendarIcon className="h-4 w-4" />}
             className="flex-1"
             onClick={() => {
               if (!selectedRoomInfo) return
-              const buildingId = buildings.find(b => b.rooms.some(r => r.id === selectedRoomInfo.id))?.id
-              if (buildingId) {
-                handleOpenRoomModal(buildingId, selectedRoomInfo)
-                setIsRoomInfoModalOpen(false)
-              }
+              setSelectedRoomForSchedule(selectedRoomInfo)
+              setIsRoomScheduleModalOpen(true)
+              setIsRoomInfoModalOpen(false)
             }}
           >
-            Edit Details
+            Room Schedule
           </Button>
         }
+      />
+
+      {/* Room Schedule Timetable Modal */}
+      <ScheduleModal
+        isOpen={isRoomScheduleModalOpen}
+        room={selectedRoomForSchedule}
+        buildingName={
+          buildings.find(b => b.rooms.some(r => r.id === selectedRoomForSchedule?.id))?.name
+        }
+        onClose={handleCloseModals}
+        onBack={() => {
+          setIsRoomScheduleModalOpen(false)
+          if (selectedRoomForSchedule) {
+            setSelectedRoomInfo(selectedRoomForSchedule)
+            setIsRoomInfoModalOpen(true)
+          }
+        }}
       />
 
       {/* Delete Room Confirmation Modal */}
