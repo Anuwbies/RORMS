@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
 import { SectionHeader } from '../../components/SectionHeader';
-import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon, BuildingIcon, DoorIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, ExclamationIcon, DuplicateIcon, QuestionIcon, CloseIcon, SpinnerIcon } from '../../components/Icons'
+import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, EditIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon, BuildingIcon, DoorIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, ExclamationIcon, DuplicateIcon, QuestionIcon, CloseIcon, SpinnerIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
@@ -115,7 +115,7 @@ const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder
 
 const statusClasses: Record<string, string> = {
   Active: 'bg-emerald-100 text-emerald-700',
-  Inactive: 'bg-gray-100 text-gray-700',
+  Inactive: 'bg-rose-100 text-rose-700',
   Pending: 'bg-amber-100 text-amber-700',
 }
 
@@ -1812,20 +1812,25 @@ function MyDepartmentPage() {
         width: '1%',
         align: 'right',
         render: (member) => (
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <IconButton
+              label="Edit member"
+              onClick={() => {}}
+              className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
+            >
+              <EditIcon className="h-4 w-4" />
+            </IconButton>
             <IconButton
               label="Remove member"
               disabled={member.id === currentUserData?.id}
-              className={`h-8 w-8 rounded-md bg-white shadow-sm transition-all border border-gray-100 ${member.id === currentUserData?.id
-                ? 'text-gray-300 cursor-not-allowed opacity-50'
-                : 'text-rose-400 hover:bg-rose-50 hover:text-rose-600'
-                }`}
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRemoveMember(member);
-              }}
+              className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
+                member.id === currentUserData?.id
+                  ? 'opacity-30 cursor-not-allowed text-slate-400'
+                  : 'text-rose-500 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
+              }`}
+              onClick={() => handleRemoveMember(member)}
             >
-              <TrashIcon className="h-4.5 w-4.5" />
+              <TrashIcon className="h-4 w-4" />
             </IconButton>
           </div>
         )

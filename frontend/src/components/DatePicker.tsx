@@ -9,6 +9,7 @@ interface DatePickerProps {
   maxDate?: string // Format: "YYYY-MM-DD"
   allowedDays?: string[] // e.g., ["Monday", "Tuesday"]
   hasError?: boolean
+  align?: 'left' | 'right'
 }
 
 const DAYS_MAP: Record<number, string> = {
@@ -21,7 +22,7 @@ const DAYS_MAP: Record<number, string> = {
   6: 'Saturday'
 }
 
-export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowedDays, hasError }: DatePickerProps) {
+export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowedDays, hasError, align = 'left' }: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -184,7 +185,7 @@ export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowe
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+        <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200`}>
           {/* Header */}
           <div className="mb-4 flex items-center justify-between">
             <button

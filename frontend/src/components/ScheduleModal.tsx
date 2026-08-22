@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
-import { CalendarIcon, SpinnerIcon, DownloadIcon } from './Icons'
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons'
 import { db } from '../firebase'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import type { Room } from '../types/room'
 import { Button } from './Button'
 import { SingleSelectDropdown } from './SingleSelectDropdown'
+import { DatePicker } from './DatePicker'
 import { toPng } from 'html-to-image'
 import jsPDF from 'jspdf'
 
@@ -27,6 +28,9 @@ export interface ScheduleModalProps {
   member?: ScheduleMemberInfo | null
   initialAcademicYear?: string
   initialSemester?: string
+  actionButton?: ReactNode
+  hideFilters?: boolean
+  showWeekCalendar?: boolean
 }
 
 interface AcademicYearData {
@@ -49,6 +53,56 @@ const STANDARD_TIME_SLOTS = [
   '15:00-16:30',
   '16:30-18:00',
 ]
+
+function getLocalIsoDate(date: Date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function computeWeekInfo(dateStr: string) {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const baseDate = new Date(y, m - 1, d)
+  baseDate.setHours(0, 0, 0, 0)
+
+  const dayOfWeek = baseDate.getDay()
+  const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+
+  const monday = new Date(baseDate)
+  monday.setDate(baseDate.getDate() + diffToMon)
+
+  const todayIso = getLocalIsoDate(new Date())
+
+  const weekDays = (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const).map((dayName, idx) => {
+    const current = new Date(monday)
+    current.setDate(monday.getDate() + idx)
+    const isoString = getLocalIsoDate(current)
+    const monthShort = current.toLocaleDateString('en-US', { month: 'short' })
+    const dayNum = current.getDate()
+    return {
+      dayName,
+      date: current,
+      isoString,
+      formattedShort: `${monthShort} ${dayNum}`,
+      isToday: isoString === todayIso
+    }
+  })
+
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+
+  const isCurrentWeek = weekDays.some(d => d.isToday)
+  const label = `${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+
+  return {
+    monday,
+    sunday,
+    weekDays,
+    isCurrentWeek,
+    label
+  }
+}
 
 const normalizeDay = (day: string): string => {
   if (!day) return ''
@@ -110,12 +164,16 @@ export function ScheduleModal({
   buildingName,
   member,
   initialAcademicYear,
-  initialSemester
+  initialSemester,
+  actionButton,
+  hideFilters,
+  showWeekCalendar
 }: ScheduleModalProps) {
   const isRoomMode = Boolean(room)
   const isInstructorMode = Boolean(member && !room)
 
   const [schedules, setSchedules] = useState<any[]>([])
+  const [reservations, setReservations] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
@@ -124,6 +182,19 @@ export function ScheduleModal({
   const [roomsMap, setRoomsMap] = useState<Map<string, string>>(new Map())
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
+
+  const [selectedWeekDate, setSelectedWeekDate] = useState<string>(() => getLocalIsoDate())
+
+  // Reset to today when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setSelectedWeekDate(getLocalIsoDate())
+    }
+  }, [isOpen])
+
+  const weekInfo = useMemo(() => {
+    return computeWeekInfo(selectedWeekDate)
+  }, [selectedWeekDate])
 
   // 1. Fetch Academic Years
   useEffect(() => {
@@ -209,20 +280,48 @@ export function ScheduleModal({
 
     if (isRoomMode && room?.id) {
       setIsLoading(true)
-      const q = query(collection(db, 'schedule'), where('roomId', '==', room.id))
+      const qSchedule = query(collection(db, 'schedule'), where('roomId', '==', room.id))
+      const qReservations = query(collection(db, 'reservations'), where('roomId', '==', room.id))
 
-      const unsubscribe = onSnapshot(q, (snapshot) => {
+      let schedulesLoaded = false
+      let reservationsLoaded = !showWeekCalendar
+
+      const unsubscribeSchedule = onSnapshot(qSchedule, (snapshot) => {
         const fetched = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
         fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
         setSchedules(fetched)
-        setIsLoading(false)
+        schedulesLoaded = true
+        if (reservationsLoaded) setIsLoading(false)
       }, (err) => {
         console.error('Error loading room schedules:', err)
         setSchedules([])
-        setIsLoading(false)
+        schedulesLoaded = true
+        if (reservationsLoaded) setIsLoading(false)
       })
 
-      return () => unsubscribe()
+      let unsubscribeReservations: (() => void) | null = null
+      if (showWeekCalendar) {
+        unsubscribeReservations = onSnapshot(qReservations, (snapshot) => {
+          const fetched = snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter((r: any) => r.status === 'Approved' || r.status === 'Pending')
+          setReservations(fetched)
+          reservationsLoaded = true
+          if (schedulesLoaded) setIsLoading(false)
+        }, (err) => {
+          console.error('Error loading room reservations:', err)
+          setReservations([])
+          reservationsLoaded = true
+          if (schedulesLoaded) setIsLoading(false)
+        })
+      } else {
+        setReservations([])
+      }
+
+      return () => {
+        unsubscribeSchedule()
+        if (unsubscribeReservations) unsubscribeReservations()
+      }
     }
 
     if (isInstructorMode && member) {
@@ -285,6 +384,17 @@ export function ScheduleModal({
     return roomsMap.get(roomId) || 'TBA'
   }
 
+  const getUserName = (uid?: string) => {
+    if (!uid) return 'User'
+    return instructorsMap.get(uid) || 'User'
+  }
+
+  const activeWeekReservations = useMemo(() => {
+    if (!isRoomMode || !showWeekCalendar || !reservations.length) return []
+    const weekIsoSet = new Set(weekInfo.weekDays.map(w => w.isoString))
+    return reservations.filter(r => r.date && weekIsoSet.has(r.date))
+  }, [isRoomMode, showWeekCalendar, reservations, weekInfo.weekDays])
+
   // 6. Build Time Slots (Standard whole day 07:30 - 18:00, 1h 30m each + any custom slots)
   const timeSlots = useMemo(() => {
     const timeSlotSet = new Set<string>(STANDARD_TIME_SLOTS)
@@ -298,13 +408,24 @@ export function ScheduleModal({
       }
     })
 
+    if (showWeekCalendar) {
+      activeWeekReservations.forEach(res => {
+        if (res.startTime && res.endTime) {
+          const formatted = `${padTime(res.startTime)}-${padTime(res.endTime)}`
+          if (!STANDARD_TIME_SLOTS.some(slot => isScheduleInSlot(res, slot))) {
+            timeSlotSet.add(formatted)
+          }
+        }
+      })
+    }
+
     return Array.from(timeSlotSet).sort((a, b) => {
       const startA = a.split('-')[0]
       const startB = b.split('-')[0]
       if (startA !== startB) return startA.localeCompare(startB)
       return a.split('-')[1].localeCompare(b.split('-')[1])
     })
-  }, [filteredSchedules])
+  }, [filteredSchedules, activeWeekReservations, showWeekCalendar])
 
   // 7. Populate Grid
   const scheduleGrid = useMemo(() => {
@@ -321,7 +442,7 @@ export function ScheduleModal({
               const d = normalizeDay(day)
               if (grid[slot] && grid[slot][d]) {
                 if (!grid[slot][d].some(existing => existing.id === schedule.id)) {
-                  grid[slot][d].push(schedule)
+                  grid[slot][d].push({ ...schedule, _itemType: 'departmentSchedule' })
                 }
               }
             })
@@ -330,8 +451,26 @@ export function ScheduleModal({
       }
     })
 
+    if (showWeekCalendar) {
+      activeWeekReservations.forEach(res => {
+        const matchedWeekDay = weekInfo.weekDays.find(w => w.isoString === res.date)
+        if (matchedWeekDay) {
+          const d = matchedWeekDay.dayName
+          timeSlots.forEach(slot => {
+            if (isScheduleInSlot(res, slot)) {
+              if (grid[slot] && grid[slot][d]) {
+                if (!grid[slot][d].some(existing => existing.id === res.id)) {
+                  grid[slot][d].push({ ...res, _itemType: 'reservation' })
+                }
+              }
+            }
+          })
+        }
+      })
+    }
+
     return grid
-  }, [timeSlots, filteredSchedules])
+  }, [timeSlots, filteredSchedules, activeWeekReservations, showWeekCalendar, weekInfo.weekDays])
 
   const academicYearOptions = useMemo(() => {
     return academicYears.map(y => y.academicYear)
@@ -433,7 +572,9 @@ export function ScheduleModal({
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.2)', padding: '8px 16px', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', color: '#ffffff', border: '1px solid rgba(255,255,255,0.3)' }}>
-                {selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}
+                {showWeekCalendar
+                  ? weekInfo.label
+                  : `${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}`}
               </span>
             </div>
           </div>
@@ -443,9 +584,17 @@ export function ScheduleModal({
               <thead>
                 <tr>
                   <th style={{ width: '95px', border: '1px solid #d1d5db', backgroundColor: '#f9fafb', padding: '8px 4px', fontSize: '12px', fontWeight: 'bold', color: '#374151', textAlign: 'center' }}>Time</th>
-                  {DAYS.map(day => (
-                    <th key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#f9fafb', padding: '8px 4px', fontSize: '12px', fontWeight: 'bold', color: '#374151', textAlign: 'center' }}>{day}</th>
-                  ))}
+                  {DAYS.map((day, dIdx) => {
+                    const wDay = showWeekCalendar ? weekInfo.weekDays[dIdx] : null
+                    return (
+                      <th key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#f9fafb', padding: '6px 4px', fontSize: '12px', fontWeight: 'bold', color: '#374151', textAlign: 'center' }}>
+                        <div>{day}</div>
+                        {wDay && (
+                          <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: 'normal' }}>{wDay.formattedShort}</div>
+                        )}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -473,23 +622,43 @@ export function ScheduleModal({
                           return (
                             <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top' }}>
                               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', height: '100%' }}>
-                                {daySchedules.map((item, idx) => (
-                                  <div key={item.id || idx} style={{ backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
-                                      <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.subjectCode || 'TBA'}</span>
-                                      <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
-                                        {item.format || 'N/A'}
-                                      </span>
+                                {daySchedules.map((item, idx) => {
+                                  if (item._itemType === 'reservation') {
+                                    return (
+                                      <div key={item.id || idx} style={{ backgroundColor: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '3px' }}>
+                                          <span style={{ fontWeight: 'bold', color: '#92400e', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {getUserName(item.userId)}
+                                          </span>
+                                          <span style={{ fontWeight: 'bold', color: '#b45309', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
+                                            {item.status || 'Reserved'}
+                                          </span>
+                                        </div>
+                                        <div style={{ marginTop: '4px', borderTop: '1px solid #fde68a', paddingTop: '4px', fontSize: '10px', color: '#78350f', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <strong style={{ color: '#1f2937' }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</strong></div>
+                                        </div>
+                                      </div>
+                                    )
+                                  }
+
+                                  return (
+                                    <div key={item.id || idx} style={{ backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
+                                        <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.subjectCode || 'TBA'}</span>
+                                        <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
+                                          {item.format || 'N/A'}
+                                        </span>
+                                      </div>
+                                      <div style={{ marginTop: '4px', borderTop: '1px solid #c6dbb6', paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <strong style={{ color: '#1f2937' }}>{item.classSection || 'TBA'}</strong></div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <strong style={{ color: '#62853e' }}>{getInstructorName(item.instructorId)}</strong></div>
+                                        {item.department && (
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563' }}>{item.department}</span></div>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div style={{ marginTop: '4px', borderTop: '1px solid #c6dbb6', paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <strong style={{ color: '#1f2937' }}>{item.classSection || 'TBA'}</strong></div>
-                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <strong style={{ color: '#62853e' }}>{getInstructorName(item.instructorId)}</strong></div>
-                                      {item.department && (
-                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563' }}>{item.department}</span></div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
+                                  )
+                                })}
                               </div>
                             </td>
                           )
@@ -596,35 +765,85 @@ export function ScheduleModal({
             </p>
           </div>
 
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Academic Year & Semester SingleSelectDropdowns */}
-            {academicYearOptions.length > 0 && (
+          {showWeekCalendar ? (
+            <div className="flex items-center gap-2 shrink-0">
+              {!weekInfo.isCurrentWeek && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedWeekDate(getLocalIsoDate())
+                  }}
+                  className="h-11 px-3.5 flex items-center justify-center rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all cursor-pointer shadow-sm"
+                >
+                  This Week
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const prev = new Date(weekInfo.monday)
+                  prev.setDate(prev.getDate() - 7)
+                  setSelectedWeekDate(getLocalIsoDate(prev))
+                }}
+                title="Previous Week"
+                className="h-11 w-11 flex items-center justify-center rounded-xl bg-white/20 hover:bg-white/30 text-white transition-all active:scale-95 cursor-pointer shadow-sm"
+              >
+                <ChevronLeftIcon className="h-5 w-5" />
+              </button>
+
+              <div className="w-56">
+                <DatePicker
+                  value={selectedWeekDate}
+                  onChange={(date) => setSelectedWeekDate(date)}
+                  align="right"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = new Date(weekInfo.monday)
+                  next.setDate(next.getDate() + 7)
+                  setSelectedWeekDate(getLocalIsoDate(next))
+                }}
+                title="Next Week"
+                className="h-11 w-11 flex items-center justify-center rounded-xl bg-white/20 hover:bg-white/30 text-white transition-all active:scale-95 cursor-pointer shadow-sm"
+              >
+                <ChevronRightIcon className="h-5 w-5" />
+              </button>
+            </div>
+          ) : !hideFilters ? (
+            <div className="flex items-center gap-3 shrink-0">
+              {/* Academic Year & Semester SingleSelectDropdowns */}
+              {academicYearOptions.length > 0 && (
+                <div className="w-52">
+                  <SingleSelectDropdown
+                    options={academicYearOptions}
+                    value={selectedAcademicYear?.academicYear || ''}
+                    onChange={(val) => {
+                      const found = academicYears.find(y => y.academicYear === val)
+                      if (found) setSelectedAcademicYear(found)
+                    }}
+                    className="[&>button]:!rounded-xl [&>button]:!bg-white [&>button]:!border-white/30 [&>button]:!shadow-sm"
+                  />
+                </div>
+              )}
+
               <div className="w-52">
                 <SingleSelectDropdown
-                  options={academicYearOptions}
-                  value={selectedAcademicYear?.academicYear || ''}
-                  onChange={(val) => {
-                    const found = academicYears.find(y => y.academicYear === val)
-                    if (found) setSelectedAcademicYear(found)
-                  }}
+                  options={['1st Semester', '2nd Semester'] as const}
+                  value={selectedSemester as '1st Semester' | '2nd Semester'}
+                  onChange={(val) => setSelectedSemester(val)}
                   className="[&>button]:!rounded-xl [&>button]:!bg-white [&>button]:!border-white/30 [&>button]:!shadow-sm"
                 />
               </div>
-            )}
-
-            <div className="w-52">
-              <SingleSelectDropdown
-                options={['1st Semester', '2nd Semester'] as const}
-                value={selectedSemester as '1st Semester' | '2nd Semester'}
-                onChange={(val) => setSelectedSemester(val)}
-                className="[&>button]:!rounded-xl [&>button]:!bg-white [&>button]:!border-white/30 [&>button]:!shadow-sm"
-              />
             </div>
-          </div>
+          ) : null}
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden bg-gray-50/50 overscroll-none flex flex-col relative z-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
+        <div className="flex-1 overflow-y-auto overflow-x-auto bg-gray-50/50 overscroll-none flex flex-col relative z-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
           {isLoading ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
               <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
@@ -658,10 +877,20 @@ export function ScheduleModal({
             >
               <thead className="contents text-gray-700 font-bold text-base">
                 <tr className="contents">
-                  <th className="p-2 h-12 flex items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">Time</th>
-                  {DAYS.map(day => (
-                    <th key={day} className="p-2 h-12 flex items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 last:border-r-0 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">{day}</th>
-                  ))}
+                  <th className="p-2 h-14 flex items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">Time</th>
+                  {DAYS.map((day, dIdx) => {
+                    const wDay = showWeekCalendar ? weekInfo.weekDays[dIdx] : null
+                    return (
+                      <th key={day} className="p-2 h-14 flex flex-col items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 last:border-r-0 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">
+                        <span className="text-sm font-bold text-gray-800">{day}</span>
+                        {wDay && (
+                          <span className={`text-[0.625rem] font-bold mt-0.5 px-1.5 py-0.2 rounded-md ${wDay.isToday ? 'bg-[var(--brand-color)] text-white' : 'text-gray-400 bg-gray-100'}`}>
+                            {wDay.formattedShort}
+                          </span>
+                        )}
+                      </th>
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody className="contents">
@@ -690,25 +919,61 @@ export function ScheduleModal({
                           return (
                             <td key={day} className="px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top bg-white group-hover:bg-gray-50/50 transition-colors h-full flex flex-col justify-start min-w-0">
                               <div className="flex flex-col gap-2 w-full h-full flex-1">
-                                {daySchedules.map((item, idx) => (
-                                  <div key={item.id || idx} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow h-full flex-1 min-w-0">
-                                    <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                      <span className="font-bold text-gray-900 uppercase truncate">{item.subjectCode || 'TBA'}</span>
-                                      <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                        {item.format || 'N/A'}
-                                      </span>
+                                {daySchedules.map((item, idx) => {
+                                  if (item._itemType === 'reservation') {
+                                    const isApproved = item.status === 'Approved'
+                                    return (
+                                      <div
+                                        key={item.id || idx}
+                                        className={`flex flex-col p-2 rounded text-sm shadow-sm transition-shadow h-full flex-1 min-w-0 border ${
+                                          isApproved
+                                            ? 'bg-amber-500/10 border-amber-500/30'
+                                            : 'bg-sky-500/10 border-sky-500/30'
+                                        }`}
+                                      >
+                                        <div className="flex flex-row items-center justify-between gap-1.5 min-w-0">
+                                          <span className="font-bold text-gray-900 truncate text-xs">
+                                            {getUserName(item.userId)}
+                                          </span>
+                                          <span
+                                            className={`font-black uppercase tracking-wider text-[0.5625rem] px-1.5 py-0.5 rounded-full shrink-0 ${
+                                              isApproved
+                                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                                : 'bg-sky-100 text-sky-800 border border-sky-300'
+                                            }`}
+                                          >
+                                            {item.status || 'Reserved'}
+                                          </span>
+                                        </div>
+                                        <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${
+                                          isApproved ? 'border-amber-500/20 text-amber-900/80' : 'border-sky-500/20 text-sky-900/80'
+                                        }`}>
+                                          <span className="truncate">Time: <span className="font-semibold text-gray-800">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                        </div>
+                                      </div>
+                                    )
+                                  }
+
+                                  return (
+                                    <div key={item.id || idx} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow h-full flex-1 min-w-0">
+                                      <div className="flex flex-row items-center gap-1.5 min-w-0">
+                                        <span className="font-bold text-gray-900 uppercase truncate">{item.subjectCode || 'TBA'}</span>
+                                        <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
+                                          {item.format || 'N/A'}
+                                        </span>
+                                      </div>
+                                      <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
+                                        <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
+                                        <span className="truncate">Inst: <span className="text-[var(--brand-color)] font-medium truncate" title={getInstructorName(item.instructorId)}>
+                                          {getInstructorName(item.instructorId)}
+                                        </span></span>
+                                        {item.department && (
+                                          <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
-                                      <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                      <span className="truncate">Inst: <span className="text-[var(--brand-color)] font-medium truncate" title={getInstructorName(item.instructorId)}>
-                                        {getInstructorName(item.instructorId)}
-                                      </span></span>
-                                      {item.department && (
-                                        <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
+                                  )
+                                })}
                               </div>
                             </td>
                           )
@@ -839,19 +1104,27 @@ export function ScheduleModal({
         {/* Modal Footer */}
         <div className="bg-gray-50/80 px-7 py-4 border-t border-gray-200 flex items-center justify-between gap-3 shrink-0 rounded-b-3xl relative z-30">
           <div className="text-xs text-gray-500 font-medium">
-            Showing schedule for <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
+            {showWeekCalendar ? (
+              <>Showing schedule for <span className="font-bold text-gray-700">{weekInfo.label}</span></>
+            ) : (
+              <>Showing schedule for <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span></>
+            )}
           </div>
           <div className="flex items-center gap-3">
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleDownloadPdf}
-              disabled={isLoading || isGeneratingPdf || (isInstructorMode && member?.role === 'Dean')}
-              className="w-45 px-4 text-sm flex items-center justify-center gap-2 !bg-[var(--brand-color)] hover:!bg-[var(--brand-color-hover)] text-white shadow-sm disabled:opacity-50 cursor-pointer"
-              icon={isGeneratingPdf ? undefined : <DownloadIcon className="h-4 w-4" />}
-            >
-              {isGeneratingPdf ? 'Exporting PDF' : 'Download PDF'}
-            </Button>
+            {actionButton !== undefined ? (
+              actionButton
+            ) : (
+              <Button
+                type="button"
+                variant="primary"
+                onClick={handleDownloadPdf}
+                disabled={isLoading || isGeneratingPdf || (isInstructorMode && member?.role === 'Dean')}
+                className="w-45 px-4 text-sm flex items-center justify-center gap-2 !bg-[var(--brand-color)] hover:!bg-[var(--brand-color-hover)] text-white shadow-sm disabled:opacity-50 cursor-pointer"
+                icon={isGeneratingPdf ? undefined : <DownloadIcon className="h-4 w-4" />}
+              >
+                {isGeneratingPdf ? 'Exporting PDF' : 'Download PDF'}
+              </Button>
+            )}
             {onBack && (
               <Button
                 type="button"

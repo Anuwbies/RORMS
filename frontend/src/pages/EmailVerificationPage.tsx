@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
 import { auth, db } from '../firebase'
 import { sendEmailVerification, signOut, onAuthStateChanged } from 'firebase/auth'
-import { doc, updateDoc } from 'firebase/firestore'
 import { LogOutIcon, CheckIcon, BellIcon } from '../components/Icons'
+import { Button } from '../components/Button'
 
 interface EmailVerificationPageProps {
   onSignOut: () => void
@@ -12,10 +12,38 @@ interface EmailVerificationPageProps {
 export default function EmailVerificationPage({ onSignOut, isNewSignup = false }: EmailVerificationPageProps) {
   const [isResending, setIsResending] = useState(false)
   const [resendStatus, setResendStatus] = useState<'idle' | 'success' | 'error'>('idle')
-  const [hasSentEmail, setHasSentEmail] = useState(isNewSignup)
+
+  const getRemainingCooldown = () => {
+    const lastSent = sessionStorage.getItem('rorms_verification_cooldown')
+    if (lastSent) {
+      const elapsed = Math.floor((Date.now() - parseInt(lastSent, 10)) / 1000)
+      const remaining = 60 - elapsed
+      if (remaining > 0) return remaining
+    }
+    return isNewSignup ? 60 : 0
+  }
+
+  const getHasSent = () => {
+    if (isNewSignup) return true
+    const lastSent = sessionStorage.getItem('rorms_verification_cooldown')
+    if (lastSent) {
+      const elapsed = Math.floor((Date.now() - parseInt(lastSent, 10)) / 1000)
+      return elapsed < 60
+    }
+    return false
+  }
+
+  const [hasSentEmail, setHasSentEmail] = useState(getHasSent)
   const [lastSentWasResend, setLastSentWasResend] = useState(false)
-  const [countdown, setCountdown] = useState(isNewSignup ? 60 : 0)
+  const [countdown, setCountdown] = useState(getRemainingCooldown)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isNewSignup) {
+      setHasSentEmail(true)
+      setCountdown((prev) => (prev > 0 ? prev : 60))
+    }
+  }, [isNewSignup])
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -44,6 +72,7 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
     try {
       setLastSentWasResend(true) // If manually clicking, it's always a resend now
       await sendEmailVerification(auth.currentUser)
+      sessionStorage.setItem('rorms_verification_cooldown', Date.now().toString())
       setResendStatus('success')
       setHasSentEmail(true)
       setCountdown(60) // 60 seconds cooldown
@@ -70,6 +99,8 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
 
   const handleSignOut = async () => {
     try {
+      sessionStorage.removeItem('rorms_verification_cooldown')
+      window.history.replaceState({}, '', '/')
       await signOut(auth)
       onSignOut()
     } catch (error) {
@@ -79,7 +110,7 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--brand-surface)] p-4">
-      <div className="w-full max-w-md overflow-hidden rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-300">
+      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-300">
         <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white text-center relative">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/20 shadow-inner">
             <BellIcon className="h-8 w-8 text-white animate-bounce" />
@@ -116,34 +147,38 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
           </div>
 
           <div className="space-y-3">
-            <button
+            <Button
               onClick={handleCheckStatus}
-              className="group flex w-full items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3.5 text-sm font-bold text-white shadow-md transition-all hover:bg-[var(--brand-color-hover)] hover:shadow-lg active:scale-[0.98]"
+              variant="brand"
+              icon={<CheckIcon className="h-5 w-5" />}
+              className="w-full"
             >
-              <CheckIcon className="h-5 w-5 transition-transform group-hover:scale-110" />
               I've Verified My Email
-            </button>
+            </Button>
 
-            <button
+            <Button
               disabled={isResending || countdown > 0}
               onClick={handleResendEmail}
-              className={`flex w-full items-center justify-center gap-2 rounded-md border border-gray-200 bg-white py-3.5 text-sm font-bold text-gray-600 transition-all hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed ${!(isResending || countdown > 0) ? 'active:scale-[0.98]' : ''}`}
-            >
-              {isResending ? (
-                <>
+              variant="outline"
+              icon={
+                isResending ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-                  Sending...
-                </>
-              ) : countdown > 0 ? (
-                `Resend in ${countdown}s`
-              ) : (
-                hasSentEmail ? 'Resend Verification Link' : 'Send Verification Link'
-              )}
-            </button>
+                ) : undefined
+              }
+              className="w-full"
+            >
+              {isResending
+                ? 'Sending...'
+                : countdown > 0
+                ? `Resend in ${countdown}s`
+                : hasSentEmail
+                ? 'Resend Verification Link'
+                : 'Send Verification Link'}
+            </Button>
           </div>
 
           {resendStatus === 'success' && (
-            <div className="rounded-md bg-emerald-50 p-4 border border-emerald-100 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="rounded-xl bg-emerald-50 p-4 border border-emerald-100 animate-in fade-in slide-in-from-top-2 duration-300">
               <p className="text-center text-sm font-bold text-emerald-700">
                 Success! {lastSentWasResend ? 'A new' : 'A'} verification link has been sent.
               </p>
@@ -151,7 +186,7 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
           )}
 
           {resendStatus === 'error' && (
-            <div className="rounded-md bg-rose-50 p-4 border border-rose-100 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="rounded-xl bg-rose-50 p-4 border border-rose-100 animate-in fade-in slide-in-from-top-2 duration-300">
               <p className="text-center text-sm font-bold text-rose-700">
                 Failed to send. Please try again later.
               </p>
@@ -160,8 +195,9 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
 
           <div className="pt-4 border-t border-gray-100">
             <button
+              type="button"
               onClick={handleSignOut}
-              className="flex w-full items-center justify-center gap-2 text-sm font-bold text-rose-500 transition-colors hover:text-rose-700"
+              className="flex w-full items-center justify-center gap-2 text-sm font-bold text-rose-500 transition-colors hover:text-rose-700 cursor-pointer"
             >
               <LogOutIcon className="h-4 w-4" />
               Sign Out and Use Different Account

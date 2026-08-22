@@ -283,14 +283,13 @@ function MyReservationsPage() {
       render: (res) => {
         const room = rooms[res.roomId]
         return (
-          <div className="flex justify-end gap-1.5">
+          <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
             <IconButton
               label="View Room"
-              onClick={(e) => {
-                e.stopPropagation()
+              onClick={() => {
                 if (room) handleOpenRoomInfoModal(room)
               }}
-              className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5"
+              className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
             >
               <SearchIcon className="h-4 w-4" />
             </IconButton>

@@ -47,12 +47,20 @@ Trigger collection for the Firebase "Trigger Email" extension.
   - `message`: object (Email content)
     - `subject`: string (Email subject line)
     - `html`: string (HTML body of the email)
-  - `delivery`: object (Managed by the extension)
+  - `delivery`: object (Managed and populated automatically by the Firebase extension)
     - `state`: string (`"PENDING"`, `"SUCCESS"`, `"ERROR"`)
-    - `attempts`: number
-    - `startTime`: timestamp
-    - `endTime`: timestamp
-    - `error`: string (if state is `"ERROR"`)
+    - `attempts`: number (Number of delivery attempts made)
+    - `startTime`: timestamp (Timestamp when dispatch started)
+    - `endTime`: timestamp (Timestamp when dispatch finished)
+    - `error`: string | null (Error message if state is `"ERROR"`, or `null` on success)
+    - `leaseExpireTime`: timestamp | null (Internal queue lock lease timer)
+    - `sendgridQueueId`: string | null (SendGrid queue ID, or `null` if using SMTP)
+    - `info`: object (Detailed SMTP / Mail server response data)
+      - `accepted`: array of strings (List of accepted recipient emails)
+      - `rejected`: array of strings (List of rejected recipient emails)
+      - `pending`: array of strings (List of pending recipient emails)
+      - `messageId`: string (Unique SMTP message tracking ID header)
+      - `response`: string (Server status code and response, e.g. `"250 2.0.0 OK"`)
 
 ## `buildings`
 Manages campus buildings and infrastructure metadata.

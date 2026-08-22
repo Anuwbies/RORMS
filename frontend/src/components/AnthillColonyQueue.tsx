@@ -357,16 +357,24 @@ export interface HoveredAntStats {
 
 export interface AntRegistryEntry {
   id: string;
+  memberId: string;
   name: string;
+  email?: string;
+  avatar?: string;
+  department?: string;
   role: MemberRole;
+  status?: MemberStatus;
   antClass: AntClass;
   x: number;
   y: number;
   hp: number;
   maxHp: number;
+  attack: number;
   isAlive: boolean;
   isNearAction?: boolean;
   workerActionType?: 'collecting' | 'dropping';
+  activityText?: string;
+  carriedItem?: CarriedItem;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -385,6 +393,7 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
   const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isHqSelected, setIsHqSelected] = useState(false);
+  const [isCardHovered, setIsCardHovered] = useState(false);
 
   // Click-to-Attack Target State
   const [selectedTargetEnemyId, setSelectedTargetEnemyId] = useState<string | null>(null);
@@ -421,6 +430,106 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
   const autoRaidTargetEnemyIdRef = useRef<string | null>(null);
   const hasPendingPostRespawnCooldownRef = useRef(false);
   const raidLossCooldownEndTimeRef = useRef<number>(0);
+
+  // Live Spectator Camera Focused Ant State
+  const [focusedAntData, setFocusedAntData] = useState<AntRegistryEntry | null>(null);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const focusTarget = currentFocusTargetRef.current;
+      let targetEntry: AntRegistryEntry | null = null;
+
+      // 1. If camera focus target is an ant
+      if (focusTarget && focusTarget.type === 'ant') {
+        const entry = antsPositionRef.current.get(focusTarget.id);
+        if (entry && entry.isAlive) {
+          targetEntry = { ...entry };
+        }
+      }
+
+      // 2. If camera focus target is an enemy (during combat/fight focus)
+      if (!targetEntry && focusTarget && focusTarget.type === 'enemy') {
+        const enemy = enemiesRef.current.find(e => e.id === focusTarget.id && e.state !== 'dead' && e.state !== 'respawning');
+        if (enemy) {
+          // Find the defending/attacking ant engaged in combat with this enemy
+          let closestCombatAnt: AntRegistryEntry | null = null;
+          let minD = 14;
+
+          antsPositionRef.current.forEach(ant => {
+            if (ant.isAlive && ant.hp > 0) {
+              const d = Math.hypot(ant.x - enemy.x, ant.y - enemy.y);
+              if (d < minD) {
+                minD = d;
+                closestCombatAnt = ant;
+              }
+            }
+          });
+
+          if (closestCombatAnt) {
+            targetEntry = { ...closestCombatAnt };
+          } else {
+            // Display the enemy Admin user member
+            targetEntry = {
+              id: enemy.id,
+              memberId: enemy.memberId,
+              name: enemy.memberName,
+              role: 'Admin',
+              status: 'Active',
+              antClass: 'warrior',
+              x: enemy.x,
+              y: enemy.y,
+              hp: enemy.hp,
+              maxHp: enemy.maxHp,
+              attack: enemy.attack,
+              isAlive: true,
+              activityText: enemy.state === 'aggro' || enemy.isFighting ? 'Battling Colony Forces' : 'Patrolling Territory',
+              carriedItem: 'none',
+            };
+          }
+        }
+      }
+
+      // 3. If any active fight is taking place across the map
+      if (!targetEntry) {
+        const fightingEnemy = enemiesRef.current.find(e => (e.isFighting || e.state === 'aggro') && e.state !== 'dead' && e.state !== 'respawning');
+        if (fightingEnemy) {
+          let combatAnt: AntRegistryEntry | null = null;
+          let minD = 14;
+          antsPositionRef.current.forEach(ant => {
+            if (ant.isAlive && ant.hp > 0) {
+              const d = Math.hypot(ant.x - fightingEnemy.x, ant.y - fightingEnemy.y);
+              if (d < minD) {
+                minD = d;
+                combatAnt = ant;
+              }
+            }
+          });
+          if (combatAnt) {
+            targetEntry = { ...combatAnt };
+          }
+        }
+      }
+
+      // 4. Default / Ambient ant follow
+      if (!targetEntry) {
+        const liveAnts: AntRegistryEntry[] = [];
+        antsPositionRef.current.forEach(a => {
+          if (a.isAlive && a.hp > 0 && a.x > 0 && a.y > 0) {
+            liveAnts.push({ ...a });
+          }
+        });
+
+        if (liveAnts.length > 0) {
+          const activeAnt = liveAnts.find(a => a.isNearAction || a.activityText?.includes('Defending') || a.activityText?.includes('Striking') || a.activityText?.includes('Shielding')) || liveAnts[0];
+          targetEntry = activeAnt;
+        }
+      }
+
+      setFocusedAntData(targetEntry);
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -1375,12 +1484,14 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
       className={`flex-1 w-full h-full relative rounded-xl overflow-hidden select-none border border-slate-200 shadow-inner bg-[#3d6025] flex flex-col justify-between ${isQuickZooming ? 'cursor-ns-resize' : isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
       onMouseEnter={() => {
         isMouseOverCardRef.current = true;
+        setIsCardHovered(true);
       }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={() => {
         isMouseOverCardRef.current = false;
+        setIsCardHovered(false);
         handleMouseUp();
       }}
       onWheel={handleWheel}
@@ -1582,14 +1693,26 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
           transition: isDragging ? 'none' : 'transform 0.15s ease-out',
         }}
       >
-        <div className="w-[1200px] h-[800px] relative shrink-0 shadow-2xl rounded-3xl overflow-hidden bg-gradient-to-br from-[#4a772f] via-[#598b3a] to-[#365921] border-4 border-[#253e16]">
-
-          {/* Ground Terrain Texture Grid */}
-          <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#1f3511_1.5px,transparent_1.5px)] [background-size:24px_24px]" />
+        <div
+          className="w-[1200px] h-[800px] relative shrink-0 shadow-2xl rounded-3xl overflow-hidden border-4 border-[#253e16]"
+          style={{
+            background: `
+              radial-gradient(circle 110px at 50% 50%, rgba(85, 56, 30, 0.35) 0%, rgba(72, 48, 26, 0.15) 50%, transparent 100%),
+              radial-gradient(ellipse 260px 120px at 22% 24%, rgba(85, 56, 30, 0.28) 0%, rgba(72, 94, 38, 0.12) 60%, transparent 100%),
+              radial-gradient(ellipse 240px 120px at 78% 76%, rgba(85, 56, 30, 0.28) 0%, rgba(72, 94, 38, 0.12) 60%, transparent 100%),
+              radial-gradient(ellipse 200px 100px at 82% 22%, rgba(80, 52, 28, 0.22) 0%, transparent 100%),
+              radial-gradient(ellipse 200px 100px at 18% 78%, rgba(80, 52, 28, 0.22) 0%, transparent 100%),
+              linear-gradient(135deg, #466b28 0%, #598334 25%, #4f752c 50%, #5e8a38 75%, #3a561f 100%)
+            `,
+          }}
+        >
+          {/* Ground Soil & Grass Texture Grain Layers */}
+          <div className="absolute inset-0 opacity-20 bg-[radial-gradient(#1e3510_1.5px,transparent_1.5px)] [background-size:22px_22px] pointer-events-none" />
+          <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#3a2512_1.5px,transparent_1.5px)] [background-size:32px_32px] pointer-events-none" />
 
           {/* Safe Zone Boundary Ring around Ant HQ */}
           <div
-            className="absolute rounded-full border border-emerald-400/25 pointer-events-none"
+            className="absolute rounded-full border border-amber-400/25 pointer-events-none"
             style={{
               width: '19%',
               height: '19%',
@@ -1715,7 +1838,7 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
                 {/* 2. BOSS HEALTH BAR — absolutely positioned below the enemy so it never pushes the body */}
                 {(() => {
                   const now = performance.now();
-                  const isInCombat = enemy.isFighting || enemy.state === 'aggro' || (enemy.lastCombatTime > 0 && (now - enemy.lastCombatTime < 2000));
+                  const isInCombat = enemy.isFighting || enemy.state === 'aggro' || (enemy.lastCombatTime > 0 && (now - enemy.lastCombatTime < 3000));
                   const showHealthBar = isTargeted || hoveredEnemyId === enemy.id || isInCombat;
 
                   if (!showHealthBar) return null;
@@ -1939,13 +2062,30 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
             </div>
           </div>
         );
+      })() : (!isCardHovered && focusedAntData) ? (() => {
+        const rawText = focusedAntData.status === 'Pending' || !focusedAntData.name
+          ? (focusedAntData.email || focusedAntData.name || 'Friendly Ant')
+          : focusedAntData.name;
+        const displayName = rawText.includes('@') ? rawText.split('@')[0] : rawText;
+
+        return (
+          <div className="absolute top-3 right-3 z-40 pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="h-8 px-3 rounded-xl bg-slate-900/90 backdrop-blur-md border border-emerald-500/40 shadow-2xl flex items-center gap-2 max-w-[200px] text-white">
+              <span className="text-xs font-bold text-white truncate drop-shadow-xs leading-none">
+                {displayName}
+              </span>
+              <span className={`text-[0.55rem] font-extrabold px-1.5 py-0.5 rounded border shrink-0 leading-tight ${roleStyles[focusedAntData.role]?.badge || 'bg-slate-800 text-slate-300 border-slate-700'}`}>
+                {focusedAntData.role}
+              </span>
+            </div>
+          </div>
+        );
       })() : null}
 
       {/* ─── 6. TOP LEFT: TOTAL MEMBERS HUD ─── */}
       <div className="absolute top-3 left-3 z-50 pointer-events-none flex items-center gap-2">
-        <div className="px-3.5 py-2 rounded-xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl flex items-center gap-1.5 text-white">
-          <span className="text-sm">👥</span>
-          <span className="text-xs font-black text-white tracking-wide">{totalCount} Total</span>
+        <div className="h-8 px-3 rounded-xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-2xl flex items-center text-white">
+          <span className="text-xs font-black text-white tracking-wide leading-none">{totalCount} Total</span>
         </div>
       </div>
 
@@ -2197,14 +2337,22 @@ function AutonomousRoleAnt({
     const antId = `ant-${member.id}`;
     antsPositionRef.current.set(antId, {
       id: antId,
+      memberId: member.id,
       name: member.name || member.email || 'Friendly Ant',
+      email: member.email,
+      avatar: member.avatar,
+      department: member.department,
       role: member.role,
+      status: member.status,
       antClass,
       x,
       y,
       hp,
       maxHp: stats.maxHp,
+      attack: stats.attack,
       isAlive: true,
+      activityText: 'Patrolling Colony',
+      carriedItem: 'none',
     });
 
     function selectSafeTargetItem(excludeItemId?: string | null): { x: number; y: number; id: string } | null {
@@ -2560,10 +2708,47 @@ function AutonomousRoleAnt({
       if (registryEntry) {
         registryEntry.x = x;
         registryEntry.y = y;
+        registryEntry.hp = hp;
+        registryEntry.isAlive = isAlive;
+        registryEntry.carriedItem = localCarried;
         const isDropping = antState === 'returning_hq' && Math.hypot(HQ.x - x, HQ.y - y) < 14;
         const isCollecting = localCarried === 'none' && Math.hypot(targetX - x, targetY - y) < 12;
         registryEntry.isNearAction = (antClass === 'worker') && (isDropping || isCollecting);
         registryEntry.workerActionType = isDropping ? 'dropping' : isCollecting ? 'collecting' : undefined;
+
+        // Dynamic activity label
+        if (!isAlive) {
+          registryEntry.activityText = 'Respawning at Colony HQ';
+        } else if (antClass === 'guard') {
+          if (fighting) {
+            registryEntry.activityText = 'Defending HQ Perimeter';
+          } else if (isAntStationary) {
+            registryEntry.activityText = 'Standing Guard on Watch';
+          } else {
+            registryEntry.activityText = 'Patrolling HQ Perimeter';
+          }
+        } else if (antClass === 'tank' || antClass === 'warrior') {
+          if (fighting) {
+            registryEntry.activityText = antClass === 'tank' ? 'Shielding in Combat' : 'Striking Boss Insect';
+          } else if (isAntStationary) {
+            registryEntry.activityText = 'Garrisoned on Watch';
+          } else {
+            registryEntry.activityText = 'Patrolling Territory';
+          }
+        } else {
+          // Worker
+          if (afraid) {
+            registryEntry.activityText = 'Evading Hostile Predator';
+          } else if (antState === 'returning_hq' || localCarried !== 'none') {
+            if (localCarried === 'leaf') registryEntry.activityText = 'Delivering Botanical Leaf';
+            else if (localCarried === 'mushroom') registryEntry.activityText = 'Delivering Spore to HQ';
+            else if (localCarried === 'seed') registryEntry.activityText = 'Delivering Amber Seed';
+            else if (localCarried === 'insect_loot') registryEntry.activityText = 'Hauling Trophy Loot';
+            else registryEntry.activityText = 'Returning Resources to HQ';
+          } else {
+            registryEntry.activityText = 'Foraging Meadow Resources';
+          }
+        }
       }
 
       if (elRef.current) {

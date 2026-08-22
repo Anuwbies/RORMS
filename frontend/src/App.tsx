@@ -11,6 +11,7 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isEmailVerified, setIsEmailVerified] = useState(false)
   const [isSignupMode, setIsSignupMode] = useState(false)
+  const [isVerificationPreview, setIsVerificationPreview] = useState(false)
   const [justSignedUp, setJustSignedUp] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -29,6 +30,11 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
+          const params = new URLSearchParams(window.location.search)
+          if (params.has('token') || window.location.pathname === '/signup' || sessionStorage.getItem('rorms_verification_cooldown')) {
+            setJustSignedUp(true)
+          }
+
           // Check if email is verified
           setIsEmailVerified(user.emailVerified)
 
@@ -71,13 +77,20 @@ function App() {
 
   const handleSignOut = useCallback(async () => {
     try {
+      sessionStorage.removeItem('rorms_verification_cooldown')
+      window.history.replaceState({}, '', '/')
+      setIsSignupMode(false)
+      setIsVerificationPreview(false)
+      setJustSignedUp(false)
       await auth.signOut()
+      setIsAuthenticated(false)
     } catch (error) {
       console.error('Error signing out:', error)
     }
   }, [])
 
   const handleSignup = () => {
+    window.history.replaceState({}, '', '/')
     setIsSignupMode(false)
     setJustSignedUp(true)
     // onAuthStateChanged will handle the state update
@@ -91,9 +104,18 @@ function App() {
     )
   }
 
+  if (isVerificationPreview) {
+    return (
+      <EmailVerificationPage 
+        onSignOut={() => setIsVerificationPreview(false)} 
+        isNewSignup={true} 
+      />
+    )
+  }
+
   if (isAuthenticated) {
     if (!isEmailVerified) {
-      return <EmailVerificationPage onSignOut={() => setIsAuthenticated(false)} isNewSignup={justSignedUp} />
+      return <EmailVerificationPage onSignOut={handleSignOut} isNewSignup={justSignedUp} />
     }
     return <LeftSidebarController onSignOut={handleSignOut} />
   }
@@ -102,6 +124,7 @@ function App() {
     return (
       <SignUpPage 
         onSignup={handleSignup} 
+        onBackToSignIn={() => setIsSignupMode(false)}
       />
     )
   }
@@ -109,6 +132,8 @@ function App() {
   return (
     <SignInPage 
       onSignIn={handleSignIn} 
+      onNavigateToSignup={() => setIsSignupMode(true)}
+      onNavigateToVerification={() => setIsVerificationPreview(true)}
     />
   )
 }

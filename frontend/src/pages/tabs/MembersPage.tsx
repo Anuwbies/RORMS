@@ -8,6 +8,7 @@ import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
+import { AnthillColonyQueue } from '../../components/AnthillColonyQueue'
 import type { MemberRole, MemberStatus, Department, Member } from '../../types/member'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -20,6 +21,12 @@ const rolePriority: Record<MemberRole, number> = {
   Instructor: 4,
 }
 
+const statusPriority: Record<MemberStatus, number> = {
+  Active: 0,
+  Pending: 1,
+  Inactive: 2,
+}
+
 const roleClasses: Record<MemberRole, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
@@ -30,7 +37,7 @@ const roleClasses: Record<MemberRole, string> = {
 
 const statusClasses: Record<MemberStatus, string> = {
   Active: 'bg-emerald-100 text-emerald-700',
-  Inactive: 'bg-gray-100 text-gray-700',
+  Inactive: 'bg-rose-100 text-rose-700',
   Pending: 'bg-amber-100 text-amber-700',
 }
 
@@ -90,10 +97,10 @@ function MembersPage() {
       }
     }
     let usersSnapEmpty = false
-
+    // 1. Fetch users to map user details
     unsubscribeUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
       const usersMap = new Map()
-      usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
+      usersSnap.forEach(uDoc => usersMap.set(uDoc.id, { id: uDoc.id, ...uDoc.data() }))
       usersLoaded = true
       if (usersSnap.empty) {
         usersSnapEmpty = true
@@ -103,11 +110,15 @@ function MembersPage() {
       // 2. Fetch memberships and join with users
       if (unsubscribeMemberships) unsubscribeMemberships()
       unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
-        const membersData = mSnap.docs.map(mDoc => {
+        const activeUserIdsWithMembership = new Set<string>()
+        const membersData: Member[] = []
+
+        mSnap.docs.forEach(mDoc => {
           const mData = mDoc.data()
           const userData = usersMap.get(mData.userId) || {}
+          activeUserIdsWithMembership.add(mData.userId)
           
-          return {
+          membersData.push({
             id: mData.userId,
             membershipId: mDoc.id,
             name: userData.fullName || '',
@@ -121,8 +132,30 @@ function MembersPage() {
               year: 'numeric'
             }) : '—',
             avatar: userData.profilePicture || '',
+          })
+        })
+
+        // Include any inactive or deactivated users who do not have an active membership doc
+        usersMap.forEach((userData, userId) => {
+          if (userData.isActive === false && !activeUserIdsWithMembership.has(userId)) {
+            membersData.push({
+              id: userId,
+              membershipId: '',
+              name: userData.fullName || '',
+              email: userData.email || '',
+              role: (userData.role as MemberRole) || 'Instructor',
+              status: 'Inactive',
+              department: userData.departmentCode || '',
+              joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
+                month: 'short',
+                day: '2-digit',
+                year: 'numeric'
+              }) : '—',
+              avatar: userData.profilePicture || '',
+            })
           }
-        }) as Member[]
+        })
+
         setUsers(membersData)
         membershipsLoaded = true
         checkFinishedLoading()
@@ -154,7 +187,7 @@ function MembersPage() {
           email: data.email || '',
           role: (data.role as MemberRole) || 'Instructor',
           status: 'Pending',
-          department: '',
+          department: data.department || '',
           joinedDate: '—', // No joined date for pending invites
           avatar: '',
         }
@@ -196,7 +229,17 @@ function MembersPage() {
     }
   }, [])
 
-  const members = useMemo(() => [...users, ...invites], [users, invites])
+  const members = useMemo(() => {
+    const pendingEmails = new Set(invites.map(inv => inv.email.toLowerCase()))
+    const filteredUsers = users.filter(u => {
+      // If an inactive user has an active pending reinvitation, hide the duplicate inactive row
+      if (u.status === 'Inactive' && pendingEmails.has(u.email.toLowerCase())) {
+        return false
+      }
+      return true
+    })
+    return [...filteredUsers, ...invites]
+  }, [users, invites])
 
   const filteredMembers = members
     .filter((member) => {
@@ -211,7 +254,11 @@ function MembersPage() {
 
       return matchesSearch && matchesRole && matchesStatus && matchesDepartment
     })
-    .sort((a, b) => rolePriority[a.role] - rolePriority[b.role])
+    .sort((a, b) => {
+      const statusDiff = (statusPriority[a.status] ?? 0) - (statusPriority[b.status] ?? 0)
+      if (statusDiff !== 0) return statusDiff
+      return (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99)
+    })
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -534,7 +581,7 @@ function MembersPage() {
         }
       }
 
-      // 2. Update membership document
+      // 2. Update or create membership document
       if (editingMember.membershipId) {
         const updateData: any = {
           role: editRole,
@@ -547,6 +594,21 @@ function MembersPage() {
         }
 
         batch.update(doc(db, 'memberships', editingMember.membershipId), updateData)
+      } else {
+        const newMembershipRef = doc(collection(db, 'memberships'))
+        batch.set(newMembershipRef, {
+          userId: editingMember.id,
+          role: editRole,
+          departmentCode: finalDept,
+          joinedAt: serverTimestamp(),
+          createdAt: serverTimestamp()
+        })
+        batch.update(doc(db, 'users', editingMember.id), {
+          isActive: true,
+          role: editRole,
+          departmentCode: finalDept,
+          updatedAt: serverTimestamp()
+        })
       }
 
       await batch.commit()
@@ -940,7 +1002,21 @@ function MembersPage() {
 
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <SummaryCard title="Card 1" subtitle="Subtitle 1" icon={<UsersIcon className="h-4.5 w-4.5 text-blue-600" />} gradientClasses="from-blue-600 to-blue-500" blobClasses="bg-blue-600/10" />
+            <SummaryCard
+              title="Colony Directory"
+              subtitle={`${users.filter(u => u.status === 'Active').length} Active • ${invites.length} Pending`}
+              icon={<UsersIcon className="h-4.5 w-4.5 text-[var(--brand-color)]" />}
+              gradientClasses="from-[var(--brand-color)]/20 to-[var(--brand-color)]/10"
+              outlineClasses="bg-[var(--brand-color)]"
+              blobClasses="bg-[var(--brand-color)]/5"
+            >
+              <AnthillColonyQueue
+                members={members}
+                users={users}
+                invites={invites}
+                departments={departments}
+              />
+            </SummaryCard>
             <SummaryCard title="Card 2" subtitle="Subtitle 2" icon={<UsersIcon className="h-4.5 w-4.5 text-green-600" />} gradientClasses="from-green-600 to-green-500" blobClasses="bg-green-600/10" />
             <SummaryCard title="Card 3" subtitle="Subtitle 3" icon={<UsersIcon className="h-4.5 w-4.5 text-red-600" />} gradientClasses="from-red-600 to-red-500" blobClasses="bg-red-600/10" />
           </div>
@@ -983,26 +1059,49 @@ function MembersPage() {
               {
                 header: 'Assigned Role',
                 width: '20%',
-                render: (member) => (
-                  <div className="flex items-center gap-2">
-                    <div className={`h-2 w-2 rounded-full ${roleClasses[member.role]?.split(' ')[0] || 'bg-gray-200'}`} />
-                    <span className={`text-[0.7rem] font-bold uppercase tracking-widest ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
-                      {member.role}
-                    </span>
-                  </div>
-                )
+                render: (member) => {
+                  if (member.status === 'Inactive') {
+                    return (
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 w-2 rounded-full bg-slate-300" />
+                        <span className="text-[0.7rem] font-bold uppercase tracking-widest text-slate-400">
+                          None
+                        </span>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="flex items-center gap-2">
+                      <div className={`h-2 w-2 rounded-full ${roleClasses[member.role]?.split(' ')[0] || 'bg-gray-200'}`} />
+                      <span className={`text-[0.7rem] font-bold uppercase tracking-widest ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
+                        {member.role}
+                      </span>
+                    </div>
+                  )
+                }
               },
               {
                 header: 'Department',
                 width: '16%',
-                render: (member) => (
-                  <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
-                    {member.department || (
-                      member.role === 'Admin' ? 'Administrative Office' :
-                      member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
-                    )}
-                  </span>
-                )
+                render: (member) => {
+                  if (member.status === 'Inactive') {
+                    return (
+                      <span className="text-sm font-semibold text-slate-400">
+                        Unassigned
+                      </span>
+                    )
+                  }
+
+                  return (
+                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
+                      {member.department || (
+                        member.role === 'Admin' ? 'Administrative Office' :
+                        member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
+                      )}
+                    </span>
+                  )
+                }
               },
               {
                 header: 'Status',
@@ -1027,23 +1126,28 @@ function MembersPage() {
                 width: '2%',
                 align: 'right',
                 render: (member) => (
-                  <div className="flex justify-end gap-1.5">
+                  <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                     <IconButton
                       label="Edit member"
                       onClick={() => openEditModal(member)}
                       className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
-                        member.status === 'Pending' 
-                          ? 'text-slate-300 cursor-not-allowed' 
+                        member.status === 'Pending' || member.status === 'Inactive'
+                          ? 'opacity-30 cursor-not-allowed text-slate-400' 
                           : 'text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
                       }`}
-                      disabled={member.status === 'Pending'}
+                      disabled={member.status === 'Pending' || member.status === 'Inactive'}
                     >
                       <EditIcon className="h-4 w-4" />
                     </IconButton>
                     <IconButton
                       label="Remove member"
                       onClick={() => setMemberToRemove(member)}
-                      className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 text-rose-500 transition-all hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5"
+                      className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
+                        member.status === 'Inactive'
+                          ? 'opacity-30 cursor-not-allowed text-slate-400'
+                          : 'text-rose-500 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
+                      }`}
+                      disabled={member.status === 'Inactive'}
                     >
                       <TrashIcon className="h-4 w-4" />
                     </IconButton>

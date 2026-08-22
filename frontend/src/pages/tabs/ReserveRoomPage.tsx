@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
-import { UserIcon, SearchIcon, CheckIcon, ClipboardIcon, BookIcon, BuildingIcon, DoorIcon, UsersIcon } from '../../components/Icons'
+import { UserIcon, SearchIcon, CheckIcon, ClipboardIcon, BookIcon, BuildingIcon, DoorIcon, UsersIcon, CalendarIcon } from '../../components/Icons'
 import { Button } from '../../components/Button'
 import { SummaryCard } from '../../components/SummaryCard'
 import { RoomInfoModal } from '../../components/RoomInfoModal'
+import { ScheduleModal } from '../../components/ScheduleModal'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
 import { TimePicker } from '../../components/TimePicker'
 import { DatePicker } from '../../components/DatePicker'
@@ -72,6 +73,8 @@ function ReserveRoomPage() {
 
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
+  const [isRoomScheduleModalOpen, setIsRoomScheduleModalOpen] = useState(false)
+  const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<Room | null>(null)
 
   const durationOptions = useMemo(() => {
     if (!selectedRoomInfo) return []
@@ -204,8 +207,10 @@ function ReserveRoomPage() {
 
   const handleOpenReservationModal = (room: Room) => {
     setSelectedRoomInfo(room)
+    setSelectedRoomForSchedule(room)
     setIsReservationModalOpen(true)
     setIsRoomInfoModalOpen(false)
+    setIsRoomScheduleModalOpen(false)
     setReservationData({
       date: getEarliestAvailableDate(room.availableDays),
       startTime: '07:30',
@@ -220,7 +225,9 @@ function ReserveRoomPage() {
     setIsReservationModalOpen(false)
     setIsFindRoomModalOpen(false)
     setIsSearchResultsModalOpen(false)
+    setIsRoomScheduleModalOpen(false)
     setSelectedRoomInfo(null)
+    setSelectedRoomForSchedule(null)
   }
 
   const allRooms = buildings.flatMap((building) => building.rooms)
@@ -548,13 +555,48 @@ function ReserveRoomPage() {
         actionButton={
           <Button
             variant="brand"
+            icon={<CalendarIcon className="h-4 w-4" />}
+            className="flex-1"
             onClick={() => {
-              if (selectedRoomInfo) {
-                handleOpenReservationModal(selectedRoomInfo)
+              if (!selectedRoomInfo) return
+              setSelectedRoomForSchedule(selectedRoomInfo)
+              setIsRoomScheduleModalOpen(true)
+              setIsRoomInfoModalOpen(false)
+            }}
+          >
+            Room Schedule
+          </Button>
+        }
+      />
+
+      {/* Room Schedule Timetable Modal */}
+      <ScheduleModal
+        isOpen={isRoomScheduleModalOpen}
+        room={selectedRoomForSchedule}
+        buildingName={
+          buildings.find(b => b.rooms.some(r => r.id === selectedRoomForSchedule?.id))?.name
+        }
+        hideFilters={true}
+        showWeekCalendar={true}
+        onClose={handleCloseModals}
+        onBack={() => {
+          setIsRoomScheduleModalOpen(false)
+          if (selectedRoomForSchedule) {
+            setSelectedRoomInfo(selectedRoomForSchedule)
+            setIsRoomInfoModalOpen(true)
+          }
+        }}
+        actionButton={
+          <Button
+            type="button"
+            variant="brand"
+            onClick={() => {
+              if (selectedRoomForSchedule) {
+                handleOpenReservationModal(selectedRoomForSchedule)
               }
             }}
             icon={<BookIcon className="h-4 w-4" />}
-            className="flex-1"
+            className="w-45 px-4 text-sm flex items-center justify-center gap-2"
           >
             Reserve Room
           </Button>
@@ -669,7 +711,7 @@ function ReserveRoomPage() {
                   variant="outline"
                   onClick={() => {
                     setIsReservationModalOpen(false)
-                    setIsRoomInfoModalOpen(true)
+                    setIsRoomScheduleModalOpen(true)
                   }}
                   disabled={isSubmitting}
                   className="flex-1"

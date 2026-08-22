@@ -72,7 +72,7 @@ function createRoomImage() {
 
 const DEFAULT_ROOM_IMAGE = createRoomImage()
 
-const BOOKING_MINUTES_OPTIONS = ['30', '60', '90', '120', '150', '180'] as const;
+const BOOKING_MINUTES_OPTIONS = ['30', '60', '90'] as const;
 
 const LIQUID_OPTIONS = ['Water', 'Coffee', 'Blood', 'Mud', 'Slime', 'Random'] as const;
 type DropdownLiquidType = typeof LIQUID_OPTIONS[number];
@@ -2474,7 +2474,12 @@ function BuildingsRoomsPage() {
                       <SingleSelectDropdown
                         options={BOOKING_MINUTES_OPTIONS}
                         value={newRoomMinBookingMins}
-                        onChange={setNewRoomMinBookingMins}
+                        onChange={(val) => {
+                          setNewRoomMinBookingMins(val)
+                          if (parseInt(newRoomMaxBookingMins) < parseInt(val)) {
+                            setNewRoomMaxBookingMins(val)
+                          }
+                        }}
                         onToggle={handleDropdownToggle}
                         className="w-full"
                       />
@@ -2484,7 +2489,7 @@ function BuildingsRoomsPage() {
                         Max Booking (Mins)
                       </label>
                       <SingleSelectDropdown
-                        options={BOOKING_MINUTES_OPTIONS}
+                        options={BOOKING_MINUTES_OPTIONS.filter(o => parseInt(o) >= parseInt(newRoomMinBookingMins))}
                         value={newRoomMaxBookingMins}
                         onChange={setNewRoomMaxBookingMins}
                         onToggle={handleDropdownToggle}

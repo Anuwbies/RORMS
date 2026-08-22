@@ -341,8 +341,8 @@ export function WeatherOverlay({
           50% { left: var(--stop-pos); transform: rotate(-90deg); }
           54% { left: var(--stop-pos); transform: rotate(-105deg); }
           58% { left: var(--stop-pos); transform: rotate(-85deg); }
-          80% { left: var(--stop-pos); transform: rotate(-85deg); }
-          85% { left: var(--stop-pos); transform: rotate(0deg); }
+          82% { left: var(--stop-pos); transform: rotate(-85deg); }
+          87% { left: var(--stop-pos); transform: rotate(0deg); }
           100% { left: 110%; transform: rotate(0deg); }
         }
         @keyframes supermanLaserRTL {
@@ -352,8 +352,8 @@ export function WeatherOverlay({
           50% { left: var(--stop-pos); transform: rotate(90deg); }
           54% { left: var(--stop-pos); transform: rotate(105deg); }
           58% { left: var(--stop-pos); transform: rotate(85deg); }
-          80% { left: var(--stop-pos); transform: rotate(85deg); }
-          85% { left: var(--stop-pos); transform: rotate(0deg); }
+          82% { left: var(--stop-pos); transform: rotate(85deg); }
+          87% { left: var(--stop-pos); transform: rotate(0deg); }
           100% { left: -50px; transform: rotate(0deg); }
         }
         @keyframes headRotate {
@@ -363,13 +363,13 @@ export function WeatherOverlay({
           50% { transform: rotate(90deg); }
           54% { transform: rotate(105deg); }
           58% { transform: rotate(85deg); }
-          75% { transform: rotate(85deg); }
-          85% { transform: rotate(0deg); }
+          82% { transform: rotate(85deg); }
+          87% { transform: rotate(0deg); }
           100% { transform: rotate(0deg); }
         }
         @keyframes laserShoot {
           0% { width: 0px; opacity: 0; }
-          10% { width: 800px; opacity: 1; }
+          6% { width: 800px; opacity: 1; }
           90% { width: 800px; opacity: 1; }
           100% { width: 800px; opacity: 0; }
         }

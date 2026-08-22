@@ -3,6 +3,7 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { Button } from '../../components/Button'
+import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db } from '../../firebase'
 import { collection, doc, setDoc, deleteDoc, writeBatch, query, orderBy, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
@@ -149,21 +150,21 @@ function AcademicCalendarPage() {
       header: 'Actions',
       align: 'right',
       render: (year) => (
-        <div className="flex justify-end gap-2">
-          <button
-            title="Edit School Year"
-            onClick={(e) => { e.stopPropagation(); handleEditClick(year); }}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-white text-gray-400 hover:bg-gray-50 hover:text-gray-700 shadow-sm border border-gray-200 transition-colors"
+        <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+          <IconButton
+            label="Edit School Year"
+            onClick={() => handleEditClick(year)}
+            className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
           >
             <EditIcon className="h-4 w-4" />
-          </button>
-          <button
-            title="Delete School Year"
-            onClick={(e) => { e.stopPropagation(); handleDeleteYear(year.id); }}
-            className="flex h-8 w-8 items-center justify-center rounded-md bg-white border border-rose-100 text-rose-400 shadow-sm transition hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200"
+          </IconButton>
+          <IconButton
+            label="Delete School Year"
+            onClick={() => handleDeleteYear(year.id)}
+            className="h-8 w-8 rounded-lg bg-white text-rose-500 shadow-sm border border-slate-200 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5 transition-all"
           >
-            <TrashIcon className="h-4.5 w-4.5" />
-          </button>
+            <TrashIcon className="h-4 w-4" />
+          </IconButton>
         </div>
       )
     }

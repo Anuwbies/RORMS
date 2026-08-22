@@ -2369,15 +2369,15 @@ function DepartmentsPage() {
             <img
               src={dept.logo}
               alt={dept.name}
-              className="h-10 w-10 rounded-full border border-gray-300 object-cover"
+              className="h-10 w-10 rounded-full object-cover shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300"
               onError={() => setLogoErrors(prev => ({ ...prev, [dept.logo]: true }))}
             />
           ) : (
-            <div className="flex h-10 w-10 items-center justify-center rounded-full border border-gray-300 bg-gray-50 text-gray-400">
-              <DepartmentIcon className="h-6 w-6" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300">
+              <DepartmentIcon className="h-5 w-5" />
             </div>
           )}
-          <span className="text-sm font-bold text-gray-900 group-hover:text-[var(--brand-color)] transition-colors">
+          <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">
             {dept.name}
           </span>
         </div>
@@ -2413,20 +2413,20 @@ function DepartmentsPage() {
       width: '2%',
       align: 'right',
       render: (dept) => (
-        <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
           <IconButton
             label="Edit department"
-            className="h-8 w-8 rounded-md bg-white text-gray-400 shadow-sm hover:bg-gray-50 hover:text-gray-600 transition-all border border-gray-100"
+            className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
             onClick={() => handleOpenEdit(dept)}
           >
-            <EditIcon className="h-4.5 w-4.5" />
+            <EditIcon className="h-4 w-4" />
           </IconButton>
           <IconButton
             label="Remove department"
-            className="h-8 w-8 rounded-md bg-white text-rose-400 shadow-sm hover:bg-rose-50 hover:text-rose-600 transition-all border border-gray-100"
+            className="h-8 w-8 rounded-lg bg-white text-rose-500 shadow-sm border border-slate-200 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5 transition-all"
             onClick={() => handleOpenDelete(dept)}
           >
-            <TrashIcon className="h-4.5 w-4.5" />
+            <TrashIcon className="h-4 w-4" />
           </IconButton>
         </div>
       )
