@@ -78,7 +78,7 @@ export function DepartmentSchedulesPage() {
   const [loadingMembers, setLoadingMembers] = useState(true)
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
-  const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: '1st Semester' | '2nd Semester'; phase: string }>({
+  const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: string; phase: string }>({
     name: '1st Semester',
     phase: 'Drafting'
   })
@@ -392,7 +392,7 @@ export function DepartmentSchedulesPage() {
             setIsAddScheduleModalOpen(true)
           }}
           subtitle={`Choose the academic term to review and plot schedules for ${selectedDepartment?.code}.`}
-          actionText="Plot Rooms"
+          editablePhases={['Drafting', 'Plotting', 'Revision', 'Final']}
         />
 
       </div>
@@ -405,6 +405,7 @@ export function DepartmentSchedulesPage() {
         members={members}
         selectedAcademicYear={selectedAcademicYear}
         selectedSemesterPhase={selectedSemesterPhase}
+        editablePhases={['Drafting', 'Plotting', 'Revision', 'Final']}
       />
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}

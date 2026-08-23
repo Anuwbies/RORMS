@@ -25,6 +25,7 @@ interface Reservation {
   startTime: string
   endTime: string
   duration: number
+  attendees?: number
   purpose: string
   status: ReservationStatus
   createdAt: any
@@ -235,11 +236,15 @@ function MyReservationsPage() {
       }
     },
     {
-      header: 'Type',
+      header: 'Attendee',
       width: '20%',
       render: (res) => {
-        const room = rooms[res.roomId]
-        return <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">{room?.type || 'Unknown'}</span>
+        const count = res.attendees || 1
+        return (
+          <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
+            {count} {count === 1 ? 'Attendee' : 'Attendees'}
+          </span>
+        )
       }
     },
     {

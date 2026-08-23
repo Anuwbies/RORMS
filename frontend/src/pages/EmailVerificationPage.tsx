@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { auth, db } from '../firebase'
 import { sendEmailVerification, signOut, onAuthStateChanged } from 'firebase/auth'
-import { LogOutIcon, CheckIcon, BellIcon } from '../components/Icons'
+import { LogOutIcon, CheckIcon, BellIcon, CheckCircleIcon, AlertCircleIcon } from '../components/Icons'
 import { Button } from '../components/Button'
 
 interface EmailVerificationPageProps {
@@ -110,13 +110,22 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--brand-surface)] p-4">
-      <div className="w-full max-w-md overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-300">
-        <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white text-center relative">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/20 shadow-inner">
-            <BellIcon className="h-8 w-8 text-white animate-bounce" />
+      <div className="w-full max-w-md animate-in overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl">
+        <div className="relative overflow-hidden bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white text-center">
+          <div aria-hidden className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-white/10"></div>
+          <div aria-hidden className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-white/10"></div>
+          <div aria-hidden className="pointer-events-none absolute top-6 left-8 h-2 w-2 rounded-full bg-white/40"></div>
+          <div aria-hidden className="pointer-events-none absolute bottom-12 right-12 h-1.5 w-1.5 rounded-full bg-white/40"></div>
+          <div aria-hidden className="pointer-events-none absolute top-14 right-16 h-3 w-3 rounded-full bg-white/30"></div>
+
+          <div className="relative mx-auto mb-4 flex h-16 w-16 items-center justify-center">
+            <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-white/25"></span>
+            <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-white/20 shadow-inner">
+              <BellIcon className="h-8 w-8 text-white" />
+            </span>
           </div>
-          <h2 className="text-3xl font-bold tracking-tight">Verify Your Email</h2>
-          <p className="mt-2 text-white/85">Protecting your account and resources.</p>
+          <h2 className="relative text-3xl font-bold tracking-tight">Verify Your Email</h2>
+          <p className="relative mt-2 text-white/85">Protecting your account and resources.</p>
         </div>
 
         <div className="p-8 space-y-6">
@@ -126,7 +135,9 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
                 <p className="text-gray-600 font-medium leading-relaxed">
                   We've sent a verification link to:
                   <br />
-                  <span className="font-bold text-gray-900 block mt-1 text-lg">{userEmail || 'your email'}</span>
+                  <span className="mt-3 inline-block max-w-full truncate rounded-xl border border-[var(--brand-color)]/20 bg-[var(--brand-color)]/5 px-4 py-2 text-lg font-bold text-[var(--brand-color)]">
+                    {userEmail || 'your email'}
+                  </span>
                 </p>
                 <p className="text-sm text-gray-500 leading-relaxed">
                   Please check your inbox (and spam folder) and click the link to activate your account. Once verified, you'll gain full access to the RORMS platform.
@@ -137,7 +148,9 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
                 <p className="text-gray-600 font-medium leading-relaxed">
                   Verify your email address to secure your account:
                   <br />
-                  <span className="font-bold text-gray-900 block mt-1 text-lg">{userEmail || 'your email'}</span>
+                  <span className="mt-3 inline-block max-w-full truncate rounded-xl border border-[var(--brand-color)]/20 bg-[var(--brand-color)]/5 px-4 py-2 text-lg font-bold text-[var(--brand-color)]">
+                    {userEmail || 'your email'}
+                  </span>
                 </p>
                 <p className="text-sm text-gray-500 leading-relaxed">
                   Your account is almost ready! Please click the button below to receive a verification link. Once verified, you'll gain full access to the RORMS platform.
@@ -178,16 +191,18 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
           </div>
 
           {resendStatus === 'success' && (
-            <div className="rounded-xl bg-emerald-50 p-4 border border-emerald-100 animate-in fade-in slide-in-from-top-2 duration-300">
-              <p className="text-center text-sm font-bold text-emerald-700">
+            <div className="flex items-start gap-3 animate-in rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+              <CheckCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+              <p className="text-sm font-bold leading-relaxed text-emerald-700">
                 Success! {lastSentWasResend ? 'A new' : 'A'} verification link has been sent.
               </p>
             </div>
           )}
 
           {resendStatus === 'error' && (
-            <div className="rounded-xl bg-rose-50 p-4 border border-rose-100 animate-in fade-in slide-in-from-top-2 duration-300">
-              <p className="text-center text-sm font-bold text-rose-700">
+            <div className="flex items-start gap-3 animate-in rounded-xl border border-rose-100 bg-rose-50 p-4">
+              <AlertCircleIcon className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+              <p className="text-sm font-bold leading-relaxed text-rose-700">
                 Failed to send. Please try again later.
               </p>
             </div>

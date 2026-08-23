@@ -6,6 +6,7 @@ import { auth, db } from '../firebase'
 import InfoTabContent from '../components/InfoTabContent'
 import { Button } from '../components/Button'
 import { TextInput } from '../components/TextInput'
+import { ExclamationIcon } from '../components/Icons'
 
 
 type TabKey = 'home' | 'about' | 'contact'
@@ -222,8 +223,12 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
 
   return (
     <main className="min-h-screen bg-[var(--brand-surface)] lg:grid lg:grid-cols-[3fr_2fr]">
-      <section className="flex min-h-[36vh] flex-col gap-8 bg-[var(--brand-color)] px-6 py-6 text-[var(--brand-color)] lg:min-h-screen lg:p-10">
-        <nav className="flex w-full flex-wrap items-center justify-between gap-5 rounded-2xl border border-gray-200/20 bg-[var(--card-surface)] px-4 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.12)]">
+      <section className="relative flex min-h-[36vh] flex-col gap-8 overflow-hidden bg-[linear-gradient(150deg,#526f34_0%,var(--brand-color)_45%,#7b9d4f_100%)] px-6 py-6 text-[var(--brand-color)] lg:min-h-screen lg:p-10">
+        <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-2xl"></div>
+        <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-black/15 blur-3xl"></div>
+        <div aria-hidden className="pointer-events-none absolute top-1/2 right-12 hidden h-44 w-44 rounded-full border-[12px] border-white/10 lg:block"></div>
+
+        <nav className="relative flex w-full flex-wrap items-center justify-between gap-5 rounded-2xl border border-gray-200/20 bg-[var(--card-surface)] px-4 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.12)]">
           <div className="flex min-w-0 items-center gap-4">
             <img
               src="/logo2.png"
@@ -263,15 +268,18 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
           </div>
         </nav>
 
-        <div className="flex w-full min-h-0 flex-1 items-stretch">
+        <div className="relative flex w-full min-h-0 flex-1 items-stretch">
           <div className="h-full w-full rounded-3xl border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
             <InfoTabContent activeTab={activeTab} />
           </div>
         </div>
       </section>
 
-      <section className="flex min-h-screen items-center justify-center px-6 py-10 sm:px-10 lg:px-12">
-        <div className="w-full max-w-md rounded-3xl border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
+      <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-10 sm:px-10 lg:px-12">
+        <div aria-hidden className="pointer-events-none absolute -top-40 -right-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
+        <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
+
+        <div className="relative w-full max-w-md animate-in rounded-3xl border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
           <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-color)]">
             {isReactivation ? 'Reactivate' : 'Sign Up'}
           </p>
@@ -279,9 +287,11 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
             {isReactivation ? 'Welcome Back' : 'Create Account'}
           </h2>
           {role && (
-            <p className="mt-1 text-center text-sm font-bold text-[var(--brand-color)]">
-              Joining as {role}
-            </p>
+            <div className="mt-3 flex justify-center">
+              <span className="rounded-full border border-[var(--brand-color)]/20 bg-[var(--brand-color)]/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-[var(--brand-color)]">
+                Joining as {role}
+              </span>
+            </div>
           )}
           <p className="mt-1 text-center text-sm leading-6 text-[var(--hint-color)]">
             {isReactivation 
@@ -291,17 +301,18 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
 
           <form className="mt-8 space-y-5" onSubmit={handleSubmit} autoComplete="off">
             {error && (
-              <div className="rounded-xl bg-red-50 p-3 text-xs text-red-600 border border-red-100">
-                {error}
+              <div className="flex items-start gap-2.5 animate-in rounded-xl border border-red-100 bg-red-50 p-3 text-xs font-medium leading-relaxed text-red-600">
+                <ExclamationIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
               </div>
             )}
             
             {!error && isReactivation && (
               <div className="space-y-6">
-                <div className="rounded-2xl bg-gray-50 p-4 border border-gray-200">
+                <div className="rounded-2xl border border-[var(--brand-color)]/20 bg-[var(--brand-color)]/5 p-4">
                   <p className="text-sm text-gray-700 text-center">
                     You are restoring your account for: <br />
-                    <span className="font-bold text-gray-900 mt-1 block">{email}</span>
+                    <span className="mt-1 block text-lg font-bold text-[var(--brand-color)]">{email}</span>
                   </p>
                 </div>
                 
@@ -427,10 +438,13 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
                             <circle cx="12" cy="12" r="3" />
                           </svg>
                         )}
-                      </button>
-                    }
-                  />
-                </label>
+                       </button>
+                     }
+                   />
+                   <p className="mt-2 text-xs text-[var(--hint-color)]">
+                     Must be at least 6 characters.
+                   </p>
+                 </label>
 
                 <Button
                   type="submit"
@@ -449,12 +463,16 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
               <button
                 type="button"
                 onClick={onBackToSignIn}
-                className="text-xs font-semibold text-gray-500 hover:text-[var(--brand-color)] transition-colors cursor-pointer"
+                className="text-xs font-semibold text-gray-500 transition-colors hover:text-[var(--brand-color)] cursor-pointer"
               >
                 ← Back to Sign In
               </button>
             </div>
           )}
+
+          <p className="mt-8 text-center text-xs font-medium text-gray-400">
+            &copy; 2026 RORMS &middot; PHINMA Education
+          </p>
         </div>
       </section>
     </main>

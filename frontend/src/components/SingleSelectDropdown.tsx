@@ -8,6 +8,8 @@ export interface SingleSelectDropdownProps<T extends string> {
   className?: string
   isDisabled?: boolean
   onToggle?: (isOpen: boolean) => void
+  placeholder?: string
+  isPlaceholder?: (value: T) => boolean
 }
 
 export function SingleSelectDropdown<T extends string>({ 
@@ -16,7 +18,9 @@ export function SingleSelectDropdown<T extends string>({
   onChange, 
   className = '',
   isDisabled = false,
-  onToggle
+  onToggle,
+  placeholder,
+  isPlaceholder: isPlaceholderProp
 }: SingleSelectDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -51,6 +55,16 @@ export function SingleSelectDropdown<T extends string>({
     setMenuMinWidth(menuWidthRef.current.offsetWidth)
   }, [longestOption])
 
+  const isMuted = isPlaceholderProp
+    ? isPlaceholderProp(value)
+    : (
+        !value || 
+        value === placeholder || 
+        value.startsWith('Any ') || 
+        value.startsWith('Select ') || 
+        value === 'None'
+      )
+
   return (
     <div
       className={`relative ${className}`}
@@ -71,9 +85,11 @@ export function SingleSelectDropdown<T extends string>({
         type="button"
         disabled={isDisabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="relative flex h-12 w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-bold text-gray-600 outline-none transition-all cursor-pointer hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 active:scale-95 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
+        className="relative flex h-12 w-full items-center justify-between gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-medium text-gray-600 outline-none transition-all cursor-pointer hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 active:scale-95 shadow-sm disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400"
       >
-        <span className="whitespace-nowrap text-gray-900">{value || 'None'}</span>
+        <span className={`whitespace-nowrap ${isMuted ? 'text-gray-400 font-medium' : 'text-gray-900 font-medium'}`}>
+          {value || placeholder || 'None'}
+        </span>
         <ChevronDownIcon className={`h-4.5 w-4.5 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
 
@@ -82,15 +98,21 @@ export function SingleSelectDropdown<T extends string>({
           <div className="space-y-1 max-h-55 overflow-y-auto custom-scrollbar pr-1 overflow-visible">
             {options.map((option) => {
               const isSelected = value === option
+              const isOptionMuted = isPlaceholderProp
+                ? isPlaceholderProp(option)
+                : (option.startsWith('Any ') || option.startsWith('Select ') || option === 'None')
+
               return (
                 <button
                   key={option}
                   type="button"
                   onClick={() => handleSelect(option)}
-                  className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-bold transition-all active:scale-[0.98] ${
+                  className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium transition-all active:scale-[0.98] ${
                     isSelected 
-                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)]' 
-                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 active:bg-gray-100'
+                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-semibold' 
+                      : isOptionMuted
+                        ? 'text-gray-400 font-medium hover:bg-gray-50 hover:text-gray-600 active:bg-gray-100'
+                        : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 active:bg-gray-100'
                   }`}
                 >
                   <span className="truncate">{option || 'None'}</span>

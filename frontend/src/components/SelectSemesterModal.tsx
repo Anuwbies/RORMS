@@ -26,6 +26,7 @@ export interface SelectSemesterModalProps {
   onSelectSemester: (semesterPhase: { name: string, phase: string }) => void;
   subtitle?: React.ReactNode;
   actionText?: string;
+  editablePhases?: string[];
 }
 
 export function SelectSemesterModal({
@@ -37,6 +38,7 @@ export function SelectSemesterModal({
   onSelectSemester,
   subtitle,
   actionText,
+  editablePhases = ['Drafting', 'Revision'],
 }: SelectSemesterModalProps) {
   if (!isOpen) return null
 
@@ -76,7 +78,7 @@ export function SelectSemesterModal({
               {/* 1st Semester Card */}
               {(() => {
                 const sem1Phase = selectedAcademicYear?.sem1?.phase || 'Closed'
-                const isSem1Editable = sem1Phase === 'Drafting' || sem1Phase === 'Revision'
+                const isSem1Editable = editablePhases.includes(sem1Phase)
                 const sem1Start = selectedAcademicYear?.sem1?.startMonth
                 const sem1End = selectedAcademicYear?.sem1?.endMonth
                 const sem1Dates = sem1Start && sem1End ? `${formatShortMonth(sem1Start)} - ${formatShortMonth(sem1End)}` : ''
@@ -130,7 +132,7 @@ export function SelectSemesterModal({
               {/* 2nd Semester Card */}
               {(() => {
                 const sem2Phase = selectedAcademicYear?.sem2?.phase || 'Closed'
-                const isSem2Editable = sem2Phase === 'Drafting' || sem2Phase === 'Revision'
+                const isSem2Editable = editablePhases.includes(sem2Phase)
                 const sem2Start = selectedAcademicYear?.sem2?.startMonth
                 const sem2End = selectedAcademicYear?.sem2?.endMonth
                 const sem2Dates = sem2Start && sem2End ? `${formatShortMonth(sem2Start)} - ${formatShortMonth(sem2End)}` : ''

@@ -650,6 +650,7 @@ function MyDepartmentPage() {
           setIsSchoolYearModalOpen(false)
           setIsAddScheduleModalOpen(true)
         }}
+        editablePhases={['Drafting', 'Revision']}
       />
 
       {/* Department Edit Schedule Modal */}
@@ -660,6 +661,7 @@ function MyDepartmentPage() {
         members={members}
         selectedAcademicYear={selectedAcademicYear}
         selectedSemesterPhase={selectedSemesterPhase}
+        editablePhases={['Drafting', 'Revision']}
       />
 
 

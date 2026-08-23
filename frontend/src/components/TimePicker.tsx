@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
 import { ClockIcon } from './Icons'
 
 interface TimePickerProps {
@@ -9,6 +9,7 @@ interface TimePickerProps {
   minuteStep?: number
   minTime?: string // Format: "HH:mm" default: "07:30"
   maxTime?: string // Format: "HH:mm" default: "18:00"
+  disabledTimes?: string[] | ((time: string) => boolean)
   hideClear?: boolean
   placeholder?: string
   defaultPlacement?: 'earliest' | 'latest'
@@ -21,7 +22,8 @@ export function TimePicker({
   hasError,
   minuteStep = 1,
   minTime = '07:30',
-  maxTime = '18:00',
+  maxTime = '17:30',
+  disabledTimes,
   hideClear = false,
   placeholder,
   defaultPlacement = 'earliest'
@@ -40,9 +42,9 @@ export function TimePicker({
   }, [minTime])
 
   const maxMinutes = useMemo(() => {
-    if (!maxTime) return 1080 // 18:00
+    if (!maxTime) return 1050 // 17:30
     const [h, m] = maxTime.split(':').map(Number)
-    return isNaN(h) || isNaN(m) ? 1080 : h * 60 + m
+    return isNaN(h) || isNaN(m) ? 1050 : h * 60 + m
   }, [maxTime])
 
   // Parse 24h to 12h or default to minTime
@@ -93,75 +95,108 @@ export function TimePicker({
     return h * 60 + min
   }
 
-  // 12-hour list in clock order (12 first, then 01..11)
-  const allHours = ['12', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11']
-  const allMinutes = Array.from({ length: Math.floor(60 / minuteStep) }, (_, i) => (i * minuteStep).toString().padStart(2, '0'))
-  const periods = ['AM', 'PM']
-
-  const isHourDisabled = (h: string, p: string = period) => {
-    return !allMinutes.some((min) => {
-      const mins = getMinutes(h, min, p)
-      return mins >= minMinutes && mins <= maxMinutes
-    })
+  const getTimeStr = (hStr: string, mStr: string, pStr: string) => {
+    let h = parseInt(hStr, 10)
+    if (pStr === 'PM' && h < 12) h += 12
+    if (pStr === 'AM' && h === 12) h = 0
+    const min = parseInt(mStr, 10) || 0
+    return `${h.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`
   }
 
-  const isMinuteDisabled = (min: string) => {
-    const mins = getMinutes(hourStr, min, period)
-    return mins < minMinutes || mins > maxMinutes
-  }
-
-  const isPeriodDisabled = (p: string) => {
-    if (p === 'AM') {
-      return minMinutes >= 720
-    }
-    if (p === 'PM') {
-      return maxMinutes < 720
+  const isMinsDisabled = useCallback((mins: number) => {
+    if (mins < minMinutes || mins > maxMinutes) return true
+    const h24 = Math.floor(mins / 60)
+    const m = mins % 60
+    const timeStr = `${h24.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
+    if (disabledTimes) {
+      if (typeof disabledTimes === 'function') {
+        return disabledTimes(timeStr)
+      }
+      if (Array.isArray(disabledTimes)) {
+        return disabledTimes.includes(timeStr)
+      }
     }
     return false
+  }, [minMinutes, maxMinutes, disabledTimes])
+
+  // 12-hour list in clock order (12 first, then 01..11)
+  const allHours = useMemo(() => ['12', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], [])
+  const allMinutes = useMemo(() => Array.from({ length: Math.floor(60 / minuteStep) }, (_, i) => (i * minuteStep).toString().padStart(2, '0')), [minuteStep])
+  const periods = useMemo(() => ['AM', 'PM'], [])
+
+  const validAMMinutes = useMemo(() => {
+    const list: number[] = []
+    allHours.forEach(h => {
+      allMinutes.forEach(m => {
+        const mins = getMinutes(h, m, 'AM')
+        if (!isMinsDisabled(mins)) {
+          list.push(mins)
+        }
+      })
+    })
+    return list.sort((a, b) => a - b)
+  }, [allHours, allMinutes, isMinsDisabled])
+
+  const validPMMinutes = useMemo(() => {
+    const list: number[] = []
+    allHours.forEach(h => {
+      allMinutes.forEach(m => {
+        const mins = getMinutes(h, m, 'PM')
+        if (!isMinsDisabled(mins)) {
+          list.push(mins)
+        }
+      })
+    })
+    return list.sort((a, b) => a - b)
+  }, [allHours, allMinutes, isMinsDisabled])
+
+  const isHourDisabled = (h: string, p: string = period) => {
+    return !allMinutes.some((m) => !isMinsDisabled(getMinutes(h, m, p)))
   }
 
   // Filter only valid selectable options to completely hide non-selectable numbers
   const visibleHours = allHours.filter((h) => !isHourDisabled(h, period))
-  const visibleMinutes = allMinutes.filter((min) => !isMinuteDisabled(min))
+
+  const visibleMinutes = allMinutes.filter((min) => {
+    if (!value) {
+      return visibleHours.some(h => !isMinsDisabled(getMinutes(h, min, period)))
+    }
+    return !isMinsDisabled(getMinutes(hourStr, min, period))
+  })
+
+  const isPeriodDisabled = (p: string) => {
+    return p === 'AM' ? validAMMinutes.length === 0 : validPMMinutes.length === 0
+  }
 
   const updateTime = (newHour: string, newMinute: string, newPeriod: string) => {
+    const validList = newPeriod === 'PM' ? validPMMinutes : validAMMinutes
+    if (validList.length === 0) return
+
     let targetMins = getMinutes(newHour, newMinute, newPeriod)
-    
+
     // If switching period (e.g. AM -> PM or PM -> AM)
     if (newPeriod !== period) {
-      if (newPeriod === 'PM') {
-        if (defaultPlacement === 'latest') {
-          // Choose latest valid PM time
-          const latestPMBound = Math.min(1439, maxMinutes)
-          let bestPM = latestPMBound - (latestPMBound % minuteStep)
-          if (bestPM < 720) bestPM = 720
-          targetMins = Math.max(minMinutes, Math.min(bestPM, maxMinutes))
-        } else {
-          // Choose earliest valid PM time
-          if (targetMins < minMinutes || targetMins > maxMinutes) {
-            const earliestPM = Math.max(720, minMinutes) // 720 is 12:00 PM
-            targetMins = Math.min(earliestPM, maxMinutes)
-          }
-        }
+      if (defaultPlacement === 'latest') {
+        targetMins = validList[validList.length - 1]
       } else {
-        if (defaultPlacement === 'latest') {
-          // Choose latest valid AM time (e.g. 11:30 AM)
-          const latestAMBound = Math.min(719, maxMinutes)
-          let bestAM = latestAMBound - (latestAMBound % minuteStep)
-          targetMins = Math.max(minMinutes, Math.min(bestAM, maxMinutes))
-        } else {
-          // Choose earliest valid AM time
-          if (targetMins < minMinutes || targetMins > maxMinutes) {
-            targetMins = Math.min(minMinutes, maxMinutes)
-          }
+        if (isMinsDisabled(targetMins)) {
+          // Snap to the earliest valid time in the target period
+          targetMins = validList[0]
         }
       }
     } else {
-      // Normal hour/minute selection: clamp within bounds
-      if (targetMins < minMinutes) {
-        targetMins = minMinutes
-      } else if (targetMins > maxMinutes) {
-        targetMins = maxMinutes
+      // If clicking hour or minute in same period
+      if (isMinsDisabled(targetMins)) {
+        // Try to find a valid minute for this newHour in newPeriod
+        const validForHour = allMinutes
+          .map(m => getMinutes(newHour, m, newPeriod))
+          .filter(m => !isMinsDisabled(m))
+
+        if (validForHour.length > 0) {
+          targetMins = validForHour[0]
+        } else {
+          targetMins = validList[0]
+        }
       }
     }
 
@@ -185,7 +220,7 @@ export function TimePicker({
         }`}
       >
         <ClockIcon className="h-4.5 w-4.5 text-gray-400 shrink-0" />
-        <span className="text-sm font-medium text-gray-900 flex-1 text-left">
+        <span className={`text-sm font-medium flex-1 text-left ${!value && !hideClear ? 'text-gray-400' : 'text-gray-900'}`}>
           {value ? `${hourStr}:${minuteStr} ${period}` : hideClear ? `${hourStr}:${minuteStr} ${period}` : (placeholder || 'Any Time')}
         </span>
       </button>
@@ -222,7 +257,14 @@ export function TimePicker({
                   <button
                     key={min}
                     type="button"
-                    onClick={() => updateTime(hourStr, min, period)}
+                    onClick={() => {
+                      if (!value) {
+                        const validHour = visibleHours.find(h => !isMinsDisabled(getMinutes(h, min, period))) || hourStr
+                        updateTime(validHour, min, period)
+                      } else {
+                        updateTime(hourStr, min, period)
+                      }
+                    }}
                     className={`w-full rounded-xl py-2.5 text-sm text-center transition-colors cursor-pointer ${
                       isSelected
                         ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-bold' 

@@ -466,7 +466,7 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
           });
 
           if (closestCombatAnt) {
-            targetEntry = { ...closestCombatAnt };
+            targetEntry = { ...(closestCombatAnt as AntRegistryEntry) };
           } else {
             // Display the enemy Admin user member
             targetEntry = {
@@ -505,7 +505,7 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
             }
           });
           if (combatAnt) {
-            targetEntry = { ...combatAnt };
+            targetEntry = { ...(combatAnt as AntRegistryEntry) };
           }
         }
       }

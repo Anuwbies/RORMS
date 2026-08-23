@@ -197,25 +197,44 @@ export function DatePicker({
 
   return (
     <div className="relative" ref={containerRef}>
-      <div
-        className={`flex h-12 w-full items-center justify-between gap-1.5 rounded-xl border bg-white pl-3.5 pr-1.5 py-1 text-sm text-gray-900 outline-none transition-all shadow-sm ${
-          hasError 
-            ? 'border-rose-500 focus-within:border-rose-500 ring-4 ring-rose-50' 
-            : isOpen
-              ? 'border-gray-300'
-              : 'border-gray-200 hover:border-gray-300'
-        }`}
-      >
+      {!(onPrev || onNext) ? (
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
-          className="flex flex-1 h-full items-center gap-2.5 text-left outline-none cursor-pointer min-w-0"
+          className={`flex h-12 w-full items-center gap-2.5 rounded-xl border bg-white px-3.5 py-1 text-sm outline-none transition-all shadow-sm cursor-pointer hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 active:scale-95 ${
+            hasError 
+              ? 'border-rose-500 focus:border-rose-500 ring-4 ring-rose-50' 
+              : isOpen
+                ? 'border-gray-300'
+                : 'border-gray-200 hover:border-gray-300'
+          }`}
         >
           <CalendarIcon className="h-4.5 w-4.5 text-gray-400 shrink-0" />
-          <span className="text-sm font-medium text-gray-900 truncate">{formattedDisplayDate}</span>
+          <span className={`text-sm font-medium truncate flex-1 text-left ${!value ? 'text-gray-400' : 'text-gray-900'}`}>
+            {formattedDisplayDate}
+          </span>
         </button>
+      ) : (
+        <div
+          className={`flex h-12 w-full items-center justify-between gap-1.5 rounded-xl border bg-white pl-3.5 pr-1.5 py-1 text-sm text-gray-900 outline-none transition-all shadow-sm ${
+            hasError 
+              ? 'border-rose-500 focus-within:border-rose-500 ring-4 ring-rose-50' 
+              : isOpen
+                ? 'border-gray-300'
+                : 'border-gray-200 hover:border-gray-300'
+          }`}
+        >
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className="flex flex-1 h-full items-center gap-2.5 text-left outline-none cursor-pointer min-w-0 transition-transform active:scale-95"
+          >
+            <CalendarIcon className="h-4.5 w-4.5 text-gray-400 shrink-0" />
+            <span className={`text-sm font-medium truncate ${!value ? 'text-gray-400' : 'text-gray-900'}`}>
+              {formattedDisplayDate}
+            </span>
+          </button>
 
-        {(onPrev || onNext) && (
           <div className="flex items-center gap-0.5 shrink-0">
             {onPrev && (
               <button
@@ -254,8 +273,8 @@ export function DatePicker({
               </button>
             )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {isOpen && (
         <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200`}>

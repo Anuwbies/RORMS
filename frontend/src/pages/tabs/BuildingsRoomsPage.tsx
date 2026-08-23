@@ -37,18 +37,18 @@ import { TimePicker } from '../../components/TimePicker'
 
 import { db, storage } from '../../firebase'
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
+import {
+  collection,
+  addDoc,
+  updateDoc,
   deleteDoc,
-  doc, 
+  doc,
   setDoc,
   writeBatch,
-  serverTimestamp, 
-  onSnapshot, 
-  query, 
-  orderBy 
+  serverTimestamp,
+  onSnapshot,
+  query,
+  orderBy
 } from 'firebase/firestore'
 import { CropModal } from '../../components/CropModal'
 
@@ -129,9 +129,9 @@ const roomStatusClasses: Record<RoomStatus, string> = {
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const ROOM_AMENITIES = [
-  'WiFi', 'Computer', 'Television', 'Projector', 'Whiteboard', 
-  'Air Conditioning', 'Sound System', 'Printer', 'Webcam', 
-  'Microphone', 'Ethernet', 'Speakers', 'HDMI Cable', 
+  'WiFi', 'Computer', 'Television', 'Projector', 'Whiteboard',
+  'Air Conditioning', 'Sound System', 'Printer', 'Webcam',
+  'Microphone', 'Ethernet', 'Speakers', 'HDMI Cable',
   'Charging Station', 'Coffee Machine', 'Water Dispenser',
   'Digital Signage', 'Video Conferencing'
 ]
@@ -160,7 +160,7 @@ for (let i = 0; i < maxGroups; i++) {
 const BuildingBarShape = (props: any) => {
   const { x, y, width, height: originalHeight, index } = props;
   const fill = index % 2 === 0 ? '#10b981' : '#34d399';
-  
+
   // Enforce a minimum height of 12 so even 0-room buildings have a base
   const height = Math.max(12, originalHeight);
   // Shift Y up by the difference so the bar stays anchored to the baseline
@@ -171,7 +171,7 @@ const BuildingBarShape = (props: any) => {
   const gap = windowSize;
   const cols = Math.floor(width / (windowSize + gap));
   const startX = x + (width - (cols * windowSize + (cols - 1) * gap)) / 2;
-  
+
   const rows = Math.floor((height - gap) / (windowSize + gap));
   const startY = actualY + gap * 2;
 
@@ -194,7 +194,7 @@ const BuildingBarShape = (props: any) => {
   return (
     <g style={{ outline: 'none' }} className="focus:outline-none outline-none">
       {/* Roof */}
-      <path d={`M${x+width*0.2},${actualY} L${x+width*0.2},${actualY-4} L${x+width*0.8},${actualY-4} L${x+width*0.8},${actualY} Z`} fill={fill} opacity={0.9} />
+      <path d={`M${x + width * 0.2},${actualY} L${x + width * 0.2},${actualY - 4} L${x + width * 0.8},${actualY - 4} L${x + width * 0.8},${actualY} Z`} fill={fill} opacity={0.9} />
       {/* Body */}
       <rect x={x} y={actualY} width={width} height={height} fill={fill} rx={2} />
       {/* Windows */}
@@ -204,77 +204,77 @@ const BuildingBarShape = (props: any) => {
 };
 
 const BUILDING_COLORS = [
-  { 
+  {
     bg: 'bg-blue-100', border: 'border-blue-400', text: 'text-blue-700', top: 'bg-blue-500/20',
     doorBg: 'bg-blue-600', doorBorder: 'border-blue-800', doorInner: 'bg-blue-200',
     btnBg: 'bg-blue-600/30 hover:bg-blue-600', btnActive: 'bg-blue-600 text-white ring-2 ring-blue-400',
     modalBorder: 'border-blue-300', modalAccent: 'text-blue-600', sliderAccent: 'accent-blue-600',
     btnSideActive: 'bg-blue-600 text-white', badgeBg: 'bg-blue-50 text-blue-700 border-blue-200'
   },
-  { 
+  {
     bg: 'bg-amber-100', border: 'border-amber-400', text: 'text-amber-700', top: 'bg-amber-500/20',
     doorBg: 'bg-amber-600', doorBorder: 'border-amber-800', doorInner: 'bg-amber-200',
     btnBg: 'bg-amber-600/30 hover:bg-amber-600', btnActive: 'bg-amber-600 text-white ring-2 ring-amber-400',
     modalBorder: 'border-amber-300', modalAccent: 'text-amber-600', sliderAccent: 'accent-amber-600',
     btnSideActive: 'bg-amber-600 text-white', badgeBg: 'bg-amber-50 text-amber-700 border-amber-200'
   },
-  { 
+  {
     bg: 'bg-rose-100', border: 'border-rose-400', text: 'text-rose-700', top: 'bg-rose-500/20',
     doorBg: 'bg-rose-600', doorBorder: 'border-rose-800', doorInner: 'bg-rose-200',
     btnBg: 'bg-rose-600/30 hover:bg-rose-600', btnActive: 'bg-rose-600 text-white ring-2 ring-rose-400',
     modalBorder: 'border-rose-300', modalAccent: 'text-rose-600', sliderAccent: 'accent-rose-600',
     btnSideActive: 'bg-rose-600 text-white', badgeBg: 'bg-rose-50 text-rose-700 border-rose-200'
   },
-  { 
+  {
     bg: 'bg-purple-100', border: 'border-purple-400', text: 'text-purple-700', top: 'bg-purple-500/20',
     doorBg: 'bg-purple-600', doorBorder: 'border-purple-800', doorInner: 'bg-purple-200',
     btnBg: 'bg-purple-600/30 hover:bg-purple-600', btnActive: 'bg-purple-600 text-white ring-2 ring-purple-400',
     modalBorder: 'border-purple-300', modalAccent: 'text-purple-600', sliderAccent: 'accent-purple-600',
     btnSideActive: 'bg-purple-600 text-white', badgeBg: 'bg-purple-50 text-purple-700 border-purple-200'
   },
-  { 
+  {
     bg: 'bg-emerald-100', border: 'border-emerald-400', text: 'text-emerald-700', top: 'bg-emerald-500/20',
     doorBg: 'bg-emerald-600', doorBorder: 'border-emerald-800', doorInner: 'bg-emerald-200',
     btnBg: 'bg-emerald-600/30 hover:bg-emerald-600', btnActive: 'bg-emerald-600 text-white ring-2 ring-emerald-400',
     modalBorder: 'border-emerald-300', modalAccent: 'text-emerald-600', sliderAccent: 'accent-emerald-600',
     btnSideActive: 'bg-emerald-600 text-white', badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200'
   },
-  { 
+  {
     bg: 'bg-cyan-100', border: 'border-cyan-400', text: 'text-cyan-700', top: 'bg-cyan-500/20',
     doorBg: 'bg-cyan-600', doorBorder: 'border-cyan-800', doorInner: 'bg-cyan-200',
     btnBg: 'bg-cyan-600/30 hover:bg-cyan-600', btnActive: 'bg-cyan-600 text-white ring-2 ring-cyan-400',
     modalBorder: 'border-cyan-300', modalAccent: 'text-cyan-600', sliderAccent: 'accent-cyan-600',
     btnSideActive: 'bg-cyan-600 text-white', badgeBg: 'bg-cyan-50 text-cyan-700 border-cyan-200'
   },
-  { 
+  {
     bg: 'bg-orange-100', border: 'border-orange-400', text: 'text-orange-700', top: 'bg-orange-500/20',
     doorBg: 'bg-orange-600', doorBorder: 'border-orange-800', doorInner: 'bg-orange-200',
     btnBg: 'bg-orange-600/30 hover:bg-orange-600', btnActive: 'bg-orange-600 text-white ring-2 ring-orange-400',
     modalBorder: 'border-orange-300', modalAccent: 'text-orange-600', sliderAccent: 'accent-orange-600',
     btnSideActive: 'bg-orange-600 text-white', badgeBg: 'bg-orange-50 text-orange-700 border-orange-200'
   },
-  { 
+  {
     bg: 'bg-indigo-100', border: 'border-indigo-400', text: 'text-indigo-700', top: 'bg-indigo-500/20',
     doorBg: 'bg-indigo-600', doorBorder: 'border-indigo-800', doorInner: 'bg-indigo-200',
     btnBg: 'bg-indigo-600/30 hover:bg-indigo-600', btnActive: 'bg-indigo-600 text-white ring-2 ring-indigo-400',
     modalBorder: 'border-indigo-300', modalAccent: 'text-indigo-600', sliderAccent: 'accent-indigo-600',
     btnSideActive: 'bg-indigo-600 text-white', badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200'
   },
-  { 
+  {
     bg: 'bg-pink-100', border: 'border-pink-400', text: 'text-pink-700', top: 'bg-pink-500/20',
     doorBg: 'bg-pink-600', doorBorder: 'border-pink-800', doorInner: 'bg-pink-200',
     btnBg: 'bg-pink-600/30 hover:bg-pink-600', btnActive: 'bg-pink-600 text-white ring-2 ring-pink-400',
     modalBorder: 'border-pink-300', modalAccent: 'text-pink-600', sliderAccent: 'accent-pink-600',
     btnSideActive: 'bg-pink-600 text-white', badgeBg: 'bg-pink-50 text-pink-700 border-pink-200'
   },
-  { 
+  {
     bg: 'bg-slate-800', border: 'border-slate-950', text: 'text-slate-900', top: 'bg-slate-700/40',
     doorBg: 'bg-slate-600', doorBorder: 'border-slate-400', doorInner: 'bg-slate-200',
     btnBg: 'bg-slate-700/50 hover:bg-slate-700', btnActive: 'bg-slate-900 text-white ring-2 ring-slate-400',
     modalBorder: 'border-slate-700', modalAccent: 'text-slate-700', sliderAccent: 'accent-slate-800',
     btnSideActive: 'bg-slate-800 text-white font-black', badgeBg: 'bg-slate-100 text-slate-900 border-slate-300'
   },
-  { 
+  {
     bg: 'bg-[#f4f1ea]', border: 'border-[#c8c0b0]', text: 'text-[#4a4438]', top: 'bg-stone-400/20',
     doorBg: 'bg-[#5c5446]', doorBorder: 'border-[#3d372e]', doorInner: 'bg-[#e8e2d5]',
     btnBg: 'bg-[#5c5446]/30 hover:bg-[#5c5446]', btnActive: 'bg-[#5c5446] text-white ring-2 ring-[#a89d89]',
@@ -301,7 +301,7 @@ const getBuildingEntranceCoord = (mb: MapBuilding, offsetRatio: number = 0) => {
   const side: EntranceSide = mb.entranceSide || 'bottom';
   const sizeRatio = ((mb.entranceSize ?? 40) / 100);
   const posRatio = ((mb.entrancePosition ?? 50) / 100);
-  
+
   let x = mb.x;
   let y = mb.y;
 
@@ -340,8 +340,8 @@ const isPointInBox = (p: { x: number, y: number }, box: { xmin: number, xmax: nu
   return p.x >= box.xmin && p.x <= box.xmax && p.y >= box.ymin && p.y <= box.ymax;
 };
 
-const lineIntersectsSegment = (p1: {x:number, y:number}, p2: {x:number, y:number}, p3: {x:number, y:number}, p4: {x:number, y:number}) => {
-  const ccw = (A: {x:number, y:number}, B: {x:number, y:number}, C: {x:number, y:number}) => {
+const lineIntersectsSegment = (p1: { x: number, y: number }, p2: { x: number, y: number }, p3: { x: number, y: number }, p4: { x: number, y: number }) => {
+  const ccw = (A: { x: number, y: number }, B: { x: number, y: number }, C: { x: number, y: number }) => {
     return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
   };
   return (ccw(p1, p3, p4) !== ccw(p2, p3, p4)) && (ccw(p1, p2, p3) !== ccw(p1, p2, p4));
@@ -356,9 +356,9 @@ const lineIntersectsBox = (p1: { x: number, y: number }, p2: { x: number, y: num
   const c4 = { x: box.xmin, y: box.ymax };
 
   return lineIntersectsSegment(p1, p2, c1, c2) ||
-         lineIntersectsSegment(p1, p2, c2, c3) ||
-         lineIntersectsSegment(p1, p2, c3, c4) ||
-         lineIntersectsSegment(p1, p2, c4, c1);
+    lineIntersectsSegment(p1, p2, c2, c3) ||
+    lineIntersectsSegment(p1, p2, c3, c4) ||
+    lineIntersectsSegment(p1, p2, c4, c1);
 };
 
 type Pt = { x: number; y: number };
@@ -510,22 +510,22 @@ const findWalkablePath = (
 
 const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: MapData | null }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [resizingId, setResizingId] = useState<string | null>(null);
   const [editingEntranceBldgId, setEditingEntranceBldgId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [resizeAnchor, setResizeAnchor] = useState({ x: 0, y: 0 });
-  
+
   const [pointerPos, setPointerPos] = useState({ x: 0, y: 0 });
   const [hoveredBldgId, setHoveredBldgId] = useState<string | null>(null);
-  
+
   const [localMapBuildings, setLocalMapBuildings] = useState<MapBuilding[]>([]);
   const [travelers, setTravelers] = useState<{ id: number, startBldgId: string, endBldgId: string, delay: number, color: string, startOffset: number, endOffset: number, outdoorStops: Pt[] }[]>([]);
 
   useEffect(() => {
     if (localMapBuildings.length < 2) return;
-    
+
     // Generate travelers that walk between buildings through doors
     // ~40% take outdoor detours through random campus waypoints
     const count = Math.min(30, localMapBuildings.length * 5);
@@ -533,7 +533,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
       const b1 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
       let b2 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
       while (b2 === b1) b2 = localMapBuildings[Math.floor(Math.random() * localMapBuildings.length)];
-      
+
       // Some travelers wander through outdoor points before reaching destination
       // ~34% direct, ~33% one stop, ~33% two stops
       const outdoorStops: Pt[] = [];
@@ -561,12 +561,12 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
 
   useEffect(() => {
     const savedBuildings = mapData?.type === 'freeform' ? mapData.buildings || [] : [];
-    
+
     // Ensure all DB buildings exist in local state
     const syncedBuildings = buildings.map((b, i) => {
       const existing = savedBuildings.find(sb => sb.buildingId === b.id);
       if (existing) return existing;
-      
+
       // Default spawn position for unplaced buildings (stack them or jitter)
       const w = 12;
       const h = 15;
@@ -574,17 +574,17 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
       const halfH = h / 2;
       const spawnX = Math.max(halfW, Math.min(100 - halfW, 10 + (i * 2 % 80)));
       const spawnY = Math.max(halfH, Math.min(100 - halfH, 10 + (i * 2 % 80)));
-      
+
       return {
-        id: b.id, 
+        id: b.id,
         buildingId: b.id,
-        x: spawnX, 
+        x: spawnX,
         y: spawnY,
         w,
         h
       };
     });
-    
+
     setLocalMapBuildings(syncedBuildings);
   }, [buildings, mapData]);
 
@@ -634,7 +634,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
 
     for (const other of localMapBuildings) {
       if (other.buildingId === skipId) continue;
-      
+
       const ow = other.w || 12;
       const oh = other.h || 15;
       const leftB = other.x - ow / 2;
@@ -643,7 +643,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
       const bottomB = other.y + oh / 2;
 
       const margin = 0.1;
-      
+
       if (
         leftA < rightB - margin &&
         rightA > leftB + margin &&
@@ -659,44 +659,44 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
   const handlePointerMove = (e: React.PointerEvent) => {
     const coords = getPointerCoords(e);
     setPointerPos(coords);
-    
+
     if (draggingId) {
       const targetX = coords.x + dragOffset.x;
       const targetY = coords.y + dragOffset.y;
-      
+
       setLocalMapBuildings(prev => prev.map(b => {
         if (b.buildingId === draggingId) {
           const halfW = (b.w || 12) / 2;
           const halfH = (b.h || 15) / 2;
-          
+
           let clampedX = Math.max(halfW, Math.min(100 - halfW, targetX));
           let clampedY = Math.max(halfH, Math.min(100 - halfH, targetY));
-          
+
           // 1. Direct teleport check: if the absolute target is totally free, jump there immediately!
           if (!checkCollision(clampedX, clampedY, b.w || 12, b.h || 15, b.buildingId)) {
-             return { ...b, x: clampedX, y: clampedY };
+            return { ...b, x: clampedX, y: clampedY };
           }
-          
+
           // 2. Fallback to sliding against walls
           let finalX = b.x;
           let finalY = b.y;
-          
+
           const canMoveX = !checkCollision(clampedX, b.y, b.w || 12, b.h || 15, b.buildingId);
           const canMoveY = !checkCollision(b.x, clampedY, b.w || 12, b.h || 15, b.buildingId);
-          
+
           if (canMoveX && canMoveY) {
-             // Blocked diagonally by a corner, pick dominant axis
-             if (Math.abs(clampedX - b.x) > Math.abs(clampedY - b.y)) {
-                finalX = clampedX;
-             } else {
-                finalY = clampedY;
-             }
+            // Blocked diagonally by a corner, pick dominant axis
+            if (Math.abs(clampedX - b.x) > Math.abs(clampedY - b.y)) {
+              finalX = clampedX;
+            } else {
+              finalY = clampedY;
+            }
           } else if (canMoveX) {
-             finalX = clampedX;
+            finalX = clampedX;
           } else if (canMoveY) {
-             finalY = clampedY;
+            finalY = clampedY;
           }
-          
+
           return { ...b, x: finalX, y: finalY };
         }
         return b;
@@ -707,23 +707,23 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         if (b.buildingId === resizingId) {
           let newW = Math.max(3, Math.min(x - resizeAnchor.x, 100 - resizeAnchor.x));
           let newH = Math.max(3, Math.min(y - resizeAnchor.y, 100 - resizeAnchor.y));
-          
+
           let testW = newW;
           let testX = resizeAnchor.x + testW / 2;
-          
+
           if (checkCollision(testX, b.y, testW, b.h || 15, b.buildingId)) {
-             testW = b.w || 12;
-             testX = b.x;
+            testW = b.w || 12;
+            testX = b.x;
           }
 
           let testH = newH;
           let testY = resizeAnchor.y + testH / 2;
-          
+
           if (checkCollision(testX, testY, testW, testH, b.buildingId)) {
-             testH = b.h || 15;
-             testY = b.y;
+            testH = b.h || 15;
+            testY = b.y;
           }
-          
+
           return { ...b, x: testX, y: testY, w: testW, h: testH };
         }
         return b;
@@ -742,7 +742,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
   };
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="relative w-full aspect-[16/9] bg-[#f3f7ee] rounded-xl border border-emerald-200/80 shadow-[inset_0_2px_8px_rgba(0,0,0,0.06),0_4px_16px_rgba(0,0,0,0.05)] select-none touch-none @container"
       onPointerMove={handlePointerMove}
@@ -752,7 +752,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
       {/* Background Texture Container (Clipped to Rounded Card Corners) */}
       <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none z-0">
         {/* Rich Campus Blueprint & Lawn Ground Texture Overlay */}
-        <div 
+        <div
           className="absolute inset-0 opacity-85"
           style={{
             backgroundImage: `
@@ -767,8 +767,8 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
           }}
         />
         {/* Perimeter Vignette Depth Layer */}
-        <div 
-          className="absolute inset-0 shadow-[inset_0_0_50px_rgba(41,54,28,0.12),inset_0_0_15px_rgba(0,0,0,0.06)]" 
+        <div
+          className="absolute inset-0 shadow-[inset_0_0_50px_rgba(41,54,28,0.12),inset_0_0_15px_rgba(0,0,0,0.06)]"
         />
       </div>
 
@@ -802,169 +802,167 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         return kf;
       }).join('')}</style>
       <div className="absolute inset-0 overflow-hidden rounded-xl">
-      
-      {/* Travelers walking between buildings via obstacle-free paths */}
-      <div className={`absolute inset-0 pointer-events-none transition-opacity duration-200 ${draggingId || resizingId ? 'opacity-0' : 'opacity-100'}`}>
-        {travelers.map(t => {
-          const startBldg = localMapBuildings.find(b => b.buildingId === t.startBldgId);
-          const endBldg = localMapBuildings.find(b => b.buildingId === t.endBldgId);
-          if (!startBldg || !endBldg) return null;
-          const path = findWalkablePath(startBldg, endBldg, t.startOffset, t.endOffset, localMapBuildings, t.outdoorStops);
-          if (path.length < 2) return null;
 
-          // Duration proportional to path length for consistent walk speed
-          let totalDist = 0;
-          for (let i = 1; i < path.length; i++) totalDist += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
-          const duration = Math.max(6, totalDist / 4);
+        {/* Travelers walking between buildings via obstacle-free paths */}
+        <div className={`absolute inset-0 pointer-events-none transition-opacity duration-200 ${draggingId || resizingId ? 'opacity-0' : 'opacity-100'}`}>
+          {travelers.map(t => {
+            const startBldg = localMapBuildings.find(b => b.buildingId === t.startBldgId);
+            const endBldg = localMapBuildings.find(b => b.buildingId === t.endBldgId);
+            if (!startBldg || !endBldg) return null;
+            const path = findWalkablePath(startBldg, endBldg, t.startOffset, t.endOffset, localMapBuildings, t.outdoorStops);
+            if (path.length < 2) return null;
+
+            // Duration proportional to path length for consistent walk speed
+            let totalDist = 0;
+            for (let i = 1; i < path.length; i++) totalDist += Math.hypot(path[i].x - path[i - 1].x, path[i].y - path[i - 1].y);
+            const duration = Math.max(6, totalDist / 4);
+
+            return (
+              <div
+                key={t.id}
+                className={`absolute w-1.5 h-1.5 rounded-full ${t.color} z-0 shadow-sm pointer-events-none`}
+                style={{
+                  animationName: `trav_${t.id}`,
+                  animationDuration: `${duration}s`,
+                  animationTimingFunction: 'linear',
+                  animationIterationCount: 'infinite',
+                  animationDirection: 'alternate',
+                  animationDelay: `${t.delay}s`
+                }}
+              />
+            );
+          })}
+        </div>
+
+        {/* Buildings */}
+        {localMapBuildings.map(mb => {
+          const b = buildings.find(x => x.id === mb.buildingId);
+          if (!b) return null;
+
+          const w = mb.w || 12;
+          const h = mb.h || 15;
+          const isDragging = draggingId === mb.buildingId;
+          const isResizing = resizingId === mb.buildingId;
+          const color = getBuildingColor(mb);
+
+          const side = mb.entranceSide || 'bottom';
+          const entSize = mb.entranceSize || 40;
+          const entPos = mb.entrancePosition ?? 50;
+          const offsetPct = (entPos / 100) * (100 - entSize);
 
           return (
-            <div 
-              key={t.id}
-              className={`absolute w-1.5 h-1.5 rounded-full ${t.color} z-0 shadow-sm pointer-events-none`}
+            <div
+              key={mb.buildingId}
+              onPointerDown={(e) => handlePointerDown(e, mb.buildingId, false)}
+              onPointerEnter={() => setHoveredBldgId(mb.buildingId)}
+              onPointerLeave={() => setHoveredBldgId(null)}
+              className={`absolute z-10 flex flex-col items-center justify-center ${color.bg} border-2 ${color.border} rounded-lg shadow-[3px_4px_10px_rgba(0,0,0,0.18)] group/bldg pointer-events-auto ${isDragging || isResizing
+                ? 'transition-none shadow-2xl z-50 cursor-grabbing scale-[1.03]'
+                : 'transition-shadow duration-150 hover:shadow-xl hover:z-50 cursor-grab'
+                }`}
               style={{
-                animationName: `trav_${t.id}`,
-                animationDuration: `${duration}s`,
-                animationTimingFunction: 'linear',
-                animationIterationCount: 'infinite',
-                animationDirection: 'alternate',
-                animationDelay: `${t.delay}s`
+                top: `${mb.y}%`,
+                left: `${mb.x}%`,
+                width: `${w}%`,
+                height: `${h}%`,
+                transform: 'translate(-50%, -50%)',
+                willChange: isDragging || isResizing ? 'top, left, width, height' : 'auto'
               }}
-            />
-          );
+            >
+              {/* Visual Entrance Doorway Cutout Threshold */}
+              {side === 'bottom' && (
+                <div
+                  className={`absolute -bottom-[2px] ${color.doorBg} border-t border-x ${color.doorBorder} rounded-t-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
+                  style={{ left: `${offsetPct}%`, width: `${entSize}%`, height: '5px' }}
+                >
+                  <div className={`w-1/2 h-[1px] ${color.doorInner} rounded-full`} />
+                </div>
+              )}
+              {side === 'top' && (
+                <div
+                  className={`absolute -top-[2px] ${color.doorBg} border-b border-x ${color.doorBorder} rounded-b-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
+                  style={{ left: `${offsetPct}%`, width: `${entSize}%`, height: '5px' }}
+                >
+                  <div className={`w-1/2 h-[1px] ${color.doorInner} rounded-full`} />
+                </div>
+              )}
+              {side === 'left' && (
+                <div
+                  className={`absolute -left-[2px] ${color.doorBg} border-r border-y ${color.doorBorder} rounded-r-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
+                  style={{ top: `${offsetPct}%`, height: `${entSize}%`, width: '5px' }}
+                >
+                  <div className={`h-1/2 w-[1px] ${color.doorInner} rounded-full`} />
+                </div>
+              )}
+              {side === 'right' && (
+                <div
+                  className={`absolute -right-[2px] ${color.doorBg} border-l border-y ${color.doorBorder} rounded-l-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
+                  style={{ top: `${offsetPct}%`, height: `${entSize}%`, width: '5px' }}
+                >
+                  <div className={`h-1/2 w-[1px] ${color.doorInner} rounded-full`} />
+                </div>
+              )}
+
+              {/* Top-Down Roof Deck Surface */}
+              <div className="absolute inset-[3px] rounded-[5px] border border-black/10 bg-white/20 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.12)] pointer-events-none flex flex-col items-center justify-center overflow-hidden">
+                {/* Roof Architectural Hatch Grid Pattern */}
+                <div
+                  className="absolute inset-0 opacity-20 pointer-events-none"
+                  style={{
+                    backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px)',
+                    backgroundSize: '8px 8px'
+                  }}
+                />
+
+                {/* Rooftop Penthouse / HVAC Mechanical Unit */}
+                <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-black/10 border border-black/20 rounded-[1px] shadow-[inset_0_0_2px_rgba(0,0,0,0.2)] pointer-events-none flex items-center justify-center">
+                  <div className="w-1 h-1 bg-black/20 rounded-full" />
+                </div>
+
+                {/* Secondary Vent Unit */}
+                <div className="absolute bottom-1 left-1 w-2 h-2 bg-black/10 border border-black/15 rounded-[1px] pointer-events-none" />
+
+                {/* Building Code Roof Plaque */}
+                <div className="relative z-10 px-1 py-0.5 rounded bg-white/90 shadow-sm border border-slate-200/80 flex items-center justify-center max-w-[85%]">
+                  <span
+                    className={`font-black ${color.text} uppercase line-clamp-1 break-all text-center leading-none pointer-events-none tracking-tight`}
+                    style={{ fontSize: `max(0.42rem, ${Math.min(w, h * 1.77) * 0.18}cqw)` }}
+                  >
+                    {b.code || b.name.substring(0, 3)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Building Settings Trigger Button */}
+              <button
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setEditingEntranceBldgId(prev => prev === mb.buildingId ? null : mb.buildingId);
+                }}
+                className={`absolute top-1 left-1 w-4 h-4 rounded transition-all flex items-center justify-center z-40 shadow-sm ${editingEntranceBldgId === mb.buildingId
+                  ? `${color.btnActive} opacity-100 pointer-events-auto`
+                  : `opacity-0 group-hover/bldg:opacity-100 ${color.btnBg} text-slate-900 hover:text-white pointer-events-none group-hover/bldg:pointer-events-auto`
+                  }`}
+                title="Configure Building Settings & Entrance"
+              >
+                <SettingsIcon className="w-2.5 h-2.5" />
+              </button>
+
+              {/* Resize Handle */}
+              <div
+                className="absolute bottom-0 right-0 w-4 h-4 bg-white/80 cursor-se-resize rounded-tl-md rounded-br-sm border-t border-l border-slate-300 opacity-0 group-hover/bldg:opacity-100 z-50 flex items-center justify-center transition-opacity shadow-sm"
+                onPointerDown={(e) => handlePointerDown(e, mb.buildingId, true)}
+              >
+                <svg className="w-2.5 h-2.5 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              </div>
+            </div>
+          )
         })}
       </div>
 
-      {/* Buildings */}
-      {localMapBuildings.map(mb => {
-        const b = buildings.find(x => x.id === mb.buildingId);
-        if (!b) return null;
-        
-        const w = mb.w || 12;
-        const h = mb.h || 15;
-        const isDragging = draggingId === mb.buildingId;
-        const isResizing = resizingId === mb.buildingId;
-        const color = getBuildingColor(mb);
-        
-        const side = mb.entranceSide || 'bottom';
-        const entSize = mb.entranceSize || 40;
-        const entPos = mb.entrancePosition ?? 50;
-        const offsetPct = (entPos / 100) * (100 - entSize);
-
-        return (
-          <div
-            key={mb.buildingId}
-            onPointerDown={(e) => handlePointerDown(e, mb.buildingId, false)}
-            onPointerEnter={() => setHoveredBldgId(mb.buildingId)}
-            onPointerLeave={() => setHoveredBldgId(null)}
-            className={`absolute z-10 flex flex-col items-center justify-center ${color.bg} border-2 ${color.border} rounded-lg shadow-[3px_4px_10px_rgba(0,0,0,0.18)] group/bldg pointer-events-auto ${
-              isDragging || isResizing 
-                ? 'transition-none shadow-2xl z-50 cursor-grabbing scale-[1.03]' 
-                : 'transition-shadow duration-150 hover:shadow-xl hover:z-50 cursor-grab'
-            }`}
-            style={{ 
-              top: `${mb.y}%`, 
-              left: `${mb.x}%`,
-              width: `${w}%`,
-              height: `${h}%`,
-              transform: 'translate(-50%, -50%)',
-              willChange: isDragging || isResizing ? 'top, left, width, height' : 'auto'
-            }}
-          >
-            {/* Visual Entrance Doorway Cutout Threshold */}
-            {side === 'bottom' && (
-              <div 
-                className={`absolute -bottom-[2px] ${color.doorBg} border-t border-x ${color.doorBorder} rounded-t-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
-                style={{ left: `${offsetPct}%`, width: `${entSize}%`, height: '5px' }}
-              >
-                <div className={`w-1/2 h-[1px] ${color.doorInner} rounded-full`} />
-              </div>
-            )}
-            {side === 'top' && (
-              <div 
-                className={`absolute -top-[2px] ${color.doorBg} border-b border-x ${color.doorBorder} rounded-b-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
-                style={{ left: `${offsetPct}%`, width: `${entSize}%`, height: '5px' }}
-              >
-                <div className={`w-1/2 h-[1px] ${color.doorInner} rounded-full`} />
-              </div>
-            )}
-            {side === 'left' && (
-              <div 
-                className={`absolute -left-[2px] ${color.doorBg} border-r border-y ${color.doorBorder} rounded-r-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
-                style={{ top: `${offsetPct}%`, height: `${entSize}%`, width: '5px' }}
-              >
-                <div className={`h-1/2 w-[1px] ${color.doorInner} rounded-full`} />
-              </div>
-            )}
-            {side === 'right' && (
-              <div 
-                className={`absolute -right-[2px] ${color.doorBg} border-l border-y ${color.doorBorder} rounded-l-[3px] shadow-sm z-30 flex items-center justify-center pointer-events-none`}
-                style={{ top: `${offsetPct}%`, height: `${entSize}%`, width: '5px' }}
-              >
-                <div className={`h-1/2 w-[1px] ${color.doorInner} rounded-full`} />
-              </div>
-            )}
-
-            {/* Top-Down Roof Deck Surface */}
-            <div className="absolute inset-[3px] rounded-[5px] border border-black/10 bg-white/20 shadow-[inset_0_1px_2px_rgba(255,255,255,0.8),inset_0_-2px_4px_rgba(0,0,0,0.12)] pointer-events-none flex flex-col items-center justify-center overflow-hidden">
-              {/* Roof Architectural Hatch Grid Pattern */}
-              <div 
-                className="absolute inset-0 opacity-20 pointer-events-none"
-                style={{
-                  backgroundImage: 'linear-gradient(0deg, rgba(0,0,0,0.15) 1px, transparent 1px), linear-gradient(90deg, rgba(0,0,0,0.15) 1px, transparent 1px)',
-                  backgroundSize: '8px 8px'
-                }}
-              />
-              
-              {/* Rooftop Penthouse / HVAC Mechanical Unit */}
-              <div className="absolute top-1 right-1 w-2.5 h-2.5 bg-black/10 border border-black/20 rounded-[1px] shadow-[inset_0_0_2px_rgba(0,0,0,0.2)] pointer-events-none flex items-center justify-center">
-                <div className="w-1 h-1 bg-black/20 rounded-full" />
-              </div>
-              
-              {/* Secondary Vent Unit */}
-              <div className="absolute bottom-1 left-1 w-2 h-2 bg-black/10 border border-black/15 rounded-[1px] pointer-events-none" />
-
-              {/* Building Code Roof Plaque */}
-              <div className="relative z-10 px-1 py-0.5 rounded bg-white/90 shadow-sm border border-slate-200/80 flex items-center justify-center max-w-[85%]">
-                <span 
-                  className={`font-black ${color.text} uppercase line-clamp-1 break-all text-center leading-none pointer-events-none tracking-tight`}
-                  style={{ fontSize: `max(0.42rem, ${Math.min(w, h * 1.77) * 0.18}cqw)` }}
-                >
-                  {b.code || b.name.substring(0,3)}
-                </span>
-              </div>
-            </div>
-
-            {/* Building Settings Trigger Button */}
-            <button
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditingEntranceBldgId(prev => prev === mb.buildingId ? null : mb.buildingId);
-              }}
-              className={`absolute top-1 left-1 w-4 h-4 rounded transition-all flex items-center justify-center z-40 shadow-sm ${
-                editingEntranceBldgId === mb.buildingId
-                  ? `${color.btnActive} opacity-100 pointer-events-auto`
-                  : `opacity-0 group-hover/bldg:opacity-100 ${color.btnBg} text-slate-900 hover:text-white pointer-events-none group-hover/bldg:pointer-events-auto`
-              }`}
-              title="Configure Building Settings & Entrance"
-            >
-              <SettingsIcon className="w-2.5 h-2.5" />
-            </button>
-
-            {/* Resize Handle */}
-            <div 
-              className="absolute bottom-0 right-0 w-4 h-4 bg-white/80 cursor-se-resize rounded-tl-md rounded-br-sm border-t border-l border-slate-300 opacity-0 group-hover/bldg:opacity-100 z-50 flex items-center justify-center transition-opacity shadow-sm"
-              onPointerDown={(e) => handlePointerDown(e, mb.buildingId, true)}
-            >
-               <svg className="w-2.5 h-2.5 text-slate-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
-               </svg>
-            </div>
-          </div>
-        )
-      })}
-      </div>
-      
       {/* Floating Building Settings Config Modal */}
       {editingEntranceBldgId && (() => {
         const targetBldg = localMapBuildings.find(b => b.buildingId === editingEntranceBldgId);
@@ -977,12 +975,12 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
         const currentPos = targetBldg.entrancePosition ?? 50;
 
         const isNearBottom = targetBldg.y > 55;
-        const modalTopY = isNearBottom 
-          ? targetBldg.y - (targetBldg.h || 15) / 2 - 1.5 
+        const modalTopY = isNearBottom
+          ? targetBldg.y - (targetBldg.h || 15) / 2 - 1.5
           : targetBldg.y + (targetBldg.h || 15) / 2 + 1.5;
 
         return (
-          <div 
+          <div
             className={`absolute z-[90] bg-white/95 backdrop-blur-md rounded-xl shadow-2xl border ${targetColor.modalBorder} p-3 w-64 pointer-events-auto transition-all select-none`}
             style={{
               left: `${targetBldg.x}%`,
@@ -997,7 +995,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
                   {targetInfo?.code || targetInfo?.name} Settings
                 </span>
               </div>
-              <button 
+              <button
                 onClick={() => setEditingEntranceBldgId(null)}
                 className="text-slate-400 hover:text-slate-700 text-xs font-bold leading-none p-1 rounded hover:bg-slate-100"
               >
@@ -1014,7 +1012,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
                 {BUILDING_COLORS.map((c, idx) => {
                   const defaultIdx = Math.abs(targetBldg.buildingId.split('').reduce((acc, char) => char.charCodeAt(0) + ((acc << 5) - acc), 0)) % BUILDING_COLORS.length;
                   const isSelected = (targetBldg.colorIndex ?? defaultIdx) === idx;
-                  
+
                   return (
                     <button
                       key={idx}
@@ -1023,9 +1021,8 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
                         setLocalMapBuildings(updated);
                         saveToFirestore(updated);
                       }}
-                      className={`w-5 h-5 rounded-full ${c.bg} border-2 ${c.border} transition-all flex items-center justify-center ${
-                        isSelected ? 'ring-2 ring-slate-800 scale-110 shadow-sm' : 'hover:scale-105 opacity-80 hover:opacity-100'
-                      }`}
+                      className={`w-5 h-5 rounded-full ${c.bg} border-2 ${c.border} transition-all flex items-center justify-center ${isSelected ? 'ring-2 ring-slate-800 scale-110 shadow-sm' : 'hover:scale-105 opacity-80 hover:opacity-100'
+                        }`}
                       title={`Theme Color ${idx + 1}`}
                     >
                       {isSelected && <div className={`w-1.5 h-1.5 rounded-full ${c.doorBg}`} />}
@@ -1045,7 +1042,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
                   const isSelected = currentSide === s;
                   const arrows: Record<EntranceSide, string> = { top: '↑', bottom: '↓', left: '←', right: '→' };
                   const titles: Record<EntranceSide, string> = { top: 'Top Side', bottom: 'Bottom Side', left: 'Left Side', right: 'Right Side' };
-                  
+
                   return (
                     <button
                       key={s}
@@ -1055,11 +1052,10 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
                         setLocalMapBuildings(updated);
                         saveToFirestore(updated);
                       }}
-                      className={`py-1 text-[0.8rem] font-black rounded transition-all flex items-center justify-center ${
-                        isSelected 
-                          ? targetColor.btnSideActive + ' shadow-sm scale-105' 
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                      }`}
+                      className={`py-1 text-[0.8rem] font-black rounded transition-all flex items-center justify-center ${isSelected
+                        ? targetColor.btnSideActive + ' shadow-sm scale-105'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                        }`}
                     >
                       {arrows[s]}
                     </button>
@@ -1078,7 +1074,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
                   {currentSize}%
                 </span>
               </div>
-              <input 
+              <input
                 type="range"
                 min="15"
                 max="85"
@@ -1108,7 +1104,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
                   {currentPos === 50 ? 'Center (50%)' : currentPos < 50 ? `Start (${currentPos}%)` : `End (${currentPos}%)`}
                 </span>
               </div>
-              <input 
+              <input
                 type="range"
                 min="0"
                 max="100"
@@ -1130,7 +1126,7 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
           </div>
         );
       })()}
-      
+
       {/* Total Badge */}
       <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
         <span className="text-sm font-black text-slate-800 leading-none">{buildings.length}</span>
@@ -1138,13 +1134,13 @@ const CampusMap = ({ buildings, mapData }: { buildings: Building[], mapData: Map
       </div>
       {/* Global Cursor-tracking Tooltip */}
       {hoveredBldgId && !draggingId && !resizingId && (
-        <div 
-           className="absolute z-[100] bg-slate-900 text-white text-xs sm:text-sm font-bold px-3 py-1.5 rounded-lg pointer-events-none whitespace-nowrap shadow-2xl border border-slate-700/60 transition-transform duration-75 ease-out"
-           style={{
-             left: `${pointerPos.x}%`,
-             top: `${pointerPos.y}%`,
-             transform: `translate(-${pointerPos.x}%, ${pointerPos.y < 50 ? '15px' : 'calc(-100% - 15px)'})`
-           }}
+        <div
+          className="absolute z-[100] bg-slate-900 text-white text-xs sm:text-sm font-bold px-3 py-1.5 rounded-lg pointer-events-none whitespace-nowrap shadow-2xl border border-slate-700/60 transition-transform duration-75 ease-out"
+          style={{
+            left: `${pointerPos.x}%`,
+            top: `${pointerPos.y}%`,
+            transform: `translate(-${pointerPos.x}%, ${pointerPos.y < 50 ? '15px' : 'calc(-100% - 15px)'})`
+          }}
         >
           {buildings.find(b => b.id === hoveredBldgId)?.name}
         </div>
@@ -1159,12 +1155,12 @@ function BuildingsRoomsPage() {
   const [buildings, setBuildings] = useState<Building[]>([])
   const [waterKey, setWaterKey] = useState(0)
   const [dismissedJars, setDismissedJars] = useState<Set<number>>(new Set())
-  const [jars, setJars] = useState<Array<{id: number, position: number, fillStatus: 'empty'|'filling'|'full'|'labeled', buildingIndex: number, liquidType?: LiquidType}>>(() => {
+  const [jars, setJars] = useState<Array<{ id: number, position: number, fillStatus: 'empty' | 'filling' | 'full' | 'labeled', buildingIndex: number, liquidType?: LiquidType }>>(() => {
     const saved = sessionStorage.getItem('rorms-jars');
     if (saved) {
       let parsed = JSON.parse(saved);
       let needsShift = false;
-      
+
       parsed = parsed.map((j: any) => {
         if (j.fillStatus === 'filling') return { ...j, fillStatus: 'full' }; // instantly finish filling
         if (j.fillStatus === 'labeled' && j.position === 0) {
@@ -1175,7 +1171,7 @@ function BuildingsRoomsPage() {
 
       if (needsShift) {
         parsed = parsed.map((j: any) => ({ ...j, position: j.position - 1 }));
-        
+
         let buildingIdx = 40;
         const savedIdx = sessionStorage.getItem('rorms-nextBuildingIndex');
         if (savedIdx) buildingIdx = parseInt(savedIdx, 10);
@@ -1186,11 +1182,11 @@ function BuildingsRoomsPage() {
           fillStatus: 'empty',
           buildingIndex: buildingIdx
         });
-        
+
         // Update sessionStorage so nextBuildingIndex initializes correctly on the next line
         sessionStorage.setItem('rorms-nextBuildingIndex', (buildingIdx + 1).toString());
       }
-      
+
       return parsed;
     }
     return Array.from({ length: 20 }).map((_, i) => ({
@@ -1200,18 +1196,18 @@ function BuildingsRoomsPage() {
       buildingIndex: i + 20
     }));
   });
-  
+
   const [nextBuildingIndex, setNextBuildingIndex] = useState(() => {
     const saved = sessionStorage.getItem('rorms-nextBuildingIndex');
     return saved ? parseInt(saved, 10) : 40;
   });
-  
+
   const [isJarsMoving, setIsJarsMoving] = useState(false);
   const [hoveredJarId, setHoveredJarId] = useState<number | null>(null);
   const [isHoveringTooltipBlock, setIsHoveringTooltipBlock] = useState(false);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoTimeoutsRef = useRef<{ fill?: ReturnType<typeof setTimeout>, move?: ReturnType<typeof setTimeout>, stop?: ReturnType<typeof setTimeout> }>({});
-  
+
   const [weatherData, setWeatherData] = useState<{ temp: number; code: number } | null>(null)
   const [timeOfDayOverride, setTimeOfDayOverride] = useState<TimeOfDay>('auto')
   const [moonPhaseOverride, setMoonPhaseOverride] = useState<MoonPhaseKey>('auto')
@@ -1232,14 +1228,14 @@ function BuildingsRoomsPage() {
   };
 
   const MOON_PHASE_SEQUENCE: MoonPhaseKey[] = [
-    'auto', 
-    'new', 
-    'waxing_crescent', 
-    'first_quarter', 
-    'waxing_gibbous', 
-    'full', 
-    'waning_gibbous', 
-    'last_quarter', 
+    'auto',
+    'new',
+    'waxing_crescent',
+    'first_quarter',
+    'waxing_gibbous',
+    'full',
+    'waning_gibbous',
+    'last_quarter',
     'waning_crescent'
   ];
 
@@ -1291,44 +1287,44 @@ function BuildingsRoomsPage() {
     if (!isAutoMode) {
       return;
     }
-    
+
     if (isJarsMoving) return;
 
     const centerJar = jars.find(j => j.position === 0);
     if (!centerJar) return;
 
     if (centerJar.fillStatus === 'empty') {
-      const actualLiquid: LiquidType = selectedLiquid === 'Random' 
+      const actualLiquid: LiquidType = selectedLiquid === 'Random'
         ? ['Water', 'Coffee', 'Blood', 'Mud', 'Slime'][Math.floor(Math.random() * 5)] as LiquidType
         : selectedLiquid as LiquidType;
 
       setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling', liquidType: actualLiquid } : j));
       setWaterKey(prev => prev + 1);
-      
+
       autoTimeoutsRef.current.fill = setTimeout(() => {
         setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'full' } : j));
       }, 13500);
-    } 
+    }
     else if (centerJar.fillStatus === 'full') {
       setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'labeled' } : j));
-      
+
       autoTimeoutsRef.current.move = setTimeout(() => {
         setIsJarsMoving(true);
         autoTimeoutsRef.current.stop = setTimeout(() => setIsJarsMoving(false), 2667);
-        
+
         const newId = Date.now() + Math.random();
         setJars(prev => {
           const nextJars = prev.map(j => ({ ...j, position: j.position - 1 }));
-          
-          nextJars.push({ 
-            id: newId, 
-            position: 19, 
+
+          nextJars.push({
+            id: newId,
+            position: 19,
             fillStatus: 'empty',
             buildingIndex: nextBuildingIndex
           });
-          
+
           setNextBuildingIndex(prev => prev + 1);
-          
+
           return nextJars.filter(j => j.position >= -15);
         });
       }, 1000);
@@ -1398,8 +1394,8 @@ function BuildingsRoomsPage() {
       const mergedBuildings = buildingsList.map(building => {
         const buildingRooms = roomsList.filter(room => room.buildingId === building.id)
         const capacity = buildingRooms.reduce((sum, room) => sum + (room.capacity || 0), 0)
-        const floor = buildingRooms.length > 0 
-          ? Math.max(...buildingRooms.map(room => room.floor || 0)) 
+        const floor = buildingRooms.length > 0
+          ? Math.max(...buildingRooms.map(room => room.floor || 0))
           : 0
 
         return {
@@ -1409,7 +1405,7 @@ function BuildingsRoomsPage() {
           capacity,
         }
       }) as Building[]
-      
+
       setBuildings(mergedBuildings)
       setRooms(roomsList)
 
@@ -1459,14 +1455,14 @@ function BuildingsRoomsPage() {
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [activeBuildingId, setActiveBuildingId] = useState<string | null>(null)
   const [roomModalStep, setRoomModalStep] = useState(1)
-  
+
   const [newRoomName, setNewRoomName] = useState('')
   const [newRoomCode, setNewRoomCode] = useState('')
   const [roomNamePrefix, setRoomNamePrefix] = useState('')
   const [roomCodePrefix, setRoomCodePrefix] = useState('')
   const [roomStartNumber, setRoomStartNumber] = useState('')
   const [roomEndNumber, setRoomEndNumber] = useState('')
-  const [newRoomType, setNewRoomType] = useState('Lecture Room')
+  const [newRoomType, setNewRoomType] = useState('Lecture')
   const [newRoomFloor, setNewRoomFloor] = useState<string>('1')
   const [newRoomCapacity, setNewRoomCapacity] = useState<string>('50')
   const [newRoomStatus, setNewRoomStatus] = useState<RoomStatus>('Available')
@@ -1530,7 +1526,7 @@ function BuildingsRoomsPage() {
   const handleRoomImageDrop = async (e: React.DragEvent) => {
     e.preventDefault()
     setIsDraggingRoomImage(false)
-    
+
     // Check for files
     const file = e.dataTransfer.files?.[0]
     if (file && file.type.startsWith('image/')) {
@@ -1545,10 +1541,10 @@ function BuildingsRoomsPage() {
     }
 
     // Check for dragged URL (e.g. from Google Images)
-    const imageUrl = e.dataTransfer.getData('text/uri-list') || 
-                   e.dataTransfer.getData('text/plain') ||
-                   e.dataTransfer.getData('url')
-    
+    const imageUrl = e.dataTransfer.getData('text/uri-list') ||
+      e.dataTransfer.getData('text/plain') ||
+      e.dataTransfer.getData('url')
+
     if (imageUrl && (imageUrl.startsWith('http') || imageUrl.startsWith('data:'))) {
       setCropModalData({ isOpen: true, imageSrc: imageUrl })
     }
@@ -1617,7 +1613,7 @@ function BuildingsRoomsPage() {
       setRoomCodePrefix('')
       setRoomStartNumber('')
       setRoomEndNumber('')
-      setNewRoomType('Lecture Room')
+      setNewRoomType('Lecture')
       setNewRoomFloor('1')
       setNewRoomCapacity('50')
       setNewRoomStatus('Available')
@@ -1677,7 +1673,7 @@ function BuildingsRoomsPage() {
     try {
       // Delete image from storage first
       await deleteImageFromStorage(roomToDelete.image)
-      
+
       await deleteDoc(doc(db, 'rooms', roomToDelete.id))
       handleCloseDeleteRoomModal()
     } catch (error) {
@@ -1710,15 +1706,15 @@ function BuildingsRoomsPage() {
       await Promise.all(buildingToDelete.rooms.map(room => deleteImageFromStorage(room.image)))
 
       const batch = writeBatch(db)
-      
+
       // Delete all rooms associated with the building
       buildingToDelete.rooms.forEach(room => {
         batch.delete(doc(db, 'rooms', room.id))
       })
-      
+
       // Delete the building itself
       batch.delete(doc(db, 'buildings', buildingToDelete.id))
-      
+
       await batch.commit()
       handleCloseDeleteBuildingModal()
     } catch (error) {
@@ -1740,12 +1736,12 @@ function BuildingsRoomsPage() {
     const normalizedName = newBuildingName.trim().toLowerCase()
     const normalizedCode = newBuildingCode.trim().toLowerCase()
 
-    const isDuplicateName = buildings.some(b => 
-      b.name.trim().toLowerCase() === normalizedName && 
+    const isDuplicateName = buildings.some(b =>
+      b.name.trim().toLowerCase() === normalizedName &&
       (!editingBuilding || b.id !== editingBuilding.id)
     )
-    const isDuplicateCode = buildings.some(b => 
-      b.code.trim().toLowerCase() === normalizedCode && 
+    const isDuplicateCode = buildings.some(b =>
+      b.code.trim().toLowerCase() === normalizedCode &&
       (!editingBuilding || b.id !== editingBuilding.id)
     )
 
@@ -1771,11 +1767,11 @@ function BuildingsRoomsPage() {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         })
-        
+
         // Close building modal first
         setIsBuildingModalOpen(false)
         setEditingBuilding(null)
-        
+
         // Automatically open room modal for the new building
         handleOpenRoomModal(docRef.id)
       }
@@ -1793,8 +1789,8 @@ function BuildingsRoomsPage() {
     if (roomModalStep === 1) {
       if (isMultipleRooms) {
         if (!roomNamePrefix.trim() || !roomCodePrefix.trim() || !roomStartNumber.trim() || !roomEndNumber.trim()) {
-          setErrors({ 
-            name: !roomNamePrefix.trim(), 
+          setErrors({
+            name: !roomNamePrefix.trim(),
             code: !roomCodePrefix.trim(),
             start: !roomStartNumber.trim(),
             end: !roomEndNumber.trim()
@@ -1813,12 +1809,12 @@ function BuildingsRoomsPage() {
           const targetName = `${roomNamePrefix}${currentNum}`.trim().toLowerCase()
           const targetCode = `${roomCodePrefix}${currentNum}`.trim().toLowerCase()
 
-          const isDuplicateName = rooms.some(r => 
-            r.name.trim().toLowerCase() === targetName && 
+          const isDuplicateName = rooms.some(r =>
+            r.name.trim().toLowerCase() === targetName &&
             (!editingRoom || r.id !== editingRoom.id)
           )
-          const isDuplicateCode = rooms.some(r => 
-            r.code.trim().toLowerCase() === targetCode && 
+          const isDuplicateCode = rooms.some(r =>
+            r.code.trim().toLowerCase() === targetCode &&
             (!editingRoom || r.id !== editingRoom.id)
           )
 
@@ -1837,12 +1833,12 @@ function BuildingsRoomsPage() {
         const normalizedName = newRoomName.trim().toLowerCase()
         const normalizedCode = newRoomCode.trim().toLowerCase()
 
-        const isDuplicateName = rooms.some(r => 
-          r.name.trim().toLowerCase() === normalizedName && 
+        const isDuplicateName = rooms.some(r =>
+          r.name.trim().toLowerCase() === normalizedName &&
           (!editingRoom || r.id !== editingRoom.id)
         )
-        const isDuplicateCode = rooms.some(r => 
-          r.code.trim().toLowerCase() === normalizedCode && 
+        const isDuplicateCode = rooms.some(r =>
+          r.code.trim().toLowerCase() === normalizedCode &&
           (!editingRoom || r.id !== editingRoom.id)
         )
 
@@ -1880,7 +1876,7 @@ function BuildingsRoomsPage() {
     try {
       let imageBlob: Blob | null = pendingRoomImageBlob;
       const isNewUpload = !!pendingRoomImageBlob || (newRoomImage.startsWith('data:') && newRoomImage !== DEFAULT_ROOM_IMAGE);
-      
+
       if (!imageBlob && isNewUpload) {
         const response = await fetch(newRoomImage);
         imageBlob = await response.blob();
@@ -1924,7 +1920,7 @@ function BuildingsRoomsPage() {
       } else if (isMultipleRooms) {
         const startNum = parseInt(roomStartNumber) || 0
         const endNum = parseInt(roomEndNumber) || 0
-        
+
         const count = Math.abs(endNum - startNum) + 1
         const step = startNum <= endNum ? 1 : -1
 
@@ -1958,7 +1954,7 @@ function BuildingsRoomsPage() {
       } else {
         const roomRef = await addDoc(collection(db, 'rooms'), {
           buildingId: activeBuildingId,
-          name: newRoomName, 
+          name: newRoomName,
           code: newRoomCode,
           type: newRoomType,
           floor: parseInt(newRoomFloor) || 0,
@@ -1993,14 +1989,14 @@ function BuildingsRoomsPage() {
 
 
   return (
-    <section 
+    <section
       className="h-screen overflow-y-scroll overflow-x-hidden custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8"
       onClick={() => setOpenMenuId(null)}
     >
       {/* Create/Edit Building Modal */}
       {isBuildingModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div 
+          <div
             className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
@@ -2010,7 +2006,7 @@ function BuildingsRoomsPage() {
                 {editingBuilding ? 'Update building information.' : 'Register a new building in the system.'}
               </p>
             </div>
-            
+
             <form onSubmit={handleBuildingSubmit} className="p-6 space-y-5">
               <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-2">
@@ -2063,18 +2059,18 @@ function BuildingsRoomsPage() {
                   disabled={isSubmitting}
                   className="flex-1"
                 >
-                  {isSubmitting 
-                    ? (editingBuilding ? 'Saving Changes...' : 'Adding Building...') 
+                  {isSubmitting
+                    ? (editingBuilding ? 'Saving Changes...' : 'Adding Building...')
                     : (editingBuilding ? 'Save Changes' : 'Add Building')}
                 </Button>
               </div>
             </form>
           </div>
-          <div 
-            className="absolute inset-0 -z-10" 
+          <div
+            className="absolute inset-0 -z-10"
             onClick={() => {
               if (!isSubmitting) handleCloseModals()
-            }} 
+            }}
           />
         </div>
       )}
@@ -2082,7 +2078,7 @@ function BuildingsRoomsPage() {
       {/* Create/Edit Room Modal */}
       {isRoomModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div 
+          <div
             className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
@@ -2096,15 +2092,15 @@ function BuildingsRoomsPage() {
                 </div>
                 <div className="flex gap-1.5">
                   {[1, 2, 3].map((s) => (
-                    <div 
-                      key={s} 
-                      className={`h-1.5 w-6 rounded-full transition-colors ${s <= roomModalStep ? 'bg-white' : 'bg-white/30'}`} 
+                    <div
+                      key={s}
+                      className={`h-1.5 w-6 rounded-full transition-colors ${s <= roomModalStep ? 'bg-white' : 'bg-white/30'}`}
                     />
                   ))}
                 </div>
               </div>
             </div>
-            
+
             <form onSubmit={handleRoomSubmit} className="p-6 space-y-5 overflow-visible">
               {roomModalStep === 1 && (
                 <div className="space-y-4 overflow-visible animate-in fade-in slide-in-from-right-4 duration-300">
@@ -2283,7 +2279,7 @@ function BuildingsRoomsPage() {
                         </p>
                       </div>
                     </div>
-                  ) }
+                  )}
 
                   <div className="grid grid-cols-2 gap-4 overflow-visible">
                     <div className="overflow-visible">
@@ -2314,7 +2310,7 @@ function BuildingsRoomsPage() {
                         Type
                       </label>
                       <SingleSelectDropdown
-                        options={['Lecture Room', 'Laboratory', 'Office', 'Meeting Room', 'Studio', 'Administrative']}
+                        options={['Lecture', 'Laboratory', 'Meeting Room', 'Studio', 'Administrative']}
                         value={newRoomType}
                         onChange={setNewRoomType}
                         onToggle={handleDropdownToggle}
@@ -2357,17 +2353,16 @@ function BuildingsRoomsPage() {
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onDrop={handleRoomImageDrop}
-                        className={`w-full aspect-square rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group relative shadow-sm ${
-                          isDraggingRoomImage 
-                            ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/5 ring-4 ring-[var(--brand-color)]/10 scale-[0.98]' 
-                            : 'border-gray-200 bg-gray-50 hover:border-[var(--brand-color)]'
-                        }`}
+                        className={`w-full aspect-square rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group relative shadow-sm ${isDraggingRoomImage
+                          ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/5 ring-4 ring-[var(--brand-color)]/10 scale-[0.98]'
+                          : 'border-gray-200 bg-gray-50 hover:border-[var(--brand-color)]'
+                          }`}
                       >
                         {newRoomImage ? (
-                          <img 
-                            src={newRoomImage} 
-                            alt="Preview" 
-                            className="h-full w-full object-cover" 
+                          <img
+                            src={newRoomImage}
+                            alt="Preview"
+                            className="h-full w-full object-cover"
                             onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                           />
                         ) : (
@@ -2411,9 +2406,9 @@ function BuildingsRoomsPage() {
                       amenities={ROOM_AMENITIES_GROUPS.flat()}
                       selectedAmenities={newRoomAmenities}
                       onToggleAmenity={(amenity) => {
-                        setNewRoomAmenities(prev => 
-                          prev.includes(amenity) 
-                            ? prev.filter(a => a !== amenity) 
+                        setNewRoomAmenities(prev =>
+                          prev.includes(amenity)
+                            ? prev.filter(a => a !== amenity)
                             : [...prev, amenity]
                         )
                       }}
@@ -2435,15 +2430,14 @@ function BuildingsRoomsPage() {
                           key={day}
                           type="button"
                           onClick={() => {
-                            setNewRoomAvailableDays(prev => 
+                            setNewRoomAvailableDays(prev =>
                               prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]
                             )
                           }}
-                          className={`flex-1 flex flex-col items-center justify-center rounded-xl border py-2 text-[0.625rem] font-bold uppercase transition cursor-pointer ${
-                            newRoomAvailableDays.includes(day)
-                              ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white shadow-sm'
-                              : 'border-gray-300 bg-white text-gray-500 hover:border-gray-400'
-                          }`}
+                          className={`flex-1 flex flex-col items-center justify-center rounded-xl border py-2 text-[0.625rem] font-bold uppercase transition cursor-pointer ${newRoomAvailableDays.includes(day)
+                            ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white shadow-sm'
+                            : 'border-gray-300 bg-white text-gray-500 hover:border-gray-400'
+                            }`}
                         >
                           {day.slice(0, 3).split('').map((char, index) => (
                             <span key={index} className="leading-tight">{char}</span>
@@ -2583,28 +2577,28 @@ function BuildingsRoomsPage() {
                     Cancel
                   </Button>
                 )}
-                
+
                 <Button
                   type="submit"
                   variant="brand"
                   disabled={isSubmitting}
                   className="flex-1"
                 >
-                  {roomModalStep < 3 
-                    ? 'Next Step' 
-                    : (isSubmitting 
-                        ? (editingRoom ? 'Saving Changes...' : 'Adding Room...') 
-                        : (editingRoom ? 'Save Changes' : 'Add Room'))}
+                  {roomModalStep < 3
+                    ? 'Next Step'
+                    : (isSubmitting
+                      ? (editingRoom ? 'Saving Changes...' : 'Adding Room...')
+                      : (editingRoom ? 'Save Changes' : 'Add Room'))}
                 </Button>
               </div>
             </form>
           </div>
-          <div 
-            className="absolute inset-0 -z-10" 
+          <div
+            className="absolute inset-0 -z-10"
             onMouseDown={() => {
               if (activeDropdowns > 0 || isSubmitting) return
               handleCloseModals()
-            }} 
+            }}
           />
         </div>
       )}
@@ -2652,7 +2646,7 @@ function BuildingsRoomsPage() {
       {/* Delete Room Confirmation Modal */}
       {isDeleteRoomModalOpen && roomToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div 
+          <div
             className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
@@ -2660,13 +2654,13 @@ function BuildingsRoomsPage() {
               <h3 className="text-xl font-bold">Delete Room</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this room from the system?</p>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 overflow-hidden shrink-0">
-                  <img 
-                    src={roomToDelete.image} 
-                    alt="" 
+                  <img
+                    src={roomToDelete.image}
+                    alt=""
                     className="h-full w-full object-cover grayscale-[0.2]"
                     onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                   />
@@ -2704,11 +2698,11 @@ function BuildingsRoomsPage() {
               </form>
             </div>
           </div>
-          <div 
-            className="absolute inset-0 -z-10" 
+          <div
+            className="absolute inset-0 -z-10"
             onClick={() => {
               if (!isDeletingRoom) handleCloseDeleteRoomModal()
-            }} 
+            }}
           />
         </div>
       )}
@@ -2716,7 +2710,7 @@ function BuildingsRoomsPage() {
       {/* Delete Building Confirmation Modal */}
       {isDeleteBuildingModalOpen && buildingToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div 
+          <div
             className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
@@ -2724,7 +2718,7 @@ function BuildingsRoomsPage() {
               <h3 className="text-xl font-bold">Delete Building</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this building from the system?</p>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 shrink-0">
@@ -2778,19 +2772,19 @@ function BuildingsRoomsPage() {
               </form>
             </div>
           </div>
-          <div 
-            className="absolute inset-0 -z-10" 
+          <div
+            className="absolute inset-0 -z-10"
             onClick={() => {
               if (!isDeletingBuilding) handleCloseDeleteBuildingModal()
-            }} 
+            }}
           />
         </div>
       )}
 
       <div className="space-y-6">
-        <SectionHeader 
-          title="Buildings & Rooms" 
-          description="Manage campus facilities, view room capacities, and track utilization." 
+        <SectionHeader
+          title="Buildings & Rooms"
+          description="Manage campus facilities, view room capacities, and track utilization."
         />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
@@ -2804,16 +2798,16 @@ function BuildingsRoomsPage() {
           >
             <CampusMap buildings={buildings} mapData={mapData} />
           </SummaryCard>
-          
+
           <SummaryCard
             title="Total Rooms"
             subtitle={weatherData ? `${weatherData.temp}°C Manila Weather${timeOfDayOverride !== 'auto' ? ` (${timeOfDayOverride.toUpperCase()})` : ''}` : "All Managed Spaces"}
             icon={
-              <button 
+              <button
                 onClick={() => {
                   setShowTestButtons(prev => !prev);
                   setShowFactoryControls(false);
-                }} 
+                }}
                 className="hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-sm p-0.5 -m-0.5"
                 title="Toggle Easter Eggs"
               >
@@ -2827,15 +2821,15 @@ function BuildingsRoomsPage() {
 
             <div className="flex-1 w-full relative aspect-[16/9] rounded-xl overflow-hidden">
               <WeatherOverlay weatherCode={weatherData?.code} timeOfDay={timeOfDayOverride} moonPhaseOverride={moonPhaseOverride} layer="back" />
-              
+
               <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
-                 <span className="text-sm font-black text-slate-800 leading-none">{rooms.length}</span>
-                 <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
+                <span className="text-sm font-black text-slate-800 leading-none">{rooms.length}</span>
+                <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
               </div>
               <ResponsiveContainer width="100%" height="100%" className="relative z-10 [&_*]:outline-none [&_*]:focus:outline-none">
                 <BarChart data={buildings.map(b => ({ code: b.code || b.name, rooms: b.rooms?.length || 0 }))} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
                   <YAxis hide domain={[0, 'dataMax']} />
-                  <Tooltip 
+                  <Tooltip
                     cursor={{ fill: 'transparent' }}
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
@@ -2855,16 +2849,16 @@ function BuildingsRoomsPage() {
               <WeatherOverlay weatherCode={weatherData?.code} timeOfDay={timeOfDayOverride} moonPhaseOverride={moonPhaseOverride} layer="front" supermanKey={supermanKey} />
             </div>
           </SummaryCard>
-          
+
           <SummaryCard
             title="Total Capacity"
             subtitle="Campus-wide Seats"
             icon={
-              <button 
+              <button
                 onClick={() => {
                   setShowFactoryControls(prev => !prev);
                   setShowTestButtons(false);
-                }} 
+                }}
                 className="hover:opacity-80 transition-opacity focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 rounded-sm p-0.5 -m-0.5"
                 title="Toggle Factory Controls"
               >
@@ -2879,44 +2873,44 @@ function BuildingsRoomsPage() {
               <div className="absolute inset-0 rounded-xl border-[4px] border-slate-600 bg-slate-700 overflow-hidden">
                 <div className="absolute inset-0 overflow-hidden shadow-[inset_0_0_50px_rgba(0,0,0,0.5)]">
                   {/* Factory Environment Background */}
-                <div className="absolute inset-0 pointer-events-none z-0">
-                  {/* Subtle Grid / Tile Pattern */}
-                  <div className="absolute inset-0 opacity-[0.15]" style={{ backgroundImage: 'linear-gradient(#000000 1px, transparent 1px), linear-gradient(90deg, #000000 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-                  
-                  {/* Support Beams (Vertical) */}
-                  <div className="absolute top-0 bottom-0 left-[12%] w-16 bg-gradient-to-r from-slate-800 via-slate-600 to-slate-800 border-x border-slate-900 shadow-2xl flex justify-center">
-                    <div className="w-1/2 h-full bg-[repeating-linear-gradient(0deg,transparent,transparent_40px,rgba(0,0,0,0.3)_40px,rgba(0,0,0,0.3)_44px)]"></div>
-                  </div>
-                  <div className="absolute top-0 bottom-0 right-[18%] w-20 bg-gradient-to-r from-slate-800 via-slate-600 to-slate-800 border-x border-slate-900 shadow-2xl flex justify-center">
-                    <div className="w-1/2 h-full bg-[repeating-linear-gradient(0deg,transparent,transparent_40px,rgba(0,0,0,0.3)_40px,rgba(0,0,0,0.3)_44px)]"></div>
-                  </div>
+                  <div className="absolute inset-0 pointer-events-none z-0">
+                    {/* Subtle Grid / Tile Pattern */}
+                    <div className="absolute inset-0 opacity-[0.15]" style={{ backgroundImage: 'linear-gradient(#000000 1px, transparent 1px), linear-gradient(90deg, #000000 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
 
-                  {/* Ceiling Structural Beam */}
-                  <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-slate-800 to-slate-700 border-b-[3px] border-slate-900 shadow-xl flex items-center justify-between px-8 z-10">
-                    {/* Vents */}
-                    <div className="flex gap-4">
-                      {[1, 2, 3].map(i => (
-                        <div key={i} className="w-12 h-6 bg-slate-900 rounded-sm border border-slate-700 shadow-inner flex flex-col justify-around p-1">
-                          <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
-                          <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
-                          <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
-                        </div>
-                      ))}
+                    {/* Support Beams (Vertical) */}
+                    <div className="absolute top-0 bottom-0 left-[12%] w-16 bg-gradient-to-r from-slate-800 via-slate-600 to-slate-800 border-x border-slate-900 shadow-2xl flex justify-center">
+                      <div className="w-1/2 h-full bg-[repeating-linear-gradient(0deg,transparent,transparent_40px,rgba(0,0,0,0.3)_40px,rgba(0,0,0,0.3)_44px)]"></div>
+                    </div>
+                    <div className="absolute top-0 bottom-0 right-[18%] w-20 bg-gradient-to-r from-slate-800 via-slate-600 to-slate-800 border-x border-slate-900 shadow-2xl flex justify-center">
+                      <div className="w-1/2 h-full bg-[repeating-linear-gradient(0deg,transparent,transparent_40px,rgba(0,0,0,0.3)_40px,rgba(0,0,0,0.3)_44px)]"></div>
                     </div>
 
-                    {/* Industrial Indicator Lights */}
-                    <div className="flex gap-4 p-2 bg-slate-900 rounded-lg border border-slate-800 shadow-[inset_0_0_8px_rgba(0,0,0,0.8)]">
-                      <div className={`w-3 h-3 rounded-full border border-black ${jars.find(j => j.position === 0)?.fillStatus !== 'filling' && !isJarsMoving ? 'bg-red-500 shadow-[0_0_12px_#ef4444]' : 'bg-red-950 opacity-40'}`} title="Idle / Stopped"></div>
-                      <div className={`w-3 h-3 rounded-full border border-black ${jars.find(j => j.position === 0)?.fillStatus === 'filling' ? 'bg-amber-400 shadow-[0_0_12px_#fbbf24]' : 'bg-amber-950 opacity-40'}`} title="Filling"></div>
-                      <div className={`w-3 h-3 rounded-full border border-black ${isJarsMoving ? 'bg-emerald-400 shadow-[0_0_12px_#34d399]' : 'bg-emerald-950 opacity-40'}`} title="Moving"></div>
+                    {/* Ceiling Structural Beam */}
+                    <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-slate-800 to-slate-700 border-b-[3px] border-slate-900 shadow-xl flex items-center justify-between px-8 z-10">
+                      {/* Vents */}
+                      <div className="flex gap-4">
+                        {[1, 2, 3].map(i => (
+                          <div key={i} className="w-12 h-6 bg-slate-900 rounded-sm border border-slate-700 shadow-inner flex flex-col justify-around p-1">
+                            <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
+                            <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
+                            <div className="w-full h-[1.5px] bg-black/60 rounded"></div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Industrial Indicator Lights */}
+                      <div className="flex gap-4 p-2 bg-slate-900 rounded-lg border border-slate-800 shadow-[inset_0_0_8px_rgba(0,0,0,0.8)]">
+                        <div className={`w-3 h-3 rounded-full border border-black ${jars.find(j => j.position === 0)?.fillStatus !== 'filling' && !isJarsMoving ? 'bg-red-500 shadow-[0_0_12px_#ef4444]' : 'bg-red-950 opacity-40'}`} title="Idle / Stopped"></div>
+                        <div className={`w-3 h-3 rounded-full border border-black ${jars.find(j => j.position === 0)?.fillStatus === 'filling' ? 'bg-amber-400 shadow-[0_0_12px_#fbbf24]' : 'bg-amber-950 opacity-40'}`} title="Filling"></div>
+                        <div className={`w-3 h-3 rounded-full border border-black ${isJarsMoving ? 'bg-emerald-400 shadow-[0_0_12px_#34d399]' : 'bg-emerald-950 opacity-40'}`} title="Moving"></div>
+                      </div>
                     </div>
+
+                    {/* Hazard Tape along bottom */}
+                    <div className="absolute bottom-0 left-0 right-0 h-2.5 bg-[repeating-linear-gradient(45deg,#fbbf24,#fbbf24_15px,#000_15px,#000_30px)] opacity-70 z-10"></div>
                   </div>
 
-                  {/* Hazard Tape along bottom */}
-                  <div className="absolute bottom-0 left-0 right-0 h-2.5 bg-[repeating-linear-gradient(45deg,#fbbf24,#fbbf24_15px,#000_15px,#000_30px)] opacity-70 z-10"></div>
-                </div>
-
-                <style>{`
+                  <style>{`
                   @keyframes conveyorMoveMain {
                     0% { background-position: 0 0; }
                     100% { background-position: -3rem 0; }
@@ -2950,312 +2944,307 @@ function BuildingsRoomsPage() {
                     100% { clip-path: inset(0 0 0 0); }
                   }
                 `}</style>
-                <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
-                   <span className="text-sm font-black text-slate-800 leading-none">
-                     {buildings.reduce((acc, b) => acc + (b.capacity || 0), 0)}
-                   </span>
-                   <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
-                </div>
-                {/* Background Conveyor Belt System */}
-                <div className="absolute bottom-19.5 -left-4 -right-4 h-2.5 border-b-[3px] border-black/80 shadow-xl overflow-hidden bg-black flex z-0 opacity-80">
-                  <div 
-                    className="w-full h-full"
-                    style={{
-                      background: 'repeating-linear-gradient(90deg, #94a3b8 0rem, #94a3b8 0.3rem, #262626 0.3rem, #262626 2rem)',
-                      backgroundSize: '2rem 100%',
-                      animation: 'conveyorMoveBg 1.524s linear infinite reverse',
-                      animationPlayState: isJarsMoving ? 'running' : 'paused'
-                    }}
-                  />
-                </div>
-
-                {/* Background Infinite Jars */}
-                {jars.map(jar => {
-                  if (jar.position > 19 || jar.position < 0) return null;
-                  const leftVal = `calc(50% + ${(9 - jar.position) * 3.5}rem)`;
-
-                  const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
-                  const displayCode = building ? building.code : 'JAR';
-                  const displayCap = building ? building.capacity || 0 : 0;
-
-                  return (
-                    <div 
-                      key={`bg-${jar.id}`}
-                      className="group/bgjar absolute bottom-[5.2rem] w-12 h-16 z-0 opacity-60 scale-90"
-                      style={{
-                        left: leftVal,
-                        transition: 'left 2.667s linear',
-                      }}
-                      onMouseEnter={() => {
-                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-                        setHoveredJarId(-jar.id);
-                        setIsHoveringTooltipBlock(true);
-                      }}
-                      onMouseLeave={() => {
-                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-                        setHoveredJarId(null);
-                        hoverTimeoutRef.current = setTimeout(() => {
-                          setIsHoveringTooltipBlock(false);
-                        }, 1500);
-                      }}
-                    >
-                      <div className="relative w-full h-full">
-                        {/* Jar Lid/Rim */}
-                        <div className="absolute top-1 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/60 border border-white/80 rounded-t-sm" />
-                        {/* Jar Neck */}
-                        <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-6 h-1 bg-white/50 border-l border-r border-white/70" />
-                        {/* Jar Body */}
-                        <div className="absolute top-3.5 inset-x-0 bottom-0 bg-white/10 border-2 border-white/70 rounded-b-lg rounded-t-md overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.9)] backdrop-blur-[1px]">
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                
-                {/* Main Conveyor Belt System */}
-                <div className="absolute bottom-6 -left-2 -right-2 h-4 border-b-[4px] border-black shadow-[0_10px_20px_rgba(0,0,0,0.8)] overflow-hidden bg-black flex">
-                  <div 
-                    className="w-full h-full"
-                    style={{
-                      background: 'repeating-linear-gradient(90deg, #cbd5e1 0rem, #cbd5e1 0.5rem, #171717 0.5rem, #171717 3rem)',
-                      backgroundSize: '3rem 100%',
-                      animation: 'conveyorMoveMain 1.6s linear infinite',
-                      animationPlayState: isJarsMoving ? 'running' : 'paused'
-                    }}
-                  />
-                </div>
-
-                {/* Water Pipe */}
-                <div 
-                  className={`absolute top-0 bottom-[30px] left-1/2 -ml-4 w-8 z-0 pointer-events-none`}
-                >
-                  {/* Visual Pipe (Fixed Height) */}
-                  <div 
-                    className={`absolute top-0 left-1 right-1 h-10 bg-slate-400 border-x-2 border-b-2 border-slate-600 rounded-b-sm bg-gradient-to-r from-slate-400 via-slate-300 to-slate-500 shadow-md z-10 pointer-events-auto transition-transform origin-top ${
-                      jars.some(j => j.position === 0 && j.fillStatus === 'empty') && !isJarsMoving
-                        ? 'cursor-pointer hover:scale-110 active:scale-95' 
-                        : ''
-                    }`}
-                    onClick={() => {
-                      if (isJarsMoving) return;
-                      const centerJar = jars.find(j => j.position === 0);
-                      if (!centerJar || centerJar.fillStatus !== 'empty') return;
-
-                      const actualLiquid: LiquidType = selectedLiquid === 'Random' 
-                        ? ['Water', 'Coffee', 'Blood', 'Mud', 'Slime'][Math.floor(Math.random() * 5)] as LiquidType
-                        : selectedLiquid as LiquidType;
-
-                      setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling', liquidType: actualLiquid } : j));
-                      setWaterKey(prev => prev + 1);
-                      
-                      setTimeout(() => {
-                        setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'full' } : j));
-                      }, 13500);
-                    }}
-                  >
-                    {/* Pipe Rim */}
-                    <div className="absolute -bottom-1 -left-1 -right-1 h-2 bg-slate-500 border-2 border-slate-700 rounded-sm"></div>
+                  <div className="absolute top-3 left-3 z-20 bg-white/90 backdrop-blur px-2 py-1 rounded-md shadow-sm border border-slate-100 flex flex-col items-center pointer-events-none">
+                    <span className="text-sm font-black text-slate-800 leading-none">
+                      {buildings.reduce((acc, b) => acc + (b.capacity || 0), 0)}
+                    </span>
+                    <span className="text-[0.5rem] font-bold text-slate-400 mt-0.5 uppercase tracking-wider">Total</span>
                   </div>
-                  
-                  {/* Continuous water stream (Stretches from pipe to jar) */}
-                  <div 
-                    key={`stream-${waterKey}`}
-                    className={`absolute top-8 bottom-0 left-3 right-3 blur-[0.5px] z-0 ${
-                      waterKey === 0 
-                        ? 'hidden' 
-                        : liquidColors[(jars.find(j => j.position === 0)?.liquidType as LiquidType) || 'Water'].main
-                    }`}
-                    style={{ 
-                      backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 10px, rgba(255,255,255,0.4) 10px, rgba(255,255,255,0.4) 20px)',
-                      backgroundSize: '100% 20px',
-                      animation: waterKey > 0 ? 'waterStreamFlow 0.3s linear infinite, pipeStreamClip 15s linear forwards' : 'none',
-                    }}
-                  ></div>
-                </div>
-
-                {jars.map(jar => {
-                  if (jar.position > 7 || jar.position < -7) return null;
-                  const leftVal = `calc(50% + ${jar.position * 5 - 2}rem)`;
-
-                  const isCenter = jar.position === 0;
-                  const isFull = jar.fillStatus === 'full';
-                  
-                  const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
-                  const displayCode = building ? building.code : 'JAR';
-                  const displayCap = building ? building.capacity || 0 : 0;
-                  
-                  const isWaitingForAction = isCenter && !isJarsMoving && (isAutoMode || jar.fillStatus === 'empty' || jar.fillStatus === 'full');
-
-                  return (
-                    <div 
-                      key={jar.id}
-                      className={`group/jar absolute bottom-9 w-16 h-20 z-10 ${
-                        (isCenter && isFull) ? 'cursor-pointer transition-transform hover:scale-105 active:scale-95' : ''
-                      }`}
+                  {/* Background Conveyor Belt System */}
+                  <div className="absolute bottom-19.5 -left-4 -right-4 h-2.5 border-b-[3px] border-black/80 shadow-xl overflow-hidden bg-black flex z-0 opacity-80">
+                    <div
+                      className="w-full h-full"
                       style={{
-                        left: leftVal,
-                        transition: 'left 2.667s linear',
+                        background: 'repeating-linear-gradient(90deg, #94a3b8 0rem, #94a3b8 0.3rem, #262626 0.3rem, #262626 2rem)',
+                        backgroundSize: '2rem 100%',
+                        animation: 'conveyorMoveBg 1.524s linear infinite reverse',
+                        animationPlayState: isJarsMoving ? 'running' : 'paused'
                       }}
-                      onMouseEnter={() => {
-                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-                        setHoveredJarId(jar.id);
-                        setIsHoveringTooltipBlock(true);
-                      }}
-                      onMouseLeave={() => {
-                        if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
-                        setHoveredJarId(null);
-                        hoverTimeoutRef.current = setTimeout(() => {
-                          setIsHoveringTooltipBlock(false);
-                        }, 1500);
-                      }}
-                      onClick={() => {
-                        if (isAutoMode) return;
-                        if (isCenter && isFull && !isJarsMoving) {
-                          setJars(prev => prev.map(j => j.id === jar.id ? { ...j, fillStatus: 'labeled' } : j));
-                          
-                          setTimeout(() => {
-                            setIsJarsMoving(true);
-                            setTimeout(() => setIsJarsMoving(false), 2667);
-                            
-                            const newId = Date.now() + Math.random();
-                            setJars(prev => {
-                              const nextJars = prev.map(j => ({ ...j, position: j.position - 1 }));
-                              
-                              nextJars.push({ 
-                                id: newId, 
-                                position: 19, 
-                                fillStatus: 'empty',
-                                buildingIndex: nextBuildingIndex
-                              });
-                              
-                              setNextBuildingIndex(prev => prev + 1);
-                              
-                              return nextJars.filter(j => j.position >= -7);
-                            });
-                          }, 1000);
-                        }
-                      }}
-                    >
-                      <div 
-                        className="relative w-full h-full" 
-                      >
-                        {/* Jar Lid/Rim */}
-                        <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/60 border border-white/80 rounded-t-sm z-10" />
-                        {/* Jar Neck */}
-                        <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/50 border-l border-r border-white/70 z-10" />
-                        {/* Jar Body */}
-                        <div className="absolute top-[14px] inset-x-0 bottom-0 bg-white/10 border-2 border-white/70 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_16px_rgba(255,255,255,0.9)] backdrop-blur-[1px]">
-                          {/* Liquid Fill */}
-                          <div 
-                            className={`absolute bottom-0 left-0 right-0 ${jar.liquidType ? liquidColors[jar.liquidType].main : 'bg-transparent'}`}
-                            style={{ 
-                              animation: jar.fillStatus === 'filling' ? 'jarFill 15s linear forwards' : 'none',
-                              height: (jar.fillStatus === 'full' || jar.fillStatus === 'labeled') ? '90%' : (jar.fillStatus === 'empty' ? '0%' : undefined)
-                            }}
-                          >
-                            <div className={`absolute top-0 left-0 right-0 h-1 ${jar.liquidType ? liquidColors[jar.liquidType].light : 'bg-transparent'}`}></div>
-                          </div>
-                          
-                          {/* Bottle Label */}
-                          {jar.fillStatus === 'labeled' && (
-                            <div 
-                              className="absolute top-[45%] inset-x-0 -translate-y-1/2 h-7 rounded-[1px] border-y-[1.5px] border-[#62853e]/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9),inset_0_-1px_2px_rgba(0,0,0,0.2),0_2px_5px_rgba(0,0,0,0.3)] flex items-center justify-between px-1 overflow-hidden transition-all duration-300 z-10 select-none"
-                              style={{
-                                background: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 3px), repeating-linear-gradient(-45deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 3px), linear-gradient(to bottom, #fefcf8 0%, #f4eee2 50%, #e7decb 100%)',
-                                ...(jar.position === 0 ? { animation: 'labelWipe 1s ease-out forwards' } : { clipPath: 'inset(0 0 0 0)' })
-                              }}
-                            >
-                              {/* Cylindrical Curve Reflection & Highlight Overlay */}
-                              <div 
-                                className="absolute inset-0 pointer-events-none z-10"
-                                style={{
-                                  background: 'linear-gradient(90deg, rgba(0,0,0,0.22) 0%, rgba(255,255,255,0.45) 15%, transparent 40%, transparent 60%, rgba(255,255,255,0.45) 85%, rgba(0,0,0,0.22) 100%)'
-                                }}
-                              />
+                    />
+                  </div>
 
-                              {/* Micro Barcode Texture (Left) */}
-                              <div className="flex items-center gap-[1px] h-3.5 opacity-50 shrink-0 pointer-events-none">
-                                <div className="w-[1.5px] h-full bg-slate-900" />
-                                <div className="w-[0.75px] h-full bg-slate-900" />
-                                <div className="w-[2px] h-full bg-slate-900" />
-                                <div className="w-[0.75px] h-full bg-slate-900" />
-                                <div className="w-[1px] h-full bg-slate-900" />
-                              </div>
-
-                              {/* Micro Building Code Batch Stamp Texture (Center & Right) */}
-                              <div className="flex-1 ml-0.5 h-5 my-auto flex items-center justify-center border border-amber-800/60 rounded-[2px] px-0.5 bg-amber-700/10 shadow-[0_0_2px_rgba(146,64,14,0.2)] pointer-events-none z-10 opacity-90 overflow-hidden">
-                                <span className="text-[0.7rem] font-black text-amber-950 tracking-tighter truncate w-full text-center leading-none uppercase drop-shadow-[0_0.5px_0_rgba(255,255,255,0.7)] flex items-center justify-center h-full">
-                                  {displayCode}
-                                </span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                </div> {/* End Factory Inner Container */}
-              </div> {/* End overflow-hidden factory visual */}
-
-                {/* Global Tooltips Layer (Outside overflow-hidden) */}
-                <div className="absolute inset-0 pointer-events-none z-[100]">
+                  {/* Background Infinite Jars */}
                   {jars.map(jar => {
+                    if (jar.position > 19 || jar.position < 0) return null;
+                    const leftVal = `calc(50% + ${(9 - jar.position) * 3.5}rem)`;
+
                     const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
                     const displayCode = building ? building.code : 'JAR';
                     const displayCap = building ? building.capacity || 0 : 0;
-                    
-                    // Background Jar Tooltip
-                    if (jar.position >= 0 && jar.position <= 19) {
-                      const bgLeftVal = `calc(50% + ${(9 - jar.position) * 3.5}rem)`;
-                      return (
-                        <div 
-                          key={`bg-tooltip-${jar.id}`}
-                          className={`absolute bottom-[5.2rem] w-12 h-16 scale-90 transition-all duration-300 pointer-events-none ${
-                            hoveredJarId === -jar.id ? 'opacity-100' : 'opacity-0'
-                          }`}
-                          style={{ left: bgLeftVal, transition: 'left 2.667s linear' }}
-                        >
-                          <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/95 text-slate-800 text-[0.55rem] font-bold px-1.5 py-0.5 rounded shadow-md">
-                            {displayCode}: {displayCap}
-                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-[4px] border-transparent border-t-white/95"></div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })}
 
-                  {jars.map(jar => {
-                    if (jar.position > 7 || jar.position < -7) return null;
-                    
-                    const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
-                    const displayCode = building ? building.code : 'JAR';
-                    const displayCap = building ? building.capacity || 0 : 0;
-                    
-                    const isCenter = jar.position === 0;
-                    const fgLeftVal = `calc(50% + ${jar.position * 5 - 2}rem)`;
-                    const isWaitingForAction = isCenter && !isJarsMoving && (isAutoMode || jar.fillStatus === 'empty' || jar.fillStatus === 'full');
-                    
                     return (
-                      <div 
-                        key={`fg-tooltip-${jar.id}`}
-                        className={`absolute bottom-9 w-16 h-20 transition-all duration-200 pointer-events-none ${
-                          hoveredJarId === jar.id ? 'opacity-100' :
-                          (isHoveringTooltipBlock ? 'opacity-0' :
-                          (isWaitingForAction ? 'opacity-100' : 'opacity-0'))
-                        }`}
-                        style={{ left: fgLeftVal, transition: 'left 2.667s linear' }}
+                      <div
+                        key={`bg-${jar.id}`}
+                        className="group/bgjar absolute bottom-[5.2rem] w-12 h-16 z-0 opacity-60 scale-90"
+                        style={{
+                          left: leftVal,
+                          transition: 'left 2.667s linear',
+                        }}
+                        onMouseEnter={() => {
+                          if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                          setHoveredJarId(-jar.id);
+                          setIsHoveringTooltipBlock(true);
+                        }}
+                        onMouseLeave={() => {
+                          if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                          setHoveredJarId(null);
+                          hoverTimeoutRef.current = setTimeout(() => {
+                            setIsHoveringTooltipBlock(false);
+                          }, 1500);
+                        }}
                       >
-                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white text-slate-800 text-xs font-bold px-2 py-1 rounded shadow-lg">
-                          {displayCode}: {displayCap} Capacity
-                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-white"></div>
+                        <div className="relative w-full h-full">
+                          {/* Jar Lid/Rim */}
+                          <div className="absolute top-1 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/60 border border-white/80 rounded-t-sm" />
+                          {/* Jar Neck */}
+                          <div className="absolute top-2.5 left-1/2 -translate-x-1/2 w-6 h-1 bg-white/50 border-l border-r border-white/70" />
+                          {/* Jar Body */}
+                          <div className="absolute top-3.5 inset-x-0 bottom-0 bg-white/10 border-2 border-white/70 rounded-b-lg rounded-t-md overflow-hidden shadow-[inset_0_0_12px_rgba(255,255,255,0.9)] backdrop-blur-[1px]">
+                          </div>
                         </div>
                       </div>
                     );
                   })}
-                </div>
+
+                  {/* Main Conveyor Belt System */}
+                  <div className="absolute bottom-6 -left-2 -right-2 h-4 border-b-[4px] border-black shadow-[0_10px_20px_rgba(0,0,0,0.8)] overflow-hidden bg-black flex">
+                    <div
+                      className="w-full h-full"
+                      style={{
+                        background: 'repeating-linear-gradient(90deg, #cbd5e1 0rem, #cbd5e1 0.5rem, #171717 0.5rem, #171717 3rem)',
+                        backgroundSize: '3rem 100%',
+                        animation: 'conveyorMoveMain 1.6s linear infinite',
+                        animationPlayState: isJarsMoving ? 'running' : 'paused'
+                      }}
+                    />
+                  </div>
+
+                  {/* Water Pipe */}
+                  <div
+                    className={`absolute top-0 bottom-[30px] left-1/2 -ml-4 w-8 z-0 pointer-events-none`}
+                  >
+                    {/* Visual Pipe (Fixed Height) */}
+                    <div
+                      className={`absolute top-0 left-1 right-1 h-10 bg-slate-400 border-x-2 border-b-2 border-slate-600 rounded-b-sm bg-gradient-to-r from-slate-400 via-slate-300 to-slate-500 shadow-md z-10 pointer-events-auto transition-transform origin-top ${jars.some(j => j.position === 0 && j.fillStatus === 'empty') && !isJarsMoving
+                        ? 'cursor-pointer hover:scale-110 active:scale-95'
+                        : ''
+                        }`}
+                      onClick={() => {
+                        if (isJarsMoving) return;
+                        const centerJar = jars.find(j => j.position === 0);
+                        if (!centerJar || centerJar.fillStatus !== 'empty') return;
+
+                        const actualLiquid: LiquidType = selectedLiquid === 'Random'
+                          ? ['Water', 'Coffee', 'Blood', 'Mud', 'Slime'][Math.floor(Math.random() * 5)] as LiquidType
+                          : selectedLiquid as LiquidType;
+
+                        setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'filling', liquidType: actualLiquid } : j));
+                        setWaterKey(prev => prev + 1);
+
+                        setTimeout(() => {
+                          setJars(prev => prev.map(j => j.id === centerJar.id ? { ...j, fillStatus: 'full' } : j));
+                        }, 13500);
+                      }}
+                    >
+                      {/* Pipe Rim */}
+                      <div className="absolute -bottom-1 -left-1 -right-1 h-2 bg-slate-500 border-2 border-slate-700 rounded-sm"></div>
+                    </div>
+
+                    {/* Continuous water stream (Stretches from pipe to jar) */}
+                    <div
+                      key={`stream-${waterKey}`}
+                      className={`absolute top-8 bottom-0 left-3 right-3 blur-[0.5px] z-0 ${waterKey === 0
+                        ? 'hidden'
+                        : liquidColors[(jars.find(j => j.position === 0)?.liquidType as LiquidType) || 'Water'].main
+                        }`}
+                      style={{
+                        backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 10px, rgba(255,255,255,0.4) 10px, rgba(255,255,255,0.4) 20px)',
+                        backgroundSize: '100% 20px',
+                        animation: waterKey > 0 ? 'waterStreamFlow 0.3s linear infinite, pipeStreamClip 15s linear forwards' : 'none',
+                      }}
+                    ></div>
+                  </div>
+
+                  {jars.map(jar => {
+                    if (jar.position > 7 || jar.position < -7) return null;
+                    const leftVal = `calc(50% + ${jar.position * 5 - 2}rem)`;
+
+                    const isCenter = jar.position === 0;
+                    const isFull = jar.fillStatus === 'full';
+
+                    const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
+                    const displayCode = building ? building.code : 'JAR';
+                    const displayCap = building ? building.capacity || 0 : 0;
+
+                    const isWaitingForAction = isCenter && !isJarsMoving && (isAutoMode || jar.fillStatus === 'empty' || jar.fillStatus === 'full');
+
+                    return (
+                      <div
+                        key={jar.id}
+                        className={`group/jar absolute bottom-9 w-16 h-20 z-10 ${(isCenter && isFull) ? 'cursor-pointer transition-transform hover:scale-105 active:scale-95' : ''
+                          }`}
+                        style={{
+                          left: leftVal,
+                          transition: 'left 2.667s linear',
+                        }}
+                        onMouseEnter={() => {
+                          if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                          setHoveredJarId(jar.id);
+                          setIsHoveringTooltipBlock(true);
+                        }}
+                        onMouseLeave={() => {
+                          if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+                          setHoveredJarId(null);
+                          hoverTimeoutRef.current = setTimeout(() => {
+                            setIsHoveringTooltipBlock(false);
+                          }, 1500);
+                        }}
+                        onClick={() => {
+                          if (isAutoMode) return;
+                          if (isCenter && isFull && !isJarsMoving) {
+                            setJars(prev => prev.map(j => j.id === jar.id ? { ...j, fillStatus: 'labeled' } : j));
+
+                            setTimeout(() => {
+                              setIsJarsMoving(true);
+                              setTimeout(() => setIsJarsMoving(false), 2667);
+
+                              const newId = Date.now() + Math.random();
+                              setJars(prev => {
+                                const nextJars = prev.map(j => ({ ...j, position: j.position - 1 }));
+
+                                nextJars.push({
+                                  id: newId,
+                                  position: 19,
+                                  fillStatus: 'empty',
+                                  buildingIndex: nextBuildingIndex
+                                });
+
+                                setNextBuildingIndex(prev => prev + 1);
+
+                                return nextJars.filter(j => j.position >= -7);
+                              });
+                            }, 1000);
+                          }
+                        }}
+                      >
+                        <div
+                          className="relative w-full h-full"
+                        >
+                          {/* Jar Lid/Rim */}
+                          <div className="absolute top-1.5 left-1/2 -translate-x-1/2 w-10 h-2 bg-white/60 border border-white/80 rounded-t-sm z-10" />
+                          {/* Jar Neck */}
+                          <div className="absolute top-3.5 left-1/2 -translate-x-1/2 w-8 h-1.5 bg-white/50 border-l border-r border-white/70 z-10" />
+                          {/* Jar Body */}
+                          <div className="absolute top-[14px] inset-x-0 bottom-0 bg-white/10 border-2 border-white/70 rounded-b-xl rounded-t-lg overflow-hidden shadow-[inset_0_0_16px_rgba(255,255,255,0.9)] backdrop-blur-[1px]">
+                            {/* Liquid Fill */}
+                            <div
+                              className={`absolute bottom-0 left-0 right-0 ${jar.liquidType ? liquidColors[jar.liquidType].main : 'bg-transparent'}`}
+                              style={{
+                                animation: jar.fillStatus === 'filling' ? 'jarFill 15s linear forwards' : 'none',
+                                height: (jar.fillStatus === 'full' || jar.fillStatus === 'labeled') ? '90%' : (jar.fillStatus === 'empty' ? '0%' : undefined)
+                              }}
+                            >
+                              <div className={`absolute top-0 left-0 right-0 h-1 ${jar.liquidType ? liquidColors[jar.liquidType].light : 'bg-transparent'}`}></div>
+                            </div>
+
+                            {/* Bottle Label */}
+                            {jar.fillStatus === 'labeled' && (
+                              <div
+                                className="absolute top-[45%] inset-x-0 -translate-y-1/2 h-7 rounded-[1px] border-y-[1.5px] border-[#62853e]/70 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9),inset_0_-1px_2px_rgba(0,0,0,0.2),0_2px_5px_rgba(0,0,0,0.3)] flex items-center justify-between px-1 overflow-hidden transition-all duration-300 z-10 select-none"
+                                style={{
+                                  background: 'repeating-linear-gradient(45deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 3px), repeating-linear-gradient(-45deg, rgba(0,0,0,0.025) 0px, rgba(0,0,0,0.025) 1px, transparent 1px, transparent 3px), linear-gradient(to bottom, #fefcf8 0%, #f4eee2 50%, #e7decb 100%)',
+                                  ...(jar.position === 0 ? { animation: 'labelWipe 1s ease-out forwards' } : { clipPath: 'inset(0 0 0 0)' })
+                                }}
+                              >
+                                {/* Cylindrical Curve Reflection & Highlight Overlay */}
+                                <div
+                                  className="absolute inset-0 pointer-events-none z-10"
+                                  style={{
+                                    background: 'linear-gradient(90deg, rgba(0,0,0,0.22) 0%, rgba(255,255,255,0.45) 15%, transparent 40%, transparent 60%, rgba(255,255,255,0.45) 85%, rgba(0,0,0,0.22) 100%)'
+                                  }}
+                                />
+
+                                {/* Micro Barcode Texture (Left) */}
+                                <div className="flex items-center gap-[1px] h-3.5 opacity-50 shrink-0 pointer-events-none">
+                                  <div className="w-[1.5px] h-full bg-slate-900" />
+                                  <div className="w-[0.75px] h-full bg-slate-900" />
+                                  <div className="w-[2px] h-full bg-slate-900" />
+                                  <div className="w-[0.75px] h-full bg-slate-900" />
+                                  <div className="w-[1px] h-full bg-slate-900" />
+                                </div>
+
+                                {/* Micro Building Code Batch Stamp Texture (Center & Right) */}
+                                <div className="flex-1 ml-0.5 h-5 my-auto flex items-center justify-center border border-amber-800/60 rounded-[2px] px-0.5 bg-amber-700/10 shadow-[0_0_2px_rgba(146,64,14,0.2)] pointer-events-none z-10 opacity-90 overflow-hidden">
+                                  <span className="text-[0.7rem] font-black text-amber-950 tracking-tighter truncate w-full text-center leading-none uppercase drop-shadow-[0_0.5px_0_rgba(255,255,255,0.7)] flex items-center justify-center h-full">
+                                    {displayCode}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div> {/* End Factory Inner Container */}
+              </div> {/* End overflow-hidden factory visual */}
+
+              {/* Global Tooltips Layer (Outside overflow-hidden) */}
+              <div className="absolute inset-0 pointer-events-none z-[100]">
+                {jars.map(jar => {
+                  const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
+                  const displayCode = building ? building.code : 'JAR';
+                  const displayCap = building ? building.capacity || 0 : 0;
+
+                  // Background Jar Tooltip
+                  if (jar.position >= 0 && jar.position <= 19) {
+                    const bgLeftVal = `calc(50% + ${(9 - jar.position) * 3.5}rem)`;
+                    return (
+                      <div
+                        key={`bg-tooltip-${jar.id}`}
+                        className={`absolute bottom-[5.2rem] w-12 h-16 scale-90 transition-all duration-300 pointer-events-none ${hoveredJarId === -jar.id ? 'opacity-100' : 'opacity-0'
+                          }`}
+                        style={{ left: bgLeftVal, transition: 'left 2.667s linear' }}
+                      >
+                        <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white/95 text-slate-800 text-[0.55rem] font-bold px-1.5 py-0.5 rounded shadow-md">
+                          {displayCode}: {displayCap}
+                          <div className="absolute top-full left-1/2 -translate-x-1/2 border-[4px] border-transparent border-t-white/95"></div>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+
+                {jars.map(jar => {
+                  if (jar.position > 7 || jar.position < -7) return null;
+
+                  const building = buildings.length > 0 ? buildings[jar.buildingIndex % buildings.length] : null;
+                  const displayCode = building ? building.code : 'JAR';
+                  const displayCap = building ? building.capacity || 0 : 0;
+
+                  const isCenter = jar.position === 0;
+                  const fgLeftVal = `calc(50% + ${jar.position * 5 - 2}rem)`;
+                  const isWaitingForAction = isCenter && !isJarsMoving && (isAutoMode || jar.fillStatus === 'empty' || jar.fillStatus === 'full');
+
+                  return (
+                    <div
+                      key={`fg-tooltip-${jar.id}`}
+                      className={`absolute bottom-9 w-16 h-20 transition-all duration-200 pointer-events-none ${hoveredJarId === jar.id ? 'opacity-100' :
+                        (isHoveringTooltipBlock ? 'opacity-0' :
+                          (isWaitingForAction ? 'opacity-100' : 'opacity-0'))
+                        }`}
+                      style={{ left: fgLeftVal, transition: 'left 2.667s linear' }}
+                    >
+                      <div className="absolute -top-10 left-1/2 -translate-x-1/2 whitespace-nowrap bg-white text-slate-800 text-xs font-bold px-2 py-1 rounded shadow-lg">
+                        {displayCode}: {displayCap} Capacity
+                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-[5px] border-transparent border-t-white"></div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
+            </div>
           </SummaryCard>
         </div>
 

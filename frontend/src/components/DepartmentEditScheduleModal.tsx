@@ -26,6 +26,7 @@ interface DepartmentEditScheduleModalProps {
   members: DepartmentMember[]
   selectedAcademicYear: any
   selectedSemesterPhase: { name: string; phase: string } | null
+  editablePhases?: string[]
 }
 
 const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder = "Select" }: { value: string, onChange: (val: string) => void, options: { value: string, label: string }[], disabled?: boolean, placeholder?: string }) => {
@@ -176,8 +177,9 @@ function DepartmentEditScheduleModal({
   members,
   selectedAcademicYear,
   selectedSemesterPhase,
+  editablePhases = ['Drafting', 'Revision'],
 }: DepartmentEditScheduleModalProps) {
-  const isEditable = selectedSemesterPhase?.phase === 'Drafting' || selectedSemesterPhase?.phase === 'Revision';
+  const isEditable = selectedSemesterPhase?.phase ? editablePhases.includes(selectedSemesterPhase.phase) : false;
 
   const [rooms, setRooms] = useState<{ id: string, code: string, name: string, buildingId: string }[]>([])
   const [buildings, setBuildings] = useState<{ id: string, name: string, code?: string }[]>([])
@@ -1431,7 +1433,7 @@ function DepartmentEditScheduleModal({
                 {selectedAcademicYear?.academicYear} - {selectedSemesterPhase?.name} Schedules
               </h3>
               <p className="mt-0.5 text-xs text-white/80 font-medium">
-                {isEditable ? 'Add multiple schedules and assign them to instructors in your department.' : `Schedules can only be edited during Drafting and Revision phases. Current phase: ${selectedSemesterPhase?.phase}.`}
+                {isEditable ? 'Add multiple schedules and assign them to instructors in your department.' : `Schedules can only be edited during ${editablePhases.length > 1 ? `${editablePhases.slice(0, -1).join(', ')}, and ${editablePhases[editablePhases.length - 1]}` : (editablePhases[0] || 'Drafting and Revision')} phases. Current phase: ${selectedSemesterPhase?.phase}.`}
               </p>
             </div>
             {!isEditable && (
