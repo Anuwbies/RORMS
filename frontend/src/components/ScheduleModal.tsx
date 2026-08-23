@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons'
-import { db } from '../firebase'
+import { db, auth } from '../firebase'
 import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import type { Room } from '../types/room'
 import { Button } from './Button'
@@ -31,6 +31,7 @@ export interface ScheduleModalProps {
   actionButton?: ReactNode
   hideFilters?: boolean
   showWeekCalendar?: boolean
+  forceFullDaySchedule?: boolean
 }
 
 interface AcademicYearData {
@@ -41,7 +42,7 @@ interface AcademicYearData {
   sem2?: { name?: string; phase?: string }
 }
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
 
 // Standard 1h 30mins whole day schedule intervals (07:30 to 18:00)
 const STANDARD_TIME_SLOTS = [
@@ -67,16 +68,16 @@ function computeWeekInfo(dateStr: string) {
   baseDate.setHours(0, 0, 0, 0)
 
   const dayOfWeek = baseDate.getDay()
-  const diffToMon = dayOfWeek === 0 ? -6 : 1 - dayOfWeek
+  const diffToSun = -dayOfWeek
 
-  const monday = new Date(baseDate)
-  monday.setDate(baseDate.getDate() + diffToMon)
+  const sunday = new Date(baseDate)
+  sunday.setDate(baseDate.getDate() + diffToSun)
 
   const todayIso = getLocalIsoDate(new Date())
 
-  const weekDays = (['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const).map((dayName, idx) => {
-    const current = new Date(monday)
-    current.setDate(monday.getDate() + idx)
+  const weekDays = (['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const).map((dayName, idx) => {
+    const current = new Date(sunday)
+    current.setDate(sunday.getDate() + idx)
     const isoString = getLocalIsoDate(current)
     const monthShort = current.toLocaleDateString('en-US', { month: 'short' })
     const dayNum = current.getDate()
@@ -89,15 +90,16 @@ function computeWeekInfo(dateStr: string) {
     }
   })
 
-  const sunday = new Date(monday)
-  sunday.setDate(monday.getDate() + 6)
+  const saturday = new Date(sunday)
+  saturday.setDate(sunday.getDate() + 6)
 
   const isCurrentWeek = weekDays.some(d => d.isToday)
-  const label = `${monday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+  const label = `${sunday.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${saturday.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 
   return {
-    monday,
     sunday,
+    saturday,
+    monday: sunday,
     weekDays,
     isCurrentWeek,
     label
@@ -127,6 +129,37 @@ const timeToMins = (t: string) => {
   if (!t) return 0
   const [h, m] = t.split(':').map(Number)
   return (h || 0) * 60 + (m || 0)
+}
+
+const STANDARD_CHECKPOINTS = [450, 540, 630, 720, 810, 900, 990, 1080] // 07:30, 09:00, 10:30, 12:00, 13:30, 15:00, 16:30, 18:00
+
+const generateTimeSlots = (startTime: string, endTime: string): string[] => {
+  const startMins = timeToMins(startTime)
+  const endMins = timeToMins(endTime)
+  if (startMins >= endMins) return []
+
+  const boundaries = new Set<number>()
+  boundaries.add(startMins)
+  boundaries.add(endMins)
+
+  STANDARD_CHECKPOINTS.forEach(cp => {
+    if (cp > startMins && cp < endMins) {
+      boundaries.add(cp)
+    }
+  })
+
+  const sorted = Array.from(boundaries).sort((a, b) => a - b)
+  const slots: string[] = []
+
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const s = sorted[i]
+    const e = sorted[i + 1]
+    const startStr = `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`
+    const endStr = `${Math.floor(e / 60).toString().padStart(2, '0')}:${(e % 60).toString().padStart(2, '0')}`
+    slots.push(`${startStr}-${endStr}`)
+  }
+
+  return slots
 }
 
 const isScheduleInSlot = (schedule: any, slot: string) => {
@@ -167,7 +200,8 @@ export function ScheduleModal({
   initialSemester,
   actionButton,
   hideFilters,
-  showWeekCalendar
+  showWeekCalendar,
+  forceFullDaySchedule = false
 }: ScheduleModalProps) {
   const isRoomMode = Boolean(room)
   const isInstructorMode = Boolean(member && !room)
@@ -179,6 +213,7 @@ export function ScheduleModal({
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
   const [selectedSemester, setSelectedSemester] = useState<string>(initialSemester || '1st Semester')
   const [instructorsMap, setInstructorsMap] = useState<Map<string, string>>(new Map())
+  const [userDepartmentMap, setUserDepartmentMap] = useState<Map<string, string>>(new Map())
   const [roomsMap, setRoomsMap] = useState<Map<string, string>>(new Map())
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
@@ -195,6 +230,44 @@ export function ScheduleModal({
   const weekInfo = useMemo(() => {
     return computeWeekInfo(selectedWeekDate)
   }, [selectedWeekDate])
+
+  // Limit week calendar to start from the current week up to the end of next month
+  const { minDate, maxDate, currentWeekSundayIso } = useMemo(() => {
+    const now = new Date()
+    now.setHours(0, 0, 0, 0)
+    const diffToSun = -now.getDay()
+    const currentWeekSunday = new Date(now)
+    currentWeekSunday.setDate(now.getDate() + diffToSun)
+
+    const nextMonthEnd = new Date(now.getFullYear(), now.getMonth() + 2, 0)
+    nextMonthEnd.setHours(23, 59, 59, 999)
+
+    return {
+      minDate: getLocalIsoDate(currentWeekSunday),
+      maxDate: getLocalIsoDate(nextMonthEnd),
+      currentWeekSundayIso: getLocalIsoDate(currentWeekSunday)
+    }
+  }, [])
+
+  const isPrevDisabled = useMemo(() => {
+    if (!currentWeekSundayIso) return false
+    const prevDate = new Date(weekInfo.sunday)
+    prevDate.setDate(prevDate.getDate() - 7)
+    return getLocalIsoDate(prevDate) < currentWeekSundayIso
+  }, [weekInfo.sunday, currentWeekSundayIso])
+
+  const isNextDisabled = useMemo(() => {
+    if (!maxDate) return false
+    const nextDate = new Date(weekInfo.sunday)
+    nextDate.setDate(nextDate.getDate() + 7)
+    return getLocalIsoDate(nextDate) > maxDate
+  }, [weekInfo.sunday, maxDate])
+
+  const selectedDayName = useMemo(() => {
+    if (!showWeekCalendar) return null
+    const matched = weekInfo.weekDays.find(w => w.isoString === selectedWeekDate)
+    return matched?.dayName || null
+  }, [showWeekCalendar, weekInfo.weekDays, selectedWeekDate])
 
   // 1. Fetch Academic Years
   useEffect(() => {
@@ -232,12 +305,16 @@ export function ScheduleModal({
 
       unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (memSnap) => {
         const map = new Map<string, string>()
+        const deptMap = new Map<string, string>()
         memSnap.forEach(mDoc => {
           const mem = mDoc.data()
           const user = usersDataMap.get(mem.userId)
           const name = user?.fullName || user?.email || 'Instructor'
           map.set(mDoc.id, name)
-          if (mem.userId) map.set(mem.userId, name)
+          if (mem.userId) {
+            map.set(mem.userId, name)
+            if (mem.departmentCode) deptMap.set(mem.userId, mem.departmentCode)
+          }
         })
         usersDataMap.forEach((user, uid) => {
           if (!map.has(uid)) {
@@ -245,6 +322,7 @@ export function ScheduleModal({
           }
         })
         setInstructorsMap(map)
+        setUserDepartmentMap(deptMap)
       })
     })
 
@@ -389,20 +467,32 @@ export function ScheduleModal({
     return instructorsMap.get(uid) || 'User'
   }
 
+  const getUserDepartment = (uid?: string) => {
+    if (auth.currentUser?.uid && uid === auth.currentUser.uid) {
+      return 'Mine'
+    }
+    if (!uid) return 'University'
+    return userDepartmentMap.get(uid) || 'University'
+  }
+
   const activeWeekReservations = useMemo(() => {
     if (!isRoomMode || !showWeekCalendar || !reservations.length) return []
     const weekIsoSet = new Set(weekInfo.weekDays.map(w => w.isoString))
     return reservations.filter(r => r.date && weekIsoSet.has(r.date))
   }, [isRoomMode, showWeekCalendar, reservations, weekInfo.weekDays])
 
-  // 6. Build Time Slots (Standard whole day 07:30 - 18:00, 1h 30m each + any custom slots)
+  // 6. Build Time Slots (Room start/end time if room mode without forceFullDaySchedule, or 07:30 - 18:00 standard whole day)
   const timeSlots = useMemo(() => {
-    const timeSlotSet = new Set<string>(STANDARD_TIME_SLOTS)
+    const baseSlots = isRoomMode && room && !forceFullDaySchedule
+      ? generateTimeSlots(room.startTime || '07:30', room.endTime || '18:00')
+      : STANDARD_TIME_SLOTS
+
+    const timeSlotSet = new Set<string>(baseSlots.length > 0 ? baseSlots : STANDARD_TIME_SLOTS)
 
     filteredSchedules.forEach(schedule => {
       if (schedule.startTime && schedule.endTime) {
         const formatted = `${padTime(schedule.startTime)}-${padTime(schedule.endTime)}`
-        if (!STANDARD_TIME_SLOTS.some(slot => isScheduleInSlot(schedule, slot))) {
+        if (!Array.from(timeSlotSet).some(slot => isScheduleInSlot(schedule, slot))) {
           timeSlotSet.add(formatted)
         }
       }
@@ -412,26 +502,39 @@ export function ScheduleModal({
       activeWeekReservations.forEach(res => {
         if (res.startTime && res.endTime) {
           const formatted = `${padTime(res.startTime)}-${padTime(res.endTime)}`
-          if (!STANDARD_TIME_SLOTS.some(slot => isScheduleInSlot(res, slot))) {
+          if (!Array.from(timeSlotSet).some(slot => isScheduleInSlot(res, slot))) {
             timeSlotSet.add(formatted)
           }
         }
       })
     }
 
-    return Array.from(timeSlotSet).sort((a, b) => {
-      const startA = a.split('-')[0]
-      const startB = b.split('-')[0]
-      if (startA !== startB) return startA.localeCompare(startB)
-      return a.split('-')[1].localeCompare(b.split('-')[1])
-    })
-  }, [filteredSchedules, activeWeekReservations, showWeekCalendar])
+    const roomStartMins = isRoomMode && room && !forceFullDaySchedule ? timeToMins(room.startTime || '07:30') : null
+    const roomEndMins = isRoomMode && room && !forceFullDaySchedule ? timeToMins(room.endTime || '18:00') : null
+
+    return Array.from(timeSlotSet)
+      .filter(slot => {
+        if (roomStartMins !== null && roomEndMins !== null) {
+          const [s, e] = slot.split('-')
+          const sMins = timeToMins(s)
+          const eMins = timeToMins(e)
+          return sMins >= roomStartMins && eMins <= roomEndMins
+        }
+        return true
+      })
+      .sort((a, b) => {
+        const startA = a.split('-')[0]
+        const startB = b.split('-')[0]
+        if (startA !== startB) return startA.localeCompare(startB)
+        return a.split('-')[1].localeCompare(b.split('-')[1])
+      })
+  }, [isRoomMode, room?.startTime, room?.endTime, forceFullDaySchedule, filteredSchedules, activeWeekReservations, showWeekCalendar])
 
   // 7. Populate Grid
   const scheduleGrid = useMemo(() => {
     const grid: Record<string, Record<string, any[]>> = {}
     timeSlots.forEach(slot => {
-      grid[slot] = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [], Sat: [], Sun: [] }
+      grid[slot] = { Sun: [], Mon: [], Tue: [], Wed: [], Thu: [], Fri: [], Sat: [] }
     })
 
     filteredSchedules.forEach(schedule => {
@@ -586,11 +689,12 @@ export function ScheduleModal({
                   <th style={{ width: '95px', border: '1px solid #d1d5db', backgroundColor: '#f9fafb', padding: '8px 4px', fontSize: '12px', fontWeight: 'bold', color: '#374151', textAlign: 'center' }}>Time</th>
                   {DAYS.map((day, dIdx) => {
                     const wDay = showWeekCalendar ? weekInfo.weekDays[dIdx] : null
+                    const isSelected = showWeekCalendar && day === selectedDayName
                     return (
-                      <th key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#f9fafb', padding: '6px 4px', fontSize: '12px', fontWeight: 'bold', color: '#374151', textAlign: 'center' }}>
-                        <div>{day}</div>
+                      <th key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#e3edda' : '#f9fafb', padding: '6px 4px', fontSize: '12px', fontWeight: 'bold', color: isSelected ? '#334322' : '#374151', textAlign: 'center' }}>
+                        <div style={{ color: isSelected ? '#526f34' : '#374151', fontWeight: 'bold' }}>{day}</div>
                         {wDay && (
-                          <div style={{ fontSize: '10px', color: '#6b7280', fontWeight: 'normal' }}>{wDay.formattedShort}</div>
+                          <div style={{ fontSize: '10px', color: isSelected ? '#41572a' : '#6b7280', fontWeight: isSelected ? 'bold' : 'normal' }}>{wDay.formattedShort}</div>
                         )}
                       </th>
                     )
@@ -610,39 +714,55 @@ export function ScheduleModal({
                       </td>
                       {DAYS.map(day => {
                         const daySchedules = scheduleGrid[slot]?.[day] || []
+                        const isSelected = showWeekCalendar && day === selectedDayName
                         if (daySchedules.length === 0) {
                           return (
-                            <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
+                            <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
                               <div style={{ height: '100%' }} />
                             </td>
                           )
                         }
 
                         if (isRoomMode) {
+                          const slotStartMins = timeToMins(start)
+                          const slotEndMins = timeToMins(end)
+                          const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
                           return (
-                            <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top' }}>
-                              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', height: '100%' }}>
+                            <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top' }}>
+                              <div style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
                                 {daySchedules.map((item, idx) => {
+                                  const itemStartMins = Math.max(slotStartMins, timeToMins(item.startTime))
+                                  const itemEndMins = Math.min(slotEndMins, timeToMins(item.endTime))
+
+                                  const startRow = Math.floor((itemStartMins - slotStartMins) / 30) + 1
+                                  const endRow = Math.max(startRow + 1, Math.ceil((itemEndMins - slotStartMins) / 30) + 1)
+                                  const gridRowStyle = `${startRow} / ${endRow}`
+
                                   if (item._itemType === 'reservation') {
+                                    const isApproved = item.status === 'Approved'
+                                    const bgColor = isApproved ? '#d1fae5' : '#fef3c7'
+                                    const borderColor = isApproved ? '#6ee7b7' : '#fcd34d'
+                                    const textColor = isApproved ? '#065f46' : '#92400e'
+
                                     return (
-                                      <div key={item.id || idx} style={{ backgroundColor: '#fef3c7', border: '1px solid #fcd34d', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginBottom: '3px' }}>
-                                          <span style={{ fontWeight: 'bold', color: '#92400e', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {getUserName(item.userId)}
+                                      <div key={item.id || idx} style={{ gridRow: gridRowStyle, backgroundColor: bgColor, border: `1px solid ${borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
+                                          <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {getUserDepartment(item.userId)}
                                           </span>
-                                          <span style={{ fontWeight: 'bold', color: '#b45309', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
+                                          <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
                                             {item.status || 'Reserved'}
                                           </span>
                                         </div>
-                                        <div style={{ marginTop: '4px', borderTop: '1px solid #fde68a', paddingTop: '4px', fontSize: '10px', color: '#78350f', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <strong style={{ color: '#1f2937' }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</strong></div>
+                                        <div style={{ marginTop: '4px', borderTop: `1px solid ${borderColor}`, paddingTop: '4px', fontSize: '10px', color: textColor, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937' }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
                                         </div>
                                       </div>
                                     )
                                   }
 
                                   return (
-                                    <div key={item.id || idx} style={{ backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                    <div key={item.id || idx} style={{ gridRow: gridRowStyle, backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                         <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.subjectCode || 'TBA'}</span>
                                         <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
@@ -689,12 +809,23 @@ export function ScheduleModal({
                           }
                         })
 
+                        const slotStartMins = timeToMins(start)
+                        const slotEndMins = timeToMins(end)
+                        const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
+
                         return (
                           <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', width: '100%', height: '100%' }}>
-                              {grouped.map((group, idx) => (
-                                group.parent.type === 'parallel' ? (
-                                  <div key={idx} style={{ backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            <div style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
+                              {grouped.map((group, idx) => {
+                                const itemStartMins = Math.max(slotStartMins, timeToMins(group.parent.startTime))
+                                const itemEndMins = Math.min(slotEndMins, timeToMins(group.parent.endTime))
+
+                                const startRow = Math.floor((itemStartMins - slotStartMins) / 30) + 1
+                                const endRow = Math.max(startRow + 1, Math.ceil((itemEndMins - slotStartMins) / 30) + 1)
+                                const gridRowStyle = `${startRow} / ${endRow}`
+
+                                return group.parent.type === 'parallel' ? (
+                                  <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                       <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.parent.subjectCode || 'TBA'}</span>
                                       <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
@@ -714,7 +845,7 @@ export function ScheduleModal({
                                     </div>
                                   </div>
                                 ) : (
-                                  <div key={idx} style={{ backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                  <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                       <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.parent.subjectCode || 'TBA'}</span>
                                       <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
@@ -730,7 +861,7 @@ export function ScheduleModal({
                                     </div>
                                   </div>
                                 )
-                              ))}
+                              })}
                             </div>
                           </td>
                         )
@@ -746,11 +877,11 @@ export function ScheduleModal({
       </div>
 
       <div
-        className="w-[85vw] max-w-[85vw] h-[88vh] max-h-[88vh] flex flex-col rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
+        className="w-[85vw] max-w-[85vw] h-[88vh] max-h-[88vh] flex flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="relative z-30 bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] px-7 py-5 text-white rounded-t-3xl shrink-0 flex items-center justify-between gap-4 overflow-visible">
+        <div className="relative z-30 bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] px-7 py-5 text-white rounded-t-2xl shrink-0 flex items-center justify-between gap-4 overflow-visible">
           <div>
             <div className="flex items-center gap-2.5">
               <h3 className="text-xl font-bold tracking-tight text-white">
@@ -773,45 +904,38 @@ export function ScheduleModal({
                   onClick={() => {
                     setSelectedWeekDate(getLocalIsoDate())
                   }}
-                  className="h-11 px-3.5 flex items-center justify-center rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all cursor-pointer shadow-sm"
+                  className="h-12 px-3.5 flex items-center justify-center rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold transition-all cursor-pointer shadow-sm"
                 >
                   This Week
                 </button>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  const prev = new Date(weekInfo.monday)
-                  prev.setDate(prev.getDate() - 7)
-                  setSelectedWeekDate(getLocalIsoDate(prev))
-                }}
-                title="Previous Week"
-                className="h-11 w-11 flex items-center justify-center rounded-xl bg-white/20 hover:bg-white/30 text-white transition-all active:scale-95 cursor-pointer shadow-sm"
-              >
-                <ChevronLeftIcon className="h-5 w-5" />
-              </button>
-
-              <div className="w-56">
+              <div className="w-72">
                 <DatePicker
                   value={selectedWeekDate}
                   onChange={(date) => setSelectedWeekDate(date)}
+                  minDate={minDate}
+                  maxDate={maxDate}
                   align="right"
+                  hideClear
+                  onPrev={() => {
+                    if (isPrevDisabled) return
+                    const prev = new Date(weekInfo.sunday)
+                    prev.setDate(prev.getDate() - 7)
+                    setSelectedWeekDate(getLocalIsoDate(prev))
+                  }}
+                  onNext={() => {
+                    if (isNextDisabled) return
+                    const next = new Date(weekInfo.sunday)
+                    next.setDate(next.getDate() + 7)
+                    setSelectedWeekDate(getLocalIsoDate(next))
+                  }}
+                  prevDisabled={isPrevDisabled}
+                  nextDisabled={isNextDisabled}
+                  prevTitle="Previous Week"
+                  nextTitle="Next Week"
                 />
               </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  const next = new Date(weekInfo.monday)
-                  next.setDate(next.getDate() + 7)
-                  setSelectedWeekDate(getLocalIsoDate(next))
-                }}
-                title="Next Week"
-                className="h-11 w-11 flex items-center justify-center rounded-xl bg-white/20 hover:bg-white/30 text-white transition-all active:scale-95 cursor-pointer shadow-sm"
-              >
-                <ChevronRightIcon className="h-5 w-5" />
-              </button>
             </div>
           ) : !hideFilters ? (
             <div className="flex items-center gap-3 shrink-0">
@@ -871,7 +995,7 @@ export function ScheduleModal({
             <table
               className="grid w-full text-left text-sm whitespace-nowrap min-w-max"
               style={{
-                gridTemplateColumns: '6rem repeat(7, minmax(11.25rem, 1fr))',
+                gridTemplateColumns: '6rem repeat(7, minmax(9.5rem, 1fr))',
                 gridTemplateRows: `auto repeat(${timeSlots.length}, minmax(7.5rem, auto))`
               }}
             >
@@ -880,11 +1004,27 @@ export function ScheduleModal({
                   <th className="p-2 h-14 flex items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">Time</th>
                   {DAYS.map((day, dIdx) => {
                     const wDay = showWeekCalendar ? weekInfo.weekDays[dIdx] : null
+                    const isSelected = showWeekCalendar && day === selectedDayName
                     return (
-                      <th key={day} className="p-2 h-14 flex flex-col items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 last:border-r-0 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">
-                        <span className="text-sm font-bold text-gray-800">{day}</span>
+                      <th
+                        key={day}
+                        className={`p-2 h-14 flex flex-col items-center justify-center border-b-2 border-r text-center border-gray-300 last:border-r-0 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold transition-colors ${isSelected
+                            ? 'bg-[#e3edda] text-[var(--brand-color)] border-b-2 border-b-[var(--brand-color)]'
+                            : 'bg-gray-50 text-gray-700'
+                          }`}
+                      >
+                        <span className={`text-sm font-bold ${isSelected ? 'text-[var(--brand-color)] font-extrabold' : 'text-gray-800'}`}>
+                          {day}
+                        </span>
                         {wDay && (
-                          <span className={`text-[0.625rem] font-bold mt-0.5 px-1.5 py-0.2 rounded-md ${wDay.isToday ? 'bg-[var(--brand-color)] text-white' : 'text-gray-400 bg-gray-100'}`}>
+                          <span
+                            className={`text-[0.625rem] font-bold mt-0.5 px-1.5 py-0.2 rounded-md transition-colors ${isSelected
+                                ? 'bg-[var(--brand-color)] text-white font-extrabold shadow-xs'
+                                : wDay.isToday
+                                  ? 'bg-[var(--brand-color)] text-white'
+                                  : 'text-gray-400 bg-gray-100'
+                              }`}
+                          >
                             {wDay.formattedShort}
                           </span>
                         )}
@@ -906,75 +1046,99 @@ export function ScheduleModal({
                       </td>
                       {DAYS.map(day => {
                         const daySchedules = scheduleGrid[slot]?.[day] || []
+                        const isSelected = showWeekCalendar && day === selectedDayName
 
                         if (daySchedules.length === 0) {
                           return (
-                            <td key={day} className="px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top bg-white group-hover:bg-gray-50/50 transition-colors h-full flex flex-col min-w-0">
+                            <td
+                              key={day}
+                              className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors h-full flex flex-col min-w-0 ${isSelected
+                                  ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
+                                  : 'bg-white group-hover:bg-gray-50/50'
+                                }`}
+                            >
                               <div className="flex-1 h-full" />
                             </td>
                           )
                         }
 
                         if (isRoomMode) {
-                          return (
-                            <td key={day} className="px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top bg-white group-hover:bg-gray-50/50 transition-colors h-full flex flex-col justify-start min-w-0">
-                              <div className="flex flex-col gap-2 w-full h-full flex-1">
-                                {daySchedules.map((item, idx) => {
-                                  if (item._itemType === 'reservation') {
-                                    const isApproved = item.status === 'Approved'
-                                    return (
-                                      <div
-                                        key={item.id || idx}
-                                        className={`flex flex-col p-2 rounded text-sm shadow-sm transition-shadow h-full flex-1 min-w-0 border ${
-                                          isApproved
-                                            ? 'bg-amber-500/10 border-amber-500/30'
-                                            : 'bg-sky-500/10 border-sky-500/30'
-                                        }`}
-                                      >
-                                        <div className="flex flex-row items-center justify-between gap-1.5 min-w-0">
-                                          <span className="font-bold text-gray-900 truncate text-xs">
-                                            {getUserName(item.userId)}
-                                          </span>
-                                          <span
-                                            className={`font-black uppercase tracking-wider text-[0.5625rem] px-1.5 py-0.5 rounded-full shrink-0 ${
-                                              isApproved
-                                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                                                : 'bg-sky-100 text-sky-800 border border-sky-300'
-                                            }`}
-                                          >
-                                            {item.status || 'Reserved'}
-                                          </span>
-                                        </div>
-                                        <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${
-                                          isApproved ? 'border-amber-500/20 text-amber-900/80' : 'border-sky-500/20 text-sky-900/80'
-                                        }`}>
-                                          <span className="truncate">Time: <span className="font-semibold text-gray-800">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
-                                        </div>
-                                      </div>
-                                    )
-                                  }
+                          const slotStartMins = timeToMins(start)
+                          const slotEndMins = timeToMins(end)
+                          const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
 
+                          const isSingleFullSlot = daySchedules.length === 1 &&
+                            timeToMins(daySchedules[0].startTime) <= slotStartMins &&
+                            timeToMins(daySchedules[0].endTime) >= slotEndMins;
+
+                          const gridRowsStyle = daySchedules.length > 0
+                            ? (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`)
+                            : 'auto';
+
+                          return (
+                            <td
+                              key={day}
+                              className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors min-w-0 h-full grid gap-1 ${isSelected
+                                  ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
+                                  : 'bg-white group-hover:bg-gray-50/50'
+                                }`}
+                              style={{ gridTemplateRows: gridRowsStyle }}
+                            >
+                              {daySchedules.map((item, idx) => {
+                                const itemStartMins = Math.max(slotStartMins, timeToMins(item.startTime))
+                                const itemEndMins = Math.min(slotEndMins, timeToMins(item.endTime))
+
+                                const startRow = Math.floor((itemStartMins - slotStartMins) / 30) + 1
+                                const endRow = Math.max(startRow + 1, Math.ceil((itemEndMins - slotStartMins) / 30) + 1)
+                                const gridRowStyle = `${startRow} / ${endRow}`
+
+                                if (item._itemType === 'reservation') {
+                                  const isApproved = item.status === 'Approved'
                                   return (
-                                    <div key={item.id || idx} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow h-full flex-1 min-w-0">
+                                    <div
+                                      key={item.id || idx}
+                                      style={{ gridRow: gridRowStyle }}
+                                      className={`flex flex-col p-2 rounded text-sm shadow-sm transition-shadow min-w-0 min-h-0 border overflow-hidden ${isApproved
+                                          ? 'bg-emerald-500/10 border-emerald-500/30'
+                                          : 'bg-amber-500/10 border-amber-500/30'
+                                        }`}
+                                    >
                                       <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                        <span className="font-bold text-gray-900 uppercase truncate">{item.subjectCode || 'TBA'}</span>
+                                        <span className="font-bold text-gray-900 uppercase truncate">
+                                          {getUserDepartment(item.userId)}
+                                        </span>
                                         <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                          {item.format || 'N/A'}
+                                          {item.status || 'Reserved'}
                                         </span>
                                       </div>
-                                      <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
-                                        <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                        <span className="truncate">Inst: <span className="text-[var(--brand-color)] font-medium truncate" title={getInstructorName(item.instructorId)}>
-                                          {getInstructorName(item.instructorId)}
-                                        </span></span>
-                                        {item.department && (
-                                          <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
-                                        )}
+                                      <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${isApproved ? 'border-emerald-500/20 text-emerald-900/80' : 'border-amber-500/20 text-amber-900/80'
+                                        }`}>
+                                        <span className="truncate">Time: <span className="text-gray-800">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
                                       </div>
                                     </div>
                                   )
-                                })}
-                              </div>
+                                }
+
+                                return (
+                                  <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden">
+                                    <div className="flex flex-row items-center gap-1.5 min-w-0">
+                                      <span className="font-bold text-gray-900 uppercase truncate">{item.subjectCode || 'TBA'}</span>
+                                      <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
+                                        {item.format || 'N/A'}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
+                                      <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
+                                      <span className="truncate">Inst: <span className="text-[var(--brand-color)] font-medium truncate" title={getInstructorName(item.instructorId)}>
+                                        {getInstructorName(item.instructorId)}
+                                      </span></span>
+                                      {item.department && (
+                                        <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
+                                      )}
+                                    </div>
+                                  </div>
+                                )
+                              })}
                             </td>
                           )
                         }
@@ -1005,91 +1169,115 @@ export function ScheduleModal({
                           }
                         })
 
+                        const slotStartMins = timeToMins(start)
+                        const slotEndMins = timeToMins(end)
+                        const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
+
+                        const isSingleFullSlot = grouped.length === 1 &&
+                          timeToMins(grouped[0].parent.startTime) <= slotStartMins &&
+                          timeToMins(grouped[0].parent.endTime) >= slotEndMins;
+
+                        const gridRowsStyle = grouped.length > 0
+                          ? (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`)
+                          : 'auto';
+
                         return (
-                          <td key={day} className="px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top bg-white group-hover:bg-gray-50/50 transition-colors h-full flex flex-col justify-start min-w-0">
-                            <div className="flex flex-col gap-2 w-full h-full flex-1">
-                              {grouped.map((group, idx) => (
-                                group.parent.type === 'parallel' ? (
-                                  <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm transition-all h-full flex-1 min-w-0">
-                                    <div className="flex flex-col focus:outline-none min-w-0">
-                                      <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                        <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
-                                        <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                          {group.parent.format || 'N/A'}
-                                        </span>
+                          <td
+                            key={day}
+                            className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors min-w-0 h-full grid gap-1 ${isSelected
+                                ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
+                                : 'bg-white group-hover:bg-gray-50/50'
+                              }`}
+                            style={{ gridTemplateRows: gridRowsStyle }}
+                          >
+                            {grouped.map((group, idx) => {
+                              const itemStartMins = Math.max(slotStartMins, timeToMins(group.parent.startTime))
+                              const itemEndMins = Math.min(slotEndMins, timeToMins(group.parent.endTime))
+
+                              const startRow = Math.floor((itemStartMins - slotStartMins) / 30) + 1
+                              const endRow = Math.max(startRow + 1, Math.ceil((itemEndMins - slotStartMins) / 30) + 1)
+                              const gridRowStyle = `${startRow} / ${endRow}`
+
+                              return group.parent.type === 'parallel' ? (
+                                <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm transition-all min-w-0 min-h-0 overflow-hidden">
+                                  <div className="flex flex-col focus:outline-none min-w-0">
+                                    <div className="flex flex-row items-center gap-1.5 min-w-0">
+                                      <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
+                                      <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
+                                        {group.parent.format || 'N/A'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 cursor-default min-w-0" onClick={e => e.stopPropagation()}>
+                                    {[group.parent, ...group.children].map((item, iIdx) => (
+                                      <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
+                                        <div className="flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
+                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
+                                          <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(item.roomId)}>
+                                            {getRoomCode(item.roomId)}
+                                          </span></span>
+                                          {item.department && (
+                                            <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
+                                          )}
+                                        </div>
                                       </div>
-                                    </div>
-                                    <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 cursor-default min-w-0" onClick={e => e.stopPropagation()}>
-                                      {[group.parent, ...group.children].map((item, iIdx) => (
-                                        <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
-                                          <div className="flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                            <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                            <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(item.roomId)}>
-                                              {getRoomCode(item.roomId)}
-                                            </span></span>
-                                            {item.department && (
-                                              <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
-                                            )}
-                                          </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : group.children.length > 0 ? (
+                                <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm min-w-0 min-h-0 overflow-hidden">
+                                  <div className="flex flex-row items-center gap-1.5 min-w-0">
+                                    <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
+                                    <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
+                                      {group.parent.format || 'N/A'}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
+                                    <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
+                                    <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(group.parent.roomId)}>
+                                      {getRoomCode(group.parent.roomId)}
+                                    </span></span>
+                                    {group.parent.department && (
+                                      <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
+                                    )}
+                                  </div>
+                                  <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 min-w-0">
+                                    {group.children.map((child, cIdx) => (
+                                      <div key={cIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
+                                        <span className="font-bold text-gray-900 uppercase truncate">{child.subjectCode || 'TBA'}</span>
+                                        <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
+                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{child.classSection || 'TBA'}</span></span>
+                                          <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(child.roomId)}>
+                                            {getRoomCode(child.roomId)}
+                                          </span></span>
+                                          {child.department && (
+                                            <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{child.department}</span></span>
+                                          )}
                                         </div>
-                                      ))}
-                                    </div>
+                                      </div>
+                                    ))}
                                   </div>
-                                ) : group.children.length > 0 ? (
-                                  <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm h-full flex-1 min-w-0">
-                                    <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                      <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
-                                      <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                        {group.parent.format || 'N/A'}
-                                      </span>
-                                    </div>
-                                    <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                      <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                      <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(group.parent.roomId)}>
-                                        {getRoomCode(group.parent.roomId)}
-                                      </span></span>
-                                      {group.parent.department && (
-                                        <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
-                                      )}
-                                    </div>
-                                    <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 min-w-0">
-                                      {group.children.map((child, cIdx) => (
-                                        <div key={cIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
-                                          <span className="font-bold text-gray-900 uppercase truncate">{child.subjectCode || 'TBA'}</span>
-                                          <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                            <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{child.classSection || 'TBA'}</span></span>
-                                            <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(child.roomId)}>
-                                              {getRoomCode(child.roomId)}
-                                            </span></span>
-                                            {child.department && (
-                                              <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{child.department}</span></span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
+                                </div>
+                              ) : (
+                                <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden">
+                                  <div className="flex flex-row items-center gap-1.5 min-w-0">
+                                    <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
+                                    <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
+                                      {group.parent.format || 'N/A'}
+                                    </span>
                                   </div>
-                                ) : (
-                                  <div key={idx} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow h-full flex-1 min-w-0">
-                                    <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                      <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
-                                      <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                        {group.parent.format || 'N/A'}
-                                      </span>
-                                    </div>
-                                    <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
-                                      <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                      <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(group.parent.roomId)}>
-                                        {getRoomCode(group.parent.roomId)}
-                                      </span></span>
-                                      {group.parent.department && (
-                                        <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
-                                      )}
-                                    </div>
+                                  <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
+                                    <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
+                                    <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(group.parent.roomId)}>
+                                      {getRoomCode(group.parent.roomId)}
+                                    </span></span>
+                                    {group.parent.department && (
+                                      <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
+                                    )}
                                   </div>
-                                )
-                              ))}
-                            </div>
+                                </div>
+                              )
+                            })}
                           </td>
                         )
                       })}
@@ -1102,7 +1290,7 @@ export function ScheduleModal({
         </div>
 
         {/* Modal Footer */}
-        <div className="bg-gray-50/80 px-7 py-4 border-t border-gray-200 flex items-center justify-between gap-3 shrink-0 rounded-b-3xl relative z-30">
+        <div className="bg-gray-50/80 px-7 py-4 border-t border-gray-200 flex items-center justify-between gap-3 shrink-0 rounded-b-2xl relative z-30">
           <div className="text-xs text-gray-500 font-medium">
             {showWeekCalendar ? (
               <>Showing schedule for <span className="font-bold text-gray-700">{weekInfo.label}</span></>

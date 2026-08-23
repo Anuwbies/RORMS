@@ -1866,6 +1866,16 @@ function BuildingsRoomsPage() {
       return
     }
 
+    const [startH, startM] = (newRoomStartTime || '07:30').split(':').map(Number)
+    const [endH, endM] = (newRoomEndTime || '18:00').split(':').map(Number)
+    const startTotalMins = (startH || 0) * 60 + (startM || 0)
+    const endTotalMins = (endH || 0) * 60 + (endM || 0)
+
+    if (startTotalMins >= endTotalMins) {
+      alert('Start time must be earlier than end time.')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       let imageBlob: Blob | null = pendingRoomImageBlob;
@@ -2450,8 +2460,33 @@ function BuildingsRoomsPage() {
                       </label>
                       <TimePicker
                         value={newRoomStartTime}
-                        onChange={setNewRoomStartTime}
+                        onChange={(val) => {
+                          setNewRoomStartTime(val)
+                          if (val && newRoomEndTime) {
+                            const [sh, sm] = val.split(':').map(Number)
+                            const [eh, em] = newRoomEndTime.split(':').map(Number)
+                            const sMins = (sh || 0) * 60 + (sm || 0)
+                            const eMins = (eh || 0) * 60 + (em || 0)
+                            if (sMins >= eMins) {
+                              const nextEndMins = Math.min(1080, sMins + 30)
+                              const endHour = Math.floor(nextEndMins / 60).toString().padStart(2, '0')
+                              const endMin = (nextEndMins % 60).toString().padStart(2, '0')
+                              setNewRoomEndTime(`${endHour}:${endMin}`)
+                            }
+                          }
+                        }}
                         onToggle={handleDropdownToggle}
+                        minuteStep={30}
+                        hideClear
+                        minTime="07:30"
+                        maxTime={(() => {
+                          if (!newRoomEndTime) return '17:30'
+                          const [eh, em] = newRoomEndTime.split(':').map(Number)
+                          const maxStartMins = Math.max(450, ((eh || 0) * 60 + (em || 0)) - 30)
+                          const h = Math.floor(maxStartMins / 60).toString().padStart(2, '0')
+                          const m = (maxStartMins % 60).toString().padStart(2, '0')
+                          return `${h}:${m}`
+                        })()}
                       />
                     </div>
                     <div>
@@ -2460,8 +2495,34 @@ function BuildingsRoomsPage() {
                       </label>
                       <TimePicker
                         value={newRoomEndTime}
-                        onChange={setNewRoomEndTime}
+                        onChange={(val) => {
+                          setNewRoomEndTime(val)
+                          if (val && newRoomStartTime) {
+                            const [sh, sm] = newRoomStartTime.split(':').map(Number)
+                            const [eh, em] = val.split(':').map(Number)
+                            const sMins = (sh || 0) * 60 + (sm || 0)
+                            const eMins = (eh || 0) * 60 + (em || 0)
+                            if (eMins <= sMins) {
+                              const nextStartMins = Math.max(450, eMins - 30)
+                              const startHour = Math.floor(nextStartMins / 60).toString().padStart(2, '0')
+                              const startMin = (nextStartMins % 60).toString().padStart(2, '0')
+                              setNewRoomStartTime(`${startHour}:${startMin}`)
+                            }
+                          }
+                        }}
                         onToggle={handleDropdownToggle}
+                        minuteStep={30}
+                        hideClear
+                        defaultPlacement="latest"
+                        minTime={(() => {
+                          if (!newRoomStartTime) return '08:00'
+                          const [sh, sm] = newRoomStartTime.split(':').map(Number)
+                          const minEndMins = Math.min(1080, ((sh || 0) * 60 + (sm || 0)) + 30)
+                          const h = Math.floor(minEndMins / 60).toString().padStart(2, '0')
+                          const m = (minEndMins % 60).toString().padStart(2, '0')
+                          return `${h}:${m}`
+                        })()}
+                        maxTime="18:00"
                       />
                     </div>
                   </div>
@@ -2577,6 +2638,7 @@ function BuildingsRoomsPage() {
         buildingName={
           buildings.find(b => b.rooms.some(r => r.id === selectedRoomForSchedule?.id))?.name
         }
+        forceFullDaySchedule={true}
         onClose={handleCloseModals}
         onBack={() => {
           setIsRoomScheduleModalOpen(false)

@@ -76,20 +76,6 @@ function ReserveRoomPage() {
   const [isRoomScheduleModalOpen, setIsRoomScheduleModalOpen] = useState(false)
   const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<Room | null>(null)
 
-  const durationOptions = useMemo(() => {
-    if (!selectedRoomInfo) return []
-    const options = []
-    const min = Math.max(30, selectedRoomInfo.minBookingMins || 30)
-    const max = selectedRoomInfo.maxBookingMins || 180
-    for (let i = min; i <= max; i += 30) {
-      options.push(i.toString())
-    }
-    return options
-  }, [selectedRoomInfo])
-
-  const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
-  const [roomInfoSource, setRoomInfoSource] = useState<'main' | 'searchResults'>('main')
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [reservationData, setReservationData] = useState({
     date: getLocalIsoDate(),
     startTime: '07:30',
@@ -97,6 +83,41 @@ function ReserveRoomPage() {
     purpose: '',
     attendees: ''
   })
+
+  const durationOptions = useMemo(() => {
+    if (!selectedRoomInfo) return []
+    const options = []
+    const min = Math.max(30, selectedRoomInfo.minBookingMins || 30)
+    let max = selectedRoomInfo.maxBookingMins || 180
+
+    // Enforce 1h 30m slot boundaries based on selected startTime
+    if (reservationData.startTime) {
+      const [h, m] = reservationData.startTime.split(':').map(Number)
+      const startMins = h * 60 + m
+      
+      // Slot boundaries starting from 07:30 (450 mins) up to 18:00 (1080 mins) in 90-minute intervals
+      const slotBoundaries = [450, 540, 630, 720, 810, 900, 990, 1080]
+      
+      for (let i = 0; i < slotBoundaries.length - 1; i++) {
+        const slotStart = slotBoundaries[i]
+        const slotEnd = slotBoundaries[i+1]
+        if (startMins >= slotStart && startMins < slotEnd) {
+          const maxAllowedBySlot = slotEnd - startMins
+          max = Math.min(max, maxAllowedBySlot)
+          break
+        }
+      }
+    }
+
+    for (let i = min; i <= max; i += 30) {
+      options.push(i.toString())
+    }
+    return options
+  }, [selectedRoomInfo, reservationData.startTime])
+
+  const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
+  const [roomInfoSource, setRoomInfoSource] = useState<'main' | 'searchResults'>('main')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formErrors, setFormErrors] = useState<Record<string, boolean>>({})
 
   const [isFindRoomModalOpen, setIsFindRoomModalOpen] = useState(false)
@@ -213,7 +234,7 @@ function ReserveRoomPage() {
     setIsRoomScheduleModalOpen(false)
     setReservationData({
       date: getEarliestAvailableDate(room.availableDays),
-      startTime: '07:30',
+      startTime: room.startTime || '07:30',
       duration: room.minBookingMins,
       purpose: '',
       attendees: ''
@@ -310,7 +331,22 @@ function ReserveRoomPage() {
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Start Time</label>
                     <TimePicker 
                       value={findRoomData.startTime}
-                      onChange={(time) => setFindRoomData({ ...findRoomData, startTime: time })}
+                      onChange={(time) => {
+                        let newDuration = findRoomData.duration;
+                        if (time && newDuration) {
+                          const [h, m] = time.split(':').map(Number);
+                          const startMins = h * 60 + m;
+                          const slotBoundaries = [450, 540, 630, 720, 810, 900, 990, 1080];
+                          for (let i = 0; i < slotBoundaries.length - 1; i++) {
+                            if (startMins >= slotBoundaries[i] && startMins < slotBoundaries[i+1]) {
+                              const maxAllowed = slotBoundaries[i+1] - startMins;
+                              if (newDuration > maxAllowed) newDuration = maxAllowed;
+                              break;
+                            }
+                          }
+                        }
+                        setFindRoomData({ ...findRoomData, startTime: time, duration: newDuration })
+                      }}
                       minuteStep={30}
                     />
                   </div>
@@ -320,7 +356,23 @@ function ReserveRoomPage() {
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Duration (mins)</label>
                     <SingleSelectDropdown
-                      options={['Any Duration', '30', '60', '90', '120', '150', '180']}
+                      options={(() => {
+                        let max = 180;
+                        if (findRoomData.startTime) {
+                          const [h, m] = findRoomData.startTime.split(':').map(Number);
+                          const startMins = h * 60 + m;
+                          const slotBoundaries = [450, 540, 630, 720, 810, 900, 990, 1080];
+                          for (let i = 0; i < slotBoundaries.length - 1; i++) {
+                            if (startMins >= slotBoundaries[i] && startMins < slotBoundaries[i+1]) {
+                              max = Math.min(max, slotBoundaries[i+1] - startMins);
+                              break;
+                            }
+                          }
+                        }
+                        const opts = ['Any Duration'];
+                        for (let i = 30; i <= max; i += 30) opts.push(i.toString());
+                        return opts;
+                      })()}
                       value={findRoomData.duration ? findRoomData.duration.toString() : 'Any Duration'}
                       onChange={(val) => setFindRoomData({ ...findRoomData, duration: val === 'Any Duration' ? '' : Number(val) })}
                     />
@@ -659,11 +711,31 @@ function ReserveRoomPage() {
                     <TimePicker 
                       value={reservationData.startTime}
                       onChange={(time) => {
-                        setReservationData({ ...reservationData, startTime: time })
+                        let newDuration = reservationData.duration
+                        if (time && selectedRoomInfo) {
+                          const [h, m] = time.split(':').map(Number)
+                          const startMins = h * 60 + m
+                          const slotBoundaries = [450, 540, 630, 720, 810, 900, 990, 1080]
+                          for (let i = 0; i < slotBoundaries.length - 1; i++) {
+                            const slotStart = slotBoundaries[i]
+                            const slotEnd = slotBoundaries[i+1]
+                            if (startMins >= slotStart && startMins < slotEnd) {
+                              const maxAllowedBySlot = slotEnd - startMins
+                              if (newDuration > maxAllowedBySlot) {
+                                newDuration = maxAllowedBySlot
+                              }
+                              break
+                            }
+                          }
+                        }
+                        setReservationData({ ...reservationData, startTime: time, duration: newDuration })
                         if (time) setFormErrors(prev => ({ ...prev, startTime: false }))
                       }}
                       hasError={formErrors.startTime}
                       minuteStep={30}
+                      hideClear
+                      minTime={selectedRoomInfo?.startTime || '07:30'}
+                      maxTime={selectedRoomInfo?.endTime || '18:00'}
                     />
                   </div>
 
@@ -770,6 +842,22 @@ function ReserveRoomPage() {
                       alert(`Reservation must be within the room's schedule: ${selectedRoomInfo.startTime} - ${selectedRoomInfo.endTime}.`)
                       setFormErrors(prev => ({ ...prev, startTime: true }))
                       return
+                    }
+
+                    // 4. Slot boundary validation
+                    const slotBoundaries = [450, 540, 630, 720, 810, 900, 990, 1080]
+                    for (let i = 0; i < slotBoundaries.length - 1; i++) {
+                      const slotStart = slotBoundaries[i]
+                      const slotEnd = slotBoundaries[i+1]
+                      if (startMins >= slotStart && startMins < slotEnd) {
+                        const maxAllowedBySlot = slotEnd - startMins
+                        if (reservationData.duration > maxAllowedBySlot) {
+                          alert(`Duration exceeds the slot boundary. Maximum allowed duration for this start time is ${maxAllowedBySlot} minutes.`)
+                          setFormErrors(prev => ({ ...prev, duration: true }))
+                          return
+                        }
+                        break
+                      }
                     }
 
                     // Calculate End Time String

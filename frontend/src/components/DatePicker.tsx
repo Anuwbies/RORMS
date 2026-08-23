@@ -10,6 +10,14 @@ interface DatePickerProps {
   allowedDays?: string[] // e.g., ["Monday", "Tuesday"]
   hasError?: boolean
   align?: 'left' | 'right'
+  showClear?: boolean
+  hideClear?: boolean
+  onPrev?: () => void
+  onNext?: () => void
+  prevDisabled?: boolean
+  nextDisabled?: boolean
+  prevTitle?: string
+  nextTitle?: string
 }
 
 const DAYS_MAP: Record<number, string> = {
@@ -22,7 +30,24 @@ const DAYS_MAP: Record<number, string> = {
   6: 'Saturday'
 }
 
-export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowedDays, hasError, align = 'left' }: DatePickerProps) {
+export function DatePicker({
+  value,
+  onChange,
+  onToggle,
+  minDate,
+  maxDate,
+  allowedDays,
+  hasError,
+  align = 'left',
+  showClear = true,
+  hideClear = false,
+  onPrev,
+  onNext,
+  prevDisabled = false,
+  nextDisabled = false,
+  prevTitle,
+  nextTitle
+}: DatePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -41,6 +66,11 @@ export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowe
     d.setHours(0, 0, 0, 0)
     return d
   })
+
+  // Sync viewDate when selectedDate changes
+  useEffect(() => {
+    setViewDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1))
+  }, [selectedDate])
 
   useEffect(() => {
     onToggle?.(isOpen)
@@ -167,22 +197,65 @@ export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowe
 
   return (
     <div className="relative" ref={containerRef}>
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        className={`flex h-12 w-full items-center justify-between gap-2 rounded-xl border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition-all shadow-sm cursor-pointer hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 active:scale-95 ${
+      <div
+        className={`flex h-12 w-full items-center justify-between gap-1.5 rounded-xl border bg-white pl-3.5 pr-1.5 py-1 text-sm text-gray-900 outline-none transition-all shadow-sm ${
           hasError 
-            ? 'border-rose-500 focus:border-rose-500 ring-4 ring-rose-50' 
+            ? 'border-rose-500 focus-within:border-rose-500 ring-4 ring-rose-50' 
             : isOpen
               ? 'border-gray-300'
-              : 'border-gray-200 focus:border-gray-300'
+              : 'border-gray-200 hover:border-gray-300'
         }`}
       >
-        <div className="flex items-center gap-3">
-          <CalendarIcon className="h-4.5 w-4.5 text-gray-400" />
-          <span className="text-sm font-medium text-gray-900">{formattedDisplayDate}</span>
-        </div>
-      </button>
+        <button
+          type="button"
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex flex-1 h-full items-center gap-2.5 text-left outline-none cursor-pointer min-w-0"
+        >
+          <CalendarIcon className="h-4.5 w-4.5 text-gray-400 shrink-0" />
+          <span className="text-sm font-medium text-gray-900 truncate">{formattedDisplayDate}</span>
+        </button>
+
+        {(onPrev || onNext) && (
+          <div className="flex items-center gap-0.5 shrink-0">
+            {onPrev && (
+              <button
+                type="button"
+                disabled={prevDisabled}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (!prevDisabled) onPrev()
+                }}
+                title={prevTitle || 'Previous'}
+                className={`h-8 w-8 flex items-center justify-center rounded-lg transition-all ${
+                  prevDisabled
+                    ? 'text-gray-300 cursor-default opacity-40'
+                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 active:scale-95 cursor-pointer'
+                }`}
+              >
+                <ChevronLeftIcon className="h-4.5 w-4.5" />
+              </button>
+            )}
+            {onNext && (
+              <button
+                type="button"
+                disabled={nextDisabled}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (!nextDisabled) onNext()
+                }}
+                title={nextTitle || 'Next'}
+                className={`h-8 w-8 flex items-center justify-center rounded-lg transition-all ${
+                  nextDisabled
+                    ? 'text-gray-300 cursor-default opacity-40'
+                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100 active:scale-95 cursor-pointer'
+                }`}
+              >
+                <ChevronRightIcon className="h-4.5 w-4.5" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
 
       {isOpen && (
         <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} z-50 mt-2 w-72 overflow-hidden rounded-2xl border border-gray-200 bg-white p-4 shadow-2xl animate-in fade-in zoom-in-95 duration-200`}>
@@ -257,24 +330,26 @@ export function DatePicker({ value, onChange, onToggle, minDate, maxDate, allowe
           </div>
 
           {/* Footer / Today button */}
-          <div className="mt-4 border-t border-gray-100 pt-3 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                onChange('')
-                setIsOpen(false)
-              }}
-              className="flex-1 rounded-xl py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer"
-            >
-              Clear
-            </button>
+          <div className="mt-3.5 border-t border-gray-100 pt-2.5 flex items-center gap-2">
+            {(showClear && !hideClear) && (
+              <button
+                type="button"
+                onClick={() => {
+                  onChange('')
+                  setIsOpen(false)
+                }}
+                className="flex-1 rounded-xl py-1.5 text-xs font-bold text-gray-500 hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                Clear
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
                 const now = new Date()
                 setViewDate(new Date(now.getFullYear(), now.getMonth(), 1))
               }}
-              className="flex-1 rounded-xl py-1.5 text-xs font-bold text-[var(--brand-color)] hover:bg-[var(--brand-color)]/5 transition-colors cursor-pointer"
+              className="w-full flex-1 rounded-xl py-1.5 text-xs font-bold text-[var(--brand-color)] hover:bg-[var(--brand-color)]/5 transition-colors cursor-pointer"
             >
               Go to Today
             </button>
