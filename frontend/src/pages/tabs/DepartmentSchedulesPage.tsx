@@ -4,6 +4,7 @@ import {
   ClockIcon, 
   EditIcon, 
   UserIcon, 
+  CheckCircleIcon
 } from '../../components/Icons'
 import { Button } from '../../components/Button'
 import { IconButton } from '../../components/IconButton'
@@ -94,6 +95,45 @@ export function DepartmentSchedulesPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
+
+  // Department Schedule statistics
+  const [deptSchedules, setDeptSchedules] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!selectedDepartment?.code) {
+      setDeptSchedules([])
+      return
+    }
+
+    const q = query(
+      collection(db, 'schedule'),
+      where('department', '==', selectedDepartment.code)
+    )
+
+    const unsub = onSnapshot(q, (snap) => {
+      const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
+      // Filter by selected academic year and semester if available
+      const filtered = allDocs.filter(item => {
+        const matchesYear = !selectedAcademicYear?.academicYear || item.academicYear === selectedAcademicYear.academicYear
+        const matchesSem = !selectedSemesterPhase?.name || item.semester === selectedSemesterPhase.name
+        return matchesYear && matchesSem
+      })
+      setDeptSchedules(filtered)
+    })
+
+    return () => unsub()
+  }, [selectedDepartment?.code, selectedAcademicYear?.academicYear, selectedSemesterPhase?.name])
+
+  const scheduleCounts = useMemo(() => {
+    const parentOrSingle = deptSchedules.filter(s => !s.parentId)
+    const plotted = parentOrSingle.filter(s => s.status === 'Plotted').length
+    const drafted = parentOrSingle.filter(s => !s.status || s.status === 'Drafted').length
+    const revised = parentOrSingle.filter(s => s.status === 'Revised').length
+    const removed = parentOrSingle.filter(s => s.status === 'Removed').length
+    const total = parentOrSingle.length
+
+    return { plotted, drafted, revised, removed, total }
+  }, [deptSchedules])
 
   // 1. Fetch Academic Years
   useEffect(() => {
@@ -294,26 +334,54 @@ export function DepartmentSchedulesPage() {
         {/* 3 Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
           <SummaryCard
-            title="Card 1"
-            subtitle="Subtitle 1"
-            icon={<UserIcon className="w-4.5 h-4.5 text-white" />}
+            title="Plotted Schedules"
+            subtitle={scheduleCounts.total > 0 ? `${scheduleCounts.plotted} of ${scheduleCounts.total} finalized` : 'No schedules created yet'}
+            icon={<CheckCircleIcon className="w-4.5 h-4.5 text-white" />}
             gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
             blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          />
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-slate-900 tracking-tight">{scheduleCounts.plotted}</span>
+              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                Finalized
+              </span>
+            </div>
+          </SummaryCard>
           <SummaryCard
-            title="Card 2"
-            subtitle="Subtitle 2"
+            title="Drafted Proposals"
+            subtitle={scheduleCounts.drafted > 0 ? `${scheduleCounts.drafted} pending Registrar review` : 'No pending drafts'}
             icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+            gradientClasses="from-blue-500 to-indigo-600"
+            blobClasses="bg-blue-500/8 group-hover:bg-blue-500/14"
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-slate-900 tracking-tight">{scheduleCounts.drafted}</span>
+              <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                Drafts
+              </span>
+            </div>
+          </SummaryCard>
+          <SummaryCard
+            title="Revised & Removed"
+            subtitle={scheduleCounts.revised > 0 ? `${scheduleCounts.revised} awaiting Dean acceptance` : (scheduleCounts.removed > 0 ? `${scheduleCounts.removed} deactivated` : 'No revisions pending')}
+            icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
             gradientClasses="from-amber-400 to-orange-500"
             blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          />
-          <SummaryCard
-            title="Card 3"
-            subtitle="Subtitle 3"
-            icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
-            gradientClasses="from-blue-400 to-indigo-500"
-            blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-          />
+          >
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-black text-slate-900 tracking-tight">{scheduleCounts.revised + scheduleCounts.removed}</span>
+              {scheduleCounts.revised > 0 && (
+                <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                  {scheduleCounts.revised} Revised
+                </span>
+              )}
+              {scheduleCounts.removed > 0 && (
+                <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                  {scheduleCounts.removed} Removed
+                </span>
+              )}
+            </div>
+          </SummaryCard>
         </div>
 
         {/* Members DataTable for Selected Department */}
@@ -406,6 +474,7 @@ export function DepartmentSchedulesPage() {
         selectedAcademicYear={selectedAcademicYear}
         selectedSemesterPhase={selectedSemesterPhase}
         editablePhases={['Drafting', 'Plotting', 'Revision', 'Final']}
+        hideTitleColumn={true}
       />
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}

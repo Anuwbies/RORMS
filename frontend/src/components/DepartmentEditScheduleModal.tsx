@@ -27,6 +27,7 @@ interface DepartmentEditScheduleModalProps {
   selectedAcademicYear: any
   selectedSemesterPhase: { name: string; phase: string } | null
   editablePhases?: string[]
+  hideTitleColumn?: boolean
 }
 
 const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder = "Select" }: { value: string, onChange: (val: string) => void, options: { value: string, label: string }[], disabled?: boolean, placeholder?: string }) => {
@@ -178,6 +179,7 @@ function DepartmentEditScheduleModal({
   selectedAcademicYear,
   selectedSemesterPhase,
   editablePhases = ['Drafting', 'Revision'],
+  hideTitleColumn = false,
 }: DepartmentEditScheduleModalProps) {
   const isEditable = selectedSemesterPhase?.phase ? editablePhases.includes(selectedSemesterPhase.phase) : false;
 
@@ -215,6 +217,173 @@ function DepartmentEditScheduleModal({
   const [isRemoveMode, setIsRemoveMode] = useState(false)
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([])
   const parallelChildrenCache = useRef<Map<string, any[]>>(new Map())
+
+  // Drag-and-drop reordering state (pointer-based, smooth CSS transform animation)
+  const [dragState, setDragState] = useState<{
+    parentId: string
+    groupIndices: number[]
+    groupHeight: number
+    startMouseY: number
+    deltaY: number
+    rowTops: number[]
+    rowHeights: number[]
+  } | null>(null)
+  const tbodyRef = useRef<HTMLTableSectionElement | null>(null)
+  const schedulesRef = useRef(schedules)
+  schedulesRef.current = schedules
+  const dragStateRef = useRef(dragState)
+  dragStateRef.current = dragState
+
+  // Get the "group" indices for a row (parent + children for parallel, or just the single row)
+  const getGroupIndices = (list: typeof schedules, idx: number): number[] => {
+    const s = list[idx]
+    if (!s) return [idx]
+    const parentIdx = s.parentId
+      ? list.findIndex(sc => sc.id === s.parentId)
+      : idx
+    const parent = list[parentIdx]
+    if (!parent) return [idx]
+    const indices = [parentIdx]
+    for (let i = parentIdx + 1; i < list.length; i++) {
+      if (list[i].parentId === parent.id) indices.push(i)
+      else break
+    }
+    return indices
+  }
+
+  const isDragging = dragState !== null
+
+  // Pointer-based drag with smooth CSS transforms
+  useEffect(() => {
+    if (!isDragging) return
+
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'grabbing'
+
+    const handlePointerMove = (e: PointerEvent) => {
+      setDragState(prev => {
+        if (!prev) return null
+        
+        let rawDeltaY = e.clientY - prev.startMouseY
+        
+        // Calculate bounds
+        const groupStartIdx = prev.groupIndices[0]
+        const groupOriginalTop = prev.rowTops[groupStartIdx]
+        const groupOriginalBottom = groupOriginalTop + prev.groupHeight
+        
+        // Top bound: first row's top
+        const minTop = prev.rowTops[0]
+        
+        // Bottom bound: last row's bottom
+        const maxBottom = prev.rowTops[prev.rowTops.length - 1] + prev.rowHeights[prev.rowHeights.length - 1]
+        
+        // Clamp deltaY so the dragged row stays within the table bounds
+        const maxDeltaYUp = minTop - groupOriginalTop
+        const maxDeltaYDown = maxBottom - groupOriginalBottom
+        
+        const clampedDeltaY = Math.max(maxDeltaYUp, Math.min(maxDeltaYDown, rawDeltaY))
+        
+        return { ...prev, deltaY: clampedDeltaY }
+      })
+    }
+
+    const handlePointerUp = () => {
+      const ds = dragStateRef.current
+      if (ds) {
+        const { groupIndices, deltaY, groupHeight, rowTops, rowHeights } = ds
+        const current = schedulesRef.current
+        const dragOriginalTop = rowTops[groupIndices[0]]
+        const dragTop = dragOriginalTop + deltaY
+        const dragBottom = dragTop + groupHeight
+
+        // Build list of all groups with their final visual centers
+        const visited = new Set(groupIndices)
+        const groupsWithVisualCenters: { indices: number[], visualCenter: number }[] = []
+        for (let i = 0; i < current.length; ) {
+          if (visited.has(i)) { i++; continue }
+          const group = getGroupIndices(current, i)
+          const gHeight = group.reduce((s, idx) => s + (rowHeights[idx] || 0), 0)
+          const gCenter = rowTops[group[0]] + gHeight / 2
+          
+          let visualCenter = gCenter
+          if (deltaY > 0 && i > groupIndices[groupIndices.length - 1] && gCenter < dragBottom) {
+             visualCenter = gCenter - groupHeight
+          } else if (deltaY < 0 && i < groupIndices[0] && gCenter > dragTop) {
+             visualCenter = gCenter + groupHeight
+          }
+          
+          groupsWithVisualCenters.push({ indices: group, visualCenter })
+          i = group[group.length - 1] + 1
+        }
+        
+        // Add dragged group
+        const draggedVisualCenter = dragTop + groupHeight / 2
+        groupsWithVisualCenters.push({ indices: groupIndices, visualCenter: draggedVisualCenter })
+        
+        // Sort by visual center
+        groupsWithVisualCenters.sort((a, b) => a.visualCenter - b.visualCenter)
+        
+        // Reconstruct schedule
+        const newSchedules: typeof current = []
+        for (const g of groupsWithVisualCenters) {
+           g.indices.forEach(idx => newSchedules.push(current[idx]))
+        }
+
+        setSchedules(newSchedules)
+      }
+      setDragState(null)
+    }
+
+    document.addEventListener('pointermove', handlePointerMove)
+    document.addEventListener('pointerup', handlePointerUp)
+    return () => {
+      document.body.style.userSelect = ''
+      document.body.style.cursor = ''
+      document.removeEventListener('pointermove', handlePointerMove)
+      document.removeEventListener('pointerup', handlePointerUp)
+    }
+  }, [isDragging])
+
+  // Calculate inline drag style for each row
+  const getRowDragStyle = (index: number): React.CSSProperties => {
+    if (!dragState) return {}
+    const { groupIndices, deltaY, groupHeight, rowTops, rowHeights } = dragState
+    const dragGroupStart = groupIndices[0]
+    const dragGroupEnd = groupIndices[groupIndices.length - 1]
+
+    if (groupIndices.includes(index)) {
+      // Dragged row - follows cursor immediately, no transition
+      return {
+        transform: `translateY(${deltaY}px)`,
+        position: 'relative',
+        zIndex: 20,
+        boxShadow: '0 4px 24px rgba(0,0,0,0.13)',
+        backgroundColor: '#ffffff',
+      }
+    }
+
+    // For non-dragged rows, check if they need to shift
+    const dragOriginalTop = rowTops[dragGroupStart]
+    const dragTop = dragOriginalTop + deltaY
+    const dragBottom = dragTop + groupHeight
+
+    // Get this row's group center
+    const thisGroup = getGroupIndices(schedules, index)
+    const thisGroupHeight = thisGroup.reduce((s, i) => s + (rowHeights[i] || 0), 0)
+    const thisGroupCenter = rowTops[thisGroup[0]] + thisGroupHeight / 2
+
+    let shift = 0
+    if (deltaY > 0 && index > dragGroupEnd && thisGroupCenter < dragBottom) {
+      shift = -groupHeight
+    } else if (deltaY < 0 && index < dragGroupStart && thisGroupCenter > dragTop) {
+      shift = groupHeight
+    }
+
+    return {
+      transform: shift !== 0 ? `translateY(${shift}px)` : undefined,
+      transition: 'transform 200ms ease',
+    }
+  }
 
   useLayoutEffect(() => {
     if (customTooltip?.visible && tooltipRef.current) {
@@ -990,7 +1159,7 @@ function DepartmentEditScheduleModal({
         if (schedule.type !== 'open lab' && !schedule.format) rowMissingIssues.push('Missing Format')
         if (missingFormat2) rowMissingIssues.push('Missing 2nd Session Format')
         if (!schedule.subjectCode) rowMissingIssues.push('Missing Subject Code')
-        if (!schedule.subjectTitle) rowMissingIssues.push('Missing Subject Title')
+        if (!hideTitleColumn && !schedule.subjectTitle) rowMissingIssues.push('Missing Subject Title')
         if (!schedule.classSection) rowMissingIssues.push('Missing Section')
         if (!schedule.instructorId) rowMissingIssues.push('Missing Instructor')
         if (!schedule.startTime || !schedule.endTime) rowMissingIssues.push('Missing Time')
@@ -1074,6 +1243,16 @@ function DepartmentEditScheduleModal({
         const newDur = getDurationMins(updated[index].startTime, updated[index].endTime);
         if (newDur === 180 && updated[index].days && updated[index].days.length > 1) {
           updated[index].days = [updated[index].days[0]];
+        }
+      }
+
+      if (field === 'status') {
+        if (!current.parentId && current.type === 'parallel') {
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].parentId === current.id) {
+              updated[i] = { ...updated[i], status: value };
+            }
+          }
         }
       }
 
@@ -1274,6 +1453,17 @@ function DepartmentEditScheduleModal({
     setIsRemoveMode(false);
   }
 
+  const handlePlotAllReady = () => {
+    setSchedules(prev => prev.map((s, idx) => {
+      const conflict = scheduleConflicts.conflictsMap[idx];
+      const hasHardConflict = conflict?.hasRoomConflict1 || conflict?.hasRoomConflict2 || conflict?.hasInstructorConflict1 || conflict?.hasInstructorConflict2;
+      if (s.status !== 'Removed' && !hasHardConflict && s.subjectCode && s.classSection) {
+        return { ...s, status: 'Plotted' };
+      }
+      return s;
+    }));
+  };
+
   const handleDropdownPosition = (e: React.MouseEvent<HTMLElement>) => {
     hideCustomTooltip();
     const summary = e.currentTarget;
@@ -1453,19 +1643,22 @@ function DepartmentEditScheduleModal({
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Type</th>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[7.5rem]">Format</th>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[5.625rem]">Code</th>
-                  <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Title</th>
+                  {!hideTitleColumn && (
+                    <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Title</th>
+                  )}
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[6.25rem]">Section</th>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[16.25rem] max-w-[16.25rem]">Instructor</th>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[15rem]">Time</th>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[8.5rem]">Days</th>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[8rem]">Building</th>
-                  <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[11.25rem]">Room</th>
+                  <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[11.25rem]">Room</th>
+                  <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[7.5rem]">Status</th>
                 </tr>
               </thead>
-              <tbody className={`divide-y divide-gray-100 bg-white ${(isLoadingSchedules || schedules.length === 0) ? 'h-full' : ''}`}>
+              <tbody ref={tbodyRef} className={`divide-y divide-gray-100 bg-white ${(isLoadingSchedules || schedules.length === 0) ? 'h-full' : ''}`}>
                 {isLoadingSchedules ? (
                   <tr className="h-full">
-                    <td colSpan={11} className="p-0 border-none bg-white h-full align-middle">
+                    <td colSpan={hideTitleColumn ? 11 : 12} className="p-0 border-none bg-white h-full align-middle">
                       <div className="sticky left-0 w-full h-full min-h-[30rem] flex flex-col items-center justify-center p-8 text-center">
                         <div className="flex flex-col items-center justify-center gap-3 max-w-md mx-auto">
                           <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
@@ -1477,7 +1670,7 @@ function DepartmentEditScheduleModal({
                   </tr>
                 ) : schedules.length === 0 ? (
                   <tr className="h-full">
-                    <td colSpan={11} className="p-0 border-none bg-white h-full align-middle">
+                    <td colSpan={hideTitleColumn ? 11 : 12} className="p-0 border-none bg-white h-full align-middle">
                       <div className="sticky left-0 w-full h-full min-h-[30rem] flex flex-col items-center justify-center p-8 text-center">
                         <div className="flex flex-col items-center justify-center max-w-md mx-auto">
                           {isEditable ? (
@@ -1633,7 +1826,9 @@ function DepartmentEditScheduleModal({
 
                     return (
                       <tr
-                        key={index}
+                        key={schedule.id + '-' + index}
+                        data-row-index={index}
+                        style={getRowDragStyle(index)}
                         onMouseDownCapture={hideCustomTooltip}
                         className={`${isSelected ? 'bg-red-100 hover:bg-red-200' : 'hover:bg-gray-50'} ${isRemoveMode ? 'cursor-pointer [&>td>*]:pointer-events-none' : ''} ${!isEditable ? '[&>td>*]:pointer-events-none opacity-95' : ''}`}
                         onClickCapture={(e) => {
@@ -1649,7 +1844,34 @@ function DepartmentEditScheduleModal({
                         }}
                       >
 
-                        <td className={`p-2 border-b border-r border-gray-300 text-center text-xs font-semibold text-gray-500 align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')}`}>
+                        <td
+                          onPointerDown={(e) => {
+                            if (!isEditable || isRemoveMode || !tbodyRef.current) return
+                            e.preventDefault()
+                            const groupIndices = getGroupIndices(schedules, index)
+                            const parentIdx = groupIndices[0]
+                            // Capture all row positions at drag start
+                            const rows = Array.from(tbodyRef.current.querySelectorAll<HTMLElement>('tr[data-row-index]'))
+                            const rowTops: number[] = []
+                            const rowHeights: number[] = []
+                            rows.forEach(row => {
+                              const rect = row.getBoundingClientRect()
+                              rowTops.push(rect.top)
+                              rowHeights.push(rect.height)
+                            })
+                            const groupHeight = groupIndices.reduce((sum, i) => sum + (rowHeights[i] || 0), 0)
+                            setDragState({
+                              parentId: schedules[parentIdx].id,
+                              groupIndices,
+                              groupHeight,
+                              startMouseY: e.clientY,
+                              deltaY: 0,
+                              rowTops,
+                              rowHeights,
+                            })
+                          }}
+                          className={`p-2 border-b border-r border-gray-300 text-center text-xs font-semibold text-gray-500 align-middle select-none ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${isEditable && !isRemoveMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                        >
                           {index + 1}
                         </td>
                         <td
@@ -1780,27 +2002,29 @@ function DepartmentEditScheduleModal({
                             className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
                           />
                         </td>
-                        <td className={`p-0 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
-                          <input
-                            type="text"
-                            placeholder="?"
-                            disabled={isChild || !isEditable}
-                            value={schedule.subjectTitle}
-                            onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
-                            onBlur={(e) => { e.target.scrollLeft = 0; }}
-                            onFocus={hideCustomTooltip}
-                            onClick={hideCustomTooltip}
-                            onMouseEnter={(e) => {
-                              if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
-                                showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
-                              } else if (!schedule.subjectTitle) {
-                                showCustomTooltip(e, 'Missing Subject Title', 'warning')
-                              }
-                            }}
-                            onMouseLeave={hideCustomTooltip}
-                            className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
-                          />
-                        </td>
+                        {!hideTitleColumn && (
+                          <td className={`p-0 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
+                            <input
+                              type="text"
+                              placeholder="?"
+                              disabled={isChild || !isEditable}
+                              value={schedule.subjectTitle}
+                              onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
+                              onBlur={(e) => { e.target.scrollLeft = 0; }}
+                              onFocus={hideCustomTooltip}
+                              onClick={hideCustomTooltip}
+                              onMouseEnter={(e) => {
+                                if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
+                                  showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
+                                } else if (!schedule.subjectTitle) {
+                                  showCustomTooltip(e, 'Missing Subject Title', 'warning')
+                                }
+                              }}
+                              onMouseLeave={hideCustomTooltip}
+                              className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
+                            />
+                          </td>
+                        )}
                         <td className={`p-0 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]' : (!schedule.classSection ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
                           <div className="relative w-full h-full flex items-center">
                             <input
@@ -2219,7 +2443,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : ''} ${hasRoomConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.roomId || missingRoom2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : ''} ${hasRoomConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.roomId || missingRoom2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -2289,6 +2513,69 @@ function DepartmentEditScheduleModal({
                             )}
                           </details>
                         </td>
+                        <td
+                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} border-b border-gray-300 focus-within:bg-[#e3edda]`}
+                        >
+                          {isEditable ? (
+                            <details className="w-full relative h-full group">
+                              <summary
+                                onClick={handleDropdownPosition}
+                                className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-0 flex items-center justify-between transition-colors bg-transparent ${schedule.status ? 'text-gray-900 font-medium' : 'text-gray-500'}`}
+                              >
+                                <span className="truncate flex items-center gap-2">
+                                  <span className={`h-2 w-2 rounded-full shrink-0 ${
+                                    schedule.status === 'Plotted' ? 'bg-emerald-500' :
+                                    schedule.status === 'Revised' ? 'bg-amber-500' :
+                                    schedule.status === 'Removed' ? 'bg-rose-500' :
+                                    'bg-slate-400'
+                                  }`} />
+                                  <span>{schedule.status || 'Drafted'}</span>
+                                </span>
+                              </summary>
+                              <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded w-full min-w-[8.5rem]`}>
+                                {['Drafted', 'Plotted', 'Revised', 'Removed'].map(opt => (
+                                  <button
+                                    key={opt}
+                                    type="button"
+                                    onClick={(e) => {
+                                      handleScheduleChange(index, 'status', opt);
+                                      if (schedule.type === 'parallel') {
+                                        schedules.forEach((s, idx) => {
+                                          if (s.id === schedule.id || s.parentId === schedule.id || (schedule.parentId && (s.id === schedule.parentId || s.parentId === schedule.parentId))) {
+                                            handleScheduleChange(idx, 'status', opt);
+                                          }
+                                        });
+                                      }
+                                      e.currentTarget.closest('details')?.removeAttribute('open');
+                                    }}
+                                    className={`text-left px-2.5 py-1.5 text-sm hover:bg-gray-100 rounded truncate flex items-center gap-2 ${
+                                      (schedule.status || 'Drafted') === opt ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-semibold' : 'text-gray-700'
+                                    }`}
+                                  >
+                                    <span className={`h-2 w-2 rounded-full shrink-0 ${
+                                      opt === 'Plotted' ? 'bg-emerald-500' :
+                                      opt === 'Revised' ? 'bg-amber-500' :
+                                      opt === 'Removed' ? 'bg-rose-500' :
+                                      'bg-slate-400'
+                                    }`} />
+                                    <span>{opt}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            </details>
+                          ) : (
+                            <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default flex items-center gap-2">
+                              <span className={`h-2 w-2 rounded-full shrink-0 ${
+                                schedule.status === 'Plotted' ? 'bg-emerald-500' :
+                                schedule.status === 'Revised' ? 'bg-amber-500' :
+                                schedule.status === 'Removed' ? 'bg-rose-500' :
+                                'bg-slate-400'
+                              }`} />
+                              <span>{schedule.status || 'Drafted'}</span>
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     );
                   })
@@ -2348,6 +2635,15 @@ function DepartmentEditScheduleModal({
                     >
                       Add Row
                     </DashedButton>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handlePlotAllReady}
+                      className="!text-emerald-700 hover:!bg-emerald-50 !border-emerald-300 text-xs font-bold shadow-xs flex items-center gap-1.5"
+                      icon={<CheckCircleIcon className="h-4 w-4 text-emerald-600" />}
+                    >
+                      Plot All Ready
+                    </Button>
                   </>
                 )}
                 <span className="text-sm font-medium text-gray-500">
