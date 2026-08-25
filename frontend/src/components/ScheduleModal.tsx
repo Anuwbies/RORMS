@@ -16,13 +16,21 @@ export interface ScheduleMemberInfo {
   name: string
   email?: string
   role?: string
+  department?: string
+  departmentName?: string
 }
-
+/**
+ * Props for the ScheduleModal component.
+ * 
+ * The modal operates in 3 distinct scenarios depending on the provided props:
+ * 1. Instructor / Program Head Schedule: Triggered when `member` is provided and `room` is null/undefined. Fetches schedules matching the member's ID.
+ * 2. Room Schedule: Triggered when `room` is provided. Fetches all department schedules plotted for this specific room.
+ * 3. Room Schedule + Reservations (Week View): Triggered when `room` is provided AND `showWeekCalendar` is true. Fetches room schedules PLUS any approved/pending reservations for the active week.
+ */
 export interface ScheduleModalProps {
   isOpen: boolean
   onClose: () => void
   onBack?: () => void
-  // Target: provide either room or member (or both)
   room?: Room | null
   buildingName?: string
   member?: ScheduleMemberInfo | null
@@ -340,7 +348,7 @@ export function ScheduleModal({
       const map = new Map<string, string>()
       snap.forEach(doc => {
         const data = doc.data()
-        map.set(doc.id, data.code || data.name || 'Room')
+        map.set(doc.id, data.name || data.code || 'Room')
       })
       setRoomsMap(map)
     })
@@ -448,16 +456,35 @@ export function ScheduleModal({
       if (selectedSemester && s.semester) {
         if (s.semester !== selectedSemester) return false
       }
+      const status = s.status || 'Drafted'
+      if (!['Drafted', 'Plotted', 'Revised'].includes(status)) return false
       return true
     })
   }, [schedules, selectedAcademicYear?.academicYear, selectedSemester])
+
+  const getScheduleStatusClasses = (status?: string) => {
+    if (showWeekCalendar) {
+      return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
+    }
+    const s = status || 'Drafted'
+    if (s === 'Plotted') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
+    if (s === 'Revised') return 'bg-amber-50 border-amber-300'
+    return 'bg-slate-100 border-slate-300' // Drafted
+  }
+
+  const getPdfStatusStyles = (status?: string) => {
+    const s = status || 'Drafted'
+    if (s === 'Plotted') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
+    if (s === 'Revised') return { backgroundColor: '#fffbeb', borderColor: '#fcd34d' }
+    return { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' } // Drafted
+  }
 
   const getInstructorName = (instructorId?: string) => {
     if (!instructorId) return 'TBA'
     return instructorsMap.get(instructorId) || 'TBA'
   }
 
-  const getRoomCode = (roomId?: string) => {
+  const getRoomName = (roomId?: string) => {
     if (!roomId) return 'TBA'
     return roomsMap.get(roomId) || 'TBA'
   }
@@ -669,7 +696,7 @@ export function ScheduleModal({
               <p style={{ marginTop: '4px', fontSize: '12px', color: 'rgba(255,255,255,0.9)', fontWeight: 500, margin: '4px 0 0 0' }}>
                 {isRoomMode && room
                   ? `${buildingName ? `${buildingName} • ` : ''}Floor ${room.floor} • ${room.type}`
-                  : `${member?.role || 'Instructor'} • ${member?.email || ''}`}
+                  : [member?.role || 'Instructor', member?.departmentName || member?.department || getUserDepartment(member?.userId || member?.id)].filter(Boolean).join(' • ')}
               </p>
             </div>
 
@@ -689,7 +716,7 @@ export function ScheduleModal({
                   <th style={{ width: '95px', border: '1px solid #d1d5db', backgroundColor: '#f9fafb', padding: '8px 4px', fontSize: '12px', fontWeight: 'bold', color: '#374151', textAlign: 'center' }}>Time</th>
                   {DAYS.map((day, dIdx) => {
                     const wDay = showWeekCalendar ? weekInfo.weekDays[dIdx] : null
-                    const isSelected = showWeekCalendar && day === selectedDayName
+                    const isSelected = false
                     return (
                       <th key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#e3edda' : '#f9fafb', padding: '6px 4px', fontSize: '12px', fontWeight: 'bold', color: isSelected ? '#334322' : '#374151', textAlign: 'center' }}>
                         <div style={{ color: isSelected ? '#526f34' : '#374151', fontWeight: 'bold' }}>{day}</div>
@@ -714,7 +741,7 @@ export function ScheduleModal({
                       </td>
                       {DAYS.map(day => {
                         const daySchedules = scheduleGrid[slot]?.[day] || []
-                        const isSelected = showWeekCalendar && day === selectedDayName
+                        const isSelected = false
                         if (daySchedules.length === 0) {
                           return (
                             <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
@@ -761,19 +788,20 @@ export function ScheduleModal({
                                     )
                                   }
 
+                                  const pdfStyles = getPdfStatusStyles(item.status)
                                   return (
-                                    <div key={item.id || idx} style={{ gridRow: gridRowStyle, backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                    <div key={item.id || idx} style={{ gridRow: gridRowStyle, backgroundColor: pdfStyles.backgroundColor, border: `1px solid ${pdfStyles.borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                         <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.subjectCode || 'TBA'}</span>
                                         <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
                                           {item.format || 'N/A'}
                                         </span>
                                       </div>
-                                      <div style={{ marginTop: '4px', borderTop: '1px solid #c6dbb6', paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <strong style={{ color: '#1f2937' }}>{item.classSection || 'TBA'}</strong></div>
-                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <strong style={{ color: '#62853e' }}>{getInstructorName(item.instructorId)}</strong></div>
-                                        {item.department && (
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563' }}>{item.department}</span></div>
+                                      <div style={{ marginTop: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{item.classSection || 'TBA'}</span></div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <span style={{ color: '#374151', fontWeight: 500 }}>{getInstructorName(item.instructorId)}</span></div>
+                                        {!isInstructorMode && item.department && (
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{item.department}</span></div>
                                         )}
                                       </div>
                                     </div>
@@ -824,39 +852,41 @@ export function ScheduleModal({
                                 const endRow = Math.max(startRow + 1, Math.ceil((itemEndMins - slotStartMins) / 30) + 1)
                                 const gridRowStyle = `${startRow} / ${endRow}`
 
+                                const pdfStyles = getPdfStatusStyles(group.parent.status)
+
                                 return group.parent.type === 'parallel' ? (
-                                  <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                  <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: pdfStyles.backgroundColor, border: `1px solid ${pdfStyles.borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                       <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.parent.subjectCode || 'TBA'}</span>
                                       <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
                                         {group.parent.format || 'N/A'}
                                       </span>
                                     </div>
-                                    <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px', borderTop: '1px solid #c6dbb6', paddingTop: '4px' }}>
+                                    <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px' }}>
                                       {[group.parent, ...group.children].map((item, iIdx) => (
-                                        <div key={iIdx} style={{ display: 'flex', flexDirection: 'column', paddingLeft: '6px', borderLeft: '2px solid #62853e', fontSize: '10px', color: '#4b5563' }}>
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <strong style={{ color: '#1f2937' }}>{item.classSection || 'TBA'}</strong></div>
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <strong style={{ color: '#62853e' }}>{getRoomCode(item.roomId)}</strong></div>
-                                          {item.department && (
-                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563' }}>{item.department}</span></div>
+                                        <div key={iIdx} style={{ display: 'flex', flexDirection: 'column', paddingLeft: '6px', borderLeft: `2px solid ${pdfStyles.borderColor}`, fontSize: '10px', color: '#4b5563' }}>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{item.classSection || 'TBA'}</span></div>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(item.roomId)}</span></div>
+                                          {!isInstructorMode && item.department && (
+                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{item.department}</span></div>
                                           )}
                                         </div>
                                       ))}
                                     </div>
                                   </div>
                                 ) : (
-                                  <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: '#f3f7ee', border: '1px solid #c6dbb6', borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                  <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: pdfStyles.backgroundColor, border: `1px solid ${pdfStyles.borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                       <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.parent.subjectCode || 'TBA'}</span>
                                       <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
                                         {group.parent.format || 'N/A'}
                                       </span>
                                     </div>
-                                    <div style={{ marginTop: '4px', borderTop: '1px solid #c6dbb6', paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <strong style={{ color: '#1f2937' }}>{group.parent.classSection || 'TBA'}</strong></div>
-                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <strong style={{ color: '#62853e' }}>{getRoomCode(group.parent.roomId)}</strong></div>
-                                      {group.parent.department && (
-                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563' }}>{group.parent.department}</span></div>
+                                    <div style={{ marginTop: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{group.parent.classSection || 'TBA'}</span></div>
+                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(group.parent.roomId)}</span></div>
+                                      {!isInstructorMode && group.parent.department && (
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{group.parent.department}</span></div>
                                       )}
                                     </div>
                                   </div>
@@ -892,7 +922,7 @@ export function ScheduleModal({
             <p className="mt-0.5 text-xs text-white/80 font-medium">
               {isRoomMode && room
                 ? `${buildingName ? `${buildingName} • ` : ''}Floor ${room.floor} • ${room.type}`
-                : `${member?.role || 'Instructor'} • ${member?.email || ''}`}
+                : [member?.role || 'Instructor', member?.departmentName || member?.department || getUserDepartment(member?.userId || member?.id)].filter(Boolean).join(' • ')}
             </p>
           </div>
 
@@ -1004,7 +1034,7 @@ export function ScheduleModal({
                   <th className="p-2 h-14 flex items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">Time</th>
                   {DAYS.map((day, dIdx) => {
                     const wDay = showWeekCalendar ? weekInfo.weekDays[dIdx] : null
-                    const isSelected = showWeekCalendar && day === selectedDayName
+                    const isSelected = false
                     return (
                       <th
                         key={day}
@@ -1046,7 +1076,7 @@ export function ScheduleModal({
                       </td>
                       {DAYS.map(day => {
                         const daySchedules = scheduleGrid[slot]?.[day] || []
-                        const isSelected = showWeekCalendar && day === selectedDayName
+                        const isSelected = false
 
                         if (daySchedules.length === 0) {
                           return (
@@ -1120,7 +1150,7 @@ export function ScheduleModal({
                                 }
 
                                 return (
-                                  <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden">
+                                  <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(item.status)}`}>
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate">{item.subjectCode || 'TBA'}</span>
                                       <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
@@ -1129,10 +1159,10 @@ export function ScheduleModal({
                                     </div>
                                     <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
                                       <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                      <span className="truncate">Inst: <span className="text-[var(--brand-color)] font-medium truncate" title={getInstructorName(item.instructorId)}>
+                                      <span className="truncate">Inst: <span className="text-gray-700 font-medium truncate" title={getInstructorName(item.instructorId)}>
                                         {getInstructorName(item.instructorId)}
                                       </span></span>
-                                      {item.department && (
+                                      {!isInstructorMode && item.department && (
                                         <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
                                       )}
                                     </div>
@@ -1199,7 +1229,7 @@ export function ScheduleModal({
                               const gridRowStyle = `${startRow} / ${endRow}`
 
                               return group.parent.type === 'parallel' ? (
-                                <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm transition-all min-w-0 min-h-0 overflow-hidden">
+                                <div key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(group.parent.status)}`}>
                                   <div className="flex flex-col focus:outline-none min-w-0">
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
@@ -1213,10 +1243,10 @@ export function ScheduleModal({
                                       <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
                                         <div className="flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                           <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                          <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(item.roomId)}>
-                                            {getRoomCode(item.roomId)}
+                                          <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(item.roomId)}>
+                                            {getRoomName(item.roomId)}
                                           </span></span>
-                                          {item.department && (
+                                          {!isInstructorMode && item.department && (
                                             <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
                                           )}
                                         </div>
@@ -1225,7 +1255,7 @@ export function ScheduleModal({
                                   </div>
                                 </div>
                               ) : group.children.length > 0 ? (
-                                <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm min-w-0 min-h-0 overflow-hidden">
+                                <div key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(group.parent.status)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
@@ -1234,10 +1264,10 @@ export function ScheduleModal({
                                   </div>
                                   <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                     <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                    <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(group.parent.roomId)}>
-                                      {getRoomCode(group.parent.roomId)}
+                                    <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(group.parent.roomId)}>
+                                      {getRoomName(group.parent.roomId)}
                                     </span></span>
-                                    {group.parent.department && (
+                                    {!isInstructorMode && group.parent.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
                                     )}
                                   </div>
@@ -1247,10 +1277,10 @@ export function ScheduleModal({
                                         <span className="font-bold text-gray-900 uppercase truncate">{child.subjectCode || 'TBA'}</span>
                                         <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                           <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{child.classSection || 'TBA'}</span></span>
-                                          <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(child.roomId)}>
-                                            {getRoomCode(child.roomId)}
+                                          <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(child.roomId)}>
+                                            {getRoomName(child.roomId)}
                                           </span></span>
-                                          {child.department && (
+                                          {!isInstructorMode && child.department && (
                                             <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{child.department}</span></span>
                                           )}
                                         </div>
@@ -1259,7 +1289,7 @@ export function ScheduleModal({
                                   </div>
                                 </div>
                               ) : (
-                                <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden">
+                                <div key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(group.parent.status)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
@@ -1268,10 +1298,10 @@ export function ScheduleModal({
                                   </div>
                                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
                                     <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                    <span className="truncate">Room: <span className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(group.parent.roomId)}>
-                                      {getRoomCode(group.parent.roomId)}
+                                    <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(group.parent.roomId)}>
+                                      {getRoomName(group.parent.roomId)}
                                     </span></span>
-                                    {group.parent.department && (
+                                    {!isInstructorMode && group.parent.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
                                     )}
                                   </div>

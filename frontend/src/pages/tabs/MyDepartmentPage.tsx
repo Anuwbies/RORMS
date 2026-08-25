@@ -623,7 +623,7 @@ function MyDepartmentPage() {
       {/* Instructor Schedule Modal */}
       <ScheduleModal
         isOpen={isScheduleModalOpen}
-        member={selectedMember}
+        member={selectedMember ? { ...selectedMember, departmentName: departmentInfo?.name || selectedMember.department } : null}
         initialAcademicYear={selectedAcademicYear?.academicYear}
         initialSemester={selectedSemesterPhase?.name}
         onClose={() => {
@@ -660,6 +660,8 @@ function MyDepartmentPage() {
         selectedAcademicYear={selectedAcademicYear}
         selectedSemesterPhase={selectedSemesterPhase}
         editablePhases={['Drafting', 'Revision']}
+        hideStatusColumn={true}
+        hidePlotAllReadyButton={true}
       />
 
 

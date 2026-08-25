@@ -475,6 +475,7 @@ export function DepartmentSchedulesPage() {
         selectedSemesterPhase={selectedSemesterPhase}
         editablePhases={['Drafting', 'Plotting', 'Revision', 'Final']}
         hideTitleColumn={true}
+        hideAddRemoveButtons={true}
       />
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}

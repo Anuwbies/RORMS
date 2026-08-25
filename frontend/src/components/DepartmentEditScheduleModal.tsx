@@ -28,6 +28,9 @@ interface DepartmentEditScheduleModalProps {
   selectedSemesterPhase: { name: string; phase: string } | null
   editablePhases?: string[]
   hideTitleColumn?: boolean
+  hideStatusColumn?: boolean
+  hideAddRemoveButtons?: boolean
+  hidePlotAllReadyButton?: boolean
 }
 
 const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder = "Select" }: { value: string, onChange: (val: string) => void, options: { value: string, label: string }[], disabled?: boolean, placeholder?: string }) => {
@@ -180,12 +183,16 @@ function DepartmentEditScheduleModal({
   selectedSemesterPhase,
   editablePhases = ['Drafting', 'Revision'],
   hideTitleColumn = false,
+  hideStatusColumn = false,
+  hideAddRemoveButtons = false,
+  hidePlotAllReadyButton = false,
 }: DepartmentEditScheduleModalProps) {
   const isEditable = selectedSemesterPhase?.phase ? editablePhases.includes(selectedSemesterPhase.phase) : false;
 
   const [rooms, setRooms] = useState<{ id: string, code: string, name: string, buildingId: string }[]>([])
   const [buildings, setBuildings] = useState<{ id: string, name: string, code?: string }[]>([])
   const [isDeleteConfirmModalOpen, setIsDeleteConfirmModalOpen] = useState(false)
+  const [isPlotConfirmModalOpen, setIsPlotConfirmModalOpen] = useState(false)
   const [isSaveConfirmModalOpen, setIsSaveConfirmModalOpen] = useState(false)
   const [isCancelConfirmModalOpen, setIsCancelConfirmModalOpen] = useState(false)
   const [isConflictSummaryModalOpen, setIsConflictSummaryModalOpen] = useState(false)
@@ -215,6 +222,7 @@ function DepartmentEditScheduleModal({
   const [isSubmittingSchedules, setIsSubmittingSchedules] = useState(false)
   const [deletedScheduleIds, setDeletedScheduleIds] = useState<string[]>([])
   const [isRemoveMode, setIsRemoveMode] = useState(false)
+  const [isPlotMode, setIsPlotMode] = useState(false)
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([])
   const parallelChildrenCache = useRef<Map<string, any[]>>(new Map())
 
@@ -352,12 +360,24 @@ function DepartmentEditScheduleModal({
     const dragGroupEnd = groupIndices[groupIndices.length - 1]
 
     if (groupIndices.includes(index)) {
+      const isFirst = index === dragGroupStart;
+      const isLast = index === dragGroupEnd;
+      
+      let shadow = 'none';
+      if (isFirst && isLast) {
+        shadow = '0 4px 24px rgba(0,0,0,0.13)';
+      } else if (isFirst) {
+        shadow = '0 -8px 20px -4px rgba(0,0,0,0.15)';
+      } else if (isLast) {
+        shadow = '0 12px 20px -4px rgba(0,0,0,0.15)';
+      }
+
       // Dragged row - follows cursor immediately, no transition
       return {
         transform: `translateY(${deltaY}px)`,
         position: 'relative',
         zIndex: 20,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.13)',
+        boxShadow: shadow,
         backgroundColor: '#ffffff',
       }
     }
@@ -513,7 +533,7 @@ function DepartmentEditScheduleModal({
                 if (child.days && child.days.length > 0) {
                   const combinedDays = [...(parent.days || []), ...child.days];
                   const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-                  parent.days = Array.from(new Set(combinedDays)).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
+                  parent.days = combinedDays.sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
                 }
 
                 parent.buildingId2 = parent.buildingId2 || (child.buildingId === parent.buildingId ? '' : child.buildingId);
@@ -1142,11 +1162,13 @@ function DepartmentEditScheduleModal({
       const isParallelSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && !!(schedule as any).instructorId2
       const isSecondSessionUnlocked = !!(schedule as any).format2 || schedule.type === 'open lab'
 
-      const missingRoom1 = !!schedule.buildingId && !schedule.roomId
-      const missingRoom2 = (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && schedule.days.length === 1 && !!schedule.buildingId && !(schedule as any).roomId2) || (isChild && parentHasRoom2 && !(schedule as any).roomId2)
-      const missingFormat2 = schedule.type !== 'open lab' && !!schedule.format && !(schedule as any).format2
-      const missingDay2 = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2 && !isParallelSameTime
-      const missingTime2 = (!!(schedule as any).instructorId2 || isSecondSessionUnlocked) && !!schedule.startTime && !(schedule as any).startTime2
+      const missingInstructor2 = isSecondSessionUnlocked && !!schedule.instructorId && !(schedule as any).instructorId2;
+      const missingBuilding2 = isSecondSessionUnlocked && !!schedule.buildingId && !(schedule as any).buildingId2;
+      const missingRoom1 = !!schedule.buildingId && !schedule.roomId;
+      const missingRoom2 = isSecondSessionUnlocked && ((!!schedule.roomId && !(schedule as any).roomId2) || (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && schedule.days.length === 1 && !!schedule.buildingId && !(schedule as any).roomId2) || (isChild && parentHasRoom2 && !(schedule as any).roomId2));
+      const missingFormat2 = schedule.type !== 'open lab' && !!schedule.format && !(schedule as any).format2;
+      const missingDay2 = isSecondSessionUnlocked && ((schedule.days.length > 0 && schedule.days.length < 2) || (!!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2 && !isParallelSameTime));
+      const missingTime2 = isSecondSessionUnlocked && !!schedule.startTime && !(schedule as any).startTime2;
 
       const rowMissingIssues: string[] = []
 
@@ -1162,11 +1184,13 @@ function DepartmentEditScheduleModal({
         if (!hideTitleColumn && !schedule.subjectTitle) rowMissingIssues.push('Missing Subject Title')
         if (!schedule.classSection) rowMissingIssues.push('Missing Section')
         if (!schedule.instructorId) rowMissingIssues.push('Missing Instructor')
+        if (missingInstructor2) rowMissingIssues.push('Missing 2nd Session Instructor')
         if (!schedule.startTime || !schedule.endTime) rowMissingIssues.push('Missing Time')
         if (missingTime2) rowMissingIssues.push('Missing 2nd Session Time')
         if (!schedule.days || schedule.days.length === 0) rowMissingIssues.push('Missing Day')
         if (missingDay2) rowMissingIssues.push('Missing 2nd Session Day')
         if (!schedule.buildingId) rowMissingIssues.push('Missing Building')
+        if (missingBuilding2) rowMissingIssues.push('Missing 2nd Session Building')
         if (missingRoom1 || !schedule.roomId) rowMissingIssues.push('Missing Room')
         if (missingRoom2) rowMissingIssues.push('Missing 2nd Session Room')
       }
@@ -1243,6 +1267,15 @@ function DepartmentEditScheduleModal({
         const newDur = getDurationMins(updated[index].startTime, updated[index].endTime);
         if (newDur === 180 && updated[index].days && updated[index].days.length > 1) {
           updated[index].days = [updated[index].days[0]];
+        }
+      }
+
+      if (['startTime', 'startTime2', 'instructorId', 'instructorId2'].includes(field)) {
+        const sched = updated[index];
+        const isSameTime = !!(sched as any).startTime2 && sched.startTime === (sched as any).startTime2;
+        const isSameInstructor = !(sched as any).instructorId2 || (sched as any).instructorId2 === sched.instructorId;
+        if (isSameTime && isSameInstructor && sched.days && sched.days.length > 1 && sched.days[0] === sched.days[1]) {
+          updated[index].days = [sched.days[0]];
         }
       }
 
@@ -1326,7 +1359,7 @@ function DepartmentEditScheduleModal({
         }
       }
 
-      newDays = Array.from(new Set(newDays.filter(Boolean))).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
+      newDays = newDays.filter(Boolean).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
 
       updated[index] = { ...current, days: newDays }
 
@@ -1453,15 +1486,19 @@ function DepartmentEditScheduleModal({
     setIsRemoveMode(false);
   }
 
-  const handlePlotAllReady = () => {
+  const handlePlotSelected = () => {
     setSchedules(prev => prev.map((s, idx) => {
-      const conflict = scheduleConflicts.conflictsMap[idx];
-      const hasHardConflict = conflict?.hasRoomConflict1 || conflict?.hasRoomConflict2 || conflict?.hasInstructorConflict1 || conflict?.hasInstructorConflict2;
-      if (s.status !== 'Removed' && !hasHardConflict && s.subjectCode && s.classSection) {
-        return { ...s, status: 'Plotted' };
+      if (selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId))) {
+        const conflict = scheduleConflicts.conflictsMap[idx];
+        const hasHardConflict = conflict?.hasRoomConflict1 || conflict?.hasRoomConflict2 || conflict?.hasInstructorConflict1 || conflict?.hasInstructorConflict2;
+        if (s.status !== 'Removed' && !hasHardConflict && s.subjectCode && s.classSection) {
+          return { ...s, status: 'Plotted' };
+        }
       }
       return s;
     }));
+    setSelectedScheduleIds([]);
+    setIsPlotMode(false);
   };
 
   const handleDropdownPosition = (e: React.MouseEvent<HTMLElement>) => {
@@ -1513,14 +1550,16 @@ function DepartmentEditScheduleModal({
           !!(schedule as any).roomId2;
         const isSplit = hasSecondDay || hasExplicitSecondSessionFields;
 
+        const parentScheduleDoc = schedule.parentId ? validSchedules.find(s => s.id === schedule.parentId) : null;
+
         const data1 = {
           department: departmentInfo?.code || null,
           session: null,
           isSplitSession: isSplit,
           classSection: schedule.classSection || null,
           type: schedule.type || null,
-          subjectCode: schedule.subjectCode || null,
-          subjectTitle: schedule.subjectTitle || null,
+          subjectCode: schedule.subjectCode || parentScheduleDoc?.subjectCode || null,
+          subjectTitle: schedule.subjectTitle || parentScheduleDoc?.subjectTitle || null,
           format: schedule.format || null,
           startTime: schedule.startTime || null,
           endTime: schedule.endTime || null,
@@ -1564,10 +1603,10 @@ function DepartmentEditScheduleModal({
             format: (schedule as any).format2 || schedule.format || null,
             startTime: (schedule as any).startTime2 || schedule.startTime || null,
             endTime: (schedule as any).endTime2 || schedule.endTime || null,
-            days: hasSecondDay ? [schedule.days[1]] : (schedule.days.length > 0 ? schedule.days : null),
-            buildingId: (schedule as any).buildingId2 || schedule.buildingId || null,
-            roomId: (schedule as any).roomId2 || schedule.roomId || null,
-            instructorId: (schedule as any).instructorId2 || schedule.instructorId || null,
+            days: hasSecondDay ? [schedule.days[1]] : null,
+            buildingId: (schedule as any).buildingId2 || null,
+            roomId: (schedule as any).roomId2 || null,
+            instructorId: (schedule as any).instructorId2 || null,
             groupId: groupId,
             parentId: schedule.id,
             orderIndex: index,
@@ -1635,8 +1674,10 @@ function DepartmentEditScheduleModal({
             )}
           </div>
 
-          <div className="py-0 flex-1 overflow-auto flex flex-col [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
-            <table className={`w-full text-left text-sm whitespace-nowrap min-w-max border-separate border-spacing-0 ${(isLoadingSchedules || schedules.length === 0) ? 'h-full flex-1' : ''}`}>
+          <div className="flex-1 relative overflow-hidden flex flex-col min-h-0">
+            <div className={`pointer-events-none absolute inset-0 z-[100] transition-shadow duration-300 ${isRemoveMode ? 'shadow-[inset_0_0_40px_rgba(244,63,94,0.3),inset_0_0_15px_rgba(244,63,94,0.2)]' : isPlotMode ? 'shadow-[inset_0_0_40px_rgba(16,185,129,0.2),inset_0_0_15px_rgba(16,185,129,0.15)]' : ''}`} />
+            <div className="py-0 flex-1 overflow-auto flex flex-col [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
+              <table className={`w-full text-left text-sm whitespace-nowrap min-w-max border-separate border-spacing-0 ${(isLoadingSchedules || schedules.length === 0) ? 'h-full flex-1' : ''}`}>
               <thead className="bg-gray-50 sticky top-0 z-20 text-gray-700 font-bold text-base shadow-sm">
                 <tr>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-12 min-w-[3rem]">#</th>
@@ -1652,13 +1693,15 @@ function DepartmentEditScheduleModal({
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 w-[8.5rem]">Days</th>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[8rem]">Building</th>
                   <th className="p-2 border-b-2 border-r text-center border-gray-300 bg-gray-50 min-w-[11.25rem]">Room</th>
-                  <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[7.5rem]">Status</th>
+                  {!hideStatusColumn && (
+                    <th className="p-2 border-b-2 text-center border-gray-300 bg-gray-50 min-w-[7.5rem]">Status</th>
+                  )}
                 </tr>
               </thead>
               <tbody ref={tbodyRef} className={`divide-y divide-gray-100 bg-white ${(isLoadingSchedules || schedules.length === 0) ? 'h-full' : ''}`}>
                 {isLoadingSchedules ? (
                   <tr className="h-full">
-                    <td colSpan={hideTitleColumn ? 11 : 12} className="p-0 border-none bg-white h-full align-middle">
+                    <td colSpan={(hideTitleColumn ? 0 : 1) + (hideStatusColumn ? 0 : 1) + 10} className="p-0 border-none bg-white h-full align-middle">
                       <div className="sticky left-0 w-full h-full min-h-[30rem] flex flex-col items-center justify-center p-8 text-center">
                         <div className="flex flex-col items-center justify-center gap-3 max-w-md mx-auto">
                           <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
@@ -1670,7 +1713,7 @@ function DepartmentEditScheduleModal({
                   </tr>
                 ) : schedules.length === 0 ? (
                   <tr className="h-full">
-                    <td colSpan={hideTitleColumn ? 11 : 12} className="p-0 border-none bg-white h-full align-middle">
+                    <td colSpan={(hideTitleColumn ? 0 : 1) + (hideStatusColumn ? 0 : 1) + 10} className="p-0 border-none bg-white h-full align-middle">
                       <div className="sticky left-0 w-full h-full min-h-[30rem] flex flex-col items-center justify-center p-8 text-center">
                         <div className="flex flex-col items-center justify-center max-w-md mx-auto">
                           {isEditable ? (
@@ -1682,16 +1725,20 @@ function DepartmentEditScheduleModal({
                                 No Schedules Created Yet
                               </h4>
                               <p className="text-xs text-slate-500 mt-1 mb-4 leading-relaxed text-center">
-                                Start drafting the timetable for {selectedAcademicYear?.academicYear || 'the academic year'} by adding your first subject row.
+                                {hideAddRemoveButtons 
+                                  ? `No schedules have been created for ${selectedAcademicYear?.academicYear || 'the academic year'} yet.`
+                                  : `Start drafting the timetable for ${selectedAcademicYear?.academicYear || 'the academic year'} by adding your first subject row.`}
                               </p>
-                              <button
-                                type="button"
-                                onClick={() => setSchedules([createDefaultSchedule()])}
-                                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--brand-color)] hover:bg-[var(--brand-color-hover)] text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer"
-                              >
-                                <PlusIcon className="h-4 w-4" />
-                                <span>Add First Schedule Row</span>
-                              </button>
+                              {!hideAddRemoveButtons && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSchedules([createDefaultSchedule()])}
+                                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--brand-color)] hover:bg-[var(--brand-color-hover)] text-white text-xs font-bold shadow-sm hover:shadow transition-all cursor-pointer"
+                                >
+                                  <PlusIcon className="h-4 w-4" />
+                                  <span>Add First Schedule Row</span>
+                                </button>
+                              )}
                             </>
                           ) : (
                             <>
@@ -1731,11 +1778,13 @@ function DepartmentEditScheduleModal({
                     const isParallelSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && !!(schedule as any).instructorId2;
                     const missingRoom1 = !!schedule.buildingId && !schedule.roomId;
                     const isSecondSessionUnlocked = !!(schedule as any).format2 || schedule.type === 'open lab';
-                    const missingRoom2 = (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && schedule.days.length === 1 && !!schedule.buildingId && !(schedule as any).roomId2) || (isChild && parentHasRoom2 && !(schedule as any).roomId2);
+                    const missingInstructor2 = isSecondSessionUnlocked && !!schedule.instructorId && !(schedule as any).instructorId2;
+                    const missingBuilding2 = isSecondSessionUnlocked && !!schedule.buildingId && !(schedule as any).buildingId2;
+                    const missingRoom2 = isSecondSessionUnlocked && ((!!schedule.roomId && !(schedule as any).roomId2) || (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && schedule.days.length === 1 && !!schedule.buildingId && !(schedule as any).roomId2) || (isChild && parentHasRoom2 && !(schedule as any).roomId2));
                     const missingFormat2 = !!schedule.format && !(schedule as any).format2;
-                    const missingDay2 = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2 && !isParallelSameTime;
+                    const missingDay2 = isSecondSessionUnlocked && ((schedule.days.length > 0 && schedule.days.length < 2) || (!!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2 && !isParallelSameTime));
                     const hasSecondSession = !!(schedule as any).instructorId2 || !!(schedule as any).roomId2 || !!(schedule as any).buildingId2 || !!(schedule as any).format2 || !!(schedule as any).startTime2;
-                    const missingTime2 = (!!(schedule as any).instructorId2 || isSecondSessionUnlocked) && !!schedule.startTime && !(schedule as any).startTime2;
+                    const missingTime2 = isSecondSessionUnlocked && !!schedule.startTime && !(schedule as any).startTime2;
 
                     let childAvailableRooms = rooms;
                     if (schedule.buildingId) {
@@ -1781,7 +1830,7 @@ function DepartmentEditScheduleModal({
                     let childAvailableRooms2 = rooms;
                     const bId2 = (schedule as any).buildingId2 || schedule.buildingId;
                     if (bId2) {
-                      childAvailableRooms2 = rooms.filter(r => r.buildingId === bId2 && r.id !== schedule.roomId);
+                      childAvailableRooms2 = rooms.filter(r => r.buildingId === bId2);
                     } else {
                       childAvailableRooms2 = [];
                     }
@@ -1823,6 +1872,7 @@ function DepartmentEditScheduleModal({
                     const availableRooms2 = childAvailableRooms2.sort((a, b) => (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' }));
 
                     const isSelected = selectedScheduleIds.includes(schedule.id) || (!!schedule.parentId && selectedScheduleIds.includes(schedule.parentId));
+                    const isPlottable = !schedule.status || schedule.status === 'Drafted';
 
                     return (
                       <tr
@@ -1830,12 +1880,13 @@ function DepartmentEditScheduleModal({
                         data-row-index={index}
                         style={getRowDragStyle(index)}
                         onMouseDownCapture={hideCustomTooltip}
-                        className={`${isSelected ? 'bg-red-100 hover:bg-red-200' : 'hover:bg-gray-50'} ${isRemoveMode ? 'cursor-pointer [&>td>*]:pointer-events-none' : ''} ${!isEditable ? '[&>td>*]:pointer-events-none opacity-95' : ''}`}
+                        className={`${isSelected ? (isPlotMode ? 'bg-emerald-100 hover:bg-emerald-200' : 'bg-red-100 hover:bg-red-200') : (isPlotMode && !isPlottable ? 'bg-gray-50/50 opacity-60' : 'hover:bg-gray-50')} ${(isRemoveMode || (isPlotMode && isPlottable)) ? 'cursor-pointer [&>td>*]:pointer-events-none' : ''} ${(isPlotMode && !isPlottable) ? 'cursor-not-allowed [&>td>*]:pointer-events-none' : ''} ${!isEditable ? '[&>td>*]:pointer-events-none opacity-95' : ''}`}
                         onClickCapture={(e) => {
                           hideCustomTooltip();
-                          if (isRemoveMode) {
+                          if (isRemoveMode || isPlotMode) {
                             e.preventDefault();
                             e.stopPropagation();
+                            if (isPlotMode && !isPlottable) return;
                             const targetId = schedule.parentId || schedule.id;
                             setSelectedScheduleIds(prev =>
                               prev.includes(targetId) ? prev.filter(id => id !== targetId) : [...prev, targetId]
@@ -1846,7 +1897,7 @@ function DepartmentEditScheduleModal({
 
                         <td
                           onPointerDown={(e) => {
-                            if (!isEditable || isRemoveMode || !tbodyRef.current) return
+                            if (!isEditable || isRemoveMode || isPlotMode || !tbodyRef.current) return
                             e.preventDefault()
                             const groupIndices = getGroupIndices(schedules, index)
                             const parentIdx = groupIndices[0]
@@ -1870,12 +1921,12 @@ function DepartmentEditScheduleModal({
                               rowHeights,
                             })
                           }}
-                          className={`p-2 border-b border-r border-gray-300 text-center text-xs font-semibold text-gray-500 align-middle select-none ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${isEditable && !isRemoveMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                          className={`p-2 border-b border-r border-gray-300 text-center text-xs font-semibold text-gray-500 align-middle select-none ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${isEditable && !isRemoveMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
                         >
                           {index + 1}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${(!isChild && !schedule.type) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${(!isChild && !schedule.type) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             if (!isChild && !schedule.type) {
                               showCustomTooltip(e, 'Missing Schedule Type', 'warning');
@@ -1914,7 +1965,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${(!isChild && schedule.type !== 'open lab' && (!schedule.format || missingFormat2)) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${(!isChild && schedule.type !== 'open lab' && (!schedule.format || missingFormat2)) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             if (!isChild && schedule.type !== 'open lab') {
                               if (!schedule.format) {
@@ -1981,51 +2032,63 @@ function DepartmentEditScheduleModal({
                             </details>
                           )}
                         </td>
-                        <td className={`p-0 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_1px_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectCode ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
-                          <input
-                            type="text"
-                            placeholder="?"
-                            disabled={isChild || !isEditable}
-                            value={schedule.subjectCode}
-                            onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
-                            onBlur={(e) => { e.target.scrollLeft = 0; }}
-                            onFocus={hideCustomTooltip}
-                            onClick={hideCustomTooltip}
-                            onMouseEnter={(e) => {
-                              if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
-                                showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
-                              } else if (!schedule.subjectCode) {
-                                showCustomTooltip(e, 'Missing Subject Code', 'warning')
-                              }
-                            }}
-                            onMouseLeave={hideCustomTooltip}
-                            className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
-                          />
-                        </td>
-                        {!hideTitleColumn && (
-                          <td className={`p-0 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
+                        <td className={`p-0 relative ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_1px_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectCode ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
+                          {isChild ? (
+                            <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
+                              {schedule.subjectCode || parentSchedule?.subjectCode || '----'}
+                            </div>
+                          ) : (
                             <input
                               type="text"
                               placeholder="?"
-                              disabled={isChild || !isEditable}
-                              value={schedule.subjectTitle}
-                              onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
+                              disabled={!isEditable}
+                              value={schedule.subjectCode}
+                              onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
                               onBlur={(e) => { e.target.scrollLeft = 0; }}
                               onFocus={hideCustomTooltip}
                               onClick={hideCustomTooltip}
                               onMouseEnter={(e) => {
                                 if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
                                   showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
-                                } else if (!schedule.subjectTitle) {
-                                  showCustomTooltip(e, 'Missing Subject Title', 'warning')
+                                } else if (!schedule.subjectCode) {
+                                  showCustomTooltip(e, 'Missing Subject Code', 'warning')
                                 }
                               }}
                               onMouseLeave={hideCustomTooltip}
-                              className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
+                              className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
                             />
+                          )}
+                        </td>
+                        {!hideTitleColumn && (
+                          <td className={`p-0 relative ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
+                            {isChild ? (
+                              <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
+                                {schedule.subjectTitle || parentSchedule?.subjectTitle || '----'}
+                              </div>
+                            ) : (
+                              <input
+                                type="text"
+                                placeholder="?"
+                                disabled={!isEditable}
+                                value={schedule.subjectTitle}
+                                onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
+                                onBlur={(e) => { e.target.scrollLeft = 0; }}
+                                onFocus={hideCustomTooltip}
+                                onClick={hideCustomTooltip}
+                                onMouseEnter={(e) => {
+                                  if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
+                                    showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
+                                  } else if (!schedule.subjectTitle) {
+                                    showCustomTooltip(e, 'Missing Subject Title', 'warning')
+                                  }
+                                }}
+                                onMouseLeave={hideCustomTooltip}
+                                className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
+                              />
+                            )}
                           </td>
                         )}
-                        <td className={`p-0 relative ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]' : (!schedule.classSection ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
+                        <td className={`p-0 relative ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ''} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]' : (!schedule.classSection ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : ((!isSelected && isChild) ? 'bg-gray-50/50 border-b border-r border-gray-300 focus-within:bg-[#e3edda]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'))}`}>
                           <div className="relative w-full h-full flex items-center">
                             <input
                               type="text"
@@ -2050,13 +2113,15 @@ function DepartmentEditScheduleModal({
                           </div>
                         </td>
                         <td
-                          className={`p-0 relative align-middle max-w-[16.25rem] ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${hasInstructorConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_1px_1px_0_0_#fb7185]' : (!isChild && !schedule.instructorId ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle max-w-[16.25rem] ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${hasInstructorConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_1px_1px_0_0_#fb7185]' : (!isChild && (!schedule.instructorId || missingInstructor2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.instructorConflictDetails1 || []), ...(conflict?.instructorConflictDetails2 || [])]
                             if (details.length > 0) {
                               showCustomTooltip(e, details, 'danger')
                             } else if (!isChild && !schedule.instructorId) {
                               showCustomTooltip(e, 'Missing Instructor', 'warning')
+                            } else if (!isChild && missingInstructor2) {
+                              showCustomTooltip(e, 'Missing 2nd Session Instructor', 'warning')
                             }
                           }}
                           onMouseLeave={hideCustomTooltip}
@@ -2067,14 +2132,14 @@ function DepartmentEditScheduleModal({
                                 <span className="truncate min-w-0 leading-none">
                                   {members.find(m => m.membershipId === schedule.instructorId)?.name || '----'}
                                 </span>
-                                {(schedule as any).instructorId2 ? (
+                                {(schedule as any).instructorId2 && ((schedule as any).instructorId2 !== schedule.instructorId || !isSecondSessionUnlocked) ? (
                                   <>
-                                    <span className="shrink-0 whitespace-pre leading-none">{'/ '}</span>
+                                    <span className="shrink-0 whitespace-pre leading-none">{' / '}</span>
                                     <span className={`truncate min-w-0 leading-none ${!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}`}>
                                       {members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}
                                     </span>
                                   </>
-                                ) : ''}
+                                ) : (missingInstructor2 ? <> <span className="shrink-0 whitespace-pre leading-none">{' / '}</span> <span>----</span></> : '')}
                               </div>
                               {hasInstructorConflict && (
                                 <ExclamationIcon className="h-4 w-4 text-rose-500 shrink-0 ml-auto" />
@@ -2091,14 +2156,14 @@ function DepartmentEditScheduleModal({
                                       {members.find(m => m.membershipId === schedule.instructorId)?.name || '?'}
                                     </span>
                                   )}
-                                  {(schedule as any).instructorId2 ? (
+                                  {(schedule as any).instructorId2 && ((schedule as any).instructorId2 !== schedule.instructorId || !isSecondSessionUnlocked) ? (
                                     <>
-                                      <span className="shrink-0 whitespace-pre leading-none">{'/ '}</span>
+                                      <span className="shrink-0 whitespace-pre leading-none">{' / '}</span>
                                       <span className={`truncate min-w-0 leading-none ${!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}`}>
                                         {members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}
                                       </span>
                                     </>
-                                  ) : ''}
+                                  ) : (missingInstructor2 ? <> <span className="shrink-0 whitespace-pre leading-none">{' / '}</span> <span className="text-amber-500 font-bold ml-1 inline-block leading-none">?</span></> : '')}
                                 </div>
                                 {hasInstructorConflict && (
                                   <ExclamationIcon className="h-4 w-4 text-rose-500 shrink-0 ml-auto" />
@@ -2123,7 +2188,7 @@ function DepartmentEditScheduleModal({
                                     value={(schedule as any).instructorId2 || ''}
                                     disabled={!isSecondSessionUnlocked || !schedule.instructorId}
                                     onChange={(val) => handleScheduleChange(index, 'instructorId2', val)}
-                                    options={members.filter(m => m.status === 'Active' && (m.role === 'Instructor' || m.role === 'Program Head') && m.membershipId !== schedule.instructorId).map(m => ({ value: m.membershipId || '', label: m.name }))}
+                                    options={members.filter(m => m.status === 'Active' && (m.role === 'Instructor' || m.role === 'Program Head')).map(m => ({ value: m.membershipId || '', label: m.name }))}
                                   />
                                 </div>
                               </div>
@@ -2131,7 +2196,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${(hasInstructorConflict || hasRoomConflict) ? `bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'} ${!hasInstructorConflict ? 'shadow-[inset_1px_1px_0_0_#fb7185]' : 'shadow-[inset_0_1px_0_0_#fb7185]'}` : (!isChild && (!schedule.startTime || missingTime2)) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${(hasInstructorConflict || hasRoomConflict) ? `bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'} ${!hasInstructorConflict ? 'shadow-[inset_1px_1px_0_0_#fb7185]' : 'shadow-[inset_0_1px_0_0_#fb7185]'}` : (!isChild && (!schedule.startTime || missingTime2)) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             const details = [
                               ...(conflict?.roomConflictDetails1 || []),
@@ -2161,7 +2226,12 @@ function DepartmentEditScheduleModal({
                                   return time1raw;
                                 }
                                 const time2raw = `${(schedule as any).startTime2} - ${(schedule as any).endTime2}`;
-                                if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2 && schedule.days.length < 2) {
+                                const isSameInstructor = !!(schedule as any).instructorId2 && (schedule as any).instructorId2 === schedule.instructorId;
+                                const isSameDay = schedule.days.length === 2 && schedule.days[0] === schedule.days[1];
+                                const isSameBuilding = !!(schedule as any).buildingId2 && (schedule as any).buildingId2 === schedule.buildingId;
+                                const isSameRoom = !!(schedule as any).roomId2 && (schedule as any).roomId2 === schedule.roomId;
+
+                                if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && isSameInstructor && isSameDay) {
                                   return `${schedule.startTime} - ${(schedule as any).endTime2}`;
                                 }
                                 return (
@@ -2183,7 +2253,12 @@ function DepartmentEditScheduleModal({
                                     );
 
                                     if ((schedule as any).startTime2) {
-                                      if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && !(schedule as any).instructorId2 && schedule.days.length < 2) {
+                                      const isSameInstructor = !!(schedule as any).instructorId2 && (schedule as any).instructorId2 === schedule.instructorId;
+                                      const isSameDay = schedule.days.length === 2 && schedule.days[0] === schedule.days[1];
+                                      const isSameBuilding = !!(schedule as any).buildingId2 && (schedule as any).buildingId2 === schedule.buildingId;
+                                      const isSameRoom = !!(schedule as any).roomId2 && (schedule as any).roomId2 === schedule.roomId;
+
+                                      if (isSecondSessionUnlocked && schedule.startTime && schedule.endTime === (schedule as any).startTime2 && isSameInstructor && isSameDay) {
                                         return (
                                           <>
                                             {schedule.startTime} - {(schedule as any).endTime2}
@@ -2262,7 +2337,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${(hasInstructorConflict || hasRoomConflict) ? `bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 shadow-[inset_0_1px_0_0_#fb7185] ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'}` : (!isChild && (schedule.days.length === 0 || missingDay2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${(hasInstructorConflict || hasRoomConflict) ? `bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 shadow-[inset_0_1px_0_0_#fb7185] ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'}` : (!isChild && (schedule.days.length === 0 || missingDay2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [
                               ...(conflict?.roomConflictDetails1 || []),
@@ -2286,7 +2361,7 @@ function DepartmentEditScheduleModal({
                                 {schedule.days.length > 0 ? (
                                   <>
                                     {schedule.days[0]}
-                                    {schedule.days[1] && (
+                                    {schedule.days[1] && (schedule.days[1] !== schedule.days[0] || !isSecondSessionUnlocked) && (
                                       <>
                                         {' / '}
                                         <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
@@ -2294,8 +2369,13 @@ function DepartmentEditScheduleModal({
                                         </span>
                                       </>
                                     )}
+                                    {missingDay2 && (
+                                      <> {' / '} <span>----</span></>
+                                    )}
                                   </>
-                                ) : '----'}
+                                ) : (
+                                  missingDay2 ? '---- / ----' : '----'
+                                )}
                               </span>
                             </div>
                           ) : (
@@ -2305,7 +2385,7 @@ function DepartmentEditScheduleModal({
                                   {schedule.days.length > 0 ? (
                                     <>
                                       {schedule.days[0]}
-                                      {schedule.days[1] && (
+                                      {schedule.days[1] && (schedule.days[1] !== schedule.days[0] || !isSecondSessionUnlocked) && (
                                         <>
                                           {' / '}
                                           <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
@@ -2341,7 +2421,12 @@ function DepartmentEditScheduleModal({
                                         <InnerDropdown
                                           value={schedule.days[0] || ''}
                                           onChange={(val) => handleDayChange(index, 0, val)}
-                                          options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => ({ value: d, label: d }))}
+                                          options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].filter(d => {
+                                            const isSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2;
+                                            const isSameInstructor = !(schedule as any).instructorId2 || (schedule as any).instructorId2 === schedule.instructorId;
+                                            if (isSameTime && isSameInstructor && schedule.days[1] === d) return false;
+                                            return true;
+                                          }).map(d => ({ value: d, label: d }))}
                                         />
                                       </div>
                                       <div className="flex flex-col gap-1.5">
@@ -2352,7 +2437,12 @@ function DepartmentEditScheduleModal({
                                           value={schedule.days[1] || ''}
                                           disabled={!isSecondSessionUnlocked || !schedule.days[0] || getDurationMins(schedule.startTime, schedule.endTime) === 180}
                                           onChange={(val) => handleDayChange(index, 1, val)}
-                                          options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => ({ value: d, label: d }))}
+                                          options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].filter(d => {
+                                            const isSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2;
+                                            const isSameInstructor = !(schedule as any).instructorId2 || (schedule as any).instructorId2 === schedule.instructorId;
+                                            if (isSameTime && isSameInstructor && schedule.days[0] === d) return false;
+                                            return true;
+                                          }).map(d => ({ value: d, label: d }))}
                                         />
                                       </div>
                                     </>
@@ -2363,13 +2453,15 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} ${hasRoomConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && !schedule.buildingId ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} ${hasRoomConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.buildingId || missingBuilding2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
                               showCustomTooltip(e, details, 'danger')
                             } else if (!isChild && !schedule.buildingId) {
                               showCustomTooltip(e, 'Missing Building', 'warning');
+                            } else if (!isChild && missingBuilding2) {
+                              showCustomTooltip(e, 'Missing 2nd Session Building', 'warning');
                             }
                           }}
                           onMouseLeave={hideCustomTooltip}
@@ -2377,14 +2469,14 @@ function DepartmentEditScheduleModal({
                           {isChild ? (
                             <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                               {resolveBuildingCode(buildings.find(b => b.id === schedule.buildingId), rooms) || '----'}
-                              {(schedule as any).buildingId2 ? (
+                              {(schedule as any).buildingId2 && ((schedule as any).buildingId2 !== schedule.buildingId || !isSecondSessionUnlocked) ? (
                                 <>
                                   {' / '}
                                   <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
                                     {resolveBuildingCode(buildings.find(b => b.id === (schedule as any).buildingId2), rooms) || '?'}
                                   </span>
                                 </>
-                              ) : ''}
+                              ) : (missingBuilding2 ? <> {' / '} <span>----</span></> : '')}
                             </div>
                           ) : (
                             <details className="w-full relative h-full group">
@@ -2393,14 +2485,14 @@ function DepartmentEditScheduleModal({
                                   {resolveBuildingCode(buildings.find(b => b.id === schedule.buildingId), rooms) || (
                                     <span className="text-amber-500 font-bold inline-block">?</span>
                                   )}
-                                  {(schedule as any).buildingId2 ? (
+                                  {(schedule as any).buildingId2 && ((schedule as any).buildingId2 !== schedule.buildingId || !isSecondSessionUnlocked) ? (
                                     <>
                                       {' / '}
                                       <span className={!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}>
                                         {resolveBuildingCode(buildings.find(b => b.id === (schedule as any).buildingId2), rooms) || '?'}
                                       </span>
                                     </>
-                                  ) : ''}
+                                  ) : (missingBuilding2 ? <> / <span className="text-amber-500 font-bold ml-1 inline-block leading-none">?</span></> : '')}
                                 </span>
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
@@ -2432,7 +2524,7 @@ function DepartmentEditScheduleModal({
                                       handleScheduleChange(index, 'buildingId2', val)
                                       handleScheduleChange(index, 'roomId2', '')
                                     }}
-                                    options={buildings.filter(b => b.id !== schedule.buildingId).map(b => ({
+                                    options={buildings.map(b => ({
                                       value: b.id,
                                       label: resolveBuildingCode(b, rooms) || ''
                                     }))}
@@ -2443,7 +2535,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : ''} ${hasRoomConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.roomId || missingRoom2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ''} ${hasRoomConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : ((!schedule.roomId || missingRoom2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -2467,7 +2559,7 @@ function DepartmentEditScheduleModal({
                                 {rooms.find(r => r.id === schedule.roomId)?.name || rooms.find(r => r.id === schedule.roomId)?.code || (
                                   <span className="text-amber-500 font-bold inline-block leading-none">?</span>
                                 )}
-                                {(schedule as any).roomId2 ? (
+                                {(schedule as any).roomId2 && ((schedule as any).roomId2 !== schedule.roomId || !isSecondSessionUnlocked) ? (
                                   <>
                                     <span className="shrink-0 whitespace-pre leading-none">{' / '}</span>
                                     <span className={`leading-none ${!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}`}>
@@ -2513,9 +2605,10 @@ function DepartmentEditScheduleModal({
                             )}
                           </details>
                         </td>
-                        <td
-                          className={`p-0 relative align-middle ${isSelected ? 'bg-red-100' : (isChild ? 'bg-gray-50/50' : '')} border-b border-gray-300 focus-within:bg-[#e3edda]`}
-                        >
+                        {!hideStatusColumn && (
+                          <td
+                            className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50' : '')} border-b border-gray-300 focus-within:bg-[#e3edda]`}
+                          >
                           {isEditable ? (
                             <details className="w-full relative h-full group">
                               <summary
@@ -2576,12 +2669,14 @@ function DepartmentEditScheduleModal({
                             </div>
                           )}
                         </td>
+                        )}
                       </tr>
                     );
                   })
                 )}
               </tbody>
             </table>
+            </div>
           </div>
 
           <div className="p-4 border-t border-gray-200 bg-white flex justify-between gap-3 shrink-0 rounded-b-2xl">
@@ -2594,11 +2689,8 @@ function DepartmentEditScheduleModal({
                       className={selectedScheduleIds.length > 0 ? '!bg-rose-500 hover:!bg-rose-600 !border-none !text-white !shadow-md' : ''}
                       onClick={() => {
                         const rowsToDeleteCount = schedules.filter(s => selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId))).length;
-                        if (rowsToDeleteCount >= 6) {
+                        if (rowsToDeleteCount > 0) {
                           setIsDeleteConfirmModalOpen(true);
-                        } else if (rowsToDeleteCount > 0) {
-                          setIsRemoveMode(false);
-                          executeBulkRemove();
                         } else {
                           setIsRemoveMode(false);
                         }
@@ -2619,31 +2711,66 @@ function DepartmentEditScheduleModal({
                       </Button>
                     )}
                   </>
+                ) : isPlotMode ? (
+                  <>
+                    <Button
+                      variant={selectedScheduleIds.length > 0 ? 'primary' : 'outline'}
+                      className={selectedScheduleIds.length > 0 ? '!bg-emerald-500 hover:!bg-emerald-600 !border-none !text-white !shadow-md' : ''}
+                      onClick={() => {
+                        if (selectedScheduleIds.length > 0) {
+                          setIsPlotConfirmModalOpen(true);
+                        } else {
+                          setIsPlotMode(false);
+                        }
+                      }}
+                    >
+                      {selectedScheduleIds.length > 0 && <CheckCircleIcon className="h-4 w-4 text-white" />}
+                      {selectedScheduleIds.length > 0 ? `Plot Selected (${schedules.filter(s => selectedScheduleIds.includes(s.id) || (s.parentId && selectedScheduleIds.includes(s.parentId))).length})` : 'Cancel Plot'}
+                    </Button>
+                    {selectedScheduleIds.length > 0 && (
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setIsPlotMode(false);
+                          setSelectedScheduleIds([]);
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </>
                 ) : (
                   <>
-                    <DashedButton
-                      variant="danger"
-                      onClick={() => setIsRemoveMode(true)}
-                      icon={<TrashIcon className="h-4 w-4" />}
-                    >
-                      Remove
-                    </DashedButton>
-                    <DashedButton
-                      variant="brand"
-                      onClick={() => setSchedules([...schedules, createDefaultSchedule()])}
-                      icon={<PlusIcon className="h-4 w-4" />}
-                    >
-                      Add Row
-                    </DashedButton>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={handlePlotAllReady}
-                      className="!text-emerald-700 hover:!bg-emerald-50 !border-emerald-300 text-xs font-bold shadow-xs flex items-center gap-1.5"
-                      icon={<CheckCircleIcon className="h-4 w-4 text-emerald-600" />}
-                    >
-                      Plot All Ready
-                    </Button>
+                    {!hideAddRemoveButtons && (
+                      <>
+                        {schedules.length > 0 && (
+                          <DashedButton
+                            variant="danger"
+                            onClick={() => setIsRemoveMode(true)}
+                            icon={<TrashIcon className="h-4 w-4" />}
+                          >
+                            Remove
+                          </DashedButton>
+                        )}
+                        <DashedButton
+                          variant="brand"
+                          onClick={() => setSchedules([...schedules, createDefaultSchedule()])}
+                          icon={<PlusIcon className="h-4 w-4" />}
+                        >
+                          Add Row
+                        </DashedButton>
+                      </>
+                    )}
+                    {!hidePlotAllReadyButton && schedules.length > 0 && (
+                      <DashedButton
+                        type="button"
+                        variant="success"
+                        onClick={() => setIsPlotMode(true)}
+                        icon={<CheckCircleIcon className="h-4 w-4" />}
+                      >
+                        Plot
+                      </DashedButton>
+                    )}
                   </>
                 )}
                 <span className="text-sm font-medium text-gray-500">
@@ -2753,7 +2880,7 @@ function DepartmentEditScheduleModal({
               >
                 {isEditable ? 'Cancel' : 'Close'}
               </Button>
-              {isEditable && (
+              {isEditable && (schedules.length > 0 || deletedScheduleIds.length > 0) && (
                 <Button
                   variant="brand"
                   disabled={isSubmittingSchedules}
@@ -2835,6 +2962,25 @@ function DepartmentEditScheduleModal({
             </div>
           </div>
           <div className="absolute inset-0 -z-10" onMouseDown={() => setIsDeleteConfirmModalOpen(false)} />
+        </div>
+      )}
+
+      {/* Plot Confirmation Modal */}
+      {isPlotConfirmModalOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="bg-emerald-600 p-5 text-white rounded-t-2xl">
+              <h3 className="text-lg font-bold">Confirm Plotting</h3>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-700">Are you sure you want to plot these selected schedules?</p>
+              <div className="flex items-center gap-3 pt-2">
+                <Button variant="outline" className="flex-1" onClick={() => setIsPlotConfirmModalOpen(false)}>Cancel</Button>
+                <Button className="flex-1 !bg-emerald-600 hover:!bg-emerald-700 !text-white !border-none !shadow-md" onClick={() => { setIsPlotConfirmModalOpen(false); handlePlotSelected(); }}>Confirm Plot</Button>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onMouseDown={() => setIsPlotConfirmModalOpen(false)} />
         </div>
       )}
 
