@@ -109,7 +109,7 @@ export function SingleSelectDropdown<T extends string>({
                   onClick={() => handleSelect(option)}
                   className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-medium transition-all active:scale-[0.98] ${
                     isSelected 
-                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)] font-semibold' 
+                      ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)]' 
                       : isOptionMuted
                         ? 'text-gray-400 font-medium hover:bg-gray-50 hover:text-gray-600 active:bg-gray-100'
                         : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 active:bg-gray-100'

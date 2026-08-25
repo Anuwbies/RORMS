@@ -39,10 +39,9 @@ const departmentData = [
 const roomStatusCounts = {
   available: 78,
   occupied: 26,
-  reserved: 15,
   maintenance: 5,
 }
-const totalRooms = roomStatusCounts.available + roomStatusCounts.occupied + roomStatusCounts.reserved + roomStatusCounts.maintenance
+const totalRooms = roomStatusCounts.available + roomStatusCounts.occupied + roomStatusCounts.maintenance
 
 const topRequestedRooms = [
   { rank: 1, room: 'Auditorium', building: 'Main', bookings: 87, avgHours: 3.2 },
@@ -134,11 +133,6 @@ function DashboardPage() {
                   title={`Occupied: ${roomStatusCounts.occupied}`}
                 />
                 <div
-                  className="bg-amber-500 transition-all"
-                  style={{ width: `${(roomStatusCounts.reserved / totalRooms) * 100}%` }}
-                  title={`Reserved: ${roomStatusCounts.reserved}`}
-                />
-                <div
                   className="bg-red-500 transition-all"
                   style={{ width: `${(roomStatusCounts.maintenance / totalRooms) * 100}%` }}
                   title={`Maintenance: ${roomStatusCounts.maintenance}`}
@@ -152,10 +146,6 @@ function DashboardPage() {
                 <div className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full bg-blue-500" />
                   <span className="text-gray-700">Occupied <span className="font-semibold text-gray-900">{roomStatusCounts.occupied}</span></span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="h-3 w-3 rounded-full bg-amber-500" />
-                  <span className="text-gray-700">Reserved <span className="font-semibold text-gray-900">{roomStatusCounts.reserved}</span></span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full bg-red-500" />

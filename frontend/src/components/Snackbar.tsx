@@ -1,4 +1,4 @@
-import React, { useState, useEffect, createContext, useContext, useCallback } from 'react'
+import React, { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { CheckIcon, CloseIcon, AlertCircleIcon, ExclamationIcon } from './Icons'
 
 export type SnackbarType = 'success' | 'error' | 'warning' | 'info' | 'brand'
@@ -84,13 +84,18 @@ export function Snackbar({
   position = 'bottom-right',
   minWidth = '340px'
 }: SnackbarProps) {
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
+
   useEffect(() => {
     if (!isOpen || duration <= 0) return
     const timer = setTimeout(() => {
-      onClose()
+      onCloseRef.current()
     }, duration)
     return () => clearTimeout(timer)
-  }, [isOpen, duration, onClose])
+  }, [isOpen, duration, message, title])
 
   if (!isOpen) return null
 

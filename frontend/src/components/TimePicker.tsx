@@ -158,9 +158,7 @@ export function TimePicker({
   const visibleHours = allHours.filter((h) => !isHourDisabled(h, period))
 
   const visibleMinutes = allMinutes.filter((min) => {
-    if (!value) {
-      return visibleHours.some(h => !isMinsDisabled(getMinutes(h, min, period)))
-    }
+    if (!value) return true
     return !isMinsDisabled(getMinutes(hourStr, min, period))
   })
 
@@ -176,14 +174,7 @@ export function TimePicker({
 
     // If switching period (e.g. AM -> PM or PM -> AM)
     if (newPeriod !== period) {
-      if (defaultPlacement === 'latest') {
-        targetMins = validList[validList.length - 1]
-      } else {
-        if (isMinsDisabled(targetMins)) {
-          // Snap to the earliest valid time in the target period
-          targetMins = validList[0]
-        }
-      }
+      targetMins = defaultPlacement === 'latest' ? validList[validList.length - 1] : validList[0]
     } else {
       // If clicking hour or minute in same period
       if (isMinsDisabled(targetMins)) {

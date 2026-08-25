@@ -14,6 +14,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { CropModal } from '../../components/CropModal'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { SummaryCard } from '../../components/SummaryCard'
+import { Snackbar } from '../../components/Snackbar'
 import type { Member } from '../../types/member'
 
 
@@ -1913,6 +1914,27 @@ function DepartmentsPage() {
     code: 'required' | 'exists' | null;
   }>({ name: null, code: null })
 
+  const [snackbar, setSnackbar] = useState<{
+    isOpen: boolean
+    message: string
+    title?: string
+    type: 'error' | 'warning' | 'info' | 'success' | 'brand'
+  }>({
+    isOpen: false,
+    message: '',
+    title: '',
+    type: 'success'
+  })
+
+  const showNotification = (message: string, type: 'error' | 'warning' | 'info' | 'success' | 'brand' = 'success', title?: string) => {
+    setSnackbar({
+      isOpen: true,
+      message,
+      title,
+      type
+    })
+  }
+
   // Fetch All Users joined with Memberships
   useEffect(() => {
     let unsubscribeUsers: (() => void) | null = null
@@ -1950,7 +1972,7 @@ function DepartmentsPage() {
     }
   }, [])
 
-  const availableDeans = allUsers.filter(u => u.role === 'Dean')
+  const availableDeans = useMemo(() => allUsers.filter(u => u.role === 'Dean'), [allUsers])
 
   // Fetch Departments
   useEffect(() => {
@@ -2112,6 +2134,13 @@ function DepartmentsPage() {
         name: nameRequired ? 'required' : null,
         code: codeRequired ? 'required' : null
       })
+      if (nameRequired && codeRequired) {
+        showNotification('Department name and code are required.', 'error', 'Missing Information')
+      } else if (nameRequired) {
+        showNotification('Department name is required.', 'error', 'Missing Information')
+      } else {
+        showNotification('Department code is required.', 'error', 'Missing Information')
+      }
       return
     }
 
@@ -2130,6 +2159,13 @@ function DepartmentsPage() {
         name: nameExists ? 'exists' : null,
         code: codeExists ? 'exists' : null
       })
+      if (nameExists && codeExists) {
+        showNotification('A department with this name and code already exists.', 'warning', 'Duplicate Department')
+      } else if (nameExists) {
+        showNotification('A department with this name already exists.', 'warning', 'Duplicate Department')
+      } else {
+        showNotification('A department with this code already exists.', 'warning', 'Duplicate Department')
+      }
       return
     }
 
@@ -2200,6 +2236,10 @@ function DepartmentsPage() {
             })
            }
         }
+
+        await batch.commit()
+        handleCloseFormModal()
+        showNotification(`Department "${trimmedName}" updated successfully.`, 'success', 'Department Updated')
       } else {
         const newDeptRef = doc(collection(db, 'departments'))
         let creationLogo = newDeptLogo || ''
@@ -2231,13 +2271,14 @@ function DepartmentsPage() {
             })
           }
         }
-      }
 
-      await batch.commit()
-      handleCloseFormModal()
+        await batch.commit()
+        handleCloseFormModal()
+        showNotification(`Department "${trimmedName}" created successfully.`, 'success', 'Department Created')
+      }
     } catch (error) {
       console.error('Error saving department:', error)
-      alert('Failed to save department.')
+      showNotification('Failed to save department. Please try again.', 'error', 'Error Saving Department')
     } finally {
       setIsSubmitting(false)
     }
@@ -2261,6 +2302,7 @@ function DepartmentsPage() {
 
     setIsDeleting(true)
     try {
+      const deptName = deptToDelete.name
       const batch = writeBatch(db)
       batch.delete(doc(db, 'departments', deptToDelete.id))
 
@@ -2277,9 +2319,10 @@ function DepartmentsPage() {
 
       await batch.commit()
       handleCloseDeleteModal()
+      showNotification(`Department "${deptName}" deleted successfully.`, 'success', 'Department Deleted')
     } catch (error) {
       console.error('Error deleting department:', error)
-      alert('Failed to delete department.')
+      showNotification('Failed to delete department. Please try again.', 'error', 'Error Deleting Department')
     } finally {
       setIsDeleting(false)
     }
@@ -3641,6 +3684,15 @@ function DepartmentsPage() {
           <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-x-[5px] border-x-transparent border-t-[5px] border-t-slate-900 -mt-[3px]"></div>
         </div>
       )}
+
+      <Snackbar
+        isOpen={snackbar.isOpen}
+        onClose={() => setSnackbar(prev => ({ ...prev, isOpen: false }))}
+        title={snackbar.title}
+        message={snackbar.message}
+        type={snackbar.type}
+        position="top-center"
+      />
     </section>
   )
 }

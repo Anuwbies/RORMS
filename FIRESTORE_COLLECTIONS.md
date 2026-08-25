@@ -83,7 +83,7 @@ Centralized inventory of all campus rooms and their real-time status.
   - `type`: string (Lecture Room, Laboratory, Office, Meeting Room, or Studio)
   - `floor`: number (The specific floor where the room is located)
   - `capacity`: number (Room seating/standing capacity)
-  - `status`: string (`"Available"`, `"Occupied"`, `"Reserved"`, or `"Maintenance"`)
+  - `status`: string (`"Available"`, `"Occupied"`, or `"Maintenance"`)
   - `image`: string (URL to the room's photo)
   - `description`: string (Detailed description of the room)
   - `amenities`: array (Flat array of strings, e.g., `["WiFi", "Projector"]`)
@@ -145,7 +145,7 @@ Manages schedule allocations for subjects, rooms, and instructors.
   - `groupId`: string (Unique ID used to group parallel schedules together)
   - `parentId`: string (Reference to the main schedule's locally generated `id` if this is a child row)
   - `orderIndex`: number (Visual top-to-bottom sorting index)
-  - `status`: string (`"Drafted"`, `"Plotted"`, `"Rejected"`, `"Revised"`) | **Default: "Drafted"**
+  - `status`: string (`"Drafted"`, `"Plotted"`, `"Removed"`, `"Revised"`) | **Default: "Drafted"**
   - `academicTerm`: string (e.g., `"1st Sem 2024-2025"`)
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**

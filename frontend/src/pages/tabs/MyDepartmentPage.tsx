@@ -447,7 +447,7 @@ function MyDepartmentPage() {
     const cols: ColumnDef<Member>[] = [
       {
         header: 'Member Info',
-        width: currentUserRole === 'Dean' ? '30%' : '31%',
+        width: '30%',
         render: (member) => (
           <div className="flex items-center gap-4">
             {member.avatar && !avatarErrors[member.avatar] ? (
@@ -501,11 +501,8 @@ function MyDepartmentPage() {
             {member.joinedDate}
           </span>
         )
-      }
-    ];
-
-    if (currentUserRole === 'Dean') {
-      cols.push({
+      },
+      {
         header: 'Actions',
         width: '1%',
         align: 'right',
@@ -517,7 +514,7 @@ function MyDepartmentPage() {
               disabled={member.id === currentUserData?.id}
               className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
                 member.id === currentUserData?.id
-                  ? 'opacity-30 cursor-not-allowed text-slate-400'
+                  ? 'opacity-30 cursor-default text-slate-400'
                   : 'text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
               }`}
             >
@@ -528,7 +525,7 @@ function MyDepartmentPage() {
               disabled={member.id === currentUserData?.id}
               className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
                 member.id === currentUserData?.id
-                  ? 'opacity-30 cursor-not-allowed text-slate-400'
+                  ? 'opacity-30 cursor-default text-slate-400'
                   : 'text-rose-500 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
               }`}
               onClick={() => handleRemoveMember(member)}
@@ -537,10 +534,11 @@ function MyDepartmentPage() {
             </IconButton>
           </div>
         )
-      });
-    }
+      }
+    ];
+
     return cols;
-  }, [currentUserRole, currentUserData]);
+  }, [currentUserData, avatarErrors]);
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
@@ -929,16 +927,14 @@ function MyDepartmentPage() {
                   Manage Schedule
                 </Button>
               )}
-              {currentUserRole === 'Dean' && (
-                <Button
-                  type="button"
-                  variant="brand"
-                  icon={<PlusIcon className="h-5 w-5" />}
-                  onClick={() => setIsAddModalOpen(true)}
-                >
-                  Add Instructor
-                </Button>
-              )}
+              <Button
+                type="button"
+                variant="brand"
+                icon={<PlusIcon className="h-5 w-5" />}
+                onClick={() => setIsAddModalOpen(true)}
+              >
+                Add Instructor
+              </Button>
             </div>
           }
         />

@@ -68,7 +68,7 @@ Alongside the primary PHINMA Olive Green, use these supporting colors for status
 | **Neutral Text & Border** | **Slate Navy** | `text-slate-900`, `border-slate-200` | `#0f172a` / `#e2e8f0` | Body text, section headers, borders & dividers |
 | **Semantic Success** | **Emerald** | `bg-emerald-100 text-emerald-700` | `#10b981` | Active members, Available rooms, success alerts |
 | **Semantic Warning** | **Amber** | `bg-amber-100 text-amber-700` | `#f59e0b` | Pending invites, Occupied rooms, warning notices |
-| **Semantic Info** | **Sky / Blue** | `bg-sky-100 text-sky-700` / `bg-blue-100` | `#0284c7` | Reserved rooms, Registrar badge, info banners |
+| **Semantic Info** | **Sky / Blue** | `bg-sky-100 text-sky-700` / `bg-blue-100` | `#0284c7` | Registrar badge, info banners |
 | **Semantic Danger** | **Rose** | `bg-rose-100 text-rose-700` | `#f43f5e` | Maintenance rooms, Program Head badge, remove actions |
 
 ### System Role Semantic Badge Colors

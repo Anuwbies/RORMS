@@ -751,7 +751,7 @@ export function ScheduleModal({
                                             {getUserDepartment(item.userId)}
                                           </span>
                                           <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
-                                            {item.status || 'Reserved'}
+                                            {item.status || 'Booked'}
                                           </span>
                                         </div>
                                         <div style={{ marginTop: '4px', borderTop: `1px solid ${borderColor}`, paddingTop: '4px', fontSize: '10px', color: textColor, display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1108,7 +1108,7 @@ export function ScheduleModal({
                                           {getUserDepartment(item.userId)}
                                         </span>
                                         <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                          {item.status || 'Reserved'}
+                                          {item.status || 'Booked'}
                                         </span>
                                       </div>
                                       <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${isApproved ? 'border-emerald-500/20 text-emerald-900/80' : 'border-amber-500/20 text-amber-900/80'

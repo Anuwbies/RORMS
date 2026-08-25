@@ -34,6 +34,7 @@ import { RoomAmenities } from '../../components/RoomAmenities'
 import { SettingsIcon, DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon, CalendarIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
+import { Snackbar } from '../../components/Snackbar'
 
 import { db, storage } from '../../firebase'
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
@@ -52,7 +53,7 @@ import {
 } from 'firebase/firestore'
 import { CropModal } from '../../components/CropModal'
 
-type RoomStatus = 'Available' | 'Occupied' | 'Reserved' | 'Maintenance'
+type RoomStatus = 'Available' | 'Occupied' | 'Maintenance'
 
 function createRoomImage() {
   const svg = `
@@ -123,7 +124,6 @@ interface Building {
 const roomStatusClasses: Record<RoomStatus, string> = {
   Available: 'bg-emerald-100 text-emerald-700',
   Occupied: 'bg-amber-100 text-amber-700',
-  Reserved: 'bg-sky-100 text-sky-700',
   Maintenance: 'bg-rose-100 text-rose-700',
 }
 
@@ -1495,6 +1495,27 @@ function BuildingsRoomsPage() {
   const [isDeletingBuilding, setIsDeletingBuilding] = useState(false)
   const [confirmBuildingName, setConfirmBuildingName] = useState('')
 
+  const [snackbar, setSnackbar] = useState<{
+    isOpen: boolean
+    message: string
+    title?: string
+    type: 'error' | 'warning' | 'info' | 'success' | 'brand'
+  }>({
+    isOpen: false,
+    message: '',
+    title: '',
+    type: 'success'
+  })
+
+  const showNotification = (message: string, type: 'error' | 'warning' | 'info' | 'success' | 'brand' = 'success', title?: string) => {
+    setSnackbar({
+      isOpen: true,
+      message,
+      title,
+      type
+    })
+  }
+
   const handleDropdownToggle = useCallback((isOpen: boolean) => {
     setActiveDropdowns(prev => isOpen ? prev + 1 : Math.max(0, prev - 1))
   }, [])
@@ -1671,14 +1692,16 @@ function BuildingsRoomsPage() {
 
     setIsDeletingRoom(true)
     try {
+      const roomName = roomToDelete.name
       // Delete image from storage first
       await deleteImageFromStorage(roomToDelete.image)
 
       await deleteDoc(doc(db, 'rooms', roomToDelete.id))
       handleCloseDeleteRoomModal()
+      showNotification(`Room "${roomName}" deleted successfully.`, 'success', 'Room Deleted')
     } catch (error) {
       console.error('Error deleting room:', error)
-      alert('Failed to delete room. Please try again.')
+      showNotification('Failed to delete room. Please try again.', 'error', 'Error Deleting Room')
     } finally {
       setIsDeletingRoom(false)
     }
@@ -1702,6 +1725,7 @@ function BuildingsRoomsPage() {
 
     setIsDeletingBuilding(true)
     try {
+      const buildingName = buildingToDelete.name
       // Delete all room images from storage
       await Promise.all(buildingToDelete.rooms.map(room => deleteImageFromStorage(room.image)))
 
@@ -1717,9 +1741,10 @@ function BuildingsRoomsPage() {
 
       await batch.commit()
       handleCloseDeleteBuildingModal()
+      showNotification(`Building "${buildingName}" and its rooms deleted successfully.`, 'success', 'Building Deleted')
     } catch (error) {
       console.error('Error deleting building:', error)
-      alert('Failed to delete building. Please try again.')
+      showNotification('Failed to delete building. Please try again.', 'error', 'Error Deleting Building')
     } finally {
       setIsDeletingBuilding(false)
     }
@@ -1729,6 +1754,13 @@ function BuildingsRoomsPage() {
     e.preventDefault()
     if (!newBuildingName.trim() || !newBuildingCode.trim()) {
       setErrors({ name: !newBuildingName.trim(), code: !newBuildingCode.trim(), start: false, end: false })
+      if (!newBuildingName.trim() && !newBuildingCode.trim()) {
+        showNotification('Building name and code are required.', 'error', 'Missing Information')
+      } else if (!newBuildingName.trim()) {
+        showNotification('Building name is required.', 'error', 'Missing Information')
+      } else {
+        showNotification('Building code is required.', 'error', 'Missing Information')
+      }
       return
     }
 
@@ -1747,6 +1779,13 @@ function BuildingsRoomsPage() {
 
     if (isDuplicateName || isDuplicateCode) {
       setErrors({ name: isDuplicateName, code: isDuplicateCode, start: false, end: false })
+      if (isDuplicateName && isDuplicateCode) {
+        showNotification('A building with this name and code already exists.', 'warning', 'Duplicate Building')
+      } else if (isDuplicateName) {
+        showNotification('A building with this name already exists.', 'warning', 'Duplicate Building')
+      } else {
+        showNotification('A building with this code already exists.', 'warning', 'Duplicate Building')
+      }
       return
     }
 
@@ -1760,7 +1799,9 @@ function BuildingsRoomsPage() {
           updatedAt: serverTimestamp()
         })
         handleCloseModals()
+        showNotification(`Building "${newBuildingName}" updated successfully.`, 'success', 'Building Updated')
       } else {
+        const savedBuildingName = newBuildingName
         const docRef = await addDoc(collection(db, 'buildings'), {
           name: newBuildingName,
           code: newBuildingCode,
@@ -1774,10 +1815,11 @@ function BuildingsRoomsPage() {
 
         // Automatically open room modal for the new building
         handleOpenRoomModal(docRef.id)
+        showNotification(`Building "${savedBuildingName}" created successfully. Add rooms to complete setup.`, 'success', 'Building Created')
       }
     } catch (error) {
       console.error("Error saving building: ", error)
-      alert("Error saving building. Please try again.")
+      showNotification('Failed to save building. Please try again.', 'error', 'Error Saving Building')
     } finally {
       setIsSubmitting(false)
     }
@@ -1795,6 +1837,7 @@ function BuildingsRoomsPage() {
             start: !roomStartNumber.trim(),
             end: !roomEndNumber.trim()
           })
+          showNotification('Please fill in all required room fields.', 'error', 'Missing Information')
           return
         }
 
@@ -1820,12 +1863,26 @@ function BuildingsRoomsPage() {
 
           if (isDuplicateName || isDuplicateCode) {
             setErrors({ name: isDuplicateName, code: isDuplicateCode, start: false, end: false })
+            showNotification(
+              isDuplicateName
+                ? `Room name "${roomNamePrefix}${currentNum}" already exists.`
+                : `Room code "${roomCodePrefix}${currentNum}" already exists.`,
+              'warning',
+              'Duplicate Room'
+            )
             return
           }
         }
       } else {
         if (!newRoomName.trim() || !newRoomCode.trim()) {
           setErrors({ name: !newRoomName.trim(), code: !newRoomCode.trim(), start: false, end: false })
+          if (!newRoomName.trim() && !newRoomCode.trim()) {
+            showNotification('Room name and code are required.', 'error', 'Missing Information')
+          } else if (!newRoomName.trim()) {
+            showNotification('Room name is required.', 'error', 'Missing Information')
+          } else {
+            showNotification('Room code is required.', 'error', 'Missing Information')
+          }
           return
         }
 
@@ -1844,6 +1901,13 @@ function BuildingsRoomsPage() {
 
         if (isDuplicateName || isDuplicateCode) {
           setErrors({ name: isDuplicateName, code: isDuplicateCode, start: false, end: false })
+          if (isDuplicateName && isDuplicateCode) {
+            showNotification('A room with this name and code already exists.', 'warning', 'Duplicate Room')
+          } else if (isDuplicateName) {
+            showNotification('A room with this name already exists.', 'warning', 'Duplicate Room')
+          } else {
+            showNotification('A room with this code already exists.', 'warning', 'Duplicate Room')
+          }
           return
         }
       }
@@ -1858,7 +1922,7 @@ function BuildingsRoomsPage() {
     const max = parseInt(newRoomMaxBookingMins) || 0
 
     if (min >= max && max !== 0) {
-      alert('Maximum booking minutes must be greater than minimum booking minutes.')
+      showNotification('Maximum booking minutes must be greater than minimum booking minutes.', 'warning', 'Invalid Booking Limits')
       return
     }
 
@@ -1868,7 +1932,7 @@ function BuildingsRoomsPage() {
     const endTotalMins = (endH || 0) * 60 + (endM || 0)
 
     if (startTotalMins >= endTotalMins) {
-      alert('Start time must be earlier than end time.')
+      showNotification('Start time must be earlier than end time.', 'warning', 'Invalid Schedule Time')
       return
     }
 
@@ -1917,6 +1981,8 @@ function BuildingsRoomsPage() {
           maxBookingMins: max,
           updatedAt: serverTimestamp()
         })
+        handleCloseModals()
+        showNotification(`Room "${newRoomName}" updated successfully.`, 'success', 'Room Updated')
       } else if (isMultipleRooms) {
         const startNum = parseInt(roomStartNumber) || 0
         const endNum = parseInt(roomEndNumber) || 0
@@ -1951,7 +2017,10 @@ function BuildingsRoomsPage() {
             await updateDoc(roomRef, { image: imageUrl })
           }
         }
+        handleCloseModals()
+        showNotification(`Successfully added ${count} rooms.`, 'success', 'Rooms Added')
       } else {
+        const savedRoomName = newRoomName
         const roomRef = await addDoc(collection(db, 'rooms'), {
           buildingId: activeBuildingId,
           name: newRoomName,
@@ -1976,11 +2045,12 @@ function BuildingsRoomsPage() {
           const imageUrl = await uploadImage(roomRef.id)
           await updateDoc(roomRef, { image: imageUrl })
         }
+        handleCloseModals()
+        showNotification(`Room "${savedRoomName}" added successfully.`, 'success', 'Room Added')
       }
-      handleCloseModals()
     } catch (error) {
       console.error("Error saving room: ", error)
-      alert("Error saving room. Please try again.")
+      showNotification('Failed to save room. Please try again.', 'error', 'Error Saving Room')
     } finally {
       setIsSubmitting(false)
     }
@@ -2322,7 +2392,7 @@ function BuildingsRoomsPage() {
                         Status
                       </label>
                       <SingleSelectDropdown
-                        options={['Available', 'Occupied', 'Reserved', 'Maintenance']}
+                        options={['Available', 'Occupied', 'Maintenance']}
                         value={newRoomStatus}
                         onChange={(val) => setNewRoomStatus(val as RoomStatus)}
                         onToggle={handleDropdownToggle}
@@ -2801,7 +2871,7 @@ function BuildingsRoomsPage() {
 
           <SummaryCard
             title="Total Rooms"
-            subtitle={weatherData ? `${weatherData.temp}°C Manila Weather${timeOfDayOverride !== 'auto' ? ` (${timeOfDayOverride.toUpperCase()})` : ''}` : "All Managed Spaces"}
+            subtitle={weatherData ? `${weatherData.temp}°C Dagupan Weather${timeOfDayOverride !== 'auto' ? ` (${timeOfDayOverride.toUpperCase()})` : ''}` : "All Managed Spaces"}
             icon={
               <button
                 onClick={() => {
@@ -2828,7 +2898,7 @@ function BuildingsRoomsPage() {
               </div>
               <ResponsiveContainer width="100%" height="100%" className="relative z-10 [&_*]:outline-none [&_*]:focus:outline-none">
                 <BarChart data={buildings.map(b => ({ code: b.code || b.name, rooms: b.rooms?.length || 0 }))} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
-                  <YAxis hide domain={[0, 'dataMax']} />
+                  <YAxis hide domain={[0, (dataMax: number) => (dataMax > 0 ? Math.ceil(dataMax * 1.35) : 5)]} />
                   <Tooltip
                     cursor={{ fill: 'transparent' }}
                     content={({ active, payload }) => {
@@ -3442,6 +3512,14 @@ function BuildingsRoomsPage() {
         />
       )}
 
+      <Snackbar
+        isOpen={snackbar.isOpen}
+        onClose={() => setSnackbar(prev => ({ ...prev, isOpen: false }))}
+        title={snackbar.title}
+        message={snackbar.message}
+        type={snackbar.type}
+        position="top-center"
+      />
     </section>
   )
 }

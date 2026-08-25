@@ -1004,7 +1004,7 @@ function ReserveRoomPage() {
                 handleOpenReservationModal(selectedRoomForSchedule)
               }
             }}
-            icon={<BookIcon className="h-4 w-4" />}
+            icon={<DoorIcon className="h-4 w-4" />}
             className="w-45 px-4 text-sm flex items-center justify-center gap-2"
           >
             Reserve Room

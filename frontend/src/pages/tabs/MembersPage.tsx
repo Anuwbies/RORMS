@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
 import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy, writeBatch, doc } from 'firebase/firestore'
+import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '../../firebase'
 import { UsersIcon, UserIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon, SearchIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, FilterIcon, BellIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
@@ -13,6 +14,7 @@ import type { MemberRole, MemberStatus, Department, Member } from '../../types/m
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
+import { Snackbar } from '../../components/Snackbar'
 const rolePriority: Record<MemberRole, number> = {
   Admin: 0,
   Registrar: 1,
@@ -642,13 +644,12 @@ function MembersPage() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<MemberRole>('Instructor')
   const [inviteDepartment, setInviteDepartment] = useState('None')
-  const [inviteError, setInviteError] = useState('')
+  const [hasEmailError, setHasEmailError] = useState(false)
   const [isInviting, setIsInviting] = useState(false)
 
   const [editingMember, setEditingMember] = useState<Member | null>(null)
   const [editRole, setEditRole] = useState<MemberRole>('Instructor')
   const [editDept, setEditDept] = useState('')
-  const [editError, setEditError] = useState('')
   const [isSavingEdit, setIsSavingEdit] = useState(false)
 
   const [memberToRemove, setMemberToRemove] = useState<Member | null>(null)
@@ -657,12 +658,41 @@ function MembersPage() {
   const [removeConfirmText, setRemoveConfirmText] = useState('')
 
   const [activeDropdowns, setActiveDropdowns] = useState(0)
+  const [currentUserId, setCurrentUserId] = useState<string>(() => auth.currentUser?.uid || '')
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUserId(user?.uid || '')
+    })
+    return () => unsubscribe()
+  }, [])
 
   const handleDropdownToggle = useCallback((isOpen: boolean) => {
     setActiveDropdowns(prev => isOpen ? prev + 1 : Math.max(0, prev - 1))
   }, [])
 
   const [isLoading, setIsLoading] = useState(true)
+
+  const [snackbar, setSnackbar] = useState<{
+    isOpen: boolean
+    message: string
+    title?: string
+    type: 'error' | 'warning' | 'info' | 'success' | 'brand'
+  }>({
+    isOpen: false,
+    message: '',
+    title: '',
+    type: 'success'
+  })
+
+  const showNotification = (message: string, type: 'error' | 'warning' | 'info' | 'success' | 'brand' = 'success', title?: string) => {
+    setSnackbar({
+      isOpen: true,
+      message,
+      title,
+      type
+    })
+  }
 
   useEffect(() => {
     // 1. Fetch all users to have a local map for joining
@@ -849,7 +879,8 @@ function MembersPage() {
     e.preventDefault()
     
     if (!inviteEmail.trim()) {
-      setInviteError('Email address is required.')
+      setHasEmailError(true)
+      showNotification('Email address is required.', 'error', 'Missing Information')
       return
     }
 
@@ -859,18 +890,21 @@ function MembersPage() {
       .filter(e => e.length > 0)
 
     if (emailList.length === 0) {
-      setInviteError('Please enter at least one valid email address.')
+      setHasEmailError(true)
+      showNotification('Please enter at least one valid email address.', 'error', 'Invalid Email')
       return
     }
 
     const invalidEmails = emailList.filter(e => !e.includes('@'))
     if (invalidEmails.length > 0) {
-      setInviteError(`Invalid format: ${invalidEmails.slice(0, 2).join(', ')}${invalidEmails.length > 2 ? '...' : ''}`)
+      setHasEmailError(true)
+      const errMsg = `Invalid format: ${invalidEmails.slice(0, 2).join(', ')}${invalidEmails.length > 2 ? '...' : ''}`
+      showNotification(errMsg, 'error', 'Invalid Email Format')
       return
     }
 
     setIsInviting(true)
-    setInviteError('')
+    setHasEmailError(false)
 
     try {
       const results = {
@@ -1050,21 +1084,28 @@ function MembersPage() {
         setInviteEmail('')
         setInviteRole('Instructor')
         setInviteDepartment('None')
-        setInviteError('')
+        setHasEmailError(false)
+        showNotification(
+          emailList.length === 1
+            ? `Invitation sent successfully to ${emailList[0]}.`
+            : `${emailList.length} invitations sent successfully.`,
+          'success',
+          'Invitation Sent'
+        )
       } else {
         const parts = []
         if (results.sent.length > 0) parts.push(`Sent ${results.sent.length}`)
         if (results.exists.length > 0) parts.push(`${results.exists.length} already members`)
         if (results.pending.length > 0) parts.push(`${results.pending.length} already invited`)
-        setInviteError(parts.join(', '))
         
         // Filter out successfully sent emails from the textarea
         const remainingEmails = emailList.filter(e => !results.sent.includes(e))
         setInviteEmail(remainingEmails.join(', '))
+        showNotification(parts.join(', '), results.sent.length > 0 ? 'info' : 'warning', 'Invitation Status')
       }
     } catch (error) {
       console.error('Error sending invitation:', error)
-      setInviteError('Failed to send invitation. Please try again.')
+      showNotification('Failed to send invitation. Please try again.', 'error', 'Error Sending Invitation')
     } finally {
       setIsInviting(false)
     }
@@ -1075,7 +1116,7 @@ function MembersPage() {
     setInviteEmail('')
     setInviteRole('Instructor')
     setInviteDepartment('None')
-    if (inviteError) setInviteError('')
+    setHasEmailError(false)
   }
 
   const openEditModal = (member: Member) => {
@@ -1083,14 +1124,12 @@ function MembersPage() {
     setEditingMember(member)
     setEditRole(member.role)
     setEditDept(member.department || '')
-    setEditError('')
   }
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingMember) return
 
-    setEditError('')
     const wasDean = editingMember.role === 'Dean'
     const isNowDean = editRole === 'Dean'
     const wasProgramHead = editingMember.role === 'Program Head'
@@ -1102,7 +1141,7 @@ function MembersPage() {
     if (isNowDean && newDeptCode) {
       const existingDean = members.find(m => m.role === 'Dean' && m.department === newDeptCode && m.id !== editingMember.id && m.status !== 'Inactive')
       if (existingDean) {
-        setEditError(`Dean exists for ${newDeptCode}.`)
+        showNotification(`A Dean already exists for ${newDeptCode}.`, 'warning', 'Assignment Conflict')
         return
       }
     }
@@ -1110,7 +1149,7 @@ function MembersPage() {
     if (isNowProgramHead && newDeptCode) {
       const existingProgramHead = members.find(m => m.role === 'Program Head' && m.department === newDeptCode && m.id !== editingMember.id && m.status !== 'Inactive')
       if (existingProgramHead) {
-        setEditError(`Program Head exists for ${newDeptCode}.`)
+        showNotification(`A Program Head already exists for ${newDeptCode}.`, 'warning', 'Assignment Conflict')
         return
       }
     }
@@ -1197,10 +1236,12 @@ function MembersPage() {
       }
 
       await batch.commit()
+      const memberName = editingMember.name || editingMember.email
       setEditingMember(null)
+      showNotification(`Member "${memberName}" updated successfully.`, 'success', 'Member Updated')
     } catch (error) {
       console.error('Error updating member:', error)
-      setEditError('Failed to update member.')
+      showNotification('Failed to update member. Please try again.', 'error', 'Error Updating Member')
     } finally {
       setIsSavingEdit(false)
     }
@@ -1272,11 +1313,19 @@ function MembersPage() {
       }
 
       await batch.commit()
+      const memberLabel = memberToRemove.name || memberToRemove.email
+      const isPending = memberToRemove.status === 'Pending'
       setMemberToRemove(null)
       setRemoveConfirmText('')
+      showNotification(
+        isPending ? `Invitation for "${memberLabel}" revoked.` : `Member "${memberLabel}" removed successfully.`,
+        'success',
+        isPending ? 'Invitation Revoked' : 'Member Removed'
+      )
     } catch (error) {
       console.error('Error removing member:', error)
       setRemoveError('Failed to remove member.')
+      showNotification('Failed to remove member. Please try again.', 'error', 'Error Removing Member')
     } finally {
       setIsRemovingMember(false)
     }
@@ -1308,7 +1357,6 @@ function MembersPage() {
                     value={editRole}
                     onChange={(val) => {
                       setEditRole(val)
-                      setEditError('')
                       if (val !== 'Dean' && val !== 'Instructor' && val !== 'Program Head') {
                         setEditDept('')
                       }
@@ -1319,22 +1367,16 @@ function MembersPage() {
                 </div>
 
                 <div className="sm:w-1/2">
-                  <label htmlFor="edit-dept" className={`flex items-center gap-2 text-xs font-bold uppercase tracking-widest mb-2 transition-colors ${
+                  <label htmlFor="edit-dept" className={`block text-xs font-bold uppercase tracking-widest mb-2 transition-colors ${
                     (editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head') ? 'text-gray-500' : 'text-gray-300'
                   }`}>
-                    <span>Department</span>
-                    {editError && (
-                      <span className="text-[0.625rem] font-bold lowercase text-rose-500 animate-in fade-in slide-in-from-left-1">
-                        {editError}
-                      </span>
-                    )}
+                    Department
                   </label>
                   <SingleSelectDropdown
                     options={['', ...departments.map(d => d.code)]}
                     value={(editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head') ? editDept : ''}
                     onChange={(val) => {
                       setEditDept(val)
-                      setEditError('')
                     }}
                     onToggle={handleDropdownToggle}
                     isDisabled={editRole !== 'Dean' && editRole !== 'Instructor' && editRole !== 'Program Head'}
@@ -1490,31 +1532,19 @@ function MembersPage() {
               <div className="flex flex-col gap-5">
                 <div className="relative flex-1">
                   <label htmlFor="invite-email" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
-                    Email Address
+                    Email Address <span className="text-rose-500">*</span>
                   </label>
                   <TextInput
                     value={inviteEmail}
                     onChange={(val) => {
                       setInviteEmail(val);
-                      if (inviteError) setInviteError('');
+                      if (hasEmailError) setHasEmailError(false);
                     }}
-                    error={!!inviteError && !inviteError.startsWith('Sent')}
+                    error={hasEmailError}
                     placeholder="name@example.com, another"
-                    inputClassName={`border ${
-                      inviteError && !inviteError.startsWith('Sent')
-                        ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-50' 
-                        : 'border-gray-200 focus:border-gray-300'}
-                    `}
                     className="w-full"
                     autoFocus
                   />
-                  {inviteError && (
-                    <p className={`absolute left-0 top-[calc(100%+4px)] text-[0.6875rem] font-bold animate-in fade-in slide-in-from-top-1 ${
-                      inviteError.startsWith('Sent') ? 'text-emerald-600' : 'text-rose-600'
-                    }`}>
-                      {inviteError}
-                    </p>
-                  )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -1560,7 +1590,7 @@ function MembersPage() {
                 <Button
                   type="submit"
                   variant="brand"
-                  disabled={isInviting || !inviteEmail.trim()}
+                  disabled={isInviting}
                   className="flex-1"
                 >
                   {isInviting ? 'Sending...' : 'Send Invitations'}
@@ -1728,34 +1758,40 @@ function MembersPage() {
                 header: 'Actions',
                 width: '2%',
                 align: 'right',
-                render: (member) => (
-                  <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                    <IconButton
-                      label="Edit member"
-                      onClick={() => openEditModal(member)}
-                      className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
-                        member.status === 'Pending' || member.status === 'Inactive'
-                          ? 'opacity-30 cursor-not-allowed text-slate-400' 
-                          : 'text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
-                      }`}
-                      disabled={member.status === 'Pending' || member.status === 'Inactive'}
-                    >
-                      <EditIcon className="h-4 w-4" />
-                    </IconButton>
-                    <IconButton
-                      label="Remove member"
-                      onClick={() => setMemberToRemove(member)}
-                      className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
-                        member.status === 'Inactive'
-                          ? 'opacity-30 cursor-not-allowed text-slate-400'
-                          : 'text-rose-500 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
-                      }`}
-                      disabled={member.status === 'Inactive'}
-                    >
-                      <TrashIcon className="h-4 w-4" />
-                    </IconButton>
-                  </div>
-                )
+                render: (member) => {
+                  const isSelf = member.id === currentUserId
+                  const isEditDisabled = isSelf || member.status === 'Pending' || member.status === 'Inactive'
+                  const isRemoveDisabled = isSelf || member.status === 'Inactive'
+
+                  return (
+                    <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <IconButton
+                        label="Edit member"
+                        onClick={() => openEditModal(member)}
+                        className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
+                          isEditDisabled
+                            ? 'opacity-30 cursor-default text-slate-400' 
+                            : 'text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
+                        }`}
+                        disabled={isEditDisabled}
+                      >
+                        <EditIcon className="h-4 w-4" />
+                      </IconButton>
+                      <IconButton
+                        label="Remove member"
+                        onClick={() => setMemberToRemove(member)}
+                        className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
+                          isRemoveDisabled
+                            ? 'opacity-30 cursor-default text-slate-400'
+                            : 'text-rose-500 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
+                        }`}
+                        disabled={isRemoveDisabled}
+                      >
+                        <TrashIcon className="h-4 w-4" />
+                      </IconButton>
+                    </div>
+                  )
+                }
               }
             ]}
             searchPlaceholder="Search by name or email..."
@@ -1809,6 +1845,15 @@ function MembersPage() {
           />
         </div>
       </div>
+
+      <Snackbar
+        isOpen={snackbar.isOpen}
+        onClose={() => setSnackbar(prev => ({ ...prev, isOpen: false }))}
+        title={snackbar.title}
+        message={snackbar.message}
+        type={snackbar.type}
+        position="top-center"
+      />
     </section>
   )
 }
