@@ -456,8 +456,8 @@ export function ScheduleModal({
       if (selectedSemester && s.semester) {
         if (s.semester !== selectedSemester) return false
       }
-      const status = s.status || 'Drafted'
-      if (!['Drafted', 'Plotted', 'Revised'].includes(status)) return false
+      const status = s.status || 'Draft'
+      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised'].includes(status)) return false
       return true
     })
   }, [schedules, selectedAcademicYear?.academicYear, selectedSemester])
@@ -466,17 +466,17 @@ export function ScheduleModal({
     if (showWeekCalendar) {
       return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
     }
-    const s = status || 'Drafted'
-    if (s === 'Plotted') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
-    if (s === 'Revised') return 'bg-amber-50 border-amber-300'
-    return 'bg-slate-100 border-slate-300' // Drafted
+    const s = status || 'Draft'
+    if (s === 'Plot' || s === 'Plotted') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
+    if (s === 'Revise' || s === 'Revised') return 'bg-amber-50 border-amber-300'
+    return 'bg-slate-100 border-slate-300' // Draft
   }
 
   const getPdfStatusStyles = (status?: string) => {
-    const s = status || 'Drafted'
-    if (s === 'Plotted') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
-    if (s === 'Revised') return { backgroundColor: '#fffbeb', borderColor: '#fcd34d' }
-    return { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' } // Drafted
+    const s = status || 'Draft'
+    if (s === 'Plot' || s === 'Plotted') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
+    if (s === 'Revise' || s === 'Revised') return { backgroundColor: '#fffbeb', borderColor: '#fcd34d' }
+    return { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' } // Draft
   }
 
   const getInstructorName = (instructorId?: string) => {

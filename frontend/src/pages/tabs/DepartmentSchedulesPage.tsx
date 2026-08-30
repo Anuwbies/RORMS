@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { 
-  CalendarIcon, 
-  ClockIcon, 
-  EditIcon, 
-  UserIcon, 
+import {
+  CalendarIcon,
+  ClockIcon,
+  EditIcon,
+  UserIcon,
   CheckCircleIcon
 } from '../../components/Icons'
 import { Button } from '../../components/Button'
@@ -17,11 +17,11 @@ import { ScheduleModal } from '../../components/ScheduleModal'
 import { DepartmentEditScheduleModal } from '../../components/DepartmentEditScheduleModal'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { db } from '../../firebase'
-import { 
-  collection, 
-  onSnapshot, 
-  query, 
-  where 
+import {
+  collection,
+  onSnapshot,
+  query,
+  where
 } from 'firebase/firestore'
 
 interface Department {
@@ -126,13 +126,13 @@ export function DepartmentSchedulesPage() {
 
   const scheduleCounts = useMemo(() => {
     const parentOrSingle = deptSchedules.filter(s => !s.parentId)
-    const plotted = parentOrSingle.filter(s => s.status === 'Plotted').length
-    const drafted = parentOrSingle.filter(s => !s.status || s.status === 'Drafted').length
-    const revised = parentOrSingle.filter(s => s.status === 'Revised').length
-    const removed = parentOrSingle.filter(s => s.status === 'Removed').length
+    const plotted = parentOrSingle.filter(s => s.status === 'Plot' || s.status === 'Plotted').length
+    const drafted = parentOrSingle.filter(s => !s.status || s.status === 'Draft' || s.status === 'Drafted').length
+    const revised = parentOrSingle.filter(s => s.status === 'Revise' || s.status === 'Revised').length
+    const returned = parentOrSingle.filter(s => s.status === 'Return' || s.status === 'Returned' || s.status === 'Removed').length
     const total = parentOrSingle.length
 
-    return { plotted, drafted, revised, removed, total }
+    return { plotted, drafted, revised, returned, total }
   }, [deptSchedules])
 
   // 1. Fetch Academic Years
@@ -158,22 +158,16 @@ export function DepartmentSchedulesPage() {
       setDepartments(fetched)
       if (fetched.length > 0) {
         setSelectedDepartment(prev => {
-          if (prev) {
-            const stillExists = fetched.find(d => d.id === prev.id || d.code === prev.code)
-            if (stillExists) return stillExists
-          }
-          const citeDept = fetched.find(d => d.code?.toUpperCase() === 'CITE')
-          return citeDept || fetched[0]
+          if (!prev) return fetched[0]
+          const stillExists = fetched.find(d => d.id === prev.id)
+          return stillExists || fetched[0]
         })
       }
     })
-
-    return () => {
-      unsubDepts()
-    }
+    return () => unsubDepts()
   }, [])
 
-  // 3. Fetch Members for Selected Department
+  // 3. Fetch Members (instructors, deans, program heads)
   useEffect(() => {
     if (!selectedDepartment?.code) {
       setMembers([])
@@ -182,22 +176,32 @@ export function DepartmentSchedulesPage() {
     }
 
     setLoadingMembers(true)
-    const qMemberships = query(
+    const qMembers = query(
       collection(db, 'memberships'),
       where('departmentCode', '==', selectedDepartment.code)
     )
 
-    const unsubUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
-      const usersMap = new Map()
-      usersSnap.forEach(u => usersMap.set(u.id, u.data()))
+    const unsubMembers = onSnapshot(qMembers, (snapMembers) => {
+      const memberDocs = snapMembers.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
+      const userIds = Array.from(new Set(memberDocs.map(m => m.userId).filter(Boolean)))
 
-      onSnapshot(qMemberships, (mSnap) => {
-        const fetched = mSnap.docs.map(doc => {
-          const data = doc.data()
+      if (userIds.length === 0) {
+        setMembers([])
+        setLoadingMembers(false)
+        return
+      }
+
+      const unsubUsers = onSnapshot(collection(db, 'users'), (snapUsers) => {
+        const usersMap = new Map()
+        snapUsers.docs.forEach(doc => {
+          usersMap.set(doc.id, { id: doc.id, ...doc.data() })
+        })
+
+        const fetched: Member[] = memberDocs.map(data => {
           const u = usersMap.get(data.userId) || {}
           return {
-            id: data.userId,
-            membershipId: doc.id,
+            id: data.userId || data.id,
+            membershipId: data.id,
             name: u.fullName || 'No Name',
             email: u.email || '',
             role: data.role || 'Instructor',
@@ -214,9 +218,11 @@ export function DepartmentSchedulesPage() {
         setMembers(fetched)
         setLoadingMembers(false)
       })
+
+      return () => unsubUsers()
     })
 
-    return () => unsubUsers()
+    return () => unsubMembers()
   }, [selectedDepartment?.code])
 
   // Row click in DataTable opens instructor schedule
@@ -313,7 +319,7 @@ export function DepartmentSchedulesPage() {
         <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
           <IconButton
             label="Edit member"
-            onClick={() => {}}
+            onClick={() => { }}
             className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
           >
             <EditIcon className="h-4 w-4" />
@@ -326,16 +332,16 @@ export function DepartmentSchedulesPage() {
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       <div className="space-y-6">
-        <SectionHeader 
-          title="Department Schedules" 
-          description="Overview of department members, schedules, and room allocations across colleges." 
+        <SectionHeader
+          title="Department Schedules"
+          description="Overview of department members, schedules, and room allocations across colleges."
         />
 
         {/* 3 Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
           <SummaryCard
-            title="Plotted Schedules"
-            subtitle={scheduleCounts.total > 0 ? `${scheduleCounts.plotted} of ${scheduleCounts.total} finalized` : 'No schedules created yet'}
+            title="Plot Schedules"
+            subtitle={scheduleCounts.total > 0 ? `${scheduleCounts.plotted} of ${scheduleCounts.total} plot` : 'No schedules created yet'}
             icon={<CheckCircleIcon className="w-4.5 h-4.5 text-white" />}
             gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
             blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
@@ -362,22 +368,22 @@ export function DepartmentSchedulesPage() {
             </div>
           </SummaryCard>
           <SummaryCard
-            title="Revised & Removed"
-            subtitle={scheduleCounts.revised > 0 ? `${scheduleCounts.revised} awaiting Dean acceptance` : (scheduleCounts.removed > 0 ? `${scheduleCounts.removed} deactivated` : 'No revisions pending')}
+            title="Revised & Returned"
+            subtitle={scheduleCounts.revised > 0 ? `${scheduleCounts.revised} awaiting Dean acceptance` : (scheduleCounts.returned > 0 ? `${scheduleCounts.returned} returned` : 'No revisions pending')}
             icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
             gradientClasses="from-amber-400 to-orange-500"
             blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
           >
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-900 tracking-tight">{scheduleCounts.revised + scheduleCounts.removed}</span>
+              <span className="text-3xl font-black text-slate-900 tracking-tight">{scheduleCounts.revised + scheduleCounts.returned}</span>
               {scheduleCounts.revised > 0 && (
                 <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  {scheduleCounts.revised} Revised
+                  {scheduleCounts.revised} Revise
                 </span>
               )}
-              {scheduleCounts.removed > 0 && (
+              {scheduleCounts.returned > 0 && (
                 <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-                  {scheduleCounts.removed} Removed
+                  {scheduleCounts.returned} Return
                 </span>
               )}
             </div>
@@ -428,7 +434,7 @@ export function DepartmentSchedulesPage() {
                     const dept = departments.find(d => d.code === code)
                     if (dept) setSelectedDepartment(dept)
                   }}
-                  className="w-full sm:w-48 min-w-[12rem]"
+                  className="w-full sm:w-34 min-w-[12rem]"
                 />
                 <Button
                   type="button"
