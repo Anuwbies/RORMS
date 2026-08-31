@@ -41,6 +41,10 @@ const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder
   return (
     <details className="relative w-full group">
       <summary
+        tabIndex={disabled ? -1 : undefined}
+        onMouseDown={(e) => {
+          if (disabled) e.preventDefault();
+        }}
         onClick={(e) => {
           if (disabled) e.preventDefault();
           else {
@@ -2137,20 +2141,27 @@ function DepartmentEditScheduleModal({
       <style>{`
         @keyframes undo-cell-fade {
           0% {
-            background-color: transparent;
+            opacity: 0;
           }
           20% {
-            background-color: #e3edda;
+            opacity: 1;
           }
           60% {
-            background-color: #e3edda;
+            opacity: 1;
           }
           100% {
-            background-color: transparent;
+            opacity: 0;
           }
         }
-        .animate-undo-highlight {
-          animation: undo-cell-fade 1000ms cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+        .animate-undo-highlight::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          background-color: #e3edda;
+          mix-blend-mode: multiply;
+          animation: undo-cell-fade 1000ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+          pointer-events: none;
+          z-index: 10;
         }
       `}</style>
       {/* Main Schedule Modal */}
@@ -2409,7 +2420,7 @@ function DepartmentEditScheduleModal({
                             isReturnStatus ? 'bg-rose-100 text-rose-800 font-bold group-hover/row:bg-rose-200/80' :
                             'bg-slate-100 text-slate-700 font-bold group-hover/row:bg-slate-200/80'
                           )
-                        : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100 text-gray-500 font-semibold' : 'group-hover/row:bg-slate-100 text-gray-500 font-semibold');
+                        : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100 text-gray-500 font-semibold' : 'group-hover/row:!bg-slate-100 text-gray-500 font-semibold');
 
                     return (
                       <tr
@@ -2433,7 +2444,7 @@ function DepartmentEditScheduleModal({
                       >
                         <td
                           onPointerDown={(e) => {
-                            if (!isRowEditable || isRemoveMode || isPlotMode || !tbodyRef.current) return
+                            if (!isEditable || isRemoveMode || isPlotMode || !tbodyRef.current) return
                             e.preventDefault()
                             const groupIndices = getGroupIndices(schedules, index)
                             const parentIdx = groupIndices[0]
@@ -2463,12 +2474,12 @@ function DepartmentEditScheduleModal({
                             }
                           }}
                           onMouseLeave={hideCustomTooltip}
-                          className={`p-2 border-b border-r border-gray-300 text-center text-xs select-none align-middle transition-colors ${numberCellBgClass} ${isRowEditable && !isRemoveMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                          className={`p-2 border-b border-r border-gray-300 text-center text-xs select-none align-middle transition-colors ${numberCellBgClass} ${isEditable && !isRemoveMode && !isPlotMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
                         >
                           {index + 1}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('type') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(!isChild && !schedule.type) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('type') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(!isChild && !schedule.type) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             if (!isChild && !schedule.type) {
                               showCustomTooltip(e, 'Missing Schedule Type', 'warning');
@@ -2509,7 +2520,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('format') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(!isChild && schedule.type !== 'open lab' && (!schedule.format || missingFormat2)) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('format') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(!isChild && schedule.type !== 'open lab' && (!schedule.format || missingFormat2)) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             if (!isChild && schedule.type !== 'open lab') {
                               if (!schedule.format) {
@@ -2577,7 +2588,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative ${isCellReverted('subjectCode') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_1px_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectCode ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative ${isCellReverted('subjectCode') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_1px_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectCode ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
                               showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
@@ -2609,7 +2620,7 @@ function DepartmentEditScheduleModal({
                         </td>
                         {!hideTitleColumn && (
                           <td
-                            className={`p-0 relative ${isCellReverted('subjectTitle') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                            className={`p-0 relative ${isCellReverted('subjectTitle') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                             onMouseEnter={(e) => {
                               if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
                                 showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
@@ -2641,7 +2652,7 @@ function DepartmentEditScheduleModal({
                           </td>
                         )}
                         <td
-                          className={`p-0 relative ${isCellReverted('classSection') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]' : (!schedule.classSection ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative ${isCellReverted('classSection') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]' : (!schedule.classSection ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
                               showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
@@ -2677,7 +2688,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle max-w-[16.25rem] ${isCellReverted('instructorId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasInstructorConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_1px_1px_0_0_#fb7185]' : (!isChild && (!schedule.instructorId || missingInstructor2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle max-w-[16.25rem] ${isCellReverted('instructorId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasInstructorConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_1px_1px_0_0_#fb7185]' : (!isChild && (!schedule.instructorId || missingInstructor2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.instructorConflictDetails1 || []), ...(conflict?.instructorConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -2760,7 +2771,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('time') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'} ${!hasInstructorConflict ? 'shadow-[inset_1px_1px_0_0_#fb7185]' : 'shadow-[inset_0_1px_0_0_#fb7185]'}` : (!isChild && (!schedule.startTime || missingTime2)) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('time') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'} ${!hasInstructorConflict ? 'shadow-[inset_1px_1px_0_0_#fb7185]' : 'shadow-[inset_0_1px_0_0_#fb7185]'}` : (!isChild && (!schedule.startTime || missingTime2)) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             const details = [
                               ...(conflict?.roomConflictDetails1 || []),
@@ -2901,7 +2912,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('days') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 shadow-[inset_0_1px_0_0_#fb7185] ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'}` : (!isChild && (schedule.days.length === 0 || missingDay2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('days') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 shadow-[inset_0_1px_0_0_#fb7185] ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'}` : (!isChild && (schedule.days.length === 0 || missingDay2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [
                               ...(conflict?.roomConflictDetails1 || []),
@@ -3017,7 +3028,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('buildingId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasRoomConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.buildingId || missingBuilding2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('buildingId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasRoomConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.buildingId || missingBuilding2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -3099,7 +3110,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('roomId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasRoomConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : ((!schedule.roomId || missingRoom2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('roomId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasRoomConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : ((!schedule.roomId || missingRoom2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -3118,7 +3129,14 @@ function DepartmentEditScheduleModal({
                               if (!schedule.buildingId || (isChild && availableRooms.length === 0)) e.preventDefault();
                             }}
                           >
-                            <summary onClick={(e) => { handleDropdownPosition(e); }} className={`h-full min-h-[2.75rem] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-0 flex items-center justify-between gap-1.5 transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}>
+                            <summary 
+                              onMouseDown={(e) => {
+                                if (!schedule.buildingId || (isChild && availableRooms.length === 0)) e.preventDefault();
+                              }}
+                              tabIndex={(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? -1 : undefined}
+                              onClick={(e) => { handleDropdownPosition(e); }} 
+                              className={`h-full min-h-[2.75rem] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-0 flex items-center justify-between gap-1.5 transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}
+                            >
                               <span className="truncate leading-none">
                                 {rooms.find(r => r.id === schedule.roomId)?.name || rooms.find(r => r.id === schedule.roomId)?.code || (
                                   <span className="text-amber-500 font-bold inline-block leading-none">?</span>
@@ -3171,7 +3189,7 @@ function DepartmentEditScheduleModal({
                         </td>
                         {!hideStatusColumn && (
                           <td
-                            className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} border-b border-gray-300`}
+                            className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} border-b border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]`}
                           >
                           {isRowEditable && !isChild && (isDraft || isRevising || isPlotStatus || isReturnStatus) ? (
                             <details className="w-full relative h-full group">
@@ -3261,6 +3279,10 @@ function DepartmentEditScheduleModal({
                                 )}
                               </div>
                             </details>
+                          ) : isChild ? (
+                            <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
+                              ----
+                            </div>
                           ) : (
                             <div className="px-3 py-3 text-sm font-medium truncate cursor-default flex items-center gap-2">
                               {(() => {

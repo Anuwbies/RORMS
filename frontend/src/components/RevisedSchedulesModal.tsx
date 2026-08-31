@@ -373,6 +373,19 @@ export function RevisedSchedulesModal({
           })
         )
       }
+      
+      // Update parallel schedule children if they exist
+      const parallelChildren = schedules.filter(s => s.parentId === schedule.id)
+      parallelChildren.forEach(child => {
+        updates.push(
+          updateDoc(doc(db, 'schedule', child.docId), {
+            status: 'Plot',
+            revisionChanges: deleteField(),
+            updatedAt: serverTimestamp()
+          })
+        )
+      })
+
       await Promise.all(updates)
     } catch (err) {
       console.error('Error accepting schedule revision:', err)
@@ -401,6 +414,19 @@ export function RevisedSchedulesModal({
           })
         )
       }
+
+      // Update parallel schedule children if they exist
+      const parallelChildren = schedules.filter(s => s.parentId === schedule.id)
+      parallelChildren.forEach(child => {
+        updates.push(
+          updateDoc(doc(db, 'schedule', child.docId), {
+            status: 'Return',
+            revisionChanges: deleteField(),
+            updatedAt: serverTimestamp()
+          })
+        )
+      })
+
       await Promise.all(updates)
     } catch (err) {
       console.error('Error declining schedule revision:', err)
@@ -501,38 +527,40 @@ export function RevisedSchedulesModal({
                       </div>
 
                       {/* Right: Accept / Decline Action Buttons */}
-                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                        <IconButton
-                          label="Accept revision"
-                          disabled={isItemProcessing}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleAccept(schedule)
-                          }}
-                          className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 text-emerald-500 hover:border-emerald-300 hover:text-emerald-600 hover:shadow hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
-                        >
-                          {isItemProcessing ? (
-                            <SpinnerIcon className="h-4 w-4 animate-spin text-emerald-500" />
-                          ) : (
-                            <CheckIcon className="h-4 w-4" />
-                          )}
-                        </IconButton>
-                        <IconButton
-                          label="Decline revision"
-                          disabled={isItemProcessing}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDecline(schedule)
-                          }}
-                          className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 text-rose-500 hover:border-rose-300 hover:text-rose-600 hover:shadow hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
-                        >
-                          {isItemProcessing ? (
-                            <SpinnerIcon className="h-4 w-4 animate-spin text-rose-500" />
-                          ) : (
-                            <CloseIcon className="h-4 w-4" />
-                          )}
-                        </IconButton>
-                      </div>
+                      {!schedule.parentId && (
+                        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          <IconButton
+                            label="Accept revision"
+                            disabled={isItemProcessing}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleAccept(schedule)
+                            }}
+                            className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 text-emerald-500 hover:border-emerald-300 hover:text-emerald-600 hover:shadow hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
+                          >
+                            {isItemProcessing ? (
+                              <SpinnerIcon className="h-4 w-4 animate-spin text-emerald-500" />
+                            ) : (
+                              <CheckIcon className="h-4 w-4" />
+                            )}
+                          </IconButton>
+                          <IconButton
+                            label="Decline revision"
+                            disabled={isItemProcessing}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDecline(schedule)
+                            }}
+                            className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 text-rose-500 hover:border-rose-300 hover:text-rose-600 hover:shadow hover:-translate-y-0.5 transition-all disabled:opacity-40 disabled:pointer-events-none"
+                          >
+                            {isItemProcessing ? (
+                              <SpinnerIcon className="h-4 w-4 animate-spin text-rose-500" />
+                            ) : (
+                              <CloseIcon className="h-4 w-4" />
+                            )}
+                          </IconButton>
+                        </div>
+                      )}
                     </div>
                   )
                 })}
