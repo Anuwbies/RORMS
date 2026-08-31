@@ -35,6 +35,7 @@ interface DepartmentEditScheduleModalProps {
   showStatusOnNumberColumn?: boolean
   onlyAllowDraftEditing?: boolean
   onlyAllowTimeDaysRoomStatusEditing?: boolean
+  allowMissingFieldsInRevision?: boolean
 }
 
 const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder = "Select" }: { value: string, onChange: (val: string) => void, options: { value: string, label: string }[], disabled?: boolean, placeholder?: string }) => {
@@ -103,6 +104,35 @@ const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder
       )}
     </details>
   );
+};
+
+const isScheduleMatchingOriginal = (currentSched: any, origSched: any): boolean => {
+  if (!currentSched || !origSched) return false;
+  if ((currentSched.type || 'normal') !== (origSched.type || 'normal')) return false;
+  if ((currentSched.format || '') !== (origSched.format || '')) return false;
+  if (((currentSched as any).format2 || '') !== ((origSched as any).format2 || '')) return false;
+  if ((currentSched.subjectCode || '').trim().toUpperCase() !== (origSched.subjectCode || '').trim().toUpperCase()) return false;
+  if ((currentSched.subjectTitle || '').trim() !== (origSched.subjectTitle || '').trim()) return false;
+  if ((currentSched.classSection || '').trim().toUpperCase() !== (origSched.classSection || '').trim().toUpperCase()) return false;
+  if ((currentSched.instructorId || '') !== (origSched.instructorId || '')) return false;
+  if (((currentSched as any).instructorId2 || '') !== ((origSched as any).instructorId2 || '')) return false;
+  if ((currentSched.startTime || '') !== (origSched.startTime || '')) return false;
+  if ((currentSched.endTime || '') !== (origSched.endTime || '')) return false;
+  if (((currentSched as any).startTime2 || '') !== ((origSched as any).startTime2 || '')) return false;
+  if (((currentSched as any).endTime2 || '') !== ((origSched as any).endTime2 || '')) return false;
+  if ((currentSched.buildingId || '') !== (origSched.buildingId || '')) return false;
+  if (((currentSched as any).buildingId2 || '') !== ((origSched as any).buildingId2 || '')) return false;
+  if ((currentSched.roomId || '') !== (origSched.roomId || '')) return false;
+  if (((currentSched as any).roomId2 || '') !== ((origSched as any).roomId2 || '')) return false;
+
+  const currentDays = currentSched.days || [];
+  const origDays = origSched.days || [];
+  if (currentDays.length !== origDays.length) return false;
+  for (let i = 0; i < currentDays.length; i++) {
+    if (currentDays[i] !== origDays[i]) return false;
+  }
+
+  return true;
 };
 
 const getDurationMins = (start: string, end: string) => {
@@ -197,6 +227,7 @@ function DepartmentEditScheduleModal({
   showStatusOnNumberColumn = false,
   onlyAllowDraftEditing = false,
   onlyAllowTimeDaysRoomStatusEditing = false,
+  allowMissingFieldsInRevision = false,
 }: DepartmentEditScheduleModalProps) {
   const isEditable = selectedSemesterPhase?.phase ? editablePhases.includes(selectedSemesterPhase.phase) : false;
 
@@ -1361,7 +1392,10 @@ function DepartmentEditScheduleModal({
       }).join(' ');
     }
     if (field === 'type') {
-      const currentType = schedules[index].type
+      const currentType = schedules[index]?.type
+      if (currentType === value) {
+        return;
+      }
       if ((value === 'parallel' && currentType !== 'parallel') ||
         (value !== 'parallel' && currentType === 'parallel')) {
         setPendingTypeChange({ index, newType: value })
@@ -1370,16 +1404,27 @@ function DepartmentEditScheduleModal({
     }
 
     setSchedules(prev => {
-      let updated = [...prev]
-      const current = updated[index]
-      updated[index] = { ...current, [field]: value }
+      const current = prev[index]
+      if (!current) return prev
 
+      const currentValue = (current as any)[field]
+      const isSameValue = Array.isArray(value) && Array.isArray(currentValue)
+        ? (currentValue.length === value.length && currentValue.every((v: any, i: number) => v === value[i]))
+        : currentValue === value
+
+      if (isSameValue && field !== 'status') {
+        return prev
+      }
+
+      let updated = [...prev]
+      updated[index] = { ...current, [field]: value }
 
       if (field === 'type') {
         if (value === 'open lab') {
           updated[index].format = 'Flexible'
         } else if (current.type === 'open lab' && value !== 'open lab') {
-          updated[index].format = ''
+          const origSched = originalSchedulesMap.current.get(current.id);
+          updated[index].format = (origSched && origSched.type !== 'open lab') ? origSched.format : '';
         }
       }
 
@@ -1415,38 +1460,67 @@ function DepartmentEditScheduleModal({
 
       // Value change status transitions
       if (field !== 'status') {
-        if (onlyAllowDraftEditing) {
-          const isReturn = current.status === 'Return' || current.status === 'Returned' || current.status === 'Removed';
-          const isPlotInRevision = selectedSemesterPhase?.phase === 'Revision' && (current.status === 'Plot' || current.status === 'Plotted');
-          
-          if (isReturn || isPlotInRevision) {
-            updated[index] = { ...updated[index], status: 'Draft' };
-            if (!current.parentId && current.type === 'parallel') {
-              for (let i = 0; i < updated.length; i++) {
-                if (updated[i].parentId === current.id) {
-                  updated[i] = { ...updated[i], status: 'Draft' };
+        const parentId = current.parentId || current.id;
+        const isParallel = current.type === 'parallel' || !!current.parentId;
+
+        if (isParallel) {
+          const origParent = originalSchedulesMap.current.get(parentId);
+          const parentSched = updated.find(s => s.id === parentId);
+          const childScheds = updated.filter(s => s.parentId === parentId);
+          const origChildCount = Array.from(originalSchedulesMap.current.values()).filter((s: any) => s.parentId === parentId).length;
+
+          const isParentMatch = parentSched && origParent && isScheduleMatchingOriginal(parentSched, origParent);
+          const isChildrenMatch = childScheds.length === origChildCount && childScheds.every(ch => {
+            const origChild = originalSchedulesMap.current.get(ch.id);
+            return origChild && isScheduleMatchingOriginal(ch, origChild);
+          });
+
+          if (isParentMatch && isChildrenMatch && origParent) {
+            for (let i = 0; i < updated.length; i++) {
+              if (updated[i].id === parentId || updated[i].parentId === parentId) {
+                const orig = originalSchedulesMap.current.get(updated[i].id);
+                if (orig) {
+                  updated[i] = { ...updated[i], status: orig.status || 'Draft' };
                 }
               }
-            } else if (current.parentId) {
-              const parentIdx = updated.findIndex(s => s.id === current.parentId);
-              if (parentIdx !== -1) {
-                updated[parentIdx] = { ...updated[parentIdx], status: 'Draft' };
+            }
+          } else {
+            const origStatus = origParent?.status || current.status;
+            if (onlyAllowDraftEditing) {
+              const isReturn = origStatus === 'Return' || origStatus === 'Returned' || origStatus === 'Removed' || current.status === 'Return' || current.status === 'Returned';
+              const isPlotInRevision = selectedSemesterPhase?.phase === 'Revision' && (origStatus === 'Plot' || origStatus === 'Plotted' || current.status === 'Plot' || current.status === 'Plotted');
+              if (isReturn || isPlotInRevision) {
+                for (let i = 0; i < updated.length; i++) {
+                  if (updated[i].id === parentId || updated[i].parentId === parentId) {
+                    updated[i] = { ...updated[i], status: 'Draft' };
+                  }
+                }
+              }
+            } else {
+              for (let i = 0; i < updated.length; i++) {
+                if (updated[i].id === parentId || updated[i].parentId === parentId) {
+                  if (updated[i].status !== 'Revising') {
+                    updated[i] = { ...updated[i], status: 'Revising' };
+                  }
+                }
               }
             }
           }
         } else {
-          if (updated[index].status !== 'Revising') {
-            updated[index] = { ...updated[index], status: 'Revising' };
-            if (!current.parentId && current.type === 'parallel') {
-              for (let i = 0; i < updated.length; i++) {
-                if (updated[i].parentId === current.id) {
-                  updated[i] = { ...updated[i], status: 'Revising' };
-                }
+          const origSched = originalSchedulesMap.current.get(current.id);
+          if (origSched && isScheduleMatchingOriginal(updated[index], origSched)) {
+            updated[index] = { ...updated[index], status: origSched.status || 'Draft' };
+          } else {
+            const origStatus = origSched?.status || current.status;
+            if (onlyAllowDraftEditing) {
+              const isReturn = origStatus === 'Return' || origStatus === 'Returned' || origStatus === 'Removed' || current.status === 'Return' || current.status === 'Returned';
+              const isPlotInRevision = selectedSemesterPhase?.phase === 'Revision' && (origStatus === 'Plot' || origStatus === 'Plotted' || current.status === 'Plot' || current.status === 'Plotted');
+              if (isReturn || isPlotInRevision) {
+                updated[index] = { ...updated[index], status: 'Draft' };
               }
-            } else if (current.parentId) {
-              const parentIdx = updated.findIndex(s => s.id === current.parentId);
-              if (parentIdx !== -1) {
-                updated[parentIdx] = { ...updated[parentIdx], status: 'Revising' };
+            } else {
+              if (updated[index].status !== 'Revising') {
+                updated[index] = { ...updated[index], status: 'Revising' };
               }
             }
           }
@@ -1498,8 +1572,9 @@ function DepartmentEditScheduleModal({
 
   const handleDayChange = (index: number, dayIndex: number, val: string) => {
     setSchedules(prev => {
-      const updated = [...prev]
-      const current = updated[index]
+      const current = prev[index]
+      if (!current) return prev
+
       let newDays = [...current.days]
       const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
@@ -1523,6 +1598,12 @@ function DepartmentEditScheduleModal({
 
       newDays = newDays.filter(Boolean).sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b))
 
+      const isSameDays = current.days.length === newDays.length && current.days.every((d, i) => d === newDays[i])
+      if (isSameDays) {
+        return prev
+      }
+
+      const updated = [...prev]
       updated[index] = { ...current, days: newDays }
 
       if (!current.parentId && current.type === 'parallel') {
@@ -1534,35 +1615,67 @@ function DepartmentEditScheduleModal({
       }
 
       // Value change status transitions
-      if (onlyAllowDraftEditing) {
-        if (current.status === 'Return' || current.status === 'Returned' || current.status === 'Removed') {
-          updated[index] = { ...updated[index], status: 'Draft' };
-          if (!current.parentId && current.type === 'parallel') {
-            for (let i = 0; i < updated.length; i++) {
-              if (updated[i].parentId === current.id) {
-                updated[i] = { ...updated[i], status: 'Draft' };
+      const parentId = current.parentId || current.id;
+      const isParallel = current.type === 'parallel' || !!current.parentId;
+
+      if (isParallel) {
+        const origParent = originalSchedulesMap.current.get(parentId);
+        const parentSched = updated.find(s => s.id === parentId);
+        const childScheds = updated.filter(s => s.parentId === parentId);
+        const origChildCount = Array.from(originalSchedulesMap.current.values()).filter((s: any) => s.parentId === parentId).length;
+
+        const isParentMatch = parentSched && origParent && isScheduleMatchingOriginal(parentSched, origParent);
+        const isChildrenMatch = childScheds.length === origChildCount && childScheds.every(ch => {
+          const origChild = originalSchedulesMap.current.get(ch.id);
+          return origChild && isScheduleMatchingOriginal(ch, origChild);
+        });
+
+        if (isParentMatch && isChildrenMatch && origParent) {
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].id === parentId || updated[i].parentId === parentId) {
+              const orig = originalSchedulesMap.current.get(updated[i].id);
+              if (orig) {
+                updated[i] = { ...updated[i], status: orig.status || 'Draft' };
               }
             }
-          } else if (current.parentId) {
-            const parentIdx = updated.findIndex(s => s.id === current.parentId);
-            if (parentIdx !== -1) {
-              updated[parentIdx] = { ...updated[parentIdx], status: 'Draft' };
+          }
+        } else {
+          const origStatus = origParent?.status || current.status;
+          if (onlyAllowDraftEditing) {
+            const isReturn = origStatus === 'Return' || origStatus === 'Returned' || origStatus === 'Removed' || current.status === 'Return' || current.status === 'Returned';
+            const isPlotInRevision = selectedSemesterPhase?.phase === 'Revision' && (origStatus === 'Plot' || origStatus === 'Plotted' || current.status === 'Plot' || current.status === 'Plotted');
+            if (isReturn || isPlotInRevision) {
+              for (let i = 0; i < updated.length; i++) {
+                if (updated[i].id === parentId || updated[i].parentId === parentId) {
+                  updated[i] = { ...updated[i], status: 'Draft' };
+                }
+              }
+            }
+          } else {
+            for (let i = 0; i < updated.length; i++) {
+              if (updated[i].id === parentId || updated[i].parentId === parentId) {
+                if (updated[i].status !== 'Revising') {
+                  updated[i] = { ...updated[i], status: 'Revising' };
+                }
+              }
             }
           }
         }
       } else {
-        if (updated[index].status !== 'Revising') {
-          updated[index] = { ...updated[index], status: 'Revising' };
-          if (!current.parentId && current.type === 'parallel') {
-            for (let i = 0; i < updated.length; i++) {
-              if (updated[i].parentId === current.id) {
-                updated[i] = { ...updated[i], status: 'Revising' };
-              }
+        const origSched = originalSchedulesMap.current.get(current.id);
+        if (origSched && isScheduleMatchingOriginal(updated[index], origSched)) {
+          updated[index] = { ...updated[index], status: origSched.status || 'Draft' };
+        } else {
+          const origStatus = origSched?.status || current.status;
+          if (onlyAllowDraftEditing) {
+            const isReturn = origStatus === 'Return' || origStatus === 'Returned' || origStatus === 'Removed' || current.status === 'Return' || current.status === 'Returned';
+            const isPlotInRevision = selectedSemesterPhase?.phase === 'Revision' && (origStatus === 'Plot' || origStatus === 'Plotted' || current.status === 'Plot' || current.status === 'Plotted');
+            if (isReturn || isPlotInRevision) {
+              updated[index] = { ...updated[index], status: 'Draft' };
             }
-          } else if (current.parentId) {
-            const parentIdx = updated.findIndex(s => s.id === current.parentId);
-            if (parentIdx !== -1) {
-              updated[parentIdx] = { ...updated[parentIdx], status: 'Revising' };
+          } else {
+            if (updated[index].status !== 'Revising') {
+              updated[index] = { ...updated[index], status: 'Revising' };
             }
           }
         }
@@ -1579,18 +1692,19 @@ function DepartmentEditScheduleModal({
     setSchedules(prev => {
       const updated = [...prev];
       const current = updated[index];
+      if (!current) return prev;
       const parentId = current.id || generateId();
       if (!current.id) updated[index].id = parentId;
 
-      const targetStatus = onlyAllowDraftEditing
-        ? (current.status === 'Return' || current.status === 'Returned' || current.status === 'Removed' ? 'Draft' : (current.status || 'Draft'))
-        : 'Revising';
+      const origParent = originalSchedulesMap.current.get(parentId);
 
       if (newType === 'parallel') {
-        updated[index] = { ...current, type: 'parallel', status: targetStatus };
+        let updatedFormat = current.format;
         if (current.type === 'open lab') {
-          updated[index].format = '';
+          updatedFormat = (origParent && origParent.type === 'parallel') ? origParent.format : '';
         }
+
+        updated[index] = { ...current, type: 'parallel', format: updatedFormat, status: 'Draft' };
 
         const cachedChildren = parallelChildrenCache.current.get(current.id) || parallelChildrenCache.current.get(parentId);
         let childrenToInsert: any[];
@@ -1614,7 +1728,7 @@ function DepartmentEditScheduleModal({
             buildingId: current.buildingId,
             buildingId2: (current as any).buildingId2 || '',
             classSection: cachedChild.classSection || '',
-            status: targetStatus
+            status: 'Draft'
           }));
 
           // Un-stage restored children docIds from deletedScheduleIds
@@ -1643,19 +1757,43 @@ function DepartmentEditScheduleModal({
             days: current.days,
             buildingId: current.buildingId,
             buildingId2: (current as any).buildingId2 || '',
-            status: targetStatus
+            status: 'Draft'
           }));
         }
 
         updated.splice(index + 1, 0, ...childrenToInsert);
-      } else {
-        updated[index] = { ...current, type: newType, status: targetStatus };
-        if (newType === 'open lab') {
-          updated[index].format = 'Flexible';
-        } else if (current.type === 'open lab') {
-          updated[index].format = '';
-        }
 
+        const parentSched = updated[index];
+        const childScheds = updated.filter(s => s.parentId === parentId);
+        const origChildCount = Array.from(originalSchedulesMap.current.values()).filter((s: any) => s.parentId === parentId).length;
+
+        const isParentMatch = parentSched && origParent && isScheduleMatchingOriginal(parentSched, origParent);
+        const isChildrenMatch = childScheds.length === origChildCount && childScheds.every(ch => {
+          const origChild = originalSchedulesMap.current.get(ch.id);
+          return origChild && isScheduleMatchingOriginal(ch, origChild);
+        });
+
+        if (isParentMatch && isChildrenMatch && origParent) {
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].id === parentId || updated[i].parentId === parentId) {
+              const orig = originalSchedulesMap.current.get(updated[i].id);
+              if (orig) {
+                updated[i] = { ...updated[i], status: orig.status || 'Draft' };
+              }
+            }
+          }
+        } else {
+          const origStatus = origParent?.status || current.status;
+          const targetStatus = onlyAllowDraftEditing
+            ? ((origStatus === 'Return' || origStatus === 'Returned' || origStatus === 'Removed' || (selectedSemesterPhase?.phase === 'Revision' && (origStatus === 'Plot' || origStatus === 'Plotted'))) ? 'Draft' : (current.status || 'Draft'))
+            : 'Revising';
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].id === parentId || updated[i].parentId === parentId) {
+              updated[i] = { ...updated[i], status: targetStatus };
+            }
+          }
+        }
+      } else {
         const childrenBeingRemoved = updated.filter(s => s.parentId === current.id);
         if (childrenBeingRemoved.length > 0) {
           parallelChildrenCache.current.set(current.id, childrenBeingRemoved);
@@ -1665,8 +1803,35 @@ function DepartmentEditScheduleModal({
           }
         }
 
-        const finalUpdated = updated.filter(s => s.parentId !== current.id);
-        return finalUpdated.map((s, idx) => ({ ...s, orderIndex: idx }));
+        const remainingSchedules = updated.filter(s => s.parentId !== current.id);
+        const parentIdxInRemaining = remainingSchedules.findIndex(s => s.id === current.id);
+
+        if (parentIdxInRemaining !== -1) {
+          let updatedFormat = current.format;
+          if (newType === 'open lab') {
+            updatedFormat = 'Flexible';
+          } else if (current.type === 'open lab') {
+            updatedFormat = (origParent && origParent.type !== 'open lab') ? origParent.format : '';
+          }
+
+          remainingSchedules[parentIdxInRemaining] = {
+            ...current,
+            type: newType,
+            format: updatedFormat
+          };
+
+          if (origParent && isScheduleMatchingOriginal(remainingSchedules[parentIdxInRemaining], origParent)) {
+            remainingSchedules[parentIdxInRemaining].status = origParent.status || 'Draft';
+          } else {
+            const origStatus = origParent?.status || current.status;
+            const targetStatus = onlyAllowDraftEditing
+              ? ((origStatus === 'Return' || origStatus === 'Returned' || origStatus === 'Removed' || (selectedSemesterPhase?.phase === 'Revision' && (origStatus === 'Plot' || origStatus === 'Plotted'))) ? 'Draft' : (current.status || 'Draft'))
+              : 'Revising';
+            remainingSchedules[parentIdxInRemaining].status = targetStatus;
+          }
+        }
+
+        return remainingSchedules.map((s, idx) => ({ ...s, orderIndex: idx }));
       }
       return updated.map((s, idx) => ({ ...s, orderIndex: idx }));
     });
@@ -1855,8 +2020,9 @@ function DepartmentEditScheduleModal({
 
   const handleSaveSchedules = async () => {
     const isStrictPhase = selectedSemesterPhase?.phase !== 'Drafting';
-    if (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && scheduleConflicts.missingCount > 0)) {
-      setConflictModalTab(scheduleConflicts.hardConflictsCount > 0 ? 'all' : 'missing')
+    const allowMissing = allowMissingFieldsInRevision && selectedSemesterPhase?.phase === 'Revision';
+    if (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && !allowMissing && scheduleConflicts.missingCount > 0)) {
+      setConflictModalTab('all')
       setIsConflictSummaryModalOpen(true)
       return
     }
@@ -2183,13 +2349,52 @@ function DepartmentEditScheduleModal({
                 {isEditable ? 'Add multiple schedules and assign them to instructors in your department.' : `Schedules can only be edited during ${editablePhases.length > 1 ? `${editablePhases.slice(0, -1).join(', ')}, and ${editablePhases[editablePhases.length - 1]}` : (editablePhases[0] || 'Drafting and Revision')} phases. Current phase: ${selectedSemesterPhase?.phase}.`}
               </p>
             </div>
-            {!isEditable && (
-              <div className="shrink-0 flex items-center">
-                <span className="inline-flex items-center rounded-full bg-white/20 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-white border border-white/30 backdrop-blur-sm">
+            <div className="shrink-0 flex items-center gap-2 flex-wrap">
+              {scheduleConflicts.overlapCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConflictModalTab('overlap')
+                    setIsConflictSummaryModalOpen(true)
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-700 border border-rose-300 text-xs font-bold hover:bg-rose-200 transition-all cursor-pointer shadow-sm"
+                  title="Schedule Overlaps (Room / Instructor)"
+                >
+                  {scheduleConflicts.overlapCount} Overlap{scheduleConflicts.overlapCount > 1 ? 's' : ''}
+                </button>
+              )}
+              {scheduleConflicts.sectionCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConflictModalTab('section')
+                    setIsConflictSummaryModalOpen(true)
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-700 border border-purple-300 text-xs font-bold hover:bg-purple-200 transition-all cursor-pointer shadow-sm"
+                  title="Duplicate Subject / Title for Section"
+                >
+                  {scheduleConflicts.sectionCount} Duplicate Section{scheduleConflicts.sectionCount > 1 ? 's' : ''}
+                </button>
+              )}
+              {scheduleConflicts.missingCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConflictModalTab('missing')
+                    setIsConflictSummaryModalOpen(true)
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-700 border border-amber-300 text-xs font-bold hover:bg-amber-200 transition-all cursor-pointer shadow-sm"
+                  title="Missing / Incomplete Fields"
+                >
+                  {scheduleConflicts.missingCount} Missing Field{scheduleConflicts.missingCount > 1 ? 's' : ''}
+                </button>
+              )}
+              {!isEditable && (
+                <span className="inline-flex items-center rounded-lg bg-white/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white border border-white/30 backdrop-blur-sm">
                   Read Only ({selectedSemesterPhase?.phase})
                 </span>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <div className="flex-1 relative overflow-hidden flex flex-col min-h-0">
@@ -2294,12 +2499,19 @@ function DepartmentEditScheduleModal({
                     const parentHasRoom2 = parentSchedule ? !!(parentSchedule as any).roomId2 : false;
 
                     const isParallelSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && !!(schedule as any).instructorId2;
-                    const missingRoom1 = !!schedule.buildingId && !schedule.roomId;
                     const isSecondSessionUnlocked = !!(schedule as any).format2 || schedule.type === 'open lab';
+
+                    const missingFormat1 = schedule.type !== 'open lab' && !schedule.format;
+                    const missingInstructor1 = !schedule.instructorId;
+                    const missingTime1 = !schedule.startTime || !schedule.endTime;
+                    const missingDay1 = !schedule.days || schedule.days.length === 0 || !schedule.days[0];
+                    const missingBuilding1 = !schedule.buildingId;
+                    const missingRoom1 = !schedule.roomId;
+
                     const missingInstructor2 = isSecondSessionUnlocked && !!schedule.instructorId && !(schedule as any).instructorId2;
                     const missingBuilding2 = isSecondSessionUnlocked && !!schedule.buildingId && !(schedule as any).buildingId2;
                     const missingRoom2 = isSecondSessionUnlocked && ((!!schedule.roomId && !(schedule as any).roomId2) || (!!(schedule as any).buildingId2 && !(schedule as any).roomId2) || (isParallelSameTime && schedule.days.length === 1 && !!schedule.buildingId && !(schedule as any).roomId2) || (isChild && parentHasRoom2 && !(schedule as any).roomId2));
-                    const missingFormat2 = !!schedule.format && !(schedule as any).format2;
+                    const missingFormat2 = schedule.type !== 'open lab' && !!schedule.format && !(schedule as any).format2;
                     const missingDay2 = isSecondSessionUnlocked && ((schedule.days.length > 0 && schedule.days.length < 2) || (!!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2 && schedule.days.length < 2 && !isParallelSameTime));
                     const hasSecondSession = !!(schedule as any).instructorId2 || !!(schedule as any).roomId2 || !!(schedule as any).buildingId2 || !!(schedule as any).format2 || !!(schedule as any).startTime2;
                     const missingTime2 = isSecondSessionUnlocked && !!schedule.startTime && !(schedule as any).startTime2;
@@ -2346,7 +2558,7 @@ function DepartmentEditScheduleModal({
                     const availableRooms = childAvailableRooms.sort((a, b) => (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' }));
 
                     let childAvailableRooms2 = rooms;
-                    const bId2 = (schedule as any).buildingId2 || schedule.buildingId;
+                    const bId2 = (schedule as any).buildingId2;
                     if (bId2) {
                       childAvailableRooms2 = rooms.filter(r => r.buildingId === bId2);
                     } else {
@@ -2483,7 +2695,7 @@ function DepartmentEditScheduleModal({
                           {index + 1}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('type') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(!isChild && !schedule.type) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('type') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(!isChild && !schedule.type) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             if (!isChild && !schedule.type) {
                               showCustomTooltip(e, 'Missing Schedule Type', 'warning');
@@ -2511,7 +2723,9 @@ function DepartmentEditScheduleModal({
                                     key={opt}
                                     type="button"
                                     onClick={(e) => {
-                                      handleScheduleChange(index, 'type', opt)
+                                      if (opt !== schedule.type) {
+                                        handleScheduleChange(index, 'type', opt)
+                                      }
                                       e.currentTarget.closest('details')?.removeAttribute('open')
                                     }}
                                     className="text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate"
@@ -2524,7 +2738,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('format') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(!isChild && schedule.type !== 'open lab' && (!schedule.format || missingFormat2)) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('format') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(!isChild && schedule.type !== 'open lab' && (!schedule.format || missingFormat2)) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             if (!isChild && schedule.type !== 'open lab') {
                               if (!schedule.format) {
@@ -2568,22 +2782,28 @@ function DepartmentEditScheduleModal({
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                               <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingFormat1 ? 'text-rose-600' : 'text-gray-500'}`}>1st Session</label>
                                   <InnerDropdown
                                     value={schedule.format || ''}
                                     onChange={(val) => {
-                                      handleScheduleChange(index, 'format', val);
-                                      if (!val) handleScheduleChange(index, 'format2', '');
+                                      if (val !== schedule.format) {
+                                        handleScheduleChange(index, 'format', val);
+                                        if (!val) handleScheduleChange(index, 'format2', '');
+                                      }
                                     }}
                                     options={[{ value: 'Lec', label: 'Lec' }, { value: 'Lab', label: 'Lab' }]}
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingFormat2 ? 'text-amber-600' : 'text-gray-500'}`}>2nd Session</label>
+                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingFormat2 ? 'text-rose-600' : 'text-gray-500'}`}>2nd Session</label>
                                   <InnerDropdown
                                     value={(schedule as any).format2 || ''}
                                     disabled={!schedule.format}
-                                    onChange={(val) => handleScheduleChange(index, 'format2', val)}
+                                    onChange={(val) => {
+                                      if (val !== (schedule as any).format2) {
+                                        handleScheduleChange(index, 'format2', val);
+                                      }
+                                    }}
                                     options={[{ value: 'Lec', label: 'Lec' }, { value: 'Lab', label: 'Lab' }]}
                                   />
                                 </div>
@@ -2592,7 +2812,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative ${isCellReverted('subjectCode') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_1px_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectCode ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
+                          className={`p-0 relative ${isCellReverted('subjectCode') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-purple-50' : ''} border-b border-purple-400 border-r border-purple-200 shadow-[inset_1px_1px_0_0_#c084fc]` : (!isChild && !schedule.subjectCode ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
                               showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
@@ -2624,7 +2844,7 @@ function DepartmentEditScheduleModal({
                         </td>
                         {!hideTitleColumn && (
                           <td
-                            className={`p-0 relative ${isCellReverted('subjectTitle') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
+                            className={`p-0 relative ${isCellReverted('subjectTitle') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-purple-50' : ''} border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]` : (!isChild && !schedule.subjectTitle ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                             onMouseEnter={(e) => {
                               if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
                                 showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
@@ -2656,7 +2876,7 @@ function DepartmentEditScheduleModal({
                           </td>
                         )}
                         <td
-                          className={`p-0 relative ${isCellReverted('classSection') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]' : (!schedule.classSection ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
+                          className={`p-0 relative ${isCellReverted('classSection') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasSectionConflict ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-purple-50' : ''} border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]` : (!schedule.classSection ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
                               showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
@@ -2692,7 +2912,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle max-w-[16.25rem] ${isCellReverted('instructorId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasInstructorConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_1px_1px_0_0_#fb7185]' : (!isChild && (!schedule.instructorId || missingInstructor2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle max-w-[16.25rem] ${isCellReverted('instructorId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasInstructorConflict ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-rose-50' : ''} border-b border-rose-400 border-r border-rose-200 shadow-[inset_1px_1px_0_0_#fb7185]` : (!isChild && (!schedule.instructorId || missingInstructor2) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.instructorConflictDetails1 || []), ...(conflict?.instructorConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -2751,22 +2971,28 @@ function DepartmentEditScheduleModal({
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                               <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingInstructor1 ? 'text-rose-600' : 'text-gray-500'}`}>1st Session</label>
                                   <InnerDropdown
                                     value={schedule.instructorId || ''}
                                     onChange={(val) => {
-                                      handleScheduleChange(index, 'instructorId', val);
-                                      if (!val) handleScheduleChange(index, 'instructorId2', '');
+                                      if (val !== schedule.instructorId) {
+                                        handleScheduleChange(index, 'instructorId', val);
+                                        if (!val) handleScheduleChange(index, 'instructorId2', '');
+                                      }
                                     }}
                                     options={members.filter(m => m.status === 'Active' && (m.role === 'Instructor' || m.role === 'Program Head')).map(m => ({ value: m.membershipId || '', label: m.name }))}
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
+                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingInstructor2 ? 'text-rose-600' : 'text-gray-500'}`}>2nd Session</label>
                                   <InnerDropdown
                                     value={(schedule as any).instructorId2 || ''}
                                     disabled={!isSecondSessionUnlocked || !schedule.instructorId}
-                                    onChange={(val) => handleScheduleChange(index, 'instructorId2', val)}
+                                    onChange={(val) => {
+                                      if (val !== (schedule as any).instructorId2) {
+                                        handleScheduleChange(index, 'instructorId2', val);
+                                      }
+                                    }}
                                     options={members.filter(m => m.status === 'Active' && (m.role === 'Instructor' || m.role === 'Program Head')).map(m => ({ value: m.membershipId || '', label: m.name }))}
                                   />
                                 </div>
@@ -2775,7 +3001,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('time') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'} ${!hasInstructorConflict ? 'shadow-[inset_1px_1px_0_0_#fb7185]' : 'shadow-[inset_0_1px_0_0_#fb7185]'}` : (!isChild && (!schedule.startTime || missingTime2)) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('time') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-rose-50' : ''} border-b border-rose-400 ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'} ${!hasInstructorConflict ? 'shadow-[inset_1px_1px_0_0_#fb7185]' : 'shadow-[inset_0_1px_0_0_#fb7185]'}` : (!isChild && (!schedule.startTime || missingTime2)) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             const details = [
                               ...(conflict?.roomConflictDetails1 || []),
@@ -2872,37 +3098,39 @@ function DepartmentEditScheduleModal({
                                   return (
                                     <>
                                       <div className="flex flex-col gap-2">
-                                        <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                        <label className={`text-xs font-bold uppercase tracking-wider ${missingTime1 ? 'text-rose-600' : 'text-gray-500'}`}>1st Session</label>
                                         <InnerDropdown
                                           value={schedule.startTime || ''}
                                           placeholder="Start Time"
                                           onChange={(val) => {
-                                            handleScheduleChange(index, 'startTime', val);
-                                            if (!val) {
-                                              handleScheduleChange(index, 'endTime', '');
-                                              handleScheduleChange(index, 'startTime2', '');
-                                              handleScheduleChange(index, 'endTime2', '');
-                                            } else {
-                                              handleScheduleChange(index, 'endTime', calculateEndTime(val, 90));
+                                            if (val !== schedule.startTime) {
+                                              handleScheduleChange(index, 'startTime', val);
+                                              if (!val) {
+                                                handleScheduleChange(index, 'endTime', '');
+                                                handleScheduleChange(index, 'startTime2', '');
+                                                handleScheduleChange(index, 'endTime2', '');
+                                              } else {
+                                                handleScheduleChange(index, 'endTime', calculateEndTime(val, 90));
+                                              }
                                             }
                                           }}
                                           options={START_TIME_OPTIONS}
                                         />
                                       </div>
                                       <div className="flex flex-col gap-2">
-                                        <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingTime2 ? 'text-amber-600' : 'text-gray-500'}`}>
-                                          2nd Session
-                                        </label>
+                                        <label className={`text-xs font-bold uppercase tracking-wider ${missingTime2 ? 'text-rose-600' : 'text-gray-500'}`}>2nd Session</label>
                                         <InnerDropdown
                                           value={(schedule as any).startTime2 || ''}
                                           placeholder="Start Time"
                                           disabled={!isSecondSessionUnlocked || !schedule.startTime}
                                           onChange={(val) => {
-                                            handleScheduleChange(index, 'startTime2', val);
-                                            if (!val) {
-                                              handleScheduleChange(index, 'endTime2', '');
-                                            } else {
-                                              handleScheduleChange(index, 'endTime2', calculateEndTime(val, 90));
+                                            if (val !== (schedule as any).startTime2) {
+                                              handleScheduleChange(index, 'startTime2', val);
+                                              if (!val) {
+                                                handleScheduleChange(index, 'endTime2', '');
+                                              } else {
+                                                handleScheduleChange(index, 'endTime2', calculateEndTime(val, 90));
+                                              }
                                             }
                                           }}
                                           options={START_TIME_OPTIONS}
@@ -2916,7 +3144,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('days') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 shadow-[inset_0_1px_0_0_#fb7185] ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'}` : (!isChild && (schedule.days.length === 0 || missingDay2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('days') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-rose-50' : ''} border-b border-rose-400 shadow-[inset_0_1px_0_0_#fb7185] ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'}` : (!isChild && (schedule.days.length === 0 || missingDay2) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [
                               ...(conflict?.roomConflictDetails1 || []),
@@ -2989,50 +3217,39 @@ function DepartmentEditScheduleModal({
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                               <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
-                                {(() => {
-                                  const missingDay1 = schedule.days.length === 0 && (!!schedule.startTime || !!(schedule as any).startTime2);
-                                  return (
-                                    <>
-                                      <div className="flex flex-col gap-1.5">
-                                        <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingDay1 ? 'text-amber-600' : 'text-gray-500'}`}>
-                                          1st Session
-                                        </label>
-                                        <InnerDropdown
-                                          value={schedule.days[0] || ''}
-                                          onChange={(val) => handleDayChange(index, 0, val)}
-                                          options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].filter(d => {
-                                            const isSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2;
-                                            const isSameInstructor = !(schedule as any).instructorId2 || (schedule as any).instructorId2 === schedule.instructorId;
-                                            if (isSameTime && isSameInstructor && schedule.days[1] === d) return false;
-                                            return true;
-                                          }).map(d => ({ value: d, label: d }))}
-                                        />
-                                      </div>
-                                      <div className="flex flex-col gap-1.5">
-                                        <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingDay2 ? 'text-amber-600' : 'text-gray-500'}`}>
-                                          2nd Session
-                                        </label>
-                                        <InnerDropdown
-                                          value={schedule.days[1] || ''}
-                                          disabled={!isSecondSessionUnlocked || !schedule.days[0] || getDurationMins(schedule.startTime, schedule.endTime) === 180}
-                                          onChange={(val) => handleDayChange(index, 1, val)}
-                                          options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].filter(d => {
-                                            const isSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2;
-                                            const isSameInstructor = !(schedule as any).instructorId2 || (schedule as any).instructorId2 === schedule.instructorId;
-                                            if (isSameTime && isSameInstructor && schedule.days[0] === d) return false;
-                                            return true;
-                                          }).map(d => ({ value: d, label: d }))}
-                                        />
-                                      </div>
-                                    </>
-                                  );
-                                })()}
+                                <div className="flex flex-col gap-1.5">
+                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingDay1 ? 'text-rose-600' : 'text-gray-500'}`}>1st Session</label>
+                                  <InnerDropdown
+                                    value={schedule.days[0] || ''}
+                                    onChange={(val) => handleDayChange(index, 0, val)}
+                                    options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].filter(d => {
+                                      const isSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2;
+                                      const isSameInstructor = !(schedule as any).instructorId2 || (schedule as any).instructorId2 === schedule.instructorId;
+                                      if (isSameTime && isSameInstructor && schedule.days[1] === d) return false;
+                                      return true;
+                                    }).map(d => ({ value: d, label: d }))}
+                                  />
+                                </div>
+                                <div className="flex flex-col gap-1.5">
+                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingDay2 ? 'text-rose-600' : 'text-gray-500'}`}>2nd Session</label>
+                                  <InnerDropdown
+                                    value={schedule.days[1] || ''}
+                                    disabled={!isSecondSessionUnlocked || !schedule.days[0] || getDurationMins(schedule.startTime, schedule.endTime) === 180}
+                                    onChange={(val) => handleDayChange(index, 1, val)}
+                                    options={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].filter(d => {
+                                      const isSameTime = !!(schedule as any).startTime2 && schedule.startTime === (schedule as any).startTime2;
+                                      const isSameInstructor = !(schedule as any).instructorId2 || (schedule as any).instructorId2 === schedule.instructorId;
+                                      if (isSameTime && isSameInstructor && schedule.days[0] === d) return false;
+                                      return true;
+                                    }).map(d => ({ value: d, label: d }))}
+                                  />
+                                </div>
                               </div>
                             </details>
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('buildingId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasRoomConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.buildingId || missingBuilding2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('buildingId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasRoomConflict ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-rose-50' : ''} border-b border-rose-400 border-r border-rose-200 shadow-[inset_0_1px_0_0_#fb7185]` : (!isChild && (!schedule.buildingId || missingBuilding2) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -3077,15 +3294,17 @@ function DepartmentEditScheduleModal({
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                               <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
+                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingBuilding1 ? 'text-rose-600' : 'text-gray-500'}`}>1st Session</label>
                                   <InnerDropdown
                                     value={schedule.buildingId || ''}
                                     onChange={(val) => {
-                                      handleScheduleChange(index, 'buildingId', val)
-                                      handleScheduleChange(index, 'roomId', '')
-                                      if (!val) {
-                                        handleScheduleChange(index, 'buildingId2', '')
-                                        handleScheduleChange(index, 'roomId2', '')
+                                      if (val !== schedule.buildingId) {
+                                        handleScheduleChange(index, 'buildingId', val)
+                                        handleScheduleChange(index, 'roomId', '')
+                                        if (!val) {
+                                          handleScheduleChange(index, 'buildingId2', '')
+                                          handleScheduleChange(index, 'roomId2', '')
+                                        }
                                       }
                                     }}
                                     options={buildings.map(b => ({
@@ -3095,13 +3314,15 @@ function DepartmentEditScheduleModal({
                                   />
                                 </div>
                                 <div className="flex flex-col gap-1.5">
-                                  <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">2nd Session</label>
+                                  <label className={`text-xs font-bold uppercase tracking-wider ${missingBuilding2 ? 'text-rose-600' : 'text-gray-500'}`}>2nd Session</label>
                                   <InnerDropdown
                                     value={(schedule as any).buildingId2 || ''}
                                     disabled={!isSecondSessionUnlocked || !schedule.buildingId}
                                     onChange={(val) => {
-                                      handleScheduleChange(index, 'buildingId2', val)
-                                      handleScheduleChange(index, 'roomId2', '')
+                                      if (val !== (schedule as any).buildingId2) {
+                                        handleScheduleChange(index, 'buildingId2', val)
+                                        handleScheduleChange(index, 'roomId2', '')
+                                      }
                                     }}
                                     options={buildings.map(b => ({
                                       value: b.id,
@@ -3114,7 +3335,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isCellReverted('roomId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasRoomConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : ((!schedule.roomId || missingRoom2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('roomId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} ${hasRoomConflict ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-rose-50' : ''} border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]` : ((!schedule.roomId || missingRoom2) ? ` focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda] ${!isSelected ? '!bg-amber-50' : ''} border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]` : 'border-b border-r border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -3130,16 +3351,18 @@ function DepartmentEditScheduleModal({
                           <details
                             className="w-full relative h-full group"
                             onClick={(e) => {
-                              if (!schedule.buildingId || (isChild && availableRooms.length === 0)) e.preventDefault();
+                              const canOpen = !isChild ? (!!schedule.buildingId || !!(schedule as any).buildingId2) : (availableRooms.length > 0 || availableRooms2.length > 0);
+                              if (!canOpen) e.preventDefault();
                             }}
                           >
                             <summary 
                               onMouseDown={(e) => {
-                                if (!schedule.buildingId || (isChild && availableRooms.length === 0)) e.preventDefault();
+                                const canOpen = !isChild ? (!!schedule.buildingId || !!(schedule as any).buildingId2) : (availableRooms.length > 0 || availableRooms2.length > 0);
+                                if (!canOpen) e.preventDefault();
                               }}
-                              tabIndex={(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? -1 : undefined}
+                              tabIndex={(!isChild ? (!schedule.buildingId && !(schedule as any).buildingId2) : (availableRooms.length === 0 && availableRooms2.length === 0)) ? -1 : undefined}
                               onClick={(e) => { handleDropdownPosition(e); }} 
-                              className={`h-full min-h-[2.75rem] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-0 flex items-center justify-between gap-1.5 transition-colors bg-transparent ${(!schedule.buildingId || (isChild && availableRooms.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}
+                              className={`h-full min-h-[2.75rem] list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-0 flex items-center justify-between gap-1.5 transition-colors bg-transparent ${(!isChild ? (!schedule.buildingId && !(schedule as any).buildingId2) : (availableRooms.length === 0 && availableRooms2.length === 0)) ? 'cursor-default text-gray-400' : 'cursor-pointer ' + ((schedule.roomId || (schedule as any).roomId2) ? 'text-gray-900 font-medium' : 'text-gray-500')}`}
                             >
                               <span className="truncate leading-none">
                                 {rooms.find(r => r.id === schedule.roomId)?.name || rooms.find(r => r.id === schedule.roomId)?.code || (
@@ -3158,31 +3381,33 @@ function DepartmentEditScheduleModal({
                                 <ExclamationIcon className="h-4 w-4 text-rose-500 shrink-0 ml-auto" />
                               )}
                             </summary>
-                            {schedule.buildingId && (
+                            {(schedule.buildingId || (schedule as any).buildingId2) && (
                               <>
                                 <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
                                 <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                   <div className="flex flex-col gap-1.5">
-                                    <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingRoom1 ? 'text-amber-600' : 'text-gray-500'}`}>
-                                      1st Session
-                                    </label>
+                                    <label className={`text-xs font-bold uppercase tracking-wider ${missingRoom1 ? 'text-rose-600' : 'text-gray-500'}`}>1st Session</label>
                                     <InnerDropdown
                                       value={schedule.roomId || ''}
+                                      disabled={!schedule.buildingId}
                                       onChange={(val) => {
-                                        handleScheduleChange(index, 'roomId', val);
-                                        if (!val) handleScheduleChange(index, 'roomId2', '');
+                                        if (val !== schedule.roomId) {
+                                          handleScheduleChange(index, 'roomId', val);
+                                        }
                                       }}
                                       options={availableRooms.map(room => ({ value: room.id, label: room.name || room.code || '' }))}
                                     />
                                   </div>
                                   <div className="flex flex-col gap-1.5">
-                                    <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingRoom2 ? 'text-amber-600' : 'text-gray-500'}`}>
-                                      2nd Session
-                                    </label>
+                                    <label className={`text-xs font-bold uppercase tracking-wider ${missingRoom2 ? 'text-rose-600' : 'text-gray-500'}`}>2nd Session</label>
                                     <InnerDropdown
                                       value={(schedule as any).roomId2 || ''}
-                                      disabled={!isSecondSessionUnlocked || !schedule.roomId}
-                                      onChange={(val) => handleScheduleChange(index, 'roomId2', val)}
+                                      disabled={!isSecondSessionUnlocked || !schedule.buildingId || !(schedule as any).buildingId2}
+                                      onChange={(val) => {
+                                        if (val !== (schedule as any).roomId2) {
+                                          handleScheduleChange(index, 'roomId2', val);
+                                        }
+                                      }}
                                       options={availableRooms2.map(room => ({ value: room.id, label: room.name || room.code || '' }))}
                                     />
                                   </div>
@@ -3193,7 +3418,7 @@ function DepartmentEditScheduleModal({
                         </td>
                         {!hideStatusColumn && (
                           <td
-                            className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} border-b border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]`}
+                            className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? '!bg-emerald-100' : '!bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:!bg-slate-100' : 'group-hover/row:!bg-slate-100')} border-b border-gray-300 focus-within:!bg-[#e3edda] has-[details[open]]:!bg-[#e3edda]`}
                           >
                           {isRowEditable && !isChild && (isDraft || isRevising || isPlotStatus || isReturnStatus) ? (
                             <details className="w-full relative h-full group">
@@ -3442,90 +3667,12 @@ function DepartmentEditScheduleModal({
                 <span className="text-sm font-medium text-gray-500">
                   Rows: {schedules.length}
                 </span>
-                {scheduleConflicts.overlapCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConflictModalTab('overlap')
-                      setIsConflictSummaryModalOpen(true)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 text-rose-700 border border-rose-300 text-xs font-bold hover:bg-rose-200 transition-all cursor-pointer shadow-sm animate-pulse"
-                    title="Schedule Overlaps (Room / Instructor)"
-                  >
-                    <ExclamationIcon className="h-3.5 w-3.5 text-rose-600 shrink-0" /> {scheduleConflicts.overlapCount} Overlap{scheduleConflicts.overlapCount > 1 ? 's' : ''}
-                  </button>
-                )}
-                {scheduleConflicts.sectionCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConflictModalTab('section')
-                      setIsConflictSummaryModalOpen(true)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-700 border border-purple-300 text-xs font-bold hover:bg-purple-200 transition-all cursor-pointer shadow-sm animate-pulse"
-                    title="Duplicate Subject / Title for Section"
-                  >
-                    <DuplicateIcon className="h-3.5 w-3.5 text-purple-600 shrink-0" /> {scheduleConflicts.sectionCount} Duplicate Section{scheduleConflicts.sectionCount > 1 ? 's' : ''}
-                  </button>
-                )}
-                {scheduleConflicts.missingCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConflictModalTab('missing')
-                      setIsConflictSummaryModalOpen(true)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-300 text-xs font-bold hover:bg-amber-200 transition-all cursor-pointer shadow-sm"
-                    title="Missing / Incomplete Fields"
-                  >
-                    <QuestionIcon className="h-3.5 w-3.5 text-amber-600 shrink-0" /> {scheduleConflicts.missingCount} Missing Field{scheduleConflicts.missingCount > 1 ? 's' : ''}
-                  </button>
-                )}
               </div>
             ) : (
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-medium text-gray-500 mr-1">
                   Rows: {schedules.length}
                 </span>
-                {scheduleConflicts.overlapCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConflictModalTab('overlap')
-                      setIsConflictSummaryModalOpen(true)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 text-rose-700 border border-rose-300 text-xs font-bold hover:bg-rose-200 transition-all cursor-pointer shadow-sm animate-pulse"
-                    title="Schedule Overlaps (Room / Instructor)"
-                  >
-                    <ExclamationIcon className="h-3.5 w-3.5 text-rose-600 shrink-0" /> {scheduleConflicts.overlapCount} Overlap{scheduleConflicts.overlapCount > 1 ? 's' : ''}
-                  </button>
-                )}
-                {scheduleConflicts.sectionCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConflictModalTab('section')
-                      setIsConflictSummaryModalOpen(true)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-700 border border-purple-300 text-xs font-bold hover:bg-purple-200 transition-all cursor-pointer shadow-sm animate-pulse"
-                    title="Duplicate Subject / Title for Section"
-                  >
-                    <DuplicateIcon className="h-3.5 w-3.5 text-purple-600 shrink-0" /> {scheduleConflicts.sectionCount} Duplicate Section{scheduleConflicts.sectionCount > 1 ? 's' : ''}
-                  </button>
-                )}
-                {scheduleConflicts.missingCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConflictModalTab('missing')
-                      setIsConflictSummaryModalOpen(true)
-                    }}
-                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-300 text-xs font-bold hover:bg-amber-200 transition-all cursor-pointer shadow-sm"
-                    title="Missing / Incomplete Fields"
-                  >
-                    <QuestionIcon className="h-3.5 w-3.5 text-amber-600 shrink-0" /> {scheduleConflicts.missingCount} Missing Field{scheduleConflicts.missingCount > 1 ? 's' : ''}
-                  </button>
-                )}
               </div>
             )}
             <div className="flex gap-3">
@@ -3552,8 +3699,9 @@ function DepartmentEditScheduleModal({
                   disabled={isSubmittingSchedules}
                   onClick={() => {
                     const isStrictPhase = selectedSemesterPhase?.phase !== 'Drafting';
-                    if (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && scheduleConflicts.missingCount > 0)) {
-                      setConflictModalTab(scheduleConflicts.hardConflictsCount > 0 ? 'all' : 'missing');
+                    const allowMissing = allowMissingFieldsInRevision && selectedSemesterPhase?.phase === 'Revision';
+                    if (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && !allowMissing && scheduleConflicts.missingCount > 0)) {
+                      setConflictModalTab('all');
                       setIsConflictSummaryModalOpen(true);
                       return;
                     }
@@ -3784,11 +3932,6 @@ function DepartmentEditScheduleModal({
                       ? 'Resolve all hard conflicts (overlaps & duplicate sections) before publishing.'
                       : 'Incomplete fields can be saved as drafts, but will show a confirmation before saving.'}
                   </p>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="inline-flex items-center rounded-full bg-white/20 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-white border border-white/30 backdrop-blur-sm">
-                    {scheduleConflicts.totalConflicts} Total
-                  </span>
                 </div>
               </div>
             </div>

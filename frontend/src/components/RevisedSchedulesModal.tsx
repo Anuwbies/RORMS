@@ -441,7 +441,7 @@ export function RevisedSchedulesModal({
     <>
       <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
         <div
-          className="w-full max-w-4xl min-h-[22rem] max-h-[78vh] flex flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
+          className="w-full max-w-4xl min-h-[28rem] max-h-[78vh] flex flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden relative"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
@@ -455,31 +455,21 @@ export function RevisedSchedulesModal({
           </div>
 
           {/* Content Body */}
-          <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-0 bg-white">
+          <div className="flex-1 overflow-y-auto custom-scrollbar px-6 py-0 bg-white flex flex-col">
             {loading ? (
-              <div className="flex h-64 flex-col items-center justify-center">
+              <div className="flex-1 min-h-[16rem] flex flex-col items-center justify-center">
                 <SpinnerIcon className="h-8 w-8 animate-spin text-[var(--brand-color)]" />
                 <p className="mt-3 text-sm font-semibold text-slate-500">Loading revised schedules...</p>
               </div>
             ) : schedules.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 px-4 text-center rounded-2xl border border-dashed border-gray-200 bg-white shadow-xs">
+              <div className="flex-1 min-h-[18rem] my-4 flex flex-col items-center justify-center py-12 px-4 text-center rounded-2xl border border-dashed border-gray-200 bg-white shadow-xs">
                 <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 mb-4 border border-emerald-100">
                   <CheckCircleIcon className="h-9 w-9" />
                 </div>
                 <h4 className="text-lg font-bold text-slate-900">All Revisions Reviewed!</h4>
                 <p className="mt-1 text-sm text-slate-500 max-w-md">
-                  There are no pending revised schedules remaining for {departmentInfo?.code}. You can now proceed to the schedule editor.
+                  There are no pending revised schedules remaining for {departmentInfo?.code}.
                 </p>
-                <div className="mt-6 flex gap-3">
-                  <Button
-                    type="button"
-                    variant="brand"
-                    onClick={onProceedToEdit}
-                    className="px-6 py-2.5 text-sm font-bold shadow-md hover:shadow-lg transition-all"
-                  >
-                    Continue
-                  </Button>
-                </div>
               </div>
             ) : (
               <div className="divide-y divide-gray-200">

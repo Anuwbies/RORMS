@@ -485,6 +485,7 @@ export function DepartmentSchedulesPage() {
         showStatusOnNumberColumn={false}
         onlyAllowDraftEditing={false}
         onlyAllowTimeDaysRoomStatusEditing={true}
+        allowMissingFieldsInRevision={true}
       />
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}
