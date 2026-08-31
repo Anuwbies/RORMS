@@ -45,12 +45,69 @@ export interface ScheduleModalProps {
   hideReturnedSchedules?: boolean
 }
 
+interface SemesterInfo {
+  name?: string
+  phase?: string
+  startMonth?: string
+  startYear?: number
+  endMonth?: string
+  endYear?: number
+}
+
 interface AcademicYearData {
   id: string
   academicYear: string
   isActive?: boolean
-  sem1?: { name?: string; phase?: string }
-  sem2?: { name?: string; phase?: string }
+  sem1?: SemesterInfo
+  sem2?: SemesterInfo
+}
+
+const MONTH_NAMES = [
+  'january', 'february', 'march', 'april', 'may', 'june',
+  'july', 'august', 'september', 'october', 'november', 'december'
+]
+
+function getMonthIndexByName(monthName?: string): number {
+  if (!monthName) return -1
+  const lower = monthName.toLowerCase().trim()
+  return MONTH_NAMES.findIndex(m => m.startsWith(lower.slice(0, 3)))
+}
+
+function resolveCurrentSemester(academicYear?: AcademicYearData | null, explicitInitialSem?: string): string {
+  if (explicitInitialSem) return explicitInitialSem
+  if (!academicYear) return '1st Semester'
+
+  const sem1 = academicYear.sem1
+  if (!sem1?.startMonth || !sem1?.endMonth) {
+    return '1st Semester'
+  }
+
+  const now = new Date()
+  const curYear = now.getFullYear()
+  const curMonth = now.getMonth() // 0 - 11
+  const curAbs = curYear * 12 + curMonth
+
+  const startM = getMonthIndexByName(sem1.startMonth)
+  const endM = getMonthIndexByName(sem1.endMonth)
+  if (startM === -1 || endM === -1) return '1st Semester'
+
+  let startY = sem1.startYear
+  let endY = sem1.endYear
+
+  if (!startY || !endY) {
+    const parts = (academicYear.academicYear || '').split(/[-–—/]/).map(p => parseInt(p.trim())).filter(n => !isNaN(n))
+    const ayStart = parts[0] || curYear
+    const ayEnd = parts[1] || ayStart + 1
+    startY = startY || ayStart
+    endY = endY || (endM < startM ? ayStart + 1 : ayStart)
+  }
+
+  const sem1EndAbs = endY * 12 + endM
+
+  if (curAbs > sem1EndAbs) {
+    return '2nd Semester'
+  }
+  return '1st Semester'
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
@@ -293,19 +350,31 @@ export function ScheduleModal({
       setAcademicYears(years)
 
       if (years.length > 0) {
-        setSelectedAcademicYear(prev => {
-          if (initialAcademicYear) {
-            const matched = years.find(y => y.academicYear === initialAcademicYear)
-            if (matched) return matched
-          }
-          if (prev && years.some(y => y.id === prev.id)) return prev
-          return years.find(y => y.isActive) || years[0]
-        })
+        let yearToSelect: AcademicYearData | null = null
+        if (initialAcademicYear) {
+          yearToSelect = years.find(y => y.academicYear === initialAcademicYear) || null
+        }
+        if (!yearToSelect) {
+          yearToSelect = years.find(y => y.isActive) || years[0]
+        }
+        setSelectedAcademicYear(yearToSelect)
+
+        if (!initialSemester) {
+          setSelectedSemester(resolveCurrentSemester(yearToSelect))
+        }
       }
     })
 
     return () => unsubscribe()
-  }, [isOpen, initialAcademicYear])
+  }, [isOpen, initialAcademicYear, initialSemester])
+
+  useEffect(() => {
+    if (initialSemester) {
+      setSelectedSemester(initialSemester)
+    } else if (selectedAcademicYear) {
+      setSelectedSemester(resolveCurrentSemester(selectedAcademicYear))
+    }
+  }, [initialSemester, selectedAcademicYear])
 
   // 2. Fetch Users & Memberships (for Room mode)
   useEffect(() => {
@@ -1030,7 +1099,12 @@ export function ScheduleModal({
                     value={selectedAcademicYear?.academicYear || ''}
                     onChange={(val) => {
                       const found = academicYears.find(y => y.academicYear === val)
-                      if (found) setSelectedAcademicYear(found)
+                      if (found) {
+                        setSelectedAcademicYear(found)
+                        if (!initialSemester) {
+                          setSelectedSemester(resolveCurrentSemester(found))
+                        }
+                      }
                     }}
                     className="[&>button]:!rounded-xl [&>button]:!bg-white [&>button]:!border-white/30 [&>button]:!shadow-sm"
                   />

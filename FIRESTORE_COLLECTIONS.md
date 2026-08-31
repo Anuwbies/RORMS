@@ -118,7 +118,9 @@ Manages room reservation requests and their approval status.
   - `endTime`: string (e.g., "09:00")
   - `duration`: number (Duration in minutes)
   - `purpose`: string (Reason for the reservation)
-  - `status`: string (`"Pending"`, `"Approved"`, `"Declined"`, or `"Cancelled"`) | **Default: "Pending"**
+  - `status`: string (`"Pending"`, `"Approved"`, `"Declined"`, `"Cancelled"`, or `"Completed"`) | **Default: "Pending"**
+  - `declinedReason`: string (Optional reason if declined by reviewer or auto-expired)
+  - `completedAt`: timestamp (Optional timestamp when an approved reservation concludes)
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
 
