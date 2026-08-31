@@ -1416,7 +1416,10 @@ function DepartmentEditScheduleModal({
       // Value change status transitions
       if (field !== 'status') {
         if (onlyAllowDraftEditing) {
-          if (current.status === 'Return' || current.status === 'Returned' || current.status === 'Removed') {
+          const isReturn = current.status === 'Return' || current.status === 'Returned' || current.status === 'Removed';
+          const isPlotInRevision = selectedSemesterPhase?.phase === 'Revision' && (current.status === 'Plot' || current.status === 'Plotted');
+          
+          if (isReturn || isPlotInRevision) {
             updated[index] = { ...updated[index], status: 'Draft' };
             if (!current.parentId && current.type === 'parallel') {
               for (let i = 0; i < updated.length; i++) {
@@ -1851,8 +1854,9 @@ function DepartmentEditScheduleModal({
   }
 
   const handleSaveSchedules = async () => {
-    if (scheduleConflicts.hardConflictsCount > 0) {
-      setConflictModalTab('all')
+    const isStrictPhase = selectedSemesterPhase?.phase !== 'Drafting';
+    if (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && scheduleConflicts.missingCount > 0)) {
+      setConflictModalTab(scheduleConflicts.hardConflictsCount > 0 ? 'all' : 'missing')
       setIsConflictSummaryModalOpen(true)
       return
     }
@@ -2406,8 +2410,8 @@ function DepartmentEditScheduleModal({
                     const origStatus = origSchedule?.status || 'Draft';
                     const isOrigDraft = !origStatus || origStatus === 'Draft' || origStatus === 'Drafted';
 
-                    const isRowEditable = isEditable && (!onlyAllowDraftEditing || isDraft || isReturnStatus);
-                    const isRemovable = !onlyAllowDraftEditing || isDraft || isReturnStatus;
+                    const isRowEditable = isEditable && (!onlyAllowDraftEditing || isDraft || isReturnStatus || (selectedSemesterPhase?.phase === 'Revision' && isPlotStatus));
+                    const isRemovable = !onlyAllowDraftEditing || isDraft || isReturnStatus || (selectedSemesterPhase?.phase === 'Revision' && isPlotStatus);
 
                     const isCellReverted = (fieldName: string) => revertedCellKeys.has(`${schedule.id}_${fieldName}`);
 
@@ -3547,8 +3551,9 @@ function DepartmentEditScheduleModal({
                   variant="brand"
                   disabled={isSubmittingSchedules}
                   onClick={() => {
-                    if (scheduleConflicts.hardConflictsCount > 0) {
-                      setConflictModalTab('all');
+                    const isStrictPhase = selectedSemesterPhase?.phase !== 'Drafting';
+                    if (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && scheduleConflicts.missingCount > 0)) {
+                      setConflictModalTab(scheduleConflicts.hardConflictsCount > 0 ? 'all' : 'missing');
                       setIsConflictSummaryModalOpen(true);
                       return;
                     }
