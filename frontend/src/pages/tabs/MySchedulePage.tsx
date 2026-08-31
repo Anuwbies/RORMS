@@ -4,6 +4,7 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
 import { Button } from '../../components/Button'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
+import { ScheduleModal } from '../../components/ScheduleModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { collection, query, where, onSnapshot, limit, doc } from 'firebase/firestore'
@@ -226,6 +227,8 @@ function MySchedulePage() {
       if (selectedSemester && s.semester) {
         if (s.semester !== selectedSemester) return false
       }
+      const status = s.status || 'Draft'
+      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised'].includes(status)) return false
       return true
     })
   }, [schedules, selectedAcademicYear?.academicYear, selectedSemester])
@@ -566,247 +569,26 @@ function MySchedulePage() {
             </span>
           </div>
         ) : (
-          <div className="flex flex-col rounded-2xl border border-gray-200 bg-white shadow-xl overflow-hidden min-h-[600px]">
-            {/* Header with brand gradient and Dropdown Filters */}
-            <div className="relative z-30 bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] px-7 py-5 text-white rounded-t-2xl shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h3 className="text-xl font-bold tracking-tight text-white">
-                  {currentUserDoc?.fullName || currentUser?.displayName || 'Weekly Timetable'}
-                </h3>
-                <p className="mt-0.5 text-xs text-white/80 font-medium">
-                  {userRole || currentMembership?.role || 'Instructor'} • {currentUser?.email || ''}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-3 shrink-0 flex-wrap">
-                {academicYearOptions.length > 0 && (
-                  <div className="w-52">
-                    <SingleSelectDropdown
-                      options={academicYearOptions}
-                      value={selectedAcademicYear?.academicYear || ''}
-                      onChange={(val) => {
-                        const found = academicYears.find(y => y.academicYear === val)
-                        if (found) setSelectedAcademicYear(found)
-                      }}
-                      className="[&>button]:!rounded-xl [&>button]:!bg-white [&>button]:!border-white/30 [&>button]:!shadow-sm"
-                    />
-                  </div>
-                )}
-
-                <div className="w-52">
-                  <SingleSelectDropdown
-                    options={['1st Semester', '2nd Semester'] as const}
-                    value={selectedSemester as '1st Semester' | '2nd Semester'}
-                    onChange={(val) => setSelectedSemester(val)}
-                    className="[&>button]:!rounded-xl [&>button]:!bg-white [&>button]:!border-white/30 [&>button]:!shadow-sm"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Timetable Grid Body */}
-            <div className="flex-1 overflow-y-auto overflow-x-auto bg-gray-50/50 overscroll-none flex flex-col relative z-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
-              {isLoading ? (
-                <div className="flex-1 flex flex-col items-center justify-center p-16 text-center gap-3">
-                  <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
-                  <p className="text-sm font-bold text-slate-700">Loading schedule...</p>
-                  <p className="text-xs text-slate-400">Retrieving timetable assignments.</p>
-                </div>
-              ) : (
-                <table
-                  className="grid w-full text-left text-sm whitespace-nowrap min-w-max"
-                  style={{
-                    gridTemplateColumns: '6rem repeat(7, minmax(9.5rem, 1fr))',
-                    gridTemplateRows: `auto repeat(${timeSlots.length}, minmax(7.5rem, auto))`
-                  }}
-                >
-                  <thead className="contents text-gray-700 font-bold text-base">
-                    <tr className="contents">
-                      <th className="p-2 h-14 flex items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">Time</th>
-                      {DAYS.map(day => (
-                        <th key={day} className="p-2 h-14 flex flex-col items-center justify-center border-b-2 border-r text-center border-gray-300 bg-gray-50 last:border-r-0 sticky top-0 z-20 shadow-[0_1px_2px_rgba(0,0,0,0.05)] font-bold text-gray-700">
-                          <span className="text-sm font-bold text-gray-800">{day}</span>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="contents">
-                    {timeSlots.map(slot => {
-                      const [start, end] = slot.split('-')
-                      return (
-                        <tr key={slot} className="contents group">
-                          <td className="px-3 py-2 text-xs font-bold text-gray-700 border-b border-r border-gray-300 align-middle whitespace-nowrap bg-gray-50/60 group-hover:bg-gray-100/70 transition-colors h-full flex items-center justify-center">
-                            <div className="flex flex-col items-center justify-center gap-1">
-                              <span className="text-gray-900 font-bold text-xs">{formatTime(start)}</span>
-                              <span className="text-gray-900 font-bold text-xs">{formatTime(end)}</span>
-                            </div>
-                          </td>
-                          {DAYS.map(day => {
-                            const daySchedules = scheduleGrid[slot]?.[day] || []
-
-                            if (daySchedules.length === 0) {
-                              return (
-                                <td key={day} className="px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top bg-white group-hover:bg-gray-50/50 transition-colors h-full flex flex-col min-w-0">
-                                  <div className="flex-1 h-full" />
-                                </td>
-                              )
-                            }
-
-                            const grouped: { parent: any, children: any[] }[] = []
-                            daySchedules.forEach(cls => {
-                              if (cls.type === 'parallel') {
-                                if (cls.groupId) {
-                                  const existingGroup = grouped.find(g => g.parent.groupId === cls.groupId)
-                                  if (existingGroup) {
-                                    existingGroup.children.push(cls)
-                                  } else {
-                                    grouped.push({ parent: cls, children: [] })
-                                  }
-                                } else {
-                                  grouped.push({ parent: cls, children: [] })
-                                }
-                              } else if (cls.parentId) {
-                                const parentGroup = grouped.find(g => g.parent.id === cls.parentId || g.parent.docId === cls.parentId)
-                                if (parentGroup) {
-                                  parentGroup.children.push(cls)
-                                } else {
-                                  grouped.push({ parent: cls, children: [] })
-                                }
-                              } else {
-                                grouped.push({ parent: cls, children: [] })
-                              }
-                            })
-
-                            const slotStartMins = timeToMins(start)
-                            const slotEndMins = timeToMins(end)
-                            const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
-
-                            const isSingleFullSlot = grouped.length === 1 && 
-                              timeToMins(grouped[0].parent.startTime) <= slotStartMins && 
-                              timeToMins(grouped[0].parent.endTime) >= slotEndMins;
-
-                            const gridRowsStyle = grouped.length > 0 
-                              ? (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`) 
-                              : 'auto';
-
-                            return (
-                              <td key={day} className="px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top bg-white group-hover:bg-gray-50/50 transition-colors min-w-0 h-full grid gap-1" style={{ gridTemplateRows: gridRowsStyle }}>
-                                  {grouped.map((group, idx) => {
-                                    const itemStartMins = Math.max(slotStartMins, timeToMins(group.parent.startTime))
-                                    const itemEndMins = Math.min(slotEndMins, timeToMins(group.parent.endTime))
-                                    
-                                    const startRow = Math.floor((itemStartMins - slotStartMins) / 30) + 1
-                                    const endRow = Math.max(startRow + 1, Math.ceil((itemEndMins - slotStartMins) / 30) + 1)
-                                    const gridRowStyle = `${startRow} / ${endRow}`
-
-                                    return group.parent.type === 'parallel' ? (
-                                      <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm transition-all min-w-0 min-h-0 overflow-hidden">
-                                        <div className="flex flex-col focus:outline-none min-w-0">
-                                          <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                            <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
-                                            <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                              {group.parent.format || 'N/A'}
-                                            </span>
-                                          </div>
-                                        </div>
-                                        <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 cursor-default min-w-0" onClick={e => e.stopPropagation()}>
-                                          {[group.parent, ...group.children].map((item, iIdx) => (
-                                            <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
-                                              <div className="flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                                <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                                <span className="truncate">Room: <strong className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(item.roomId)}>
-                                                  {getRoomCode(item.roomId)}
-                                                </strong></span>
-                                                {item.department && (
-                                                  <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ) : group.children.length > 0 ? (
-                                      <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/5 border border-[var(--brand-color)]/30 rounded text-sm shadow-sm min-w-0 min-h-0 overflow-hidden">
-                                        <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                          <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
-                                          <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                            {group.parent.format || 'N/A'}
-                                          </span>
-                                        </div>
-                                        <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                          <span className="truncate">Room: <strong className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(group.parent.roomId)}>
-                                            {getRoomCode(group.parent.roomId)}
-                                          </strong></span>
-                                          {group.parent.department && (
-                                            <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
-                                          )}
-                                        </div>
-                                        <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 min-w-0">
-                                          {group.children.map((child, cIdx) => (
-                                            <div key={cIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
-                                              <span className="font-bold text-gray-900 uppercase truncate">{child.subjectCode || 'TBA'}</span>
-                                              <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                                <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{child.classSection || 'TBA'}</span></span>
-                                                <span className="truncate">Room: <strong className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(child.roomId)}>
-                                                  {getRoomCode(child.roomId)}
-                                                </strong></span>
-                                                {child.department && (
-                                                  <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{child.department}</span></span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div key={idx} style={{ gridRow: gridRowStyle }} className="flex flex-col p-2 bg-[var(--brand-color)]/10 border border-[var(--brand-color)]/20 rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden">
-                                        <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                          <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
-                                          <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                            {group.parent.format || 'N/A'}
-                                          </span>
-                                        </div>
-                                        <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
-                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                          <span className="truncate">Room: <strong className="text-[var(--brand-color)] font-medium truncate" title={getRoomCode(group.parent.roomId)}>
-                                            {getRoomCode(group.parent.roomId)}
-                                          </strong></span>
-                                          {group.parent.department && (
-                                            <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    )
-                                  })}
-                              </td>
-                            )
-                          })}
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {/* Footer with Academic Term indicator & PDF Download */}
-            <div className="bg-gray-50/80 px-7 py-4 border-t border-gray-200 flex items-center justify-between gap-3 shrink-0 rounded-b-2xl relative z-30">
-              <div className="text-xs text-gray-500 font-medium">
-                Showing schedule for <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
-              </div>
-              <Button
-                type="button"
-                variant="brand"
-                onClick={handleDownloadPdf}
-                disabled={isLoading || isGeneratingPdf}
-                className="w-45 px-4 text-sm flex items-center justify-center gap-2 text-white shadow-sm disabled:opacity-50 cursor-pointer !h-10"
-                icon={isGeneratingPdf ? undefined : <DownloadIcon className="h-4 w-4" />}
-              >
-                {isGeneratingPdf ? 'Exporting PDF' : 'Download PDF'}
-              </Button>
-            </div>
-          </div>
+          <ScheduleModal
+            isOpen={true}
+            onClose={() => {}}
+            member={{
+              id: currentUser?.uid,
+              membershipId: membershipId,
+              userId: currentUser?.uid,
+              name: currentUserDoc?.fullName || currentUser?.displayName || 'Instructor',
+              email: currentUser?.email || '',
+              role: userRole || currentMembership?.role || 'Instructor',
+              department: currentMembership?.departmentCode || currentMembership?.department || '',
+              departmentName: currentMembership?.departmentName || ''
+            }}
+            showWeekCalendar={true}
+            showStatusColors={true}
+            isInline={true}
+            hideReturnedSchedules={true}
+            initialAcademicYear={selectedAcademicYear?.academicYear}
+            initialSemester={selectedSemester}
+          />
         )}
       </div>
     </section>

@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
-import { CalendarIcon, PlusIcon, TrashIcon, CheckIcon, CheckCircleIcon, AlertCircleIcon, ExclamationIcon, DuplicateIcon, QuestionIcon, SpinnerIcon, SearchIcon, CloseIcon } from './Icons'
+import { CalendarIcon, PlusIcon, TrashIcon, CheckIcon, CheckCircleIcon, AlertCircleIcon, ExclamationIcon, DuplicateIcon, QuestionIcon, SpinnerIcon, SearchIcon, CloseIcon, UndoIcon } from './Icons'
 import { Button } from './Button'
 import { DashedButton } from './DashedButton'
 import { SearchInput } from './SearchInput'
 import { db } from '../firebase'
 import { collection, query, where, onSnapshot, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore'
+import { combineSessionChanges } from './RevisedSchedulesModal'
 
 export interface DepartmentMember {
   id: string
@@ -31,6 +32,9 @@ interface DepartmentEditScheduleModalProps {
   hideStatusColumn?: boolean
   hideAddRemoveButtons?: boolean
   hidePlotAllReadyButton?: boolean
+  showStatusOnNumberColumn?: boolean
+  onlyAllowDraftEditing?: boolean
+  onlyAllowTimeDaysRoomStatusEditing?: boolean
 }
 
 const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder = "Select" }: { value: string, onChange: (val: string) => void, options: { value: string, label: string }[], disabled?: boolean, placeholder?: string }) => {
@@ -64,7 +68,7 @@ const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder
       {!disabled && (
         <>
           <div className="fixed inset-0 z-[60]" onClick={(e) => { e.stopPropagation(); e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-          <div className="absolute top-full mt-1 left-0 z-[70] bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded w-full max-h-[12.5rem] overflow-y-auto">
+          <div className="absolute top-full mt-1 left-0 z-[70] bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-1 flex flex-col gap-1 rounded w-full max-h-[12.5rem] overflow-y-auto">
             <button
               type="button"
               onClick={(e) => {
@@ -125,16 +129,16 @@ const START_TIME_OPTIONS = [
 
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).substring(2, 7)
 
-const createDefaultSchedule = () => ({
+export const createDefaultSchedule = () => ({
   id: generateId(),
-  instructorId: '',
-  instructorId2: '',
   type: 'normal',
   subjectCode: '',
   subjectTitle: '',
   classSection: '',
   format: '',
   format2: '',
+  instructorId: '',
+  instructorId2: '',
   startTime: '',
   startTime2: '',
   endTime: '',
@@ -186,6 +190,9 @@ function DepartmentEditScheduleModal({
   hideStatusColumn = false,
   hideAddRemoveButtons = false,
   hidePlotAllReadyButton = false,
+  showStatusOnNumberColumn = false,
+  onlyAllowDraftEditing = false,
+  onlyAllowTimeDaysRoomStatusEditing = false,
 }: DepartmentEditScheduleModalProps) {
   const isEditable = selectedSemesterPhase?.phase ? editablePhases.includes(selectedSemesterPhase.phase) : false;
 
@@ -207,14 +214,16 @@ function DepartmentEditScheduleModal({
     targetY: number
     targetBottomY: number
     lines: string[]
-    type?: 'danger' | 'warning' | 'purple' | 'info' | 'dark'
+    type?: 'danger' | 'warning' | 'purple' | 'info' | 'dark' | 'success'
+    position?: 'top' | 'right'
   } | null>(null)
   const tooltipRef = useRef<HTMLDivElement | null>(null)
-  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; arrowLeft: number; isBelow: boolean }>({
+  const [tooltipPos, setTooltipPos] = useState<{ left: number; top: number; arrowLeft: number; isBelow: boolean; isRight: boolean }>({
     left: 0,
     top: 0,
     arrowLeft: 50,
-    isBelow: false
+    isBelow: false,
+    isRight: false
   })
 
   const [schedules, setSchedules] = useState([createDefaultSchedule()])
@@ -225,6 +234,10 @@ function DepartmentEditScheduleModal({
   const [isPlotMode, setIsPlotMode] = useState(false)
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([])
   const parallelChildrenCache = useRef<Map<string, any[]>>(new Map())
+  const originalSchedulesMap = useRef<Map<string, any>>(new Map())
+  const [revertedCellKeys, setRevertedCellKeys] = useState<Set<string>>(new Set())
+  const undoHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [pendingUndoIndex, setPendingUndoIndex] = useState<number | null>(null)
 
   // Drag-and-drop reordering state (pointer-based, smooth CSS transform animation)
   const [dragState, setDragState] = useState<{
@@ -242,17 +255,18 @@ function DepartmentEditScheduleModal({
   const dragStateRef = useRef(dragState)
   dragStateRef.current = dragState
 
-  // Status rank order: 0: Draft, 1: Revise, 2: Plot, 3: Return
+  // Status rank order: 0: Draft, 1: Return, 2: Revise/Revising/Revised, 3: Plot/Plotted
   const STATUS_ORDER: Record<string, number> = {
     'Draft': 0,
     'Drafted': 0,
-    'Revise': 1,
-    'Revised': 1,
-    'Plot': 2,
-    'Plotted': 2,
-    'Return': 3,
-    'Returned': 3,
-    'Removed': 3,
+    'Return': 1,
+    'Returned': 1,
+    'Removed': 1,
+    'Revising': 2,
+    'Revise': 2,
+    'Revised': 2,
+    'Plot': 3,
+    'Plotted': 3,
   }
 
   const getStatusRank = (status?: string): number => {
@@ -275,32 +289,6 @@ function DepartmentEditScheduleModal({
       else break
     }
     return indices
-  }
-
-  // Helper to find the first and last row indices for the status group of the dragged row
-  const getStatusLimits = (list: typeof schedules, groupIndices: number[]) => {
-    const currentItem = list[groupIndices[0]]
-    const targetRank = getStatusRank(currentItem?.status)
-
-    let firstAllowedIdx = groupIndices[0]
-    let lastAllowedIdx = groupIndices[groupIndices.length - 1]
-
-    for (let i = 0; i < list.length; i++) {
-      if (getStatusRank(list[i]?.status) === targetRank) {
-        firstAllowedIdx = i
-        break
-      }
-    }
-
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (getStatusRank(list[i]?.status) === targetRank) {
-        const g = getGroupIndices(list, i)
-        lastAllowedIdx = g[g.length - 1]
-        break
-      }
-    }
-
-    return { firstAllowedIdx, lastAllowedIdx }
   }
 
   // Stable sort schedules by status: Draft (0) -> Revise (1) -> Plot (2) -> Return (3)
@@ -348,20 +336,15 @@ function DepartmentEditScheduleModal({
         
         let rawDeltaY = e.clientY - prev.startMouseY
         
-        // Calculate bounds restricted to its status limit
+        // Calculate bounds restricted to table bounds
         const groupStartIdx = prev.groupIndices[0]
         const groupOriginalTop = prev.rowTops[groupStartIdx]
         const groupOriginalBottom = groupOriginalTop + prev.groupHeight
         
-        const { firstAllowedIdx, lastAllowedIdx } = getStatusLimits(schedulesRef.current, prev.groupIndices)
-
-        // Top bound: first row's top of the same status
-        const minTop = prev.rowTops[firstAllowedIdx]
+        const minTop = prev.rowTops[0] ?? 0
+        const maxBottom = (prev.rowTops[prev.rowTops.length - 1] ?? 0) + (prev.rowHeights[prev.rowHeights.length - 1] ?? 0)
         
-        // Bottom bound: last row's bottom of the same status
-        const maxBottom = prev.rowTops[lastAllowedIdx] + prev.rowHeights[lastAllowedIdx]
-        
-        // Clamp deltaY so the dragged row stays strictly within its status limits
+        // Clamp deltaY so the dragged row stays within table limits
         const maxDeltaYUp = minTop - groupOriginalTop
         const maxDeltaYDown = maxBottom - groupOriginalBottom
         
@@ -380,40 +363,32 @@ function DepartmentEditScheduleModal({
         const dragTop = dragOriginalTop + deltaY
         const dragBottom = dragTop + groupHeight
 
-        const draggedRank = getStatusRank(current[groupIndices[0]]?.status)
-
         // Build list of all groups with their final visual centers
         const visited = new Set(groupIndices)
-        const groupsWithVisualCenters: { indices: number[], visualCenter: number, rank: number }[] = []
+        const groupsWithVisualCenters: { indices: number[], visualCenter: number }[] = []
         for (let i = 0; i < current.length; ) {
           if (visited.has(i)) { i++; continue }
           const group = getGroupIndices(current, i)
           const gHeight = group.reduce((s, idx) => s + (rowHeights[idx] || 0), 0)
           const gCenter = rowTops[group[0]] + gHeight / 2
-          const gRank = getStatusRank(current[group[0]]?.status)
           
           let visualCenter = gCenter
-          if (gRank === draggedRank) {
-            if (deltaY > 0 && i > groupIndices[groupIndices.length - 1] && gCenter < dragBottom) {
-               visualCenter = gCenter - groupHeight
-            } else if (deltaY < 0 && i < groupIndices[0] && gCenter > dragTop) {
-               visualCenter = gCenter + groupHeight
-            }
+          if (deltaY > 0 && i > groupIndices[groupIndices.length - 1] && gCenter < dragBottom) {
+             visualCenter = gCenter - groupHeight
+          } else if (deltaY < 0 && i < groupIndices[0] && gCenter > dragTop) {
+             visualCenter = gCenter + groupHeight
           }
           
-          groupsWithVisualCenters.push({ indices: group, visualCenter, rank: gRank })
+          groupsWithVisualCenters.push({ indices: group, visualCenter })
           i = group[group.length - 1] + 1
         }
         
         // Add dragged group
         const draggedVisualCenter = dragTop + groupHeight / 2
-        groupsWithVisualCenters.push({ indices: groupIndices, visualCenter: draggedVisualCenter, rank: draggedRank })
+        groupsWithVisualCenters.push({ indices: groupIndices, visualCenter: draggedVisualCenter })
         
-        // Sort: Primary by rank (so status groups are strictly preserved), Secondary by visual center
-        groupsWithVisualCenters.sort((a, b) => {
-          if (a.rank !== b.rank) return a.rank - b.rank
-          return a.visualCenter - b.visualCenter
-        })
+        // Sort by visual center
+        groupsWithVisualCenters.sort((a, b) => a.visualCenter - b.visualCenter)
         
         // Reconstruct schedule with updated orderIndex
         const newSchedules: typeof current = []
@@ -477,16 +452,11 @@ function DepartmentEditScheduleModal({
     const thisGroupHeight = thisGroup.reduce((s, i) => s + (rowHeights[i] || 0), 0)
     const thisGroupCenter = rowTops[thisGroup[0]] + thisGroupHeight / 2
 
-    // Only allow shift if this row has the SAME status rank as the dragged group
-    const isSameStatusRank = getStatusRank(schedules[thisGroup[0]]?.status) === getStatusRank(schedules[dragGroupStart]?.status)
-
     let shift = 0
-    if (isSameStatusRank) {
-      if (deltaY > 0 && index > dragGroupEnd && thisGroupCenter < dragBottom) {
-        shift = -groupHeight
-      } else if (deltaY < 0 && index < dragGroupStart && thisGroupCenter > dragTop) {
-        shift = groupHeight
-      }
+    if (deltaY > 0 && index > dragGroupEnd && thisGroupCenter < dragBottom) {
+      shift = -groupHeight
+    } else if (deltaY < 0 && index < dragGroupStart && thisGroupCenter > dragTop) {
+      shift = groupHeight
     }
 
     return {
@@ -500,6 +470,7 @@ function DepartmentEditScheduleModal({
       const el = tooltipRef.current
       const rect = el.getBoundingClientRect()
       const tooltipWidth = rect.width
+      const tooltipHeight = rect.height
       const halfWidth = tooltipWidth / 2
 
       // Find the active modal container if any, otherwise fallback to viewport
@@ -510,35 +481,50 @@ function DepartmentEditScheduleModal({
       const leftBound = modalRect ? modalRect.left + 16 : 24
       const topBound = modalRect ? modalRect.top + 16 : 16
 
-      // Default to perfectly centered over the hovered element
-      let tooltipLeft = customTooltip.targetX - halfWidth
+      if (customTooltip.position === 'right') {
+        // Position to the right of the target element
+        const tooltipLeft = customTooltip.targetX
+        const tooltipTop = customTooltip.targetY - tooltipHeight / 2
 
-      // Only shift if it actually overflows the right or left edge of the modal/screen
-      if (tooltipLeft + tooltipWidth > rightBound) {
-        tooltipLeft = rightBound - tooltipWidth
+        setTooltipPos({
+          left: tooltipLeft,
+          top: tooltipTop,
+          arrowLeft: 0,
+          isBelow: false,
+          isRight: true
+        })
+      } else {
+        // Default: position above/below the target element
+        let tooltipLeft = customTooltip.targetX - halfWidth
+
+        // Only shift if it actually overflows the right or left edge of the modal/screen
+        if (tooltipLeft + tooltipWidth > rightBound) {
+          tooltipLeft = rightBound - tooltipWidth
+        }
+        if (tooltipLeft < leftBound) {
+          tooltipLeft = leftBound
+        }
+
+        // Calculate arrow position (50% when centered, dynamically adjusted when shifted near edges)
+        const arrowPixelFromLeft = customTooltip.targetX - tooltipLeft
+        const arrowLeft = Math.max(6, Math.min(94, (arrowPixelFromLeft / tooltipWidth) * 100))
+
+        const isBelow = customTooltip.targetY - rect.height < topBound
+        const top = isBelow ? customTooltip.targetBottomY : customTooltip.targetY
+        const centerX = tooltipLeft + halfWidth
+
+        setTooltipPos({
+          left: centerX,
+          top,
+          arrowLeft,
+          isBelow,
+          isRight: false
+        })
       }
-      if (tooltipLeft < leftBound) {
-        tooltipLeft = leftBound
-      }
-
-      // Calculate arrow position (50% when centered, dynamically adjusted when shifted near edges)
-      const arrowPixelFromLeft = customTooltip.targetX - tooltipLeft
-      const arrowLeft = Math.max(6, Math.min(94, (arrowPixelFromLeft / tooltipWidth) * 100))
-
-      const isBelow = customTooltip.targetY - rect.height < topBound
-      const top = isBelow ? customTooltip.targetBottomY : customTooltip.targetY
-      const centerX = tooltipLeft + halfWidth
-
-      setTooltipPos({
-        left: centerX,
-        top,
-        arrowLeft,
-        isBelow
-      })
     }
   }, [customTooltip])
 
-  const showCustomTooltip = (e: React.MouseEvent, textOrLines: string | string[] | undefined, type: 'danger' | 'warning' | 'purple' | 'info' | 'dark' = 'dark') => {
+  const showCustomTooltip = (e: React.MouseEvent, textOrLines: string | string[] | undefined, type: 'danger' | 'warning' | 'purple' | 'info' | 'dark' | 'success' = 'dark', position: 'top' | 'right' = 'top') => {
     if (!textOrLines) return
     const rawLines = Array.isArray(textOrLines) ? textOrLines.filter(Boolean) : textOrLines.split('\n').filter(Boolean)
     const lines = Array.from(new Set(rawLines.map(s => s.trim()))).filter(Boolean)
@@ -546,16 +532,29 @@ function DepartmentEditScheduleModal({
 
     const current = e.currentTarget as HTMLElement
     const rect = current.getBoundingClientRect()
-    const targetCenterX = rect.left + rect.width / 2
 
-    setCustomTooltip({
-      visible: true,
-      targetX: targetCenterX,
-      targetY: rect.top - 8,
-      targetBottomY: rect.bottom + 8,
-      lines,
-      type
-    })
+    if (position === 'right') {
+      setCustomTooltip({
+        visible: true,
+        targetX: rect.right + 8,
+        targetY: rect.top + rect.height / 2,
+        targetBottomY: rect.bottom,
+        lines,
+        type,
+        position: 'right'
+      })
+    } else {
+      const targetCenterX = rect.left + rect.width / 2
+      setCustomTooltip({
+        visible: true,
+        targetX: targetCenterX,
+        targetY: rect.top - 8,
+        targetBottomY: rect.bottom + 8,
+        lines,
+        type,
+        position: 'top'
+      })
+    }
   }
 
   const hideCustomTooltip = () => setCustomTooltip(null)
@@ -660,8 +659,13 @@ function DepartmentEditScheduleModal({
 
             setSchedules(sortedFetched);
             setOriginalSchedulesSnapshot(JSON.stringify(sortedFetched));
+            originalSchedulesMap.current.clear();
+            sortedFetched.forEach(item => {
+              originalSchedulesMap.current.set(item.id, JSON.parse(JSON.stringify(item)));
+            });
           } else {
             parallelChildrenCache.current.clear()
+            originalSchedulesMap.current.clear()
             setSchedules([])
             setOriginalSchedulesSnapshot(JSON.stringify([]))
           }
@@ -676,6 +680,9 @@ function DepartmentEditScheduleModal({
     } else {
       setIsLoadingSchedules(false)
       parallelChildrenCache.current.clear()
+      originalSchedulesMap.current.clear()
+      if (undoHighlightTimeoutRef.current) clearTimeout(undoHighlightTimeoutRef.current)
+      setRevertedCellKeys(new Set())
       setSchedules([])
       setDeletedScheduleIds([])
       setIsRemoveMode(false)
@@ -1193,7 +1200,7 @@ function DepartmentEditScheduleModal({
           const matchTitle = titleA && titleB && titleA === titleB
 
           if (matchCode || matchTitle) {
-            const subjectDisplay = codeA || rowA.subjectTitle || 'this subject'
+            const subjectDisplay = matchCode ? codeA : (rowA.subjectTitle || 'this subject')
             const msgA = `Section "${secA}" already has ${subjectDisplay} on Row #${j + 1}`
             const msgB = `Section "${secB}" already has ${subjectDisplay} on Row #${i + 1}`
 
@@ -1233,7 +1240,7 @@ function DepartmentEditScheduleModal({
           const matchTitle = titleA && extTitle && titleA === extTitle
 
           if (matchCode || matchTitle) {
-            const subjectDisplay = codeA || rowA.subjectTitle || 'this subject'
+            const subjectDisplay = matchCode ? codeA : (rowA.subjectTitle || 'this subject')
             const msg = `Section "${secA}" already has ${subjectDisplay} in department records`
 
             conflictsMap[i].hasSectionConflict = true
@@ -1337,6 +1344,18 @@ function DepartmentEditScheduleModal({
     if (typeof value === 'string' && (field === 'subjectCode' || field === 'classSection')) {
       value = value.toUpperCase();
     }
+    if (field === 'subjectTitle' && typeof value === 'string') {
+      const smallWords = /^(a|an|and|as|at|but|by|en|for|if|in|nor|of|on|or|per|the|to|v.?|vs.?|via)$/i;
+      value = value.split(' ').map((word, idx) => {
+        if (idx !== 0 && smallWords.test(word)) {
+          return word.toLowerCase();
+        }
+        if (word.length > 0) {
+          return word.charAt(0).toUpperCase() + word.slice(1);
+        }
+        return word;
+      }).join(' ');
+    }
     if (field === 'type') {
       const currentType = schedules[index].type
       if ((value === 'parallel' && currentType !== 'parallel') ||
@@ -1390,19 +1409,39 @@ function DepartmentEditScheduleModal({
         }
       }
 
-      // Auto-set status to 'Revise' when editing any non-status field (instructor, time, day, etc.)
-      if (field !== 'status' && updated[index].status !== 'Revise') {
-        updated[index] = { ...updated[index], status: 'Revise' };
-        if (!current.parentId && current.type === 'parallel') {
-          for (let i = 0; i < updated.length; i++) {
-            if (updated[i].parentId === current.id) {
-              updated[i] = { ...updated[i], status: 'Revise' };
+      // Value change status transitions
+      if (field !== 'status') {
+        if (onlyAllowDraftEditing) {
+          if (current.status === 'Return' || current.status === 'Returned' || current.status === 'Removed') {
+            updated[index] = { ...updated[index], status: 'Draft' };
+            if (!current.parentId && current.type === 'parallel') {
+              for (let i = 0; i < updated.length; i++) {
+                if (updated[i].parentId === current.id) {
+                  updated[i] = { ...updated[i], status: 'Draft' };
+                }
+              }
+            } else if (current.parentId) {
+              const parentIdx = updated.findIndex(s => s.id === current.parentId);
+              if (parentIdx !== -1) {
+                updated[parentIdx] = { ...updated[parentIdx], status: 'Draft' };
+              }
             }
           }
-        } else if (current.parentId) {
-          const parentIdx = updated.findIndex(s => s.id === current.parentId);
-          if (parentIdx !== -1) {
-            updated[parentIdx] = { ...updated[parentIdx], status: 'Revise' };
+        } else {
+          if (updated[index].status !== 'Revising') {
+            updated[index] = { ...updated[index], status: 'Revising' };
+            if (!current.parentId && current.type === 'parallel') {
+              for (let i = 0; i < updated.length; i++) {
+                if (updated[i].parentId === current.id) {
+                  updated[i] = { ...updated[i], status: 'Revising' };
+                }
+              }
+            } else if (current.parentId) {
+              const parentIdx = updated.findIndex(s => s.id === current.parentId);
+              if (parentIdx !== -1) {
+                updated[parentIdx] = { ...updated[parentIdx], status: 'Revising' };
+              }
+            }
           }
         }
       }
@@ -1446,11 +1485,6 @@ function DepartmentEditScheduleModal({
         }
       }
 
-      const isTextInput = field === 'subjectCode' || field === 'classSection' || field === 'subjectTitle';
-      if (!isTextInput) {
-        return sortSchedulesByStatus(updated).map((s, idx) => ({ ...s, orderIndex: idx }));
-      }
-
       return updated
     })
   }
@@ -1492,24 +1526,42 @@ function DepartmentEditScheduleModal({
         }
       }
 
-      // Auto-set status to 'Revise' when days change
-      if (updated[index].status !== 'Revise') {
-        updated[index] = { ...updated[index], status: 'Revise' };
-        if (!current.parentId && current.type === 'parallel') {
-          for (let i = 0; i < updated.length; i++) {
-            if (updated[i].parentId === current.id) {
-              updated[i] = { ...updated[i], status: 'Revise' };
+      // Value change status transitions
+      if (onlyAllowDraftEditing) {
+        if (current.status === 'Return' || current.status === 'Returned' || current.status === 'Removed') {
+          updated[index] = { ...updated[index], status: 'Draft' };
+          if (!current.parentId && current.type === 'parallel') {
+            for (let i = 0; i < updated.length; i++) {
+              if (updated[i].parentId === current.id) {
+                updated[i] = { ...updated[i], status: 'Draft' };
+              }
+            }
+          } else if (current.parentId) {
+            const parentIdx = updated.findIndex(s => s.id === current.parentId);
+            if (parentIdx !== -1) {
+              updated[parentIdx] = { ...updated[parentIdx], status: 'Draft' };
             }
           }
-        } else if (current.parentId) {
-          const parentIdx = updated.findIndex(s => s.id === current.parentId);
-          if (parentIdx !== -1) {
-            updated[parentIdx] = { ...updated[parentIdx], status: 'Revise' };
+        }
+      } else {
+        if (updated[index].status !== 'Revising') {
+          updated[index] = { ...updated[index], status: 'Revising' };
+          if (!current.parentId && current.type === 'parallel') {
+            for (let i = 0; i < updated.length; i++) {
+              if (updated[i].parentId === current.id) {
+                updated[i] = { ...updated[i], status: 'Revising' };
+              }
+            }
+          } else if (current.parentId) {
+            const parentIdx = updated.findIndex(s => s.id === current.parentId);
+            if (parentIdx !== -1) {
+              updated[parentIdx] = { ...updated[parentIdx], status: 'Revising' };
+            }
           }
         }
       }
 
-      return sortSchedulesByStatus(updated).map((s, idx) => ({ ...s, orderIndex: idx }))
+      return updated
     })
   }
 
@@ -1523,8 +1575,12 @@ function DepartmentEditScheduleModal({
       const parentId = current.id || generateId();
       if (!current.id) updated[index].id = parentId;
 
+      const targetStatus = onlyAllowDraftEditing
+        ? (current.status === 'Return' || current.status === 'Returned' || current.status === 'Removed' ? 'Draft' : (current.status || 'Draft'))
+        : 'Revising';
+
       if (newType === 'parallel') {
-        updated[index] = { ...current, type: 'parallel' };
+        updated[index] = { ...current, type: 'parallel', status: targetStatus };
         if (current.type === 'open lab') {
           updated[index].format = '';
         }
@@ -1550,7 +1606,8 @@ function DepartmentEditScheduleModal({
             days: current.days,
             buildingId: current.buildingId,
             buildingId2: (current as any).buildingId2 || '',
-            classSection: cachedChild.classSection || ''
+            classSection: cachedChild.classSection || '',
+            status: targetStatus
           }));
 
           // Un-stage restored children docIds from deletedScheduleIds
@@ -1578,13 +1635,14 @@ function DepartmentEditScheduleModal({
             endTime2: (current as any).endTime2 || '',
             days: current.days,
             buildingId: current.buildingId,
-            buildingId2: (current as any).buildingId2 || ''
+            buildingId2: (current as any).buildingId2 || '',
+            status: targetStatus
           }));
         }
 
         updated.splice(index + 1, 0, ...childrenToInsert);
       } else {
-        updated[index] = { ...current, type: newType };
+        updated[index] = { ...current, type: newType, status: targetStatus };
         if (newType === 'open lab') {
           updated[index].format = 'Flexible';
         } else if (current.type === 'open lab') {
@@ -1601,9 +1659,9 @@ function DepartmentEditScheduleModal({
         }
 
         const finalUpdated = updated.filter(s => s.parentId !== current.id);
-        return sortSchedulesByStatus(finalUpdated).map((s, idx) => ({ ...s, orderIndex: idx }));
+        return finalUpdated.map((s, idx) => ({ ...s, orderIndex: idx }));
       }
-      return sortSchedulesByStatus(updated).map((s, idx) => ({ ...s, orderIndex: idx }));
+      return updated.map((s, idx) => ({ ...s, orderIndex: idx }));
     });
     setPendingTypeChange(null);
   };
@@ -1620,11 +1678,135 @@ function DepartmentEditScheduleModal({
         setDeletedScheduleIds(current => [...current, ...removedDocIds]);
       }
       const remaining = prev.filter(s => !selectedScheduleIds.includes(s.id) && (!s.parentId || !selectedScheduleIds.includes(s.parentId)));
-      return sortSchedulesByStatus(remaining).map((s, idx) => ({ ...s, orderIndex: idx }));
+      return remaining.map((s, idx) => ({ ...s, orderIndex: idx }));
     });
     setSelectedScheduleIds([]);
     setIsRemoveMode(false);
   }
+
+  const handleUndoSchedule = (index: number) => {
+    const target = schedules[index];
+    if (!target) return;
+
+    const parentId = target.parentId || target.id;
+    const originalParent = originalSchedulesMap.current.get(parentId);
+
+    const changedKeys = new Set<string>();
+
+    const checkScheduleDiff = (currentSched: any, origSched: any) => {
+      if (!currentSched || !origSched) return;
+      const sId = currentSched.id;
+      if (currentSched.type !== origSched.type) changedKeys.add(`${sId}_type`);
+      if (currentSched.format !== origSched.format || (currentSched as any).format2 !== (origSched as any).format2) changedKeys.add(`${sId}_format`);
+      if (currentSched.subjectCode !== origSched.subjectCode) changedKeys.add(`${sId}_subjectCode`);
+      if (currentSched.subjectTitle !== origSched.subjectTitle) changedKeys.add(`${sId}_subjectTitle`);
+      if (currentSched.classSection !== origSched.classSection) changedKeys.add(`${sId}_classSection`);
+      if (currentSched.instructorId !== origSched.instructorId || (currentSched as any).instructorId2 !== (origSched as any).instructorId2) changedKeys.add(`${sId}_instructorId`);
+      if (
+        currentSched.startTime !== origSched.startTime ||
+        currentSched.endTime !== origSched.endTime ||
+        (currentSched as any).startTime2 !== (origSched as any).startTime2 ||
+        (currentSched as any).endTime2 !== (origSched as any).endTime2
+      ) changedKeys.add(`${sId}_time`);
+      if (JSON.stringify(currentSched.days || []) !== JSON.stringify(origSched.days || [])) changedKeys.add(`${sId}_days`);
+      if (currentSched.buildingId !== origSched.buildingId || (currentSched as any).buildingId2 !== (origSched as any).buildingId2) changedKeys.add(`${sId}_buildingId`);
+      if (currentSched.roomId !== origSched.roomId || (currentSched as any).roomId2 !== (origSched as any).roomId2) changedKeys.add(`${sId}_roomId`);
+    };
+
+    if (target.type === 'parallel' || target.parentId) {
+      if (originalParent) {
+        const parentSchedule = schedules.find(s => s.id === parentId);
+        if (parentSchedule) checkScheduleDiff(parentSchedule, originalParent);
+
+        schedules.forEach(s => {
+          if (s.parentId === parentId) {
+            const origChild = originalSchedulesMap.current.get(s.id);
+            if (origChild) checkScheduleDiff(s, origChild);
+          }
+        });
+      }
+    } else {
+      const original = originalSchedulesMap.current.get(target.id);
+      if (original) {
+        checkScheduleDiff(target, original);
+      } else {
+        const defaultSched = createDefaultSchedule();
+        checkScheduleDiff(target, { ...defaultSched, id: target.id, orderIndex: target.orderIndex, status: 'Draft' });
+      }
+    }
+
+    if (changedKeys.size > 0) {
+      setRevertedCellKeys(changedKeys);
+      if (undoHighlightTimeoutRef.current) {
+        clearTimeout(undoHighlightTimeoutRef.current);
+      }
+      undoHighlightTimeoutRef.current = setTimeout(() => {
+        setRevertedCellKeys(new Set());
+      }, 1000);
+    }
+
+    setSchedules(prev => {
+      const updated = [...prev];
+      const targetSched = updated[index];
+      if (!targetSched) return prev;
+
+      const isUndoingPlotOrReturn = targetSched.status === 'Plot' || targetSched.status === 'Plotted' || targetSched.status === 'Return' || targetSched.status === 'Returned';
+
+      if (targetSched.type === 'parallel' || targetSched.parentId) {
+        if (originalParent) {
+          const parentIdx = updated.findIndex(s => s.id === parentId);
+          if (parentIdx !== -1) {
+            const restoredStatus = isUndoingPlotOrReturn ? 'Draft' : (originalParent.status || 'Draft');
+            updated[parentIdx] = {
+              ...JSON.parse(JSON.stringify(originalParent)),
+              status: restoredStatus
+            };
+          }
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].parentId === parentId) {
+              const origChild = originalSchedulesMap.current.get(updated[i].id);
+              const restoredChildStatus = isUndoingPlotOrReturn ? 'Draft' : (origChild?.status || originalParent.status || 'Draft');
+              if (origChild) {
+                updated[i] = {
+                  ...JSON.parse(JSON.stringify(origChild)),
+                  status: restoredChildStatus
+                };
+              } else {
+                updated[i] = {
+                  ...updated[i],
+                  status: restoredChildStatus
+                };
+              }
+            }
+          }
+        } else {
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].id === parentId || updated[i].parentId === parentId) {
+              updated[i] = { ...updated[i], status: 'Draft' };
+            }
+          }
+        }
+      } else {
+        const original = originalSchedulesMap.current.get(targetSched.id);
+        if (original) {
+          const restoredStatus = isUndoingPlotOrReturn ? 'Draft' : (original.status || 'Draft');
+          updated[index] = {
+            ...JSON.parse(JSON.stringify(original)),
+            status: restoredStatus
+          };
+        } else {
+          updated[index] = {
+            ...createDefaultSchedule(),
+            id: targetSched.id,
+            orderIndex: targetSched.orderIndex,
+            status: 'Draft'
+          };
+        }
+      }
+
+      return updated.map((s, idx) => ({ ...s, orderIndex: idx }));
+    });
+  };
 
   const handlePlotSelected = () => {
     setSchedules(prev => {
@@ -1638,7 +1820,7 @@ function DepartmentEditScheduleModal({
         }
         return s;
       });
-      return sortSchedulesByStatus(updated).map((s, idx) => ({ ...s, orderIndex: idx }));
+      return updated.map((s, idx) => ({ ...s, orderIndex: idx }));
     });
     setSelectedScheduleIds([]);
     setIsPlotMode(false);
@@ -1677,6 +1859,158 @@ function DepartmentEditScheduleModal({
     }
 
     setIsSubmittingSchedules(true)
+
+    const getMemberName = (id: string) => {
+      if (!id) return 'None';
+      const m = members.find(member => (member as any).membershipId === id || member.id === id || (member as any).uid === id || (member as any).userId === id);
+      if (!m) return id;
+      return m.name || (m as any).fullName || (m as any).displayName || id;
+    };
+    const getRoomName = (id: string) => {
+      if (!id) return 'None';
+      const r = rooms.find(room => room.id === id);
+      if (!r) return id;
+      return r.name || id;
+    };
+    const getBuildingName = (id: string) => {
+      if (!id) return 'None';
+      const b = buildings.find(building => building.id === id);
+      if (!b) return id;
+      return b.code || b.name || id;
+    };
+
+    const generateRevisionChanges = (current: any, original: any): string[] => {
+      const prevList: string[] = Array.isArray(original?.revisionChanges) ? [...original.revisionChanges] : [];
+      if (!original) return prevList;
+
+      const s1 = " 1st session";
+      const s2 = " 2nd session";
+
+      const fields: {
+        label: string;
+        initialFrom: string;
+        currentTo: string;
+        isChanged: boolean;
+      }[] = [
+        {
+          label: "Subject code",
+          initialFrom: original.subjectCode || 'None',
+          currentTo: current.subjectCode || 'None',
+          isChanged: (current.subjectCode || '') !== (original.subjectCode || '')
+        },
+        {
+          label: "Subject title",
+          initialFrom: original.subjectTitle || 'None',
+          currentTo: current.subjectTitle || 'None',
+          isChanged: (current.subjectTitle || '') !== (original.subjectTitle || '')
+        },
+        {
+          label: "Section",
+          initialFrom: original.classSection || 'None',
+          currentTo: current.classSection || 'None',
+          isChanged: (current.classSection || '') !== (original.classSection || '')
+        },
+        // 1st Session
+        {
+          label: `Days${s1}`,
+          initialFrom: original.days?.[0] || 'None',
+          currentTo: current.days?.[0] || 'None',
+          isChanged: (current.days?.[0] || '') !== (original.days?.[0] || '')
+        },
+        {
+          label: `Time${s1}`,
+          initialFrom: original.startTime ? `${original.startTime} - ${original.endTime || ''}` : 'None',
+          currentTo: current.startTime ? `${current.startTime} - ${current.endTime || ''}` : 'None',
+          isChanged: (current.startTime || '') !== (original.startTime || '') || (current.endTime || '') !== (original.endTime || '')
+        },
+        {
+          label: `Building${s1}`,
+          initialFrom: getBuildingName(original.buildingId),
+          currentTo: getBuildingName(current.buildingId),
+          isChanged: (current.buildingId || '') !== (original.buildingId || '')
+        },
+        {
+          label: `Room${s1}`,
+          initialFrom: getRoomName(original.roomId),
+          currentTo: getRoomName(current.roomId),
+          isChanged: (current.roomId || '') !== (original.roomId || '')
+        },
+        {
+          label: `Instructor${s1}`,
+          initialFrom: getMemberName(original.instructorId),
+          currentTo: getMemberName(current.instructorId),
+          isChanged: (current.instructorId || '') !== (original.instructorId || '')
+        },
+        {
+          label: `Format${s1}`,
+          initialFrom: original.format || 'None',
+          currentTo: current.format || 'None',
+          isChanged: (current.format || '') !== (original.format || '')
+        },
+        // 2nd Session
+        {
+          label: `Days${s2}`,
+          initialFrom: original.days?.[1] || 'None',
+          currentTo: current.days?.[1] || 'None',
+          isChanged: (current.days?.[1] || '') !== (original.days?.[1] || '')
+        },
+        {
+          label: `Time${s2}`,
+          initialFrom: original.startTime2 ? `${original.startTime2} - ${original.endTime2 || ''}` : 'None',
+          currentTo: current.startTime2 ? `${current.startTime2} - ${current.endTime2 || ''}` : 'None',
+          isChanged: (current.startTime2 || '') !== (original.startTime2 || '') || (current.endTime2 || '') !== (original.endTime2 || '')
+        },
+        {
+          label: `Building${s2}`,
+          initialFrom: getBuildingName(original.buildingId2),
+          currentTo: getBuildingName(current.buildingId2),
+          isChanged: (current.buildingId2 || '') !== (original.buildingId2 || '')
+        },
+        {
+          label: `Room${s2}`,
+          initialFrom: getRoomName(original.roomId2),
+          currentTo: getRoomName(current.roomId2),
+          isChanged: (current.roomId2 || '') !== (original.roomId2 || '')
+        },
+        {
+          label: `Instructor${s2}`,
+          initialFrom: getMemberName(original.instructorId2),
+          currentTo: getMemberName(current.instructorId2),
+          isChanged: (current.instructorId2 || '') !== (original.instructorId2 || '')
+        },
+        {
+          label: `Format${s2}`,
+          initialFrom: original.format2 || 'None',
+          currentTo: current.format2 || 'None',
+          isChanged: (current.format2 || '') !== (original.format2 || '')
+        }
+      ];
+
+      const resultList = [...prevList];
+
+      fields.forEach(f => {
+        const prefix = `${f.label} revised from `;
+        const existingIdx = resultList.findIndex(item => item.startsWith(prefix));
+
+        if (existingIdx !== -1) {
+          const existingStr = resultList[existingIdx];
+          const withoutPrefix = existingStr.substring(prefix.length);
+          const lastToIdx = withoutPrefix.lastIndexOf(' to ');
+          const originalFrom = lastToIdx !== -1 ? withoutPrefix.substring(0, lastToIdx) : withoutPrefix;
+
+          if (originalFrom === f.currentTo) {
+            resultList.splice(existingIdx, 1);
+          } else {
+            resultList[existingIdx] = `${f.label} revised from ${originalFrom} to ${f.currentTo}`;
+          }
+        } else if (f.isChanged && f.initialFrom !== f.currentTo) {
+          resultList.push(`${f.label} revised from ${f.initialFrom} to ${f.currentTo}`);
+        }
+      });
+
+      return combineSessionChanges(resultList);
+    };
+
     try {
       const savePromises = validSchedules.flatMap((schedule, index) => {
         if (!(schedule as any).docId && !schedule.subjectCode && !schedule.type) return [];
@@ -1694,6 +2028,11 @@ function DepartmentEditScheduleModal({
         const isSplit = hasSecondDay || hasExplicitSecondSessionFields;
 
         const parentScheduleDoc = schedule.parentId ? validSchedules.find(s => s.id === schedule.parentId) : null;
+
+        const originalSchedule = originalSchedulesMap.current.get(schedule.id);
+        const finalRevisionChanges = schedule.status === 'Revising'
+          ? generateRevisionChanges(schedule, originalSchedule)
+          : ((schedule as any).revisionChanges || originalSchedule?.revisionChanges || []);
 
         const data1 = {
           department: departmentInfo?.code || null,
@@ -1721,7 +2060,8 @@ function DepartmentEditScheduleModal({
           orderIndex: index,
           academicYear: selectedAcademicYear?.academicYear || '2026 - 2027',
           semester: selectedSemesterPhase?.name || '1st Semester',
-          status: (schedule as any).status || 'Draft',
+          status: (schedule.status === 'Revising' || schedule.status === 'Revised' || schedule.status === 'Revise') ? 'Revise' : (schedule.status || 'Draft'),
+          revisionChanges: finalRevisionChanges,
           updatedAt: serverTimestamp()
         };
 
@@ -1755,7 +2095,8 @@ function DepartmentEditScheduleModal({
             orderIndex: index,
             academicYear: selectedAcademicYear?.academicYear || '2026 - 2027',
             semester: selectedSemesterPhase?.name || '1st Semester',
-            status: (schedule as any).status || 'Draft',
+            status: (schedule.status === 'Revising' || schedule.status === 'Revised' || schedule.status === 'Revise') ? 'Revise' : (schedule.status || 'Draft'),
+            revisionChanges: finalRevisionChanges,
             updatedAt: serverTimestamp()
           };
 
@@ -1793,6 +2134,25 @@ function DepartmentEditScheduleModal({
 
   return (
     <>
+      <style>{`
+        @keyframes undo-cell-fade {
+          0% {
+            background-color: transparent;
+          }
+          20% {
+            background-color: #e3edda;
+          }
+          60% {
+            background-color: #e3edda;
+          }
+          100% {
+            background-color: transparent;
+          }
+        }
+        .animate-undo-highlight {
+          animation: undo-cell-fade 1000ms cubic-bezier(0.4, 0, 0.2, 1) forwards !important;
+        }
+      `}</style>
       {/* Main Schedule Modal */}
       <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
         <div
@@ -2015,20 +2375,55 @@ function DepartmentEditScheduleModal({
                     const availableRooms2 = childAvailableRooms2.sort((a, b) => (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true, sensitivity: 'base' }));
 
                     const isSelected = selectedScheduleIds.includes(schedule.id) || (!!schedule.parentId && selectedScheduleIds.includes(schedule.parentId));
-                    const isPlottable = !schedule.status || schedule.status === 'Draft';
+                    const rowStatus = schedule.status || parentSchedule?.status || 'Draft';
+                    const isPlotStatus = rowStatus === 'Plot' || rowStatus === 'Plotted';
+                    const isRevising = rowStatus === 'Revising';
+                    const isRevised = rowStatus === 'Revise' || rowStatus === 'Revised';
+                    const isReviseStatus = isRevising || isRevised;
+                    const isReturnStatus = rowStatus === 'Return' || rowStatus === 'Returned' || rowStatus === 'Removed';
+                    const isDraft = !rowStatus || rowStatus === 'Draft' || rowStatus === 'Drafted';
+
+                    const statusLabel = isPlotStatus ? 'Plotted'
+                      : (isRevising ? 'Revising'
+                      : (isRevised ? 'Revised'
+                      : (isReturnStatus ? 'Returned' : 'Draft')));
+
+                    const statusTooltipType: 'success' | 'warning' | 'danger' | 'dark' = isPlotStatus ? 'success' : (isReviseStatus ? 'warning' : (isReturnStatus ? 'danger' : 'dark'));
+
+                    const isPlottable = isDraft;
+                    const origSchedule = originalSchedulesMap.current.get(schedule.id) || (schedule.parentId ? originalSchedulesMap.current.get(schedule.parentId) : null);
+                    const origStatus = origSchedule?.status || 'Draft';
+                    const isOrigDraft = !origStatus || origStatus === 'Draft' || origStatus === 'Drafted';
+
+                    const isRowEditable = isEditable && (!onlyAllowDraftEditing || isDraft || isReturnStatus);
+                    const isRemovable = !onlyAllowDraftEditing || isDraft || isReturnStatus;
+
+                    const isCellReverted = (fieldName: string) => revertedCellKeys.has(`${schedule.id}_${fieldName}`);
+
+                    const numberCellBgClass = isSelected
+                      ? (isPlotMode ? 'bg-emerald-100 text-emerald-900 font-bold' : 'bg-red-100 text-red-900 font-bold')
+                      : showStatusOnNumberColumn
+                        ? (
+                            isPlotStatus ? 'bg-emerald-100 text-emerald-800 font-bold group-hover/row:bg-emerald-200/80' :
+                            isReviseStatus ? 'bg-amber-100 text-amber-800 font-bold group-hover/row:bg-amber-200/80' :
+                            isReturnStatus ? 'bg-rose-100 text-rose-800 font-bold group-hover/row:bg-rose-200/80' :
+                            'bg-slate-100 text-slate-700 font-bold group-hover/row:bg-slate-200/80'
+                          )
+                        : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100 text-gray-500 font-semibold' : 'group-hover/row:bg-slate-100 text-gray-500 font-semibold');
 
                     return (
                       <tr
                         key={schedule.id + '-' + index}
                         data-row-index={index}
                         style={getRowDragStyle(index)}
-                        className={`${isDragging ? 'pointer-events-none' : 'group/row'} transition-colors duration-150 ${isSelected ? (isPlotMode ? (isDragging ? 'bg-emerald-100' : 'bg-emerald-100 hover:bg-emerald-200') : (isDragging ? 'bg-red-100' : 'bg-red-100 hover:bg-red-200')) : (isPlotMode && !isPlottable ? 'bg-gray-50/50 opacity-60' : (isDragging ? '' : 'hover:bg-slate-100'))} ${(isRemoveMode || (isPlotMode && isPlottable)) ? 'cursor-pointer [&>td>*]:pointer-events-none' : ''} ${(isPlotMode && !isPlottable) ? 'cursor-not-allowed [&>td>*]:pointer-events-none' : ''} ${!isEditable ? '[&>td>*]:pointer-events-none opacity-95' : ''}`}
+                        className={`${isDragging ? 'pointer-events-none' : 'group/row'} transition-colors duration-150 ${isSelected ? (isPlotMode ? (isDragging ? 'bg-emerald-100' : 'bg-emerald-100 hover:bg-emerald-200') : (isDragging ? 'bg-red-100' : 'bg-red-100 hover:bg-red-200')) : (isPlotMode && !isPlottable ? 'bg-gray-50/50 opacity-60' : isRemoveMode && !isRemovable ? 'bg-gray-50/50 opacity-60' : (isDragging ? '' : 'hover:bg-slate-100'))} ${((isRemoveMode && isRemovable) || (isPlotMode && isPlottable)) ? 'cursor-pointer [&>td>*]:pointer-events-none' : ''} ${((isPlotMode && !isPlottable) || (isRemoveMode && !isRemovable)) ? 'cursor-not-allowed [&>td>*]:pointer-events-none' : ''} ${!isRowEditable ? '[&>td>*]:pointer-events-none opacity-95' : ''}`}
                         onClickCapture={(e) => {
                           hideCustomTooltip();
                           if (isRemoveMode || isPlotMode) {
                             e.preventDefault();
                             e.stopPropagation();
                             if (isPlotMode && !isPlottable) return;
+                            if (isRemoveMode && !isRemovable) return;
                             const targetId = schedule.parentId || schedule.id;
                             setSelectedScheduleIds(prev =>
                               prev.includes(targetId) ? prev.filter(id => id !== targetId) : [...prev, targetId]
@@ -2036,10 +2431,9 @@ function DepartmentEditScheduleModal({
                           }
                         }}
                       >
-
                         <td
                           onPointerDown={(e) => {
-                            if (!isEditable || isRemoveMode || isPlotMode || !tbodyRef.current) return
+                            if (!isRowEditable || isRemoveMode || isPlotMode || !tbodyRef.current) return
                             e.preventDefault()
                             const groupIndices = getGroupIndices(schedules, index)
                             const parentIdx = groupIndices[0]
@@ -2063,12 +2457,18 @@ function DepartmentEditScheduleModal({
                               rowHeights,
                             })
                           }}
-                          className={`p-2 border-b border-r border-gray-300 text-center text-xs font-semibold text-gray-500 align-middle select-none ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${isEditable && !isRemoveMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                          onMouseEnter={(e) => {
+                            if (showStatusOnNumberColumn) {
+                              showCustomTooltip(e, `Status: ${statusLabel}`, statusTooltipType, 'right');
+                            }
+                          }}
+                          onMouseLeave={hideCustomTooltip}
+                          className={`p-2 border-b border-r border-gray-300 text-center text-xs select-none align-middle transition-colors ${numberCellBgClass} ${isRowEditable && !isRemoveMode ? 'cursor-grab active:cursor-grabbing' : ''}`}
                         >
                           {index + 1}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(!isChild && !schedule.type) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('type') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(!isChild && !schedule.type) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             if (!isChild && !schedule.type) {
                               showCustomTooltip(e, 'Missing Schedule Type', 'warning');
@@ -2076,8 +2476,10 @@ function DepartmentEditScheduleModal({
                           }}
                           onMouseLeave={hideCustomTooltip}
                         >
-                          {isChild ? (
-                            <div className="px-3 py-3 text-sm text-gray-900 font-medium text-left cursor-default">----</div>
+                          {isChild || onlyAllowTimeDaysRoomStatusEditing ? (
+                            <div className="px-3 py-3 text-sm text-gray-900 font-medium text-left cursor-default">
+                              {isChild ? '----' : (schedule.type ? schedule.type.charAt(0).toUpperCase() + schedule.type.slice(1) : '----')}
+                            </div>
                           ) : (
                             <details className="w-full relative h-full group">
                               <summary onClick={handleDropdownPosition} className={`h-full min-h-[2.75rem] cursor-pointer list-none [&::-webkit-details-marker]:hidden px-3 py-3 text-sm focus:outline-none focus:ring-0 flex items-center justify-between transition-colors bg-transparent ${schedule.type ? 'text-gray-900 font-medium' : 'text-gray-500'}`}>
@@ -2088,7 +2490,7 @@ function DepartmentEditScheduleModal({
                                 </span>
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded w-full`}>
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-1 flex flex-col gap-1 rounded w-full`}>
                                 {['normal', 'open lab', 'parallel'].map(opt => (
                                   <button
                                     key={opt}
@@ -2107,7 +2509,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(!isChild && schedule.type !== 'open lab' && (!schedule.format || missingFormat2)) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('format') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(!isChild && schedule.type !== 'open lab' && (!schedule.format || missingFormat2)) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             if (!isChild && schedule.type !== 'open lab') {
                               if (!schedule.format) {
@@ -2119,7 +2521,11 @@ function DepartmentEditScheduleModal({
                           }}
                           onMouseLeave={hideCustomTooltip}
                         >
-                          {isChild ? (
+                          {schedule.type === 'open lab' || schedule.format === 'Flexible' ? (
+                            <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
+                              Flexible
+                            </div>
+                          ) : isChild || onlyAllowTimeDaysRoomStatusEditing ? (
                             <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                               {!schedule.format ? '----' : (
                                 schedule.format === (schedule as any).format2 ? (
@@ -2128,10 +2534,6 @@ function DepartmentEditScheduleModal({
                                   <>{schedule.format} / {(schedule as any).format2 ? (schedule as any).format2 : '----'}</>
                                 )
                               )}
-                            </div>
-                          ) : schedule.type === 'open lab' ? (
-                            <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
-                              Flexible
                             </div>
                           ) : (
                             <details className="w-full relative h-full group">
@@ -2149,7 +2551,7 @@ function DepartmentEditScheduleModal({
                                 </span>
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                 <div className="flex flex-col gap-1.5">
                                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
                                   <InnerDropdown
@@ -2174,8 +2576,18 @@ function DepartmentEditScheduleModal({
                             </details>
                           )}
                         </td>
-                        <td className={`p-0 relative ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_1px_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectCode ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
-                          {isChild ? (
+                        <td
+                          className={`p-0 relative ${isCellReverted('subjectCode') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_1px_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectCode ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          onMouseEnter={(e) => {
+                            if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
+                              showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
+                            } else if (!isChild && !schedule.subjectCode) {
+                              showCustomTooltip(e, 'Missing Subject Code', 'warning')
+                            }
+                          }}
+                          onMouseLeave={hideCustomTooltip}
+                        >
+                          {isChild || onlyAllowTimeDaysRoomStatusEditing ? (
                             <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                               {schedule.subjectCode || parentSchedule?.subjectCode || '----'}
                             </div>
@@ -2183,30 +2595,31 @@ function DepartmentEditScheduleModal({
                             <input
                               type="text"
                               placeholder="?"
-                              disabled={!isEditable}
+                              disabled={!isRowEditable}
                               value={schedule.subjectCode}
                               onChange={(e) => handleScheduleChange(index, 'subjectCode', e.target.value)}
                               onBlur={(e) => {
                                 e.target.scrollLeft = 0;
-                                setSchedules(prev => sortSchedulesByStatus(prev).map((s, idx) => ({ ...s, orderIndex: idx })));
                               }}
                               onFocus={hideCustomTooltip}
                               onClick={hideCustomTooltip}
-                              onMouseEnter={(e) => {
-                                if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
-                                  showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
-                                } else if (!schedule.subjectCode) {
-                                  showCustomTooltip(e, 'Missing Subject Code', 'warning')
-                                }
-                              }}
-                              onMouseLeave={hideCustomTooltip}
                               className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent uppercase ${schedule.subjectCode ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
                             />
                           )}
                         </td>
                         {!hideTitleColumn && (
-                          <td className={`p-0 relative ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
-                            {isChild ? (
+                          <td
+                            className={`p-0 relative ${isCellReverted('subjectTitle') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-200 shadow-[inset_0_1px_0_0_#c084fc]' : (!isChild && !schedule.subjectTitle ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                            onMouseEnter={(e) => {
+                              if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
+                                showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
+                              } else if (!isChild && !schedule.subjectTitle) {
+                                showCustomTooltip(e, 'Missing Subject Title', 'warning')
+                              }
+                            }}
+                            onMouseLeave={hideCustomTooltip}
+                          >
+                            {isChild || onlyAllowTimeDaysRoomStatusEditing ? (
                               <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
                                 {schedule.subjectTitle || parentSchedule?.subjectTitle || '----'}
                               </div>
@@ -2214,57 +2627,57 @@ function DepartmentEditScheduleModal({
                               <input
                                 type="text"
                                 placeholder="?"
-                                disabled={!isEditable}
+                                disabled={!isRowEditable}
                                 value={schedule.subjectTitle}
                                 onChange={(e) => handleScheduleChange(index, 'subjectTitle', e.target.value)}
                                 onBlur={(e) => {
                                   e.target.scrollLeft = 0;
-                                  setSchedules(prev => sortSchedulesByStatus(prev).map((s, idx) => ({ ...s, orderIndex: idx })));
                                 }}
                                 onFocus={hideCustomTooltip}
                                 onClick={hideCustomTooltip}
-                                onMouseEnter={(e) => {
-                                  if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
-                                    showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
-                                  } else if (!schedule.subjectTitle) {
-                                    showCustomTooltip(e, 'Missing Subject Title', 'warning')
-                                  }
-                                }}
-                                onMouseLeave={hideCustomTooltip}
                                 className={`h-full w-full min-h-[2.75rem] py-3 px-3 text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent ${schedule.subjectTitle ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
                               />
                             )}
                           </td>
                         )}
-                        <td className={`p-0 relative ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? 'bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]' : (!schedule.classSection ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}>
-                          <div className="relative w-full h-full flex items-center">
-                            <input
-                              type="text"
-                              placeholder="?"
-                              value={schedule.classSection}
-                              onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
-                              onBlur={() => {
-                                setSchedules(prev => sortSchedulesByStatus(prev).map((s, idx) => ({ ...s, orderIndex: idx })));
-                              }}
-                              onFocus={hideCustomTooltip}
-                              onClick={hideCustomTooltip}
-                              onMouseEnter={(e) => {
-                                if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
-                                  showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
-                                } else if (!schedule.classSection) {
-                                  showCustomTooltip(e, 'Missing Section', 'warning')
-                                }
-                              }}
-                              onMouseLeave={hideCustomTooltip}
-                              className={`h-full w-full min-h-[2.75rem] py-3 px-3 ${hasSectionConflict ? 'pr-8' : ''} text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent uppercase ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
-                            />
-                            {hasSectionConflict && (
-                              <DuplicateIcon className="h-4 w-4 text-purple-600 shrink-0 absolute right-3 pointer-events-none" />
-                            )}
-                          </div>
+                        <td
+                          className={`p-0 relative ${isCellReverted('classSection') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasSectionConflict ? '!bg-purple-50 focus-within:!bg-[#e3edda] border-b border-purple-400 border-r border-purple-400 shadow-[inset_0_1px_0_0_#c084fc]' : (!schedule.classSection ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          onMouseEnter={(e) => {
+                            if (hasSectionConflict && conflict.sectionConflictDetails.length > 0) {
+                              showCustomTooltip(e, conflict.sectionConflictDetails, 'purple')
+                            } else if (!schedule.classSection) {
+                              showCustomTooltip(e, 'Missing Section', 'warning')
+                            }
+                          }}
+                          onMouseLeave={hideCustomTooltip}
+                        >
+                          {onlyAllowTimeDaysRoomStatusEditing ? (
+                            <div className="px-3 py-3 text-sm text-gray-900 font-medium truncate cursor-default">
+                              {schedule.classSection || '----'}
+                            </div>
+                          ) : (
+                            <div className="relative w-full h-full flex items-center">
+                              <input
+                                type="text"
+                                placeholder="?"
+                                disabled={!isRowEditable}
+                                value={schedule.classSection}
+                                onChange={(e) => handleScheduleChange(index, 'classSection', e.target.value)}
+                                onBlur={(e) => {
+                                  e.target.scrollLeft = 0;
+                                }}
+                                onFocus={hideCustomTooltip}
+                                onClick={hideCustomTooltip}
+                                className={`h-full w-full min-h-[2.75rem] py-3 px-3 ${hasSectionConflict ? 'pr-8' : ''} text-sm focus:outline-none focus:ring-0 transition-colors bg-transparent uppercase ${schedule.classSection ? 'text-gray-900 font-medium' : 'text-gray-500 placeholder:text-amber-500 placeholder:font-bold'}`}
+                              />
+                              {hasSectionConflict && (
+                                <DuplicateIcon className="h-4 w-4 text-purple-600 shrink-0 absolute right-3 pointer-events-none" />
+                              )}
+                            </div>
+                          )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle max-w-[16.25rem] ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasInstructorConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_1px_1px_0_0_#fb7185]' : (!isChild && (!schedule.instructorId || missingInstructor2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle max-w-[16.25rem] ${isCellReverted('instructorId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasInstructorConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_1px_1px_0_0_#fb7185]' : (!isChild && (!schedule.instructorId || missingInstructor2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.instructorConflictDetails1 || []), ...(conflict?.instructorConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -2277,17 +2690,17 @@ function DepartmentEditScheduleModal({
                           }}
                           onMouseLeave={hideCustomTooltip}
                         >
-                          {isChild ? (
+                          {isChild || onlyAllowTimeDaysRoomStatusEditing ? (
                             <div className="px-3 py-3 text-sm text-gray-900 font-medium cursor-default flex items-center justify-between gap-1.5 overflow-hidden w-full">
                               <div className="flex items-center min-w-0 truncate">
                                 <span className="truncate min-w-0 leading-none">
-                                  {members.find(m => m.membershipId === schedule.instructorId)?.name || '----'}
+                                  {members.find(m => (m as any).membershipId === schedule.instructorId || m.id === schedule.instructorId)?.name || '----'}
                                 </span>
                                 {(schedule as any).instructorId2 && ((schedule as any).instructorId2 !== schedule.instructorId || !isSecondSessionUnlocked) ? (
                                   <>
                                     <span className="shrink-0 whitespace-pre leading-none">{' / '}</span>
                                     <span className={`truncate min-w-0 leading-none ${!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}`}>
-                                      {members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}
+                                      {members.find(m => (m as any).membershipId === (schedule as any).instructorId2 || m.id === (schedule as any).instructorId2)?.name || '?'}
                                     </span>
                                   </>
                                 ) : (missingInstructor2 ? <> <span className="shrink-0 whitespace-pre leading-none">{' / '}</span> <span>----</span></> : '')}
@@ -2321,7 +2734,7 @@ function DepartmentEditScheduleModal({
                                 )}
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                 <div className="flex flex-col gap-1.5">
                                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
                                   <InnerDropdown
@@ -2347,7 +2760,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'} ${!hasInstructorConflict ? 'shadow-[inset_1px_1px_0_0_#fb7185]' : 'shadow-[inset_0_1px_0_0_#fb7185]'}` : (!isChild && (!schedule.startTime || missingTime2)) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
+                          className={`p-0 relative align-middle ${isCellReverted('time') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'} ${!hasInstructorConflict ? 'shadow-[inset_1px_1px_0_0_#fb7185]' : 'shadow-[inset_0_1px_0_0_#fb7185]'}` : (!isChild && (!schedule.startTime || missingTime2)) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]'}`}
                           onMouseEnter={(e) => {
                             const details = [
                               ...(conflict?.roomConflictDetails1 || []),
@@ -2436,7 +2849,7 @@ function DepartmentEditScheduleModal({
                                 </span>
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-4 rounded w-full`}>
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-4 rounded w-full`}>
                                 {(() => {
                                   const duration1 = getDurationMins(schedule.startTime, schedule.endTime);
                                   const session2Disabled = !isSecondSessionUnlocked || duration1 === 180;
@@ -2488,7 +2901,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 shadow-[inset_0_1px_0_0_#fb7185] ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'}` : (!isChild && (schedule.days.length === 0 || missingDay2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('days') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${(hasInstructorConflict || hasRoomConflict) ? `!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 shadow-[inset_0_1px_0_0_#fb7185] ${hasRoomConflict ? 'border-r border-rose-200' : 'border-r border-rose-400'}` : (!isChild && (schedule.days.length === 0 || missingDay2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [
                               ...(conflict?.roomConflictDetails1 || []),
@@ -2560,7 +2973,7 @@ function DepartmentEditScheduleModal({
                                 </span>
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                 {(() => {
                                   const missingDay1 = schedule.days.length === 0 && (!!schedule.startTime || !!(schedule as any).startTime2);
                                   return (
@@ -2604,7 +3017,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasRoomConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.buildingId || missingBuilding2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('buildingId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasRoomConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-200 shadow-[inset_0_1px_0_0_#fb7185]' : (!isChild && (!schedule.buildingId || missingBuilding2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -2647,7 +3060,7 @@ function DepartmentEditScheduleModal({
                                 </span>
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                 <div className="flex flex-col gap-1.5">
                                   <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">1st Session</label>
                                   <InnerDropdown
@@ -2686,7 +3099,7 @@ function DepartmentEditScheduleModal({
                           )}
                         </td>
                         <td
-                          className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasRoomConflict ? 'bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : ((!schedule.roomId || missingRoom2) ? 'bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
+                          className={`p-0 relative align-middle ${isCellReverted('roomId') ? 'animate-undo-highlight' : ''} ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} ${hasRoomConflict ? '!bg-rose-50 focus-within:!bg-[#e3edda] border-b border-rose-400 border-r border-rose-400 shadow-[inset_0_1px_0_0_#fb7185]' : ((!schedule.roomId || missingRoom2) ? '!bg-amber-50 focus-within:!bg-[#e3edda] border-b border-amber-400 border-r border-amber-400 shadow-[inset_1px_1px_0_0_#fbbf24]' : 'border-b border-r border-gray-300 focus-within:bg-[#e3edda]')}`}
                           onMouseEnter={(e) => {
                             const details = [...(conflict?.roomConflictDetails1 || []), ...(conflict?.roomConflictDetails2 || [])]
                             if (details.length > 0) {
@@ -2726,7 +3139,7 @@ function DepartmentEditScheduleModal({
                             {schedule.buildingId && (
                               <>
                                 <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                                <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-3 flex flex-col gap-3 rounded w-full`}>
+                                <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-3 flex flex-col gap-3 rounded w-full`}>
                                   <div className="flex flex-col gap-1.5">
                                     <label className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1 ${missingRoom1 ? 'text-amber-600' : 'text-gray-500'}`}>
                                       1st Session
@@ -2760,7 +3173,7 @@ function DepartmentEditScheduleModal({
                           <td
                             className={`p-0 relative align-middle ${isSelected ? (isPlotMode ? 'bg-emerald-100' : 'bg-red-100') : ((!isSelected && isChild) ? 'bg-gray-50/50 group-hover/row:bg-slate-100' : 'group-hover/row:bg-slate-100')} border-b border-gray-300`}
                           >
-                          {isEditable && !isChild ? (
+                          {isRowEditable && !isChild && (isDraft || isRevising || isPlotStatus || isReturnStatus) ? (
                             <details className="w-full relative h-full group">
                               <summary
                                 onClick={handleDropdownPosition}
@@ -2768,75 +3181,111 @@ function DepartmentEditScheduleModal({
                               >
                                 <span className="truncate flex items-center gap-2">
                                   <span className={`h-2 w-2 rounded-full shrink-0 ${
-                                    (schedule.status === 'Plot' || schedule.status === 'Plotted') ? 'bg-emerald-500' :
-                                    (schedule.status === 'Revise' || schedule.status === 'Revised') ? 'bg-amber-500' :
-                                    (schedule.status === 'Return' || schedule.status === 'Returned') ? 'bg-rose-500' :
+                                    isPlotStatus ? 'bg-emerald-500' :
+                                    isRevising ? 'bg-amber-500' :
+                                    isReturnStatus ? 'bg-rose-500' :
                                     'bg-slate-400'
                                   }`} />
                                   <span className={`text-sm font-medium ${
-                                    (schedule.status === 'Plot' || schedule.status === 'Plotted') ? 'text-emerald-700' :
-                                    (schedule.status === 'Revise' || schedule.status === 'Revised') ? 'text-amber-700' :
-                                    (schedule.status === 'Return' || schedule.status === 'Returned') ? 'text-rose-700' :
+                                    isPlotStatus ? 'text-emerald-700' :
+                                    isRevising ? 'text-amber-700' :
+                                    isReturnStatus ? 'text-rose-700' :
                                     'text-slate-600'
                                   }`}>
-                                    {schedule.status === 'Plot' || schedule.status === 'Plotted' ? 'Plotted' :
-                                     schedule.status === 'Revise' || schedule.status === 'Revised' ? 'Revised' :
-                                     schedule.status === 'Return' || schedule.status === 'Returned' ? 'Returned' :
-                                     (schedule.status || 'Draft')}
+                                    {statusLabel}
                                   </span>
                                 </span>
                               </summary>
                               <div className="fixed inset-0 z-40" onClick={(e) => { e.currentTarget.closest('details')?.removeAttribute('open') }}></div>
-                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-gray-300 shadow-xl p-1 flex flex-col gap-1 rounded w-full`}>
-                                {['Plot', 'Return'].map(opt => (
+                              <div className={`absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 ring-1 ring-black/5 shadow-[0_12px_28px_rgba(0,0,0,0.18),0_2px_6px_rgba(0,0,0,0.08)] p-1 flex flex-col gap-1 rounded w-full min-w-[7.5rem]`}>
+                                {isDraft && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        handleScheduleChange(index, 'status', 'Plot');
+                                        if (schedule.type === 'parallel') {
+                                          schedules.forEach((s, idx) => {
+                                            if (s.id === schedule.id || s.parentId === schedule.id || (schedule.parentId && (s.id === schedule.parentId || s.parentId === schedule.parentId))) {
+                                              handleScheduleChange(idx, 'status', 'Plot');
+                                            }
+                                          });
+                                        }
+                                        e.currentTarget.closest('details')?.removeAttribute('open');
+                                      }}
+                                      className="flex items-center gap-2 text-left px-2 py-1.5 text-sm hover:bg-emerald-50 rounded truncate transition-colors cursor-pointer w-full"
+                                    >
+                                      <span className="h-2 w-2 rounded-full shrink-0 bg-emerald-500" />
+                                      <span className="text-emerald-700 font-medium">Plot</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        handleScheduleChange(index, 'status', 'Return');
+                                        if (schedule.type === 'parallel') {
+                                          schedules.forEach((s, idx) => {
+                                            if (s.id === schedule.id || s.parentId === schedule.id || (schedule.parentId && (s.id === schedule.parentId || s.parentId === schedule.parentId))) {
+                                              handleScheduleChange(idx, 'status', 'Return');
+                                            }
+                                          });
+                                        }
+                                        e.currentTarget.closest('details')?.removeAttribute('open');
+                                      }}
+                                      className="flex items-center gap-2 text-left px-2 py-1.5 text-sm hover:bg-rose-50 rounded truncate transition-colors cursor-pointer w-full"
+                                    >
+                                      <span className="h-2 w-2 rounded-full shrink-0 bg-rose-500" />
+                                      <span className="text-rose-700 font-medium">Return</span>
+                                    </button>
+                                  </>
+                                )}
+                                {(isRevising || isPlotStatus || isReturnStatus) && (
                                   <button
-                                    key={opt}
                                     type="button"
                                     onClick={(e) => {
-                                      handleScheduleChange(index, 'status', opt);
-                                      if (schedule.type === 'parallel') {
-                                        schedules.forEach((s, idx) => {
-                                          if (s.id === schedule.id || s.parentId === schedule.id || (schedule.parentId && (s.id === schedule.parentId || s.parentId === schedule.parentId))) {
-                                            handleScheduleChange(idx, 'status', opt);
-                                          }
-                                        });
-                                      }
                                       e.currentTarget.closest('details')?.removeAttribute('open');
+                                      setPendingUndoIndex(index);
                                     }}
-                                    className="flex items-center gap-2 text-left px-2 py-1.5 text-sm hover:bg-gray-100 rounded truncate transition-colors cursor-pointer w-full"
+                                    className={`flex items-center gap-2 text-left px-2 py-1.5 text-sm rounded truncate transition-colors cursor-pointer w-full ${
+                                      isPlotStatus ? 'hover:bg-emerald-50 text-emerald-700' :
+                                      isReturnStatus ? 'hover:bg-rose-50 text-rose-700' :
+                                      'hover:bg-amber-50 text-amber-700'
+                                    }`}
                                   >
-                                    <span className={`h-2 w-2 rounded-full shrink-0 ${
-                                      opt === 'Plot' ? 'bg-emerald-500' : 'bg-rose-500'
+                                    <UndoIcon className={`h-3.5 w-3.5 shrink-0 ${
+                                      isPlotStatus ? 'text-emerald-600' :
+                                      isReturnStatus ? 'text-rose-600' :
+                                      'text-amber-600'
                                     }`} />
-                                    <span className={opt === 'Plot' ? 'text-emerald-700 font-medium' : 'text-rose-700 font-medium'}>
-                                      {opt}
-                                    </span>
+                                    <span className="font-medium">Undo</span>
                                   </button>
-                                ))}
+                                )}
                               </div>
                             </details>
                           ) : (
                             <div className="px-3 py-3 text-sm font-medium truncate cursor-default flex items-center gap-2">
                               {(() => {
                                 const currentStatus = (isChild && parentSchedule?.status) ? parentSchedule.status : schedule.status;
+                                const currentIsPlot = currentStatus === 'Plot' || currentStatus === 'Plotted';
+                                const currentIsRevising = currentStatus === 'Revising';
+                                const currentIsRevised = currentStatus === 'Revise' || currentStatus === 'Revised';
+                                const currentIsReturn = currentStatus === 'Return' || currentStatus === 'Returned' || currentStatus === 'Removed';
+                                const currentLabel = currentIsPlot ? 'Plotted' : (currentIsRevising ? 'Revising' : (currentIsRevised ? 'Revised' : (currentIsReturn ? 'Returned' : 'Draft')));
+
                                 return (
                                   <>
                                     <span className={`h-2 w-2 rounded-full shrink-0 ${
-                                      (currentStatus === 'Plot' || currentStatus === 'Plotted') ? 'bg-emerald-500' :
-                                      (currentStatus === 'Revise' || currentStatus === 'Revised') ? 'bg-amber-500' :
-                                      (currentStatus === 'Return' || currentStatus === 'Returned') ? 'bg-rose-500' :
+                                      currentIsPlot ? 'bg-emerald-500' :
+                                      (currentIsRevising || currentIsRevised) ? 'bg-amber-500' :
+                                      currentIsReturn ? 'bg-rose-500' :
                                       'bg-slate-400'
                                     }`} />
                                     <span className={
-                                      (currentStatus === 'Plot' || currentStatus === 'Plotted') ? 'text-emerald-700' :
-                                      (currentStatus === 'Revise' || currentStatus === 'Revised') ? 'text-amber-700' :
-                                      (currentStatus === 'Return' || currentStatus === 'Returned') ? 'text-rose-700' :
-                                      'text-slate-600'
+                                      currentIsPlot ? 'text-emerald-700 font-medium' :
+                                      (currentIsRevising || currentIsRevised) ? 'text-amber-700 font-medium' :
+                                      currentIsReturn ? 'text-rose-700 font-medium' :
+                                      'text-slate-600 font-medium'
                                     }>
-                                      {currentStatus === 'Plot' || currentStatus === 'Plotted' ? 'Plotted' :
-                                       currentStatus === 'Revise' || currentStatus === 'Revised' ? 'Revised' :
-                                       currentStatus === 'Return' || currentStatus === 'Returned' ? 'Returned' :
-                                       (currentStatus || 'Draft')}
+                                      {currentLabel}
                                     </span>
                                   </>
                                 );
@@ -2929,7 +3378,23 @@ function DepartmentEditScheduleModal({
                         )}
                         <DashedButton
                           variant="brand"
-                          onClick={() => setSchedules(prev => sortSchedulesByStatus([...prev, createDefaultSchedule()]).map((s, idx) => ({ ...s, orderIndex: idx })))}
+                          onClick={() => setSchedules(prev => {
+                            let lastDraftIndex = -1;
+                            for (let i = prev.length - 1; i >= 0; i--) {
+                              const status = prev[i].status || 'Draft';
+                              if (status === 'Draft' || status === 'Drafted') {
+                                lastDraftIndex = i;
+                                break;
+                              }
+                            }
+                            const insertIndex = lastDraftIndex !== -1 ? lastDraftIndex + 1 : 0;
+                            const newSchedules = [
+                              ...prev.slice(0, insertIndex),
+                              createDefaultSchedule(),
+                              ...prev.slice(insertIndex)
+                            ];
+                            return newSchedules.map((s, idx) => ({ ...s, orderIndex: idx }));
+                          })}
                           icon={<PlusIcon className="h-4 w-4" />}
                         >
                           Add Row
@@ -3118,6 +3583,56 @@ function DepartmentEditScheduleModal({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Undo Confirmation Modal */}
+      {pendingUndoIndex !== null && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+          <div
+            className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-5 text-white rounded-t-2xl">
+              <h3 className="text-lg font-bold">Confirm Undo</h3>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-sm text-gray-700">
+                {(() => {
+                  const s = schedules[pendingUndoIndex];
+                  if (!s) return 'Are you sure you want to undo changes to this schedule?';
+                  if (s.status === 'Plot' || s.status === 'Plotted') {
+                    return 'Are you sure you want to undo and return this plotted schedule back to Draft?';
+                  }
+                  if (s.status === 'Return' || s.status === 'Returned') {
+                    return 'Are you sure you want to undo and return this schedule back to Draft?';
+                  }
+                  return 'Are you sure you want to undo your changes and restore this schedule to its previous values?';
+                })()}
+              </p>
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => setPendingUndoIndex(null)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="brand"
+                  className="flex-1"
+                  onClick={() => {
+                    const idx = pendingUndoIndex;
+                    setPendingUndoIndex(null);
+                    handleUndoSchedule(idx);
+                  }}
+                >
+                  Confirm Undo
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onMouseDown={() => setPendingUndoIndex(null)} />
         </div>
       )}
 
@@ -3510,13 +4025,15 @@ function DepartmentEditScheduleModal({
       {customTooltip && customTooltip.visible && (
         <div
           ref={tooltipRef}
-          className={`fixed z-[350] pointer-events-none transform -translate-x-1/2 ${tooltipPos.isBelow ? 'translate-y-0' : '-translate-y-full'} px-4 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md border text-xs font-semibold whitespace-nowrap max-w-[90vw] transition-all duration-100 animate-in fade-in-0 zoom-in-95 ${customTooltip.type === 'danger'
+          className={`fixed z-[350] pointer-events-none ${tooltipPos.isRight ? '' : `transform -translate-x-1/2 ${tooltipPos.isBelow ? 'translate-y-0' : '-translate-y-full'}`} px-4 py-2.5 rounded-2xl shadow-2xl backdrop-blur-md border text-xs font-semibold whitespace-nowrap max-w-[90vw] animate-in fade-in-0 zoom-in-95 ${customTooltip.type === 'danger'
             ? 'bg-rose-950/95 border-rose-500/40 text-rose-100 shadow-[0_8px_30px_rgba(225,29,72,0.35)]'
             : customTooltip.type === 'purple'
               ? 'bg-purple-950/95 border-purple-500/40 text-purple-100 shadow-[0_8px_30px_rgba(168,85,247,0.35)]'
               : customTooltip.type === 'warning'
                 ? 'bg-amber-950/95 border-amber-500/40 text-amber-100 shadow-[0_8px_30px_rgba(245,158,11,0.35)]'
-                : 'bg-slate-900/95 border-slate-700/60 text-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.5)]'
+                : customTooltip.type === 'success'
+                  ? 'bg-emerald-950/95 border-emerald-500/40 text-emerald-100 shadow-[0_8px_30px_rgba(16,185,129,0.35)]'
+                  : 'bg-slate-900/95 border-slate-700/60 text-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.5)]'
             }`}
           style={{
             left: tooltipPos.left || customTooltip.targetX,
@@ -3530,6 +4047,7 @@ function DepartmentEditScheduleModal({
                   <span className={`shrink-0 font-bold ${
                     customTooltip.type === 'danger' ? 'text-rose-400' :
                     customTooltip.type === 'purple' ? 'text-purple-400' :
+                    customTooltip.type === 'success' ? 'text-emerald-400' :
                     'text-amber-400'
                   }`}>•</span>
                 )}
@@ -3538,27 +4056,43 @@ function DepartmentEditScheduleModal({
             ))}
           </div>
           {/* Dynamic Arrow Pointer */}
-          <div
-            className={`absolute ${tooltipPos.isBelow ? 'bottom-full border-b-[6px]' : 'top-full border-t-[6px]'} -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent ${tooltipPos.isBelow
-              ? (customTooltip.type === 'danger'
-                ? 'border-b-rose-950/95'
-                : customTooltip.type === 'purple'
-                  ? 'border-b-purple-950/95'
-                  : customTooltip.type === 'warning'
-                    ? 'border-b-amber-950/95'
-                    : 'border-b-slate-900/95')
-              : (customTooltip.type === 'danger'
-                ? 'border-t-rose-950/95'
-                : customTooltip.type === 'purple'
-                  ? 'border-t-purple-950/95'
-                  : customTooltip.type === 'warning'
-                    ? 'border-t-amber-950/95'
-                    : 'border-t-slate-900/95')
+          {tooltipPos.isRight ? (
+            <div
+              className={`absolute right-full top-1/2 -translate-y-1/2 w-0 h-0 border-y-[6px] border-y-transparent border-r-[6px] ${
+                customTooltip.type === 'danger' ? 'border-r-rose-950/95'
+                : customTooltip.type === 'purple' ? 'border-r-purple-950/95'
+                : customTooltip.type === 'warning' ? 'border-r-amber-950/95'
+                : customTooltip.type === 'success' ? 'border-r-emerald-950/95'
+                : 'border-r-slate-900/95'
               }`}
-            style={{
-              left: `${tooltipPos.arrowLeft}%`
-            }}
-          />
+            />
+          ) : (
+            <div
+              className={`absolute ${tooltipPos.isBelow ? 'bottom-full border-b-[6px]' : 'top-full border-t-[6px]'} -translate-x-1/2 w-0 h-0 border-x-[6px] border-x-transparent ${tooltipPos.isBelow
+                ? (customTooltip.type === 'danger'
+                  ? 'border-b-rose-950/95'
+                  : customTooltip.type === 'purple'
+                    ? 'border-b-purple-950/95'
+                    : customTooltip.type === 'warning'
+                      ? 'border-b-amber-950/95'
+                      : customTooltip.type === 'success'
+                        ? 'border-b-emerald-950/95'
+                        : 'border-b-slate-900/95')
+                : (customTooltip.type === 'danger'
+                  ? 'border-t-rose-950/95'
+                  : customTooltip.type === 'purple'
+                    ? 'border-t-purple-950/95'
+                    : customTooltip.type === 'warning'
+                      ? 'border-t-amber-950/95'
+                      : customTooltip.type === 'success'
+                        ? 'border-t-emerald-950/95'
+                        : 'border-t-slate-900/95')
+                }`}
+              style={{
+                left: `${tooltipPos.arrowLeft}%`
+              }}
+            />
+          )}
         </div>
       )}
     </>

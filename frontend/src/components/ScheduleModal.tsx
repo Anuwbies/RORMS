@@ -39,7 +39,10 @@ export interface ScheduleModalProps {
   actionButton?: ReactNode
   hideFilters?: boolean
   showWeekCalendar?: boolean
+  showStatusColors?: boolean
   forceFullDaySchedule?: boolean
+  isInline?: boolean
+  hideReturnedSchedules?: boolean
 }
 
 interface AcademicYearData {
@@ -209,7 +212,10 @@ export function ScheduleModal({
   actionButton,
   hideFilters,
   showWeekCalendar,
-  forceFullDaySchedule = false
+  showStatusColors = false,
+  forceFullDaySchedule = false,
+  isInline = false,
+  hideReturnedSchedules = false
 }: ScheduleModalProps) {
   const isRoomMode = Boolean(room)
   const isInstructorMode = Boolean(member && !room)
@@ -420,6 +426,9 @@ export function ScheduleModal({
       setIsLoading(true)
       const validInstructorIds = [member.membershipId, member.id, member.userId].filter(Boolean) as string[]
 
+      let schedulesLoaded = false
+      let reservationsLoaded = !showWeekCalendar
+
       const q = query(collection(db, 'schedule'))
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -432,14 +441,44 @@ export function ScheduleModal({
         })
         fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
         setSchedules(fetched)
-        setIsLoading(false)
+        schedulesLoaded = true
+        if (reservationsLoaded) setIsLoading(false)
       }, (err) => {
         console.error('Error loading instructor schedules:', err)
         setSchedules([])
-        setIsLoading(false)
+        schedulesLoaded = true
+        if (reservationsLoaded) setIsLoading(false)
       })
 
-      return () => unsubscribe()
+      let unsubscribeReservations: (() => void) | null = null
+      if (showWeekCalendar) {
+        const qReservations = query(collection(db, 'reservations'))
+        unsubscribeReservations = onSnapshot(qReservations, (snapshot) => {
+          const fetched = snapshot.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter((r: any) => 
+              (validInstructorIds.includes(r.userId) || validInstructorIds.includes(r.instructorId)) &&
+              (r.status === 'Approved' || r.status === 'Pending')
+            )
+          setReservations(fetched)
+          reservationsLoaded = true
+          if (schedulesLoaded) setIsLoading(false)
+        }, (err) => {
+          console.error('Error loading instructor reservations:', err)
+          setReservations([])
+          reservationsLoaded = true
+          if (schedulesLoaded) setIsLoading(false)
+        })
+      } else {
+        setReservations([])
+        reservationsLoaded = true
+        if (schedulesLoaded) setIsLoading(false)
+      }
+
+      return () => {
+        unsubscribe()
+        if (unsubscribeReservations) unsubscribeReservations()
+      }
     }
 
     setSchedules([])
@@ -457,25 +496,36 @@ export function ScheduleModal({
         if (s.semester !== selectedSemester) return false
       }
       const status = s.status || 'Draft'
-      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised'].includes(status)) return false
+      
+      let allowedStatuses = ['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised', 'Return', 'Returned']
+      if (hideReturnedSchedules) {
+        allowedStatuses = ['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised']
+      }
+      
+      if (!allowedStatuses.includes(status)) return false
       return true
     })
-  }, [schedules, selectedAcademicYear?.academicYear, selectedSemester])
+  }, [schedules, selectedAcademicYear?.academicYear, selectedSemester, hideReturnedSchedules])
 
   const getScheduleStatusClasses = (status?: string) => {
-    if (showWeekCalendar) {
+    if (showWeekCalendar && !showStatusColors) {
       return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
     }
     const s = status || 'Draft'
     if (s === 'Plot' || s === 'Plotted') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
     if (s === 'Revise' || s === 'Revised') return 'bg-amber-50 border-amber-300'
+    if (s === 'Return' || s === 'Returned') return 'bg-rose-50 border-rose-300'
     return 'bg-slate-100 border-slate-300' // Draft
   }
 
   const getPdfStatusStyles = (status?: string) => {
+    if (showWeekCalendar && !showStatusColors) {
+      return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
+    }
     const s = status || 'Draft'
     if (s === 'Plot' || s === 'Plotted') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
     if (s === 'Revise' || s === 'Revised') return { backgroundColor: '#fffbeb', borderColor: '#fcd34d' }
+    if (s === 'Return' || s === 'Returned') return { backgroundColor: '#fff1f2', borderColor: '#fda4af' }
     return { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' } // Draft
   }
 
@@ -503,10 +553,10 @@ export function ScheduleModal({
   }
 
   const activeWeekReservations = useMemo(() => {
-    if (!isRoomMode || !showWeekCalendar || !reservations.length) return []
+    if (!showWeekCalendar || !reservations.length) return []
     const weekIsoSet = new Set(weekInfo.weekDays.map(w => w.isoString))
     return reservations.filter(r => r.date && weekIsoSet.has(r.date))
-  }, [isRoomMode, showWeekCalendar, reservations, weekInfo.weekDays])
+  }, [showWeekCalendar, reservations, weekInfo.weekDays])
 
   // 6. Build Time Slots (Room start/end time if room mode without forceFullDaySchedule, or 07:30 - 18:00 standard whole day)
   const timeSlots = useMemo(() => {
@@ -664,11 +714,11 @@ export function ScheduleModal({
     }
   }
 
-  if (!isOpen) return null
+  if (!isOpen && !isInline) return null
   if (!room && !member) return null
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+    <div className={isInline ? "flex flex-col w-full h-full" : "fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"}>
       {/* Hidden Print Template for PDF Export */}
       {/* 
         This wrapper is 0x0 and hides overflow. 
@@ -907,7 +957,10 @@ export function ScheduleModal({
       </div>
 
       <div
-        className="w-[85vw] max-w-[85vw] h-[88vh] max-h-[88vh] flex flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
+        className={isInline 
+          ? "flex flex-col rounded-2xl border border-gray-200 bg-white shadow-xl overflow-hidden min-h-[600px] w-full"
+          : "w-[85vw] max-w-[85vw] h-[88vh] max-h-[88vh] flex flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
+        }
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
@@ -997,7 +1050,7 @@ export function ScheduleModal({
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto overflow-x-auto bg-gray-50/50 overscroll-none flex flex-col relative z-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden">
+        <div className={`flex-1 overflow-y-auto overflow-x-auto bg-gray-50/50 ${isInline ? '' : 'overscroll-none'} flex flex-col relative z-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden`}>
           {isLoading ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
               <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
@@ -1143,7 +1196,7 @@ export function ScheduleModal({
                                       </div>
                                       <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${isApproved ? 'border-emerald-500/20 text-emerald-900/80' : 'border-amber-500/20 text-amber-900/80'
                                         }`}>
-                                        <span className="truncate">Time: <span className="text-gray-800">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                        <span className="truncate text-gray-500">Time: <span className="text-gray-700 font-medium">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
                                       </div>
                                     </div>
                                   )
@@ -1227,6 +1280,41 @@ export function ScheduleModal({
                               const startRow = Math.floor((itemStartMins - slotStartMins) / 30) + 1
                               const endRow = Math.max(startRow + 1, Math.ceil((itemEndMins - slotStartMins) / 30) + 1)
                               const gridRowStyle = `${startRow} / ${endRow}`
+
+                              if (group.parent._itemType === 'reservation') {
+                                const item = group.parent
+                                const isApproved = item.status === 'Approved'
+                                return (
+                                  <div
+                                    key={item.id || idx}
+                                    style={{ gridRow: gridRowStyle }}
+                                    className={`flex flex-col p-2 rounded text-sm shadow-sm transition-shadow min-w-0 min-h-0 border overflow-hidden ${isApproved
+                                        ? 'bg-emerald-500/10 border-emerald-500/30'
+                                        : 'bg-amber-500/10 border-amber-500/30'
+                                      }`}
+                                  >
+                                    <div className="flex flex-row items-center gap-1.5 min-w-0">
+                                      <span className="font-bold text-gray-900 uppercase truncate">
+                                        {isInstructorMode ? getRoomName(item.roomId) : getUserDepartment(item.userId)}
+                                      </span>
+                                      <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
+                                        {item.status || 'Booked'}
+                                      </span>
+                                    </div>
+                                    <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${isApproved ? 'border-emerald-500/20 text-emerald-900/80' : 'border-amber-500/20 text-amber-900/80'
+                                      }`}>
+                                      <span className="truncate text-gray-500">Time: <span className="text-gray-700 font-medium">
+                                        {(() => {
+                                          const diff = timeToMins(item.endTime) - timeToMins(item.startTime)
+                                          if (diff >= 60 && diff % 60 === 0) return `${diff / 60} hr${diff / 60 > 1 ? 's' : ''}`
+                                          if (diff > 60) return `${Math.floor(diff / 60)} hr ${diff % 60} mins`
+                                          return `${diff} mins`
+                                        })()}
+                                      </span></span>
+                                    </div>
+                                  </div>
+                                )
+                              }
 
                               return group.parent.type === 'parallel' ? (
                                 <div key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(group.parent.status)}`}>

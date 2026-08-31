@@ -475,13 +475,16 @@ export function DepartmentSchedulesPage() {
       <DepartmentEditScheduleModal
         isOpen={isAddScheduleModalOpen}
         onClose={() => setIsAddScheduleModalOpen(false)}
-        departmentInfo={selectedDepartment ? { name: selectedDepartment.name, code: selectedDepartment.code, logo: selectedDepartment.logo || '' } : null}
+        departmentInfo={useMemo(() => selectedDepartment ? { name: selectedDepartment.name, code: selectedDepartment.code, logo: selectedDepartment.logo || '' } : null, [selectedDepartment?.name, selectedDepartment?.code, selectedDepartment?.logo])}
         members={members}
         selectedAcademicYear={selectedAcademicYear}
         selectedSemesterPhase={selectedSemesterPhase}
         editablePhases={['Drafting', 'Plotting', 'Revision', 'Final']}
         hideTitleColumn={true}
         hideAddRemoveButtons={true}
+        showStatusOnNumberColumn={false}
+        onlyAllowDraftEditing={false}
+        onlyAllowTimeDaysRoomStatusEditing={true}
       />
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}

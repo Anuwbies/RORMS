@@ -6,6 +6,7 @@ import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { ScheduleModal } from '../../components/ScheduleModal'
 import { DepartmentEditScheduleModal } from '../../components/DepartmentEditScheduleModal'
+import { RevisedSchedulesModal } from '../../components/RevisedSchedulesModal'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
@@ -64,6 +65,7 @@ function MyDepartmentPage() {
   const [rooms, setRooms] = useState<{ id: string, code: string, name: string, buildingId: string }[]>([])
   const [buildings, setBuildings] = useState<{ id: string, name: string, code?: string }[]>([])
   const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false)
+  const [isRevisedSchedulesModalOpen, setIsRevisedSchedulesModalOpen] = useState(false)
   // School Year and Semester Selection State
   const [academicYears, setAcademicYears] = useState<any[]>([])
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
@@ -626,6 +628,7 @@ function MyDepartmentPage() {
         member={selectedMember ? { ...selectedMember, departmentName: departmentInfo?.name || selectedMember.department } : null}
         initialAcademicYear={selectedAcademicYear?.academicYear}
         initialSemester={selectedSemesterPhase?.name}
+        hideReturnedSchedules={true}
         onClose={() => {
           setIsScheduleModalOpen(false)
           setSelectedMember(null)
@@ -643,12 +646,52 @@ function MyDepartmentPage() {
         academicYears={academicYears}
         selectedAcademicYear={selectedAcademicYear}
         setSelectedAcademicYear={setSelectedAcademicYear}
-        onSelectSemester={(semesterPhase) => {
+        onSelectSemester={async (semesterPhase) => {
           setSelectedSemesterPhase(semesterPhase)
           setIsSchoolYearModalOpen(false)
+
+          if (departmentInfo?.code && selectedAcademicYear?.academicYear && semesterPhase?.name) {
+            try {
+              const qRevise = query(
+                collection(db, 'schedule'),
+                where('department', '==', departmentInfo.code),
+                where('academicYear', '==', selectedAcademicYear.academicYear),
+                where('semester', '==', semesterPhase.name)
+              )
+              const snap = await getDocs(qRevise)
+              const hasReviseSchedules = snap.docs.some(d => {
+                const data = d.data()
+                return data.status === 'Revise' || data.status === 'Revised' || data.status === 'Revising'
+              })
+
+              if (hasReviseSchedules) {
+                setIsRevisedSchedulesModalOpen(true)
+                return
+              }
+            } catch (err) {
+              console.error('Error checking revise schedules:', err)
+            }
+          }
+
           setIsAddScheduleModalOpen(true)
         }}
         editablePhases={['Drafting', 'Revision']}
+      />
+
+      {/* Revised Schedules Review Modal */}
+      <RevisedSchedulesModal
+        isOpen={isRevisedSchedulesModalOpen}
+        onClose={() => {
+          setIsRevisedSchedulesModalOpen(false)
+        }}
+        onProceedToEdit={() => {
+          setIsRevisedSchedulesModalOpen(false)
+          setIsAddScheduleModalOpen(true)
+        }}
+        departmentInfo={departmentInfo}
+        members={members}
+        selectedAcademicYear={selectedAcademicYear}
+        selectedSemesterPhase={selectedSemesterPhase}
       />
 
       {/* Department Edit Schedule Modal */}
@@ -662,6 +705,8 @@ function MyDepartmentPage() {
         editablePhases={['Drafting', 'Revision']}
         hideStatusColumn={true}
         hidePlotAllReadyButton={true}
+        showStatusOnNumberColumn={true}
+        onlyAllowDraftEditing={true}
       />
 
 
