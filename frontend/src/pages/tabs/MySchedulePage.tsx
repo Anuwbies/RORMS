@@ -4,7 +4,7 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
 import { Button } from '../../components/Button'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
-import { ScheduleModal } from '../../components/ScheduleModal'
+import { ScheduleModal, resolveCurrentSemester } from '../../components/ScheduleModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { collection, query, where, onSnapshot, limit, doc } from 'firebase/firestore'
@@ -86,6 +86,7 @@ function MySchedulePage() {
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [currentUserDoc, setCurrentUserDoc] = useState<any>(null)
   const [currentMembership, setCurrentMembership] = useState<any>(null)
+  const [departmentName, setDepartmentName] = useState<string>('')
   const [membershipId, setMembershipId] = useState<string>('')
   const [userRole, setUserRole] = useState<string>('')
   const [schedules, setSchedules] = useState<any[]>([])
@@ -107,7 +108,11 @@ function MySchedulePage() {
       if (years.length > 0) {
         setSelectedAcademicYear(prev => {
           if (prev && years.some(y => y.id === prev.id)) return prev
-          return years.find(y => y.isActive) || years[0]
+          
+          const activeYear = years.find(y => y.isActive) || years[0]
+          // When we resolve a new active year, also dynamically resolve its current semester
+          setSelectedSemester(resolveCurrentSemester(activeYear))
+          return activeYear
         })
       }
     })
@@ -127,6 +132,21 @@ function MySchedulePage() {
     })
     return () => unsubscribe()
   }, [])
+
+  // 2.5 Fetch Department Name
+  useEffect(() => {
+    if (currentMembership?.department) {
+      const q = query(collection(db, 'departments'), where('code', '==', currentMembership.department), limit(1))
+      const unsub = onSnapshot(q, (snap) => {
+        if (!snap.empty) {
+          setDepartmentName(snap.docs[0].data().name)
+        } else {
+          setDepartmentName(currentMembership.department)
+        }
+      })
+      return () => unsub()
+    }
+  }, [currentMembership?.department])
 
   // 3. Fetch Current User, Membership, and Schedules
   useEffect(() => {
@@ -527,7 +547,7 @@ function MySchedulePage() {
       <div className="space-y-6">
         <SectionHeader 
           title="My Schedule" 
-          description="View and manage your assigned classes, weekly timetable, and room schedule."
+          description={`View and manage your assigned classes, weekly timetable, and room schedule for ${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}.`}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
@@ -580,7 +600,7 @@ function MySchedulePage() {
               email: currentUser?.email || '',
               role: userRole || currentMembership?.role || 'Instructor',
               department: currentMembership?.department || '',
-              departmentName: currentMembership?.departmentName || ''
+              departmentName: departmentName || currentMembership?.departmentName || ''
             }}
             showWeekCalendar={true}
             showStatusColors={true}

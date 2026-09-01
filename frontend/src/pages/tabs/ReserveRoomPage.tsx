@@ -996,19 +996,21 @@ function ReserveRoomPage() {
           }
         }}
         actionButton={
-          <Button
-            type="button"
-            variant="brand"
-            onClick={() => {
-              if (selectedRoomForSchedule) {
-                handleOpenReservationModal(selectedRoomForSchedule)
-              }
-            }}
-            icon={<DoorIcon className="h-4 w-4" />}
-            className="w-45 px-4 text-sm flex items-center justify-center gap-2"
-          >
-            Reserve Room
-          </Button>
+          selectedRoomForSchedule?.status === 'Available' ? (
+            <Button
+              type="button"
+              variant="brand"
+              onClick={() => {
+                if (selectedRoomForSchedule) {
+                  handleOpenReservationModal(selectedRoomForSchedule)
+                }
+              }}
+              icon={<DoorIcon className="h-4 w-4" />}
+              className="w-45 px-4 text-sm flex items-center justify-center gap-2"
+            >
+              Reserve Room
+            </Button>
+          ) : null
         }
       />
 

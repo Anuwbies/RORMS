@@ -79,10 +79,7 @@ export function DepartmentSchedulesPage() {
   const [loadingMembers, setLoadingMembers] = useState(true)
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
-  const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: string; phase: string }>({
-    name: '1st Semester',
-    phase: 'Drafting'
-  })
+  const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: string; phase: string } | null>(null)
 
   // Modals & Navigation state
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
@@ -512,7 +509,7 @@ export function DepartmentSchedulesPage() {
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}
       <ScheduleModal
         isOpen={isScheduleModalOpen}
-        member={selectedMember}
+        member={selectedMember ? { ...selectedMember, departmentName: selectedDepartment?.name || selectedMember.department } : null}
         initialAcademicYear={selectedAcademicYear?.academicYear}
         initialSemester={selectedSemesterPhase?.name}
         onClose={() => {

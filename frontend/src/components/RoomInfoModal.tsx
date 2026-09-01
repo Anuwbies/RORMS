@@ -1,5 +1,5 @@
 import React from 'react'
-import { UserIcon, ClockIcon, BookIcon } from './Icons'
+import { UserIcon, ClockIcon, BookIcon, HourglassIcon } from './Icons'
 import { roomStatusClasses, DAYS_OF_WEEK, DEFAULT_ROOM_IMAGE } from '../types/room'
 import type { Room } from '../types/room'
 import { Button } from './Button'
@@ -68,7 +68,7 @@ export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton }: R
                   <div className="space-y-1.5">
                     <p className="text-xs font-bold uppercase tracking-widest text-gray-500">Booking Limits</p>
                     <div className="rounded-xl border border-gray-200 bg-gray-100 p-2.5 flex items-center gap-2">
-                      <ClockIcon className="h-4 w-4 text-gray-500 shrink-0" />
+                      <HourglassIcon className="h-4 w-4 text-gray-500 shrink-0" />
                       <p className="text-sm font-bold text-gray-700">
                         {room.minBookingMins}m - {room.maxBookingMins}m
                       </p>

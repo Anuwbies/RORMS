@@ -103,8 +103,8 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="overflow-auto custom-scrollbar w-full max-h-[495px] flex-1">
-        <table className="w-full text-left border-separate border-spacing-0 min-w-[600px]">
+      <div className="overflow-auto custom-scrollbar w-full max-h-[495px] flex-1 flex flex-col">
+        <table className={`w-full text-left border-separate border-spacing-0 min-w-[600px] ${currentData.length === 0 ? 'h-full' : ''}`}>
           <thead className="sticky top-0 z-10">
             <tr>
               {columns.map((col, i) => (
@@ -131,7 +131,7 @@ export function DataTable<T>({
               </tr>
             ) : currentData.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-6 py-20 text-center text-slate-400 border-b border-slate-100">
+                <td colSpan={columns.length} className="px-6 py-10 text-center text-slate-400 border-b border-slate-100 align-middle">
                   <div className="flex flex-col items-center justify-center">
                     {emptyIcon && <div className="mb-4 text-slate-200">{emptyIcon}</div>}
                     <p className="text-base font-bold text-slate-600">{emptyTitle}</p>

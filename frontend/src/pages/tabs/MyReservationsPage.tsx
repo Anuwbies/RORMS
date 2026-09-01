@@ -1,17 +1,23 @@
 import { useState, useEffect, useMemo } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
-import { ClockIcon, UserIcon, SearchIcon, CalendarIcon, PlusIcon } from '../../components/Icons'
+import { ClockIcon, UserIcon, DoorIcon, SearchIcon, CalendarIcon, PlusIcon, HourglassIcon, TrashIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { Button } from '../../components/Button'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
+import { ReservationInfoModal } from '../../components/ReservationInfoModal'
+import { ConfirmModal } from '../../components/ConfirmModal'
+import { ScheduleModal } from '../../components/ScheduleModal'
+import { useSnackbar } from '../../components/Snackbar'
 import { db, auth } from '../../firebase'
 import { 
   collection, 
   onSnapshot, 
   query, 
-  where
+  where,
+  doc,
+  updateDoc
 } from 'firebase/firestore'
 
 type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
@@ -30,6 +36,7 @@ interface Reservation {
   status: ReservationStatus
   createdAt: any
   updatedAt: any
+  isHidden?: boolean
 }
 
 type RoomStatus = 'Available' | 'Occupied' | 'Maintenance'
@@ -101,8 +108,16 @@ function MyReservationsPage() {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([])
 
+  const { showSnackbar } = useSnackbar()
+
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
+
+  const [isRoomScheduleModalOpen, setIsRoomScheduleModalOpen] = useState(false)
+  const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<Room | null>(null)
+
+  const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
+  const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
 
   const handleOpenRoomInfoModal = (room: Room) => {
     setSelectedRoomInfo(room)
@@ -112,6 +127,10 @@ function MyReservationsPage() {
   const handleCloseModals = () => {
     setIsRoomInfoModalOpen(false)
     setSelectedRoomInfo(null)
+    setIsReservationModalOpen(false)
+    setSelectedReservation(null)
+    setIsRoomScheduleModalOpen(false)
+    setSelectedRoomForSchedule(null)
   }
 
   useEffect(() => {
@@ -179,6 +198,8 @@ function MyReservationsPage() {
     const normalizedSearch = searchTerm.trim().toLowerCase()
     
     return reservations.filter(res => {
+      if (res.isHidden) return false
+      
       const room = rooms[res.roomId]
       const building = buildings[res.buildingId]
       
@@ -295,7 +316,19 @@ function MyReservationsPage() {
               }}
               className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
             >
-              <SearchIcon className="h-4 w-4" />
+              <DoorIcon className="h-4 w-4" />
+            </IconButton>
+            <IconButton
+              label="Delete Record"
+              disabled={!['Cancelled', 'Completed', 'Declined'].includes(res.status)}
+              onClick={() => handleDeleteReservation(res.id)}
+              className={`h-8 w-8 rounded-lg bg-white transition-all border border-slate-200 ${
+                ['Cancelled', 'Completed', 'Declined'].includes(res.status)
+                  ? 'text-rose-500 hover:border-rose-300 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
+                  : 'opacity-30 text-slate-400'
+              }`}
+            >
+              <TrashIcon className="h-4 w-4" />
             </IconButton>
           </div>
         )
@@ -319,6 +352,88 @@ function MyReservationsPage() {
       onChange: setSelectedStatuses
     }
   ]
+
+  const [reservationToCancel, setReservationToCancel] = useState<string | null>(null)
+  const [isCanceling, setIsCanceling] = useState(false)
+
+  const handleCancelReservation = (reservationId: string) => {
+    setReservationToCancel(reservationId)
+  }
+
+  const executeCancelReservation = async () => {
+    if (!reservationToCancel) return
+    
+    const targetId = reservationToCancel
+    setReservationToCancel(null)
+    setIsCanceling(true)
+
+    try {
+      const resRef = doc(db, 'reservations', targetId)
+      await updateDoc(resRef, {
+        status: 'Cancelled',
+        updatedAt: new Date()
+      })
+      
+      setIsReservationModalOpen(false)
+      setSelectedReservation(null)
+      showSnackbar({
+        message: 'Reservation cancelled successfully',
+        type: 'success',
+        action: {
+          label: 'Delete Record',
+          onClick: () => {
+            // Directly trigger delete for the cancelled reservation
+            handleDeleteReservation(targetId)
+          }
+        }
+      })
+    } catch (error) {
+      console.error('Error cancelling reservation:', error)
+      showSnackbar({
+        message: 'Failed to cancel reservation',
+        type: 'error'
+      })
+    } finally {
+      setIsCanceling(false)
+    }
+  }
+
+  const [reservationToDelete, setReservationToDelete] = useState<string | null>(null)
+  
+  const handleDeleteReservation = (reservationId: string) => {
+    setReservationToDelete(reservationId)
+  }
+
+  const executeDeleteReservation = async () => {
+    if (!reservationToDelete) return
+    
+    const targetId = reservationToDelete
+    setReservationToDelete(null)
+    setIsCanceling(true) // Reuse the same processing state for the button
+
+    try {
+      const resRef = doc(db, 'reservations', targetId)
+      await updateDoc(resRef, {
+        isHidden: true,
+        updatedAt: new Date()
+      })
+      
+      setIsReservationModalOpen(false)
+      setSelectedReservation(null)
+      showSnackbar({
+        message: 'Reservation record removed',
+        type: 'success'
+      })
+    } catch (error) {
+      console.error('Error deleting reservation:', error)
+      showSnackbar({
+        message: 'Failed to delete reservation record',
+        type: 'error'
+      })
+    } finally {
+      setIsCanceling(false)
+    }
+  }
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
@@ -375,7 +490,7 @@ function MyReservationsPage() {
                       <div className="space-y-1.5">
                         <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Booking Limits</p>
                         <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 flex items-center gap-2">
-                          <ClockIcon className="h-4 w-4 text-slate-500 shrink-0" />
+                          <HourglassIcon className="h-4 w-4 text-slate-500 shrink-0" />
                           <p className="text-sm font-bold text-slate-700">
                             {selectedRoomInfo.minBookingMins}m - {selectedRoomInfo.maxBookingMins}m
                           </p>
@@ -443,14 +558,27 @@ function MyReservationsPage() {
                   </div>
                 </div>
 
-                <div className="flex pt-2">
+                <div className="flex gap-3 pt-4">
                   <Button
                     type="button"
-                    variant="brand"
+                    variant="outline"
                     onClick={handleCloseModals}
                     className="flex-1 h-12 text-base"
                   >
                     Close
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="brand"
+                    icon={<CalendarIcon className="h-4 w-4" />}
+                    onClick={() => {
+                      setSelectedRoomForSchedule(selectedRoomInfo)
+                      setIsRoomScheduleModalOpen(true)
+                      setIsRoomInfoModalOpen(false)
+                    }}
+                    className="flex-1 h-12 text-base"
+                  >
+                    Room Schedule
                   </Button>
                 </div>
               </div>
@@ -462,6 +590,62 @@ function MyReservationsPage() {
           />
         </div>
       )}
+
+      {/* Room Schedule Timetable Modal */}
+      <ScheduleModal
+        isOpen={isRoomScheduleModalOpen}
+        room={selectedRoomForSchedule}
+        buildingName={
+          Object.values(buildings).find(b => b.id === selectedRoomForSchedule?.buildingId)?.name
+        }
+        hideFilters={true}
+        showWeekCalendar={true}
+        onClose={handleCloseModals}
+        onBack={() => {
+          setIsRoomScheduleModalOpen(false)
+          if (selectedRoomForSchedule) {
+            setSelectedRoomInfo(selectedRoomForSchedule)
+            setIsRoomInfoModalOpen(true)
+          }
+        }}
+        actionButton={null}
+      />
+
+      <ConfirmModal
+        isOpen={!!reservationToCancel}
+        title="Cancel Reservation"
+        message="Are you sure you want to cancel?"
+        confirmText="Yes, Cancel"
+        cancelText="No, Keep It"
+        onConfirm={executeCancelReservation}
+        onCancel={() => setReservationToCancel(null)}
+        isDestructive={true}
+      />
+
+      <ConfirmModal
+        isOpen={!!reservationToDelete}
+        title="Delete Record"
+        message="Are you sure you want to remove?"
+        confirmText="Yes, Delete"
+        cancelText="Cancel"
+        onConfirm={executeDeleteReservation}
+        onCancel={() => setReservationToDelete(null)}
+        isDestructive={true}
+      />
+
+      <ReservationInfoModal
+        isOpen={isReservationModalOpen}
+        onClose={() => {
+          setIsReservationModalOpen(false)
+          setSelectedReservation(null)
+        }}
+        onCancel={handleCancelReservation}
+        onDelete={handleDeleteReservation}
+        isCanceling={isCanceling}
+        reservation={selectedReservation as any}
+        roomName={selectedReservation && rooms[selectedReservation.roomId] ? rooms[selectedReservation.roomId].name : 'Unknown Room'}
+        buildingName={selectedReservation && buildings[selectedReservation.buildingId] ? buildings[selectedReservation.buildingId].name : 'Unknown Building'}
+      />
 
       <div className="space-y-6">
         <SectionHeader 
@@ -517,8 +701,8 @@ function MyReservationsPage() {
             emptyDescription="Try adjusting your filters or make a new reservation."
             emptyIcon={<CalendarIcon className="h-12 w-12" />}
             onRowClick={(res) => {
-              const room = rooms[res.roomId]
-              if (room) handleOpenRoomInfoModal(room)
+              setSelectedReservation(res)
+              setIsReservationModalOpen(true)
             }}
           />
         </div>

@@ -1960,11 +1960,11 @@ function DepartmentsPage() {
             name: userData.fullName || mData.fullName || '',
             email: userData.email || mData.email || '',
             role: (mData.role as any) || 'Instructor',
-            status: (userData.isActive !== false) ? 'Active' : 'Deactivated',
+            status: (userData.isActive === false) ? 'Deactivated' : (mData.status === 'pending' ? 'Pending' : 'Active'),
             department: mData.department || '',
-            joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
+            joinedDate: mData.joinedAt?.toDate ? new Intl.DateTimeFormat('en-US', {
               month: 'short', day: '2-digit', year: 'numeric'
-            }) : '— — — — —',
+            }).format(mData.joinedAt.toDate()) : '— — — — —',
             avatar: userData.profilePicture || '',
           }
         }) as Member[]
@@ -2399,7 +2399,7 @@ function DepartmentsPage() {
     },
     {
       header: 'Status',
-      width: '20%',
+      width: '23%',
       render: (member) => (
         <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
           {member.status}
@@ -2826,7 +2826,6 @@ function DepartmentsPage() {
                 columns={deptMemberColumns}
                 emptyTitle="No members found"
                 emptyDescription="No members assigned to this department yet."
-                emptyIcon={<UsersIcon className="h-12 w-12" />}
               />
             </div>
           </div>

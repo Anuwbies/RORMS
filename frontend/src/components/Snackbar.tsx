@@ -153,7 +153,7 @@ export function Snackbar({
         <button
           type="button"
           onClick={onClose}
-          className="shrink-0 rounded-xl p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors cursor-pointer"
+          className="ml-auto shrink-0 rounded-xl p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors cursor-pointer"
           aria-label="Close notification"
         >
           <CloseIcon className="h-5 w-5" />

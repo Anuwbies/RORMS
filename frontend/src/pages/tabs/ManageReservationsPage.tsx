@@ -610,6 +610,8 @@ function ManageReservationsPage() {
     reservation: Reservation;
     type: 'decline' | 'delete';
   } | null>(null)
+  
+  const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     const unsubRes = onSnapshot(query(collection(db, 'reservations'), orderBy('createdAt', 'desc')), (snapshot) => {
@@ -650,7 +652,7 @@ function ManageReservationsPage() {
         requester: {
           name: user?.fullName || 'Unknown User',
           email: user?.email || 'No Email',
-          avatar: user?.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.fullName || 'U')}&background=random`,
+          avatar: user?.profilePicture || '',
         },
         roomName: room?.name || 'Unknown Room',
         buildingName: building?.name || 'Unknown Building'
@@ -748,11 +750,18 @@ function ManageReservationsPage() {
       width: '30%',
       render: (res) => (
         <div className="flex items-center gap-4">
-          <img
-            src={res.requester?.avatar}
-            alt={res.requester?.name}
-            className="h-10 w-10 rounded-full border border-slate-200 object-cover ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300 shadow-sm"
-          />
+          {res.requester?.avatar && !avatarErrors[res.requester.avatar] ? (
+            <img
+              src={res.requester.avatar}
+              alt={res.requester.name}
+              className="h-10 w-10 rounded-full border border-slate-200 object-cover ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300 shadow-sm"
+              onError={() => setAvatarErrors(prev => ({ ...prev, [res.requester!.avatar!]: true }))}
+            />
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-400 shadow-sm ring-2 ring-transparent group-hover:ring-[var(--brand-color)]/20 transition-all duration-300">
+              <UserIcon className="h-5 w-5" />
+            </div>
+          )}
           <div>
             <p className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{res.requester?.name}</p>
             <p className="text-xs font-medium text-slate-500">{res.requester?.email}</p>

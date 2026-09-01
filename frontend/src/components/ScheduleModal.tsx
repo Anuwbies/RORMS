@@ -73,7 +73,7 @@ function getMonthIndexByName(monthName?: string): number {
   return MONTH_NAMES.findIndex(m => m.startsWith(lower.slice(0, 3)))
 }
 
-function resolveCurrentSemester(academicYear?: AcademicYearData | null, explicitInitialSem?: string): string {
+export function resolveCurrentSemester(academicYear?: AcademicYearData | null, explicitInitialSem?: string): string {
   if (explicitInitialSem) return explicitInitialSem
   if (!academicYear) return '1st Semester'
 
@@ -902,7 +902,10 @@ export function ScheduleModal({
                                           </span>
                                         </div>
                                         <div style={{ marginTop: '4px', borderTop: `1px solid ${borderColor}`, paddingTop: '4px', fontSize: '10px', color: textColor, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937' }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dur: <span style={{ color: '#1f2937' }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
+                                          {isInstructorMode && item.roomId && (
+                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#1f2937', fontWeight: 500 }}>{getRoomName(item.roomId)}</span></div>
+                                          )}
                                         </div>
                                       </div>
                                     )
@@ -1271,7 +1274,10 @@ export function ScheduleModal({
                                       </div>
                                       <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${isApproved ? 'border-emerald-500/20 text-emerald-900/80' : 'border-amber-500/20 text-amber-900/80'
                                         }`}>
-                                        <span className="truncate text-gray-500">Time: <span className="text-gray-700 font-medium">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                        <span className="truncate text-gray-500">Dur: <span className="text-gray-700 font-medium">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                        {isInstructorMode && item.roomId && (
+                                          <span className="truncate text-gray-500">Room: <span className="text-gray-700 font-medium">{getRoomName(item.roomId)}</span></span>
+                                        )}
                                       </div>
                                     </div>
                                   )
@@ -1378,7 +1384,7 @@ export function ScheduleModal({
                                     </div>
                                     <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${isApproved ? 'border-emerald-500/20 text-emerald-900/80' : 'border-amber-500/20 text-amber-900/80'
                                       }`}>
-                                      <span className="truncate text-gray-500">Time: <span className="text-gray-700 font-medium">
+                                      <span className="truncate text-gray-500">Dur: <span className="text-gray-700 font-medium">
                                         {(() => {
                                           const diff = timeToMins(item.endTime) - timeToMins(item.startTime)
                                           if (diff >= 60 && diff % 60 === 0) return `${diff / 60} hr${diff / 60 > 1 ? 's' : ''}`
@@ -1386,6 +1392,9 @@ export function ScheduleModal({
                                           return `${diff} mins`
                                         })()}
                                       </span></span>
+                                      {isInstructorMode && item.roomId && (
+                                        <span className="truncate text-gray-500">Room: <span className="text-gray-700 font-medium">{getRoomName(item.roomId)}</span></span>
+                                      )}
                                     </div>
                                   </div>
                                 )
@@ -1486,9 +1495,9 @@ export function ScheduleModal({
         <div className="bg-gray-50/80 px-7 py-4 border-t border-gray-200 flex items-center justify-between gap-3 shrink-0 rounded-b-2xl relative z-30">
           <div className="text-xs text-gray-500 font-medium">
             {showWeekCalendar ? (
-              <>Showing schedule for <span className="font-bold text-gray-700">{weekInfo.label}</span></>
+              <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester} • {weekInfo.label}</span>
             ) : (
-              <>Showing schedule for <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span></>
+              <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
             )}
           </div>
           <div className="flex items-center gap-3">
