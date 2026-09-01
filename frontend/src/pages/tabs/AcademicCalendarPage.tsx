@@ -3,6 +3,7 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { Button } from '../../components/Button'
+import { TextInput } from '../../components/TextInput'
 import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db } from '../../firebase'
@@ -58,6 +59,8 @@ function AcademicCalendarPage() {
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isPhaseModalOpen, setIsPhaseModalOpen] = useState(false)
   const [editingYearId, setEditingYearId] = useState<string | null>(null)
+  const [yearToDelete, setYearToDelete] = useState<AcademicYear | null>(null)
+  const [isDeletingYear, setIsDeletingYear] = useState(false)
   
   // Manage Phase State
   const [manageYearId, setManageYearId] = useState('')
@@ -82,12 +85,19 @@ function AcademicCalendarPage() {
   const [createError, setCreateError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Real-time listener for academic years
   useEffect(() => {
-    const q = query(collection(db, 'academicYears'), orderBy('createdAt', 'desc'))
+    const q = query(collection(db, 'academicYears'), orderBy('academicYear', 'desc'))
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AcademicYear))
-      setYears(fetched)
+      const yearsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as AcademicYear[]
+      setYears(yearsData)
+    }, (error) => {
+      console.error("Error fetching academic years: ", error)
     })
+
     return () => unsubscribe()
   }, [])
 
@@ -115,35 +125,41 @@ function AcademicCalendarPage() {
     {
       header: 'Academic Year',
       render: (year) => (
-        <span className={`font-bold text-base ${year.isActive ? 'text-emerald-600' : 'text-gray-900'}`}>
+        <span className={`font-bold ${year.isActive ? 'text-[var(--brand-color)]' : 'text-gray-900'}`}>
           {year.academicYear}
         </span>
       )
     },
     {
-      header: '1st Semester',
+      header: '1st Sem Months',
       render: (year) => (
-        <div className="flex items-center gap-2.5">
-          <span className="text-sm font-semibold text-gray-700">
-            {formatShortMonth(year.sem1.startMonth)} - {formatShortMonth(year.sem1.endMonth)}
-          </span>
-          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider border ${phaseClasses[year.sem1.phase] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-            {year.sem1.phase || 'Closed'}
-          </span>
-        </div>
+        <span className="text-gray-600 font-medium">
+          {formatShortMonth(year.sem1.startMonth)} - {formatShortMonth(year.sem1.endMonth)}
+        </span>
       )
     },
     {
-      header: '2nd Semester',
+      header: '1st Sem Phase',
       render: (year) => (
-        <div className="flex items-center gap-2.5">
-          <span className="text-sm font-semibold text-gray-700">
-            {formatShortMonth(year.sem2.startMonth)} - {formatShortMonth(year.sem2.endMonth)}
-          </span>
-          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider border ${phaseClasses[year.sem2.phase] || 'bg-gray-100 text-gray-600 border-gray-200'}`}>
-            {year.sem2.phase || 'Closed'}
-          </span>
-        </div>
+        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold border ${phaseClasses[year.sem1.phase] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+          {year.sem1.phase || 'Not Set'}
+        </span>
+      )
+    },
+    {
+      header: '2nd Sem Months',
+      render: (year) => (
+        <span className="text-gray-600 font-medium">
+          {formatShortMonth(year.sem2.startMonth)} - {formatShortMonth(year.sem2.endMonth)}
+        </span>
+      )
+    },
+    {
+      header: '2nd Sem Phase',
+      render: (year) => (
+        <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold border ${phaseClasses[year.sem2.phase] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+          {year.sem2.phase || 'Not Set'}
+        </span>
       )
     },
     {
@@ -160,7 +176,7 @@ function AcademicCalendarPage() {
           </IconButton>
           <IconButton
             label="Delete School Year"
-            onClick={() => handleDeleteYear(year.id)}
+            onClick={() => setYearToDelete(year)}
             className="h-8 w-8 rounded-lg bg-white text-rose-500 shadow-sm border border-slate-200 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5 transition-all"
           >
             <TrashIcon className="h-4 w-4" />
@@ -170,8 +186,7 @@ function AcademicCalendarPage() {
     }
   ]
 
-  const handleYearChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value
+  const handleYearChange = (val: string) => {
     // If the input was already formatted and user presses backspace/changes it, clear it
     if (newYear.length > 2 && val.length < newYear.length) {
       setNewYear('')
@@ -311,13 +326,16 @@ function AcademicCalendarPage() {
     }
   }
 
-  const handleDeleteYear = async (yearId: string) => {
-    if (window.confirm("Are you sure you want to delete this school year?")) {
-      try {
-        await deleteDoc(doc(db, 'academicYears', yearId))
-      } catch (error) {
-        console.error('Error deleting year:', error)
-      }
+  const confirmDeleteYear = async () => {
+    if (!yearToDelete) return
+    setIsDeletingYear(true)
+    try {
+      await deleteDoc(doc(db, 'academicYears', yearToDelete.id))
+      setYearToDelete(null)
+    } catch (error) {
+      console.error('Error deleting year:', error)
+    } finally {
+      setIsDeletingYear(false)
     }
   }
 
@@ -569,46 +587,35 @@ function AcademicCalendarPage() {
             </div>
           }
         />
+      {/* Add / Edit School Year Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-bold">{editingYearId ? 'Edit School Year' : 'Create New School Year'}</h3>
-                <p className="mt-1 text-sm text-white/80">{editingYearId ? 'Reconfigure the start and end months for this year.' : 'Add a new academic year and configure its semesters.'}</p>
-              </div>
-              <button
-                onClick={() => {
-                  setIsModalOpen(false)
-                  setEditingYearId(null)
-                }}
-                className="text-white/80 hover:text-white transition"
-              >
-                ✕
-              </button>
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
+              <h3 className="text-xl font-bold">{editingYearId ? 'Edit School Year' : 'Create New School Year'}</h3>
+              <p className="mt-1 text-sm text-white/80">{editingYearId ? 'Reconfigure the start and end months for this year.' : 'Add a new academic year and configure its semesters.'}</p>
             </div>
             <form onSubmit={handleCreateYear} className="p-6 space-y-6">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                <label htmlFor="academic-year-input" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                   Academic Year <span className="text-rose-500">*</span>
                 </label>
-                <input
-                  type="text"
+                <TextInput
+                  id="academic-year-input"
                   required
                   disabled={!!editingYearId}
                   placeholder="e.g. Type '25' for 2025 - 2026"
                   value={newYear}
                   onChange={handleYearChange}
-                  className={`w-full rounded-md border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-gray-300 focus:ring-4 focus:ring-gray-50 shadow-sm ${editingYearId ? 'bg-gray-50 cursor-not-allowed text-gray-500' : 'bg-white'}`}
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 {/* 1st Semester Config */}
-                <div className="space-y-4 rounded-md border border-gray-200 bg-gray-100 p-4 shadow-sm">
+                <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-xs">
                   <h4 className="text-sm font-bold text-gray-800">1st Semester</h4>
                   
                   <div>
@@ -626,7 +633,7 @@ function AcademicCalendarPage() {
                 </div>
 
                 {/* 2nd Semester Config */}
-                <div className="space-y-4 rounded-md border border-gray-200 bg-gray-100 p-4 shadow-sm">
+                <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-xs">
                   <h4 className="text-sm font-bold text-gray-800">2nd Semester</h4>
                   
                   <div>
@@ -650,29 +657,27 @@ function AcademicCalendarPage() {
                 </p>
               )}
 
-              <div className="flex items-center gap-4 pt-2">
-                <button
+              <div className="flex items-center gap-3 pt-2">
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => {
                     setIsModalOpen(false)
                     setEditingYearId(null)
                   }}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-50 active:shadow-none"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="brand"
                   disabled={isSubmitting || !/^\d{4}\s*-\s*\d{4}$/.test(newYear.trim())}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-[#7b9d4f]/30 active:shadow-none disabled:opacity-50"
+                  icon={isSubmitting ? <SpinnerIcon className="h-5 w-5 animate-spin" /> : <CheckCircleIcon className="h-5 w-5" />}
+                  className="flex-1"
                 >
-                  {isSubmitting ? (
-                    <SpinnerIcon className="h-5 w-5" />
-                  ) : (
-                    <CheckCircleIcon className="h-5 w-5" />
-                  )}
                   {editingYearId ? 'Save Changes' : 'Create School Year'}
-                </button>
+                </Button>
               </div>
             </form>
           </div>
@@ -683,24 +688,16 @@ function AcademicCalendarPage() {
         </div>
       )}
     
+      {/* Manage Active Year & Phases Modal */}
       {isPhaseModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible relative"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-md flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-bold">Manage Active Year & Phases</h3>
-                <p className="mt-1 text-sm text-white/80">Set the active school year and its semester details.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsPhaseModalOpen(false)}
-                className="text-white/80 hover:text-white transition"
-              >
-                ✕
-              </button>
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
+              <h3 className="text-xl font-bold">Manage Active Year & Phases</h3>
+              <p className="mt-1 text-sm text-white/80">Set the active school year and its semester details.</p>
             </div>
             <form onSubmit={handleSavePhases} className="p-6 space-y-6">
               <div>
@@ -716,7 +713,7 @@ function AcademicCalendarPage() {
 
               <div className="grid grid-cols-2 gap-4">
                 {/* 1st Semester Config */}
-                <div className="space-y-4 rounded-md border border-gray-200 bg-gray-100 p-4 shadow-sm">
+                <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-xs">
                   <h4 className="text-sm font-bold text-gray-800">1st Semester</h4>
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Month</label>
@@ -733,7 +730,7 @@ function AcademicCalendarPage() {
                 </div>
 
                 {/* 2nd Semester Config */}
-                <div className="space-y-4 rounded-md border border-gray-200 bg-gray-100 p-4 shadow-sm">
+                <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-xs">
                   <h4 className="text-sm font-bold text-gray-800">2nd Semester</h4>
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Month</label>
@@ -756,32 +753,91 @@ function AcademicCalendarPage() {
                 </p>
               )}
 
-              <div className="flex items-center gap-4 pt-2">
-                <button
+              <div className="flex items-center gap-3 pt-2">
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => setIsPhaseModalOpen(false)}
-                  className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus:ring-4 focus:ring-gray-50 active:shadow-none"
+                  className="flex-1"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="submit"
+                  variant="brand"
                   disabled={isManageSubmitting || !manageYearId}
-                  className="flex-1 inline-flex items-center justify-center gap-2 rounded-md bg-[var(--brand-color)] py-3 text-sm font-bold text-white shadow-md transition hover:bg-[var(--brand-color-hover)] hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-[#7b9d4f]/30 active:shadow-none disabled:opacity-50"
+                  icon={isManageSubmitting ? <SpinnerIcon className="h-5 w-5 animate-spin" /> : <CheckCircleIcon className="h-5 w-5" />}
+                  className="flex-1"
                 >
-                  {isManageSubmitting ? (
-                    <SpinnerIcon className="h-5 w-5" />
-                  ) : (
-                    <CheckCircleIcon className="h-5 w-5" />
-                  )}
                   Save Settings
-                </button>
+                </Button>
               </div>
             </form>
           </div>
           <div 
             className="absolute inset-0 -z-10" 
             onMouseDown={() => !isManageSubmitting && setIsPhaseModalOpen(false)}
+          />
+        </div>
+      )}
+
+      {/* Delete School Year Confirmation Modal */}
+      {yearToDelete && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <div
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-rose-600 p-6 text-white">
+              <h3 className="text-xl font-bold">Delete School Year</h3>
+              <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this school year?</p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 shrink-0">
+                  <CalendarIcon className="h-7 w-7 text-gray-400" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">A.Y. {yearToDelete.academicYear}</p>
+                  <p className="text-xs font-medium text-gray-500">
+                    {yearToDelete.isActive ? 'Active School Year' : 'Inactive'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
+                <p className="text-xs leading-relaxed text-rose-700">
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently remove this academic year configuration. This action cannot be undone.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setYearToDelete(null)}
+                  disabled={isDeletingYear}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  onClick={confirmDeleteYear}
+                  disabled={isDeletingYear}
+                  className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white shadow-md shadow-rose-600/20 hover:shadow-lg"
+                >
+                  {isDeletingYear ? 'Deleting...' : 'Confirm Delete'}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <div
+            className="absolute inset-0 -z-10"
+            onClick={() => {
+              if (!isDeletingYear) setYearToDelete(null)
+            }}
           />
         </div>
       )}

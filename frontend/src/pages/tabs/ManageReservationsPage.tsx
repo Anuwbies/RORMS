@@ -288,14 +288,14 @@ function ConfirmationModal({ reservation, type, onConfirm, onClose }: Confirmati
             >
               Cancel
             </Button>
-            <button
+            <Button
               type="button"
               onClick={handleConfirm}
               disabled={isProcessing}
-              className="flex-1 rounded-md h-12 text-base font-bold text-white shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed bg-rose-600 enabled:hover:bg-rose-700"
+              className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white shadow-md shadow-rose-600/20 hover:shadow-lg h-12 text-base"
             >
               {isProcessing ? 'Processing...' : (isDecline ? 'Confirm Decline' : 'Confirm Delete')}
-            </button>
+            </Button>
           </div>
         </div>
       </div>

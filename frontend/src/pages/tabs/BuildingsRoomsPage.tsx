@@ -2067,10 +2067,10 @@ function BuildingsRoomsPage() {
       {isBuildingModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div
-            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl"
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
               <h3 className="text-xl font-bold">{editingBuilding ? 'Edit Building' : 'Add Building'}</h3>
               <p className="mt-1 text-sm text-white/80">
                 {editingBuilding ? 'Update building information.' : 'Register a new building in the system.'}
@@ -2149,10 +2149,10 @@ function BuildingsRoomsPage() {
       {isRoomModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div
-            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-visible"
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-xl font-bold">{editingRoom ? 'Edit Room' : 'Add Room'}</h3>
@@ -2717,16 +2717,16 @@ function BuildingsRoomsPage() {
       {isDeleteRoomModalOpen && roomToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div
-            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-3xl">
+            <div className="bg-rose-600 p-6 text-white">
               <h3 className="text-xl font-bold">Delete Room</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this room from the system?</p>
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+              <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 overflow-hidden shrink-0">
                   <img
                     src={roomToDelete.image}
@@ -2741,7 +2741,7 @@ function BuildingsRoomsPage() {
                 </div>
               </div>
 
-              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+              <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
                 <p className="text-xs leading-relaxed text-rose-700">
                   <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this room and all its associated booking history. This action cannot be undone.
                 </p>
@@ -2749,21 +2749,22 @@ function BuildingsRoomsPage() {
 
               <form onSubmit={handleDeleteRoomSubmit} className="space-y-4 pt-2">
                 <div className="flex items-center gap-3">
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={handleCloseDeleteRoomModal}
                     disabled={isDeletingRoom}
-                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                    className="flex-1"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
                     disabled={isDeletingRoom}
-                    className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white shadow-md shadow-rose-600/20 hover:shadow-lg"
                   >
                     {isDeletingRoom ? 'Deleting...' : 'Confirm Delete'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
@@ -2781,16 +2782,16 @@ function BuildingsRoomsPage() {
       {isDeleteBuildingModalOpen && buildingToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div
-            className="w-full max-w-md rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-3xl">
+            <div className="bg-rose-600 p-6 text-white">
               <h3 className="text-xl font-bold">Delete Building</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this building from the system?</p>
             </div>
 
             <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+              <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 shrink-0">
                   <BuildingIcon className="h-7 w-7 text-gray-400" />
                 </div>
@@ -2800,44 +2801,48 @@ function BuildingsRoomsPage() {
                 </div>
               </div>
 
-              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+              <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
                 <p className="text-xs leading-relaxed text-rose-700">
                   <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this building and all rooms associated with it. This action cannot be undone.
                 </p>
               </div>
 
-              <div className="space-y-3 pt-2">
-                <label htmlFor="confirm-building-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500">
-                  To confirm, please type: <span className="text-rose-600">"{buildingToDelete.name}"</span>
-                </label>
-                <input
-                  id="confirm-building-name"
-                  type="text"
-                  value={confirmBuildingName}
-                  onChange={(e) => setConfirmBuildingName(e.target.value)}
-                  placeholder="Enter building name"
-                  className="w-full rounded-md border border-gray-200 px-4 py-2.5 text-sm text-gray-900 outline-none transition focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-sm"
-                  autoFocus
-                />
-              </div>
+              <form onSubmit={handleDeleteBuildingSubmit} className="space-y-4">
+                <div className="space-y-3">
+                  <div>
+                    <label htmlFor="confirm-building-name" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-1">
+                      To confirm, please type:
+                    </label>
+                    <p className="text-sm font-bold text-rose-600 mb-2">
+                      "{buildingToDelete.name}"
+                    </p>
+                    <TextInput
+                      id="confirm-building-name"
+                      value={confirmBuildingName}
+                      onChange={(val) => setConfirmBuildingName(val)}
+                      placeholder="Enter building name"
+                      autoFocus
+                    />
+                  </div>
+                </div>
 
-              <form onSubmit={handleDeleteBuildingSubmit} className="space-y-4 pt-2">
-                <div className="flex items-center gap-3">
-                  <button
+                <div className="flex items-center gap-3 pt-2">
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={handleCloseDeleteBuildingModal}
                     disabled={isDeletingBuilding}
-                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                    className="flex-1"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
                     disabled={isDeletingBuilding || confirmBuildingName !== buildingToDelete.name}
-                    className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white shadow-md shadow-rose-600/20 hover:shadow-lg"
                   >
                     {isDeletingBuilding ? 'Deleting...' : 'Confirm Delete'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>

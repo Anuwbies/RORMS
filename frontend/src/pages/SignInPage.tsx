@@ -18,11 +18,9 @@ type TabKey = 'home' | 'about' | 'contact'
 
 interface SignInPageProps {
   onSignIn: () => void
-  onNavigateToSignup?: () => void
-  onNavigateToVerification?: () => void
 }
 
-function SignInPage({ onSignIn, onNavigateToSignup, onNavigateToVerification }: SignInPageProps) {
+function SignInPage({ onSignIn }: SignInPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [activeTab, setActiveTab] = useState<TabKey>('home')
   const [email, setEmail] = useState('')
@@ -145,7 +143,7 @@ function SignInPage({ onSignIn, onNavigateToSignup, onNavigateToVerification }: 
         </nav>
 
         <div className="relative flex w-full min-h-0 flex-1 items-stretch">
-          <div className="h-full w-full rounded-3xl border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
+          <div className="h-full w-full rounded-2xl border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
             <InfoTabContent activeTab={activeTab} />
           </div>
         </div>
@@ -155,7 +153,7 @@ function SignInPage({ onSignIn, onNavigateToSignup, onNavigateToVerification }: 
         <div aria-hidden className="pointer-events-none absolute -top-40 -right-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
         <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
 
-        <div className="relative w-full max-w-md animate-in rounded-3xl border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
+        <div className="relative w-full max-w-md animate-in rounded-2xl border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
           <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-color)]">
             Sign In
           </p>
@@ -285,36 +283,6 @@ function SignInPage({ onSignIn, onNavigateToSignup, onNavigateToVerification }: 
               {loading ? 'Signing in...' : 'Sign in'}
             </Button>
           </form>
-
-          {(onNavigateToSignup || onNavigateToVerification) && (
-            <div className="mt-8 pt-6 border-t border-gray-100">
-              <p className="text-[11px] text-center font-bold text-gray-400 uppercase tracking-widest mb-3">
-                Page Testing & Preview
-              </p>
-              <div className="grid grid-cols-2 gap-2.5">
-                {onNavigateToSignup && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={onNavigateToSignup}
-                    className="!h-9 !text-xs !rounded-lg !font-semibold"
-                  >
-                    Test Sign Up
-                  </Button>
-                )}
-                {onNavigateToVerification && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={onNavigateToVerification}
-                    className="!h-9 !text-xs !rounded-lg !font-semibold"
-                  >
-                    Test Verification
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
 
           <p className="mt-8 text-center text-xs font-medium text-gray-400">
             &copy; 2026 RORMS &middot; PHINMA Education

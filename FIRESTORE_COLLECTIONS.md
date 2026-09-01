@@ -1,7 +1,7 @@
 # Firestore Collections
 
 ## `users`
-Stores user profile information and system roles.
+Stores user account profile information (roles and departments are maintained in `memberships`).
 
 - **Document ID**: Firebase Auth `uid`
 - **Fields**:
@@ -14,13 +14,14 @@ Stores user profile information and system roles.
   - `isActive`: boolean (Whether the account is active) | **Default: true**
 
 ## `invitations`
-Tracks secure, role-based invites for new members.
+Tracks secure onboarding invitations and activation links for members.
 
 - **Document ID**: Unique Token (e.g., auto-generated ID)
 - **Fields**:
   - `email`: string (The invited email address)
-  - `role`: string (Admin, Registrar, Dean, Program Head, or Instructor)
-  - `status`: string (`"pending"`, `"accepted"`, or `"expired"`) | **Default: "pending"**
+  - `membershipId`: string (Reference to the pre-created `memberships` document ID)
+  - `status`: string (`"pending"`, `"accepted"`, or `"revoked"`) | **Default: "pending"**
+  - `isReactivation`: boolean (Optional flag indicating a reactivation invitation)
   - `invitedBy`: string (UID of the user who sent the invite)
   - `createdAt`: timestamp (Date the invite was created) | **Default: serverTimestamp()**
   - `expiresAt`: timestamp (Expiration date)
@@ -98,12 +99,16 @@ Centralized inventory of all campus rooms and their real-time status.
 ## `memberships`
 Tracks the association between users and departments.
 
-- **Document ID**: Auto-generated ID (or a composite like `userId_departmentCode`)
+- **Document ID**: Auto-generated ID (or a composite like `userId_department`)
 - **Fields**:
-  - `userId`: string (Reference to the user's UID)
-  - `departmentCode`: string (Reference to the department's unique code)
-  - `role`: string (User's role within this department: Admin, Registrar, Dean, Program Head, or Instructor)
-  - `joinedAt`: timestamp | **Default: serverTimestamp()**
+  - `userId`: string (Reference to the user's UID; empty string for pending invited users)
+  - `fullName`: string (User's full name)
+  - `email`: string (User's email address)
+  - `department`: string (Reference to the department's code, or "Administrative Office" for Admin, "Registrar's Office" for Registrar)
+  - `role`: string (User's role: Admin, Registrar, Dean, Program Head, or Instructor)
+  - `status`: string (`"accepted"`, `"pending"`, `"declined"`) | **Default: "pending" on invitation, "accepted" on signup/activation**
+  - `joinedAt`: timestamp | string | **Default: "" on invitation, serverTimestamp() on acceptance**
+  - `createdAt`: timestamp | **Default: serverTimestamp()**
 
 ## `reservations`
 Manages room reservation requests and their approval status.

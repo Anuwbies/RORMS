@@ -105,8 +105,8 @@ export function BuildingBrowser({
   }, [buildings, searchTerm, selectedStatuses, selectedBuildings])
 
   return (
-    <div className="rounded-3xl border border-gray-200 bg-white shadow-sm overflow-visible flex flex-col w-full animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
-      <div className="flex flex-col lg:flex-row items-center justify-between gap-4 w-full relative z-20 p-4 bg-white rounded-t-3xl border-b border-gray-200">
+    <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-visible flex flex-col w-full animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
+      <div className="flex flex-col lg:flex-row items-center justify-between gap-4 w-full relative z-20 p-4 bg-white rounded-t-2xl border-b border-gray-200">
         <div className="flex items-center gap-3 w-full flex-1 flex-col lg:flex-row">
           <div className="relative w-full lg:max-w-xl">
             <SearchInput
@@ -150,13 +150,13 @@ export function BuildingBrowser({
 
       <div className="flex flex-col">
         {isLoading ? (
-          <div className="p-16 text-center bg-gray-50/50 rounded-b-3xl flex flex-col items-center justify-center gap-3">
+          <div className="p-16 text-center bg-gray-50/50 rounded-b-2xl flex flex-col items-center justify-center gap-3">
             <SpinnerIcon className="h-8 w-8 text-[var(--brand-color)]" />
             <p className="text-base font-bold text-gray-700">Loading data...</p>
             <p className="text-xs text-gray-400">Please wait while information is retrieved.</p>
           </div>
         ) : filteredBuildings.length === 0 ? (
-          <div className="p-16 text-center bg-gray-50/50 rounded-b-3xl">
+          <div className="p-16 text-center bg-gray-50/50 rounded-b-2xl">
             <p className="text-lg font-semibold text-[var(--brand-color)]">
               No matching buildings or rooms
             </p>

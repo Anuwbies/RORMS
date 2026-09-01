@@ -1,5 +1,5 @@
 export type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Program Head' | 'Instructor'
-export type MemberStatus = 'Active' | 'Inactive' | 'Pending'
+export type MemberStatus = 'Active' | 'Deactivated' | 'Pending'
 
 export interface Department {
   id: string
@@ -19,4 +19,5 @@ export interface Member {
   joinedDate: string
   avatar: string
   membershipId?: string
+  isReactivation?: boolean
 }

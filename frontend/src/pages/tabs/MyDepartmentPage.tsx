@@ -13,7 +13,7 @@ import { SummaryCard } from '../../components/SummaryCard'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, query, where, onSnapshot, doc, updateDoc, limit, getDocs } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, doc, updateDoc, limit, getDocs, writeBatch, serverTimestamp } from 'firebase/firestore'
 
 interface Member {
   id: string
@@ -39,7 +39,7 @@ const roleClasses: Record<string, string> = {
 
 const statusClasses: Record<string, string> = {
   Active: 'bg-emerald-100 text-emerald-700',
-  Inactive: 'bg-rose-100 text-rose-700',
+  Deactivated: 'bg-rose-100 text-rose-700',
   Pending: 'bg-amber-100 text-amber-700',
 }
 
@@ -76,6 +76,9 @@ function MyDepartmentPage() {
 
   const [currentUserData, setCurrentUserData] = useState<any>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
+  const [currentUserMembership, setCurrentUserMembership] = useState<{ id: string; status?: string; role?: string; department?: string; joinedAt?: any } | null>(null)
+  const [isAcceptingInvite, setIsAcceptingInvite] = useState(false)
+  const [isDecliningInvite, setIsDecliningInvite] = useState(false)
   const [departmentInfo, setDepartmentInfo] = useState<{ id: string; name: string; code: string; logo: string } | null>(null)
   const [logoError, setLogoError] = useState(false)
   const [members, setMembers] = useState<Member[]>([])
@@ -112,10 +115,12 @@ function MyDepartmentPage() {
         const membershipQuery = query(collection(db, 'memberships'), where('userId', '==', user.uid), limit(1))
         unsubscribeMemberships = onSnapshot(membershipQuery, (mSnap) => {
           if (!mSnap.empty) {
-            const mData = mSnap.docs[0].data()
-            const deptCode = mData.departmentCode
+            const mDoc = mSnap.docs[0]
+            const mData = mDoc.data()
+            const deptCode = mData.department
             const role = mData.role
             setCurrentUserRole(role || '')
+            setCurrentUserMembership({ id: mDoc.id, ...mData })
 
             if (deptCode) {
               // 3. Fetch department details
@@ -134,32 +139,47 @@ function MyDepartmentPage() {
               })
 
               // 4. Fetch all memberships for this department
-              const deptMembershipsQuery = query(collection(db, 'memberships'), where('departmentCode', '==', deptCode))
+              const allMembershipsQuery = collection(db, 'memberships')
 
               // 5. Fetch all users to join data
               unsubscribeAllUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
                 const usersMap = new Map()
                 usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
 
-                onSnapshot(deptMembershipsQuery, (deptMSnap) => {
-                  const fetchedMembers = deptMSnap.docs.map(mDoc => {
-                    const memData = mDoc.data()
-                    const userData = usersMap.get(memData.userId) || {}
-                    return {
-                      id: memData.userId,
-                      membershipId: mDoc.id,
-                      name: userData.fullName || 'No Name',
-                      email: userData.email || '',
-                      role: memData.role || 'Instructor',
-                      status: userData.isActive === false ? 'Inactive' : 'Active',
-                      department: memData.departmentCode || '',
-                      joinedDate: memData.joinedAt?.toDate ?
-                        new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(memData.joinedAt.toDate()) :
-                        'N/A',
-                      avatar: userData.profilePicture || '',
-                      joinedAt: memData.joinedAt?.toDate ? memData.joinedAt.toDate() : null
-                    }
-                  })
+                onSnapshot(allMembershipsQuery, (deptMSnap) => {
+                  const fetchedMembers = deptMSnap.docs
+                    .map(mDoc => ({ id: mDoc.id, ...mDoc.data() }))
+                    .filter((memData: any) => {
+                      const isTargetDept = memData.department === deptCode
+                      const hasRegisteredUser = Boolean(memData.userId && usersMap.has(memData.userId))
+                      return isTargetDept && hasRegisteredUser
+                    })
+                    .map((memData: any) => {
+                      const userData = usersMap.get(memData.userId) || {}
+                      const dateObj = memData.joinedAt?.toDate ? memData.joinedAt.toDate() : null
+                      
+                      let computedStatus = 'Active'
+                      if (userData.isActive === false) {
+                        computedStatus = 'Deactivated'
+                      } else if (memData.status === 'pending') {
+                        computedStatus = 'Pending'
+                      }
+
+                      return {
+                        id: memData.userId,
+                        membershipId: memData.id,
+                        name: userData.fullName || memData.fullName || '',
+                        email: userData.email || memData.email || '',
+                        role: memData.role || 'Instructor',
+                        status: computedStatus,
+                        department: memData.department || '',
+                        joinedDate: dateObj ?
+                          new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(dateObj) :
+                          '— — — — —',
+                        avatar: userData.profilePicture || '',
+                        joinedAt: dateObj
+                      }
+                    })
                   setMembers(fetchedMembers)
                   setLoading(false)
                 })
@@ -199,8 +219,7 @@ function MyDepartmentPage() {
 
     const q = query(
       collection(db, 'memberships'),
-      where('role', '==', 'Instructor'),
-      where('departmentCode', '==', '')
+      where('role', '==', 'Instructor')
     )
 
     const unsubscribe = onSnapshot(collection(db, 'users'), (usersSnap) => {
@@ -208,24 +227,32 @@ function MyDepartmentPage() {
       usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
 
       onSnapshot(q, (snapshot) => {
-        const instructors = snapshot.docs.map(doc => {
-          const memData = doc.data()
-          const userData = usersMap.get(memData.userId) || {}
-          return {
-            id: memData.userId,
-            membershipId: doc.id,
-            name: userData.fullName || 'No Name',
-            email: userData.email || '',
-            role: memData.role || 'Instructor',
-            status: userData.isActive === false ? 'Inactive' : 'Active',
-            department: memData.departmentCode || '',
-            joinedDate: memData.joinedAt?.toDate ?
-              new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(memData.joinedAt.toDate()) :
-              'N/A',
-            avatar: userData.profilePicture || '',
-            joinedAt: memData.joinedAt?.toDate ? memData.joinedAt.toDate() : null
-          }
-        })
+        const instructors = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter((memData: any) => {
+            const hasNoDept = !memData.department
+            const hasRegisteredUser = Boolean(memData.userId && usersMap.has(memData.userId))
+            const isActive = usersMap.get(memData.userId)?.isActive !== false
+            return hasNoDept && hasRegisteredUser && isActive
+          })
+          .map((memData: any) => {
+            const userData = usersMap.get(memData.userId) || {}
+            const dateObj = memData.joinedAt?.toDate ? memData.joinedAt.toDate() : null
+            return {
+              id: memData.userId,
+              membershipId: memData.id,
+              name: userData.fullName || memData.fullName || '',
+              email: userData.email || memData.email || '',
+              role: memData.role || 'Instructor',
+              status: userData.isActive === false ? 'Deactivated' : 'Active',
+              department: memData.department || '',
+              joinedDate: dateObj ?
+                new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(dateObj) :
+                '— — — — —',
+              avatar: userData.profilePicture || '',
+              joinedAt: dateObj
+            }
+          })
         setAvailableInstructors(instructors)
       })
     })
@@ -308,6 +335,62 @@ function MyDepartmentPage() {
       return a.name.localeCompare(b.name)
     })
 
+  const handleAcceptInvitation = async () => {
+    if (!currentUserMembership?.id) return
+    setIsAcceptingInvite(true)
+    try {
+      const batch = writeBatch(db)
+      const memRef = doc(db, 'memberships', currentUserMembership.id)
+      batch.update(memRef, {
+        status: 'accepted',
+        joinedAt: serverTimestamp()
+      })
+
+      if (departmentInfo?.id) {
+        const deptRef = doc(db, 'departments', departmentInfo.id)
+        if (currentUserRole === 'Dean') {
+          batch.update(deptRef, { dean: currentUserData?.fullName || '' })
+        } else if (currentUserRole === 'Program Head') {
+          batch.update(deptRef, { programHead: currentUserData?.fullName || '' })
+        }
+      }
+
+      await batch.commit()
+    } catch (err) {
+      console.error('Error accepting department invitation:', err)
+    } finally {
+      setIsAcceptingInvite(false)
+    }
+  }
+
+  const handleDeclineInvitation = async () => {
+    if (!currentUserMembership?.id) return
+    setIsDecliningInvite(true)
+    try {
+      const batch = writeBatch(db)
+      const memRef = doc(db, 'memberships', currentUserMembership.id)
+      batch.update(memRef, {
+        status: 'declined',
+        department: ''
+      })
+
+      if (departmentInfo?.id) {
+        const deptRef = doc(db, 'departments', departmentInfo.id)
+        if (currentUserRole === 'Dean') {
+          batch.update(deptRef, { dean: '' })
+        } else if (currentUserRole === 'Program Head') {
+          batch.update(deptRef, { programHead: '' })
+        }
+      }
+
+      await batch.commit()
+    } catch (err) {
+      console.error('Error declining department invitation:', err)
+    } finally {
+      setIsDecliningInvite(false)
+    }
+  }
+
   const toggleInstructorSelection = (id: string) => {
     setSelectedInstructorIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
@@ -326,8 +409,9 @@ function MyDepartmentPage() {
           const mId = (i as any).membershipId
           if (mId) {
             return updateDoc(doc(db, 'memberships', mId), {
-              departmentCode: departmentInfo.code,
-              joinedAt: new Date()
+              department: departmentInfo.code,
+              status: 'pending',
+              joinedAt: ''
             })
           }
           return Promise.resolve()
@@ -360,21 +444,18 @@ function MyDepartmentPage() {
     try {
       const mId = (memberToRemove as any).membershipId
       if (mId) {
-        const membershipUpdate = updateDoc(doc(db, 'memberships', mId), {
-          departmentCode: '',
-          joinedAt: new Date()
+        await updateDoc(doc(db, 'memberships', mId), {
+          department: '',
+          status: '',
+          joinedAt: ''
         })
 
-        const scheduleQuery = query(collection(db, 'schedule'), where('instructorId', '==', mId))
-        const scheduleSnapshot = await getDocs(scheduleQuery)
-
-        const scheduleUpdates = scheduleSnapshot.docs.map(scheduleDoc =>
-          updateDoc(doc(db, 'schedule', scheduleDoc.id), {
-            instructorId: null
-          })
-        )
-
-        await Promise.all([membershipUpdate, ...scheduleUpdates])
+        if (memberToRemove.role === 'Program Head' && departmentInfo?.id) {
+          await updateDoc(doc(db, 'departments', departmentInfo.id), {
+            programHead: '',
+            updatedAt: serverTimestamp()
+          }).catch(console.error)
+        }
       }
       setIsRemoveModalOpen(false)
       setMemberToRemove(null)
@@ -481,16 +562,19 @@ function MyDepartmentPage() {
         header: 'Role',
         width: '23%',
         render: (member) => (
-          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
-            {member.role}
-          </span>
+          <div className={`flex items-center gap-2 ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
+            <div className="h-2 w-2 rounded-full bg-current" />
+            <span className="text-[0.7rem] font-bold uppercase tracking-widest">
+              {member.role}
+            </span>
+          </div>
         )
       },
       {
         header: 'Status',
         width: '23%',
         render: (member) => (
-          <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
+          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
             {member.status}
           </span>
         )
@@ -717,14 +801,7 @@ function MyDepartmentPage() {
             className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl relative">
-              <button
-                onClick={() => !isAdding && setIsAddModalOpen(false)}
-                disabled={isAdding}
-                className={`absolute right-4 top-4 text-white/70 hover:text-white transition-colors ${isAdding ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                <PlusIcon className="h-6 w-6 rotate-45" />
-              </button>
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
               <h3 className="text-xl font-bold">Add Instructors</h3>
               <p className="mt-1 text-sm text-white/80">Select instructors to add to the {departmentInfo?.code || 'your'} department.</p>
             </div>
@@ -817,6 +894,7 @@ function MyDepartmentPage() {
           title="My Department"
           description="Overview of your department's members, rooms, and activity."
         />
+
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 mb-6">
           {(() => {
             const totalMembers = members.length;
@@ -923,68 +1001,115 @@ function MyDepartmentPage() {
           })()}
         </div>
 
-
-
-        <DataTable<Member>
-          data={filteredMembers}
-          columns={memberColumns}
-          onRowClick={handleRowClick}
-          searchPlaceholder="Search members..."
-          searchValue={searchTerm}
-          onSearchChange={setSearchTerm}
-          filters={
-            <FilterDropdown
-              groups={[
-                {
-                  id: 'role',
-                  title: 'Role',
-                  options: ['Dean', 'Program Head', 'Instructor'],
-                  selectedValues: selectedRoles,
-                  onChange: setSelectedRoles
-                },
-                {
-                  id: 'status',
-                  title: 'Status',
-                  options: ['Active', 'Inactive', 'Pending'],
-                  selectedValues: selectedStatuses,
-                  onChange: setSelectedStatuses
-                }
-              ]}
-              onClearAll={() => {
-                setSelectedRoles([])
-                setSelectedStatuses([])
-              }}
-            />
-          }
-          emptyTitle={loading ? "Loading..." : "No members found"}
-          emptyDescription={loading ? 'Loading members...' : 'No members found matching your search.'}
-          primaryAction={
-            <div className="flex gap-2">
-              {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head') && (
+        {/* Pending Department Invitation Banner */}
+        {currentUserMembership?.status === 'pending' && (
+          <div className="relative overflow-hidden rounded-2xl border-2 border-amber-300/80 bg-gradient-to-r from-amber-50/90 via-amber-50/50 to-emerald-50/60 p-6 shadow-lg shadow-amber-900/5 animate-in fade-in slide-in-from-top-4 duration-500">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center rounded-md bg-amber-200/80 px-2.5 py-0.5 text-[0.65rem] font-black uppercase tracking-wider text-amber-900">
+                    Pending Department Invitation
+                  </span>
+                </div>
+                <h3 className="text-lg font-bold text-slate-900">
+                  You've been invited to join the {departmentInfo?.name || departmentInfo?.code || 'this'} Department
+                </h3>
+                <p className="text-xs font-medium text-slate-600 max-w-2xl leading-relaxed">
+                  Accept this invitation to confirm your membership and access department schedules.
+                </p>
+              </div>
+              <div className="flex items-center gap-3 shrink-0 w-full md:w-auto">
                 <Button
                   type="button"
                   variant="outline"
-                  icon={<CalendarIcon className="h-5 w-5" />}
-                  onClick={() => {
-                    const active = academicYears.find((y: any) => y.isActive)
-                    if (active) setSelectedAcademicYear(active)
-                    setIsSchoolYearModalOpen(true)
-                  }}
+                  disabled={isAcceptingInvite || isDecliningInvite}
+                  onClick={handleDeclineInvitation}
+                  className="flex-1 md:flex-initial !text-xs !font-bold"
                 >
-                  Manage Schedule
+                  {isDecliningInvite ? 'Declining...' : 'Decline'}
                 </Button>
-              )}
-              <Button
-                type="button"
-                variant="brand"
-                icon={<PlusIcon className="h-5 w-5" />}
-                onClick={() => setIsAddModalOpen(true)}
-              >
-                Add Instructor
-              </Button>
+                <Button
+                  type="button"
+                  variant="brand"
+                  disabled={isAcceptingInvite || isDecliningInvite}
+                  onClick={handleAcceptInvitation}
+                  icon={isAcceptingInvite ? (
+                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  ) : (
+                    <CheckIcon className="h-4 w-4" />
+                  )}
+                  className="flex-1 md:flex-initial !text-xs !font-bold !shadow-md"
+                >
+                  {isAcceptingInvite ? 'Accepting...' : 'Accept Invitation'}
+                </Button>
+              </div>
             </div>
-          }
-        />
+          </div>
+        )}
+
+        {/* Members DataTable (hidden while department membership is pending) */}
+        {currentUserMembership?.status !== 'pending' && (
+          <DataTable<Member>
+            data={filteredMembers}
+            columns={memberColumns}
+            onRowClick={handleRowClick}
+            searchPlaceholder="Search members..."
+            searchValue={searchTerm}
+            onSearchChange={setSearchTerm}
+            filters={
+              <FilterDropdown
+                groups={[
+                  {
+                    id: 'role',
+                    title: 'Role',
+                    options: ['Dean', 'Program Head', 'Instructor'],
+                    selectedValues: selectedRoles,
+                    onChange: setSelectedRoles
+                  },
+                  {
+                    id: 'status',
+                    title: 'Status',
+                    options: ['Active', 'Deactivated', 'Pending'],
+                    selectedValues: selectedStatuses,
+                    onChange: setSelectedStatuses
+                  }
+                ]}
+                onClearAll={() => {
+                  setSelectedRoles([])
+                  setSelectedStatuses([])
+                }}
+              />
+            }
+            emptyTitle={loading ? "Loading..." : "No members found"}
+            emptyDescription={loading ? 'Loading members...' : 'No members found matching your search.'}
+            primaryAction={
+              <div className="flex gap-2">
+                {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head') && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    icon={<CalendarIcon className="h-5 w-5" />}
+                    onClick={() => {
+                      const active = academicYears.find((y: any) => y.isActive)
+                      if (active) setSelectedAcademicYear(active)
+                      setIsSchoolYearModalOpen(true)
+                    }}
+                  >
+                    Manage Schedule
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="brand"
+                  icon={<PlusIcon className="h-5 w-5" />}
+                  onClick={() => setIsAddModalOpen(true)}
+                >
+                  Add Instructor
+                </Button>
+              </div>
+            }
+          />
+        )}
       </div>
       {/* Edit Member Modal */}
       {editingMember && (

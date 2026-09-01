@@ -609,10 +609,10 @@ function ReserveRoomPage() {
       {isFindRoomModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-visible"
+            className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
               <h3 className="text-xl font-bold leading-tight">Find a Room</h3>
               <p className="text-xs text-white/80 font-medium mt-0.5">Specify your requirements to find the perfect room</p>
             </div>
@@ -826,7 +826,7 @@ function ReserveRoomPage() {
       {isSearchResultsModalOpen && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-[80vw] h-[80vh] flex flex-col rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
+            className="w-[80vw] h-[80vh] flex flex-col rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white shrink-0">
@@ -1016,10 +1016,10 @@ function ReserveRoomPage() {
       {isReservationModalOpen && selectedRoomInfo && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-visible"
+            className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-3xl">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
               <h3 className="text-xl font-bold leading-tight">Reserve {selectedRoomInfo.name}</h3>
               <p className="text-xs text-white/80 font-medium mt-0.5">Fill in the details to book this room</p>
             </div>
@@ -1399,7 +1399,7 @@ function ReserveRoomPage() {
       {successDetails && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white p-6 md:p-7 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
+            className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 md:p-7 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Top Header: Checkmark on the left */}

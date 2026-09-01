@@ -110,7 +110,7 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--brand-surface)] p-4">
-      <div className="w-full max-w-md animate-in overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-2xl">
+      <div className="w-full max-w-md animate-in overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
         <div className="relative overflow-hidden bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-8 text-white text-center">
           <div aria-hidden className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-white/10"></div>
           <div aria-hidden className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-white/10"></div>

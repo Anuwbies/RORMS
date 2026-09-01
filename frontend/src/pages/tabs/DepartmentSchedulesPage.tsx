@@ -64,7 +64,7 @@ const roleClasses: Record<string, string> = {
 
 const statusClasses: Record<string, string> = {
   Active: 'bg-emerald-100 text-emerald-700',
-  Inactive: 'bg-rose-100 text-rose-700',
+  Deactivated: 'bg-rose-100 text-rose-700',
   Pending: 'bg-amber-100 text-amber-700',
 }
 
@@ -158,9 +158,16 @@ export function DepartmentSchedulesPage() {
       setDepartments(fetched)
       if (fetched.length > 0) {
         setSelectedDepartment(prev => {
-          if (!prev) return fetched[0]
-          const stillExists = fetched.find(d => d.id === prev.id)
-          return stillExists || fetched[0]
+          if (prev) {
+            const stillExists = fetched.find(d => d.id === prev.id)
+            if (stillExists) return stillExists
+          }
+          const savedCode = localStorage.getItem('rorms_selected_department_code')
+          if (savedCode) {
+            const savedDept = fetched.find(d => d.code === savedCode)
+            if (savedDept) return savedDept
+          }
+          return fetched[0]
         })
       }
     })
@@ -175,21 +182,8 @@ export function DepartmentSchedulesPage() {
       return
     }
 
-    setLoadingMembers(true)
-    const qMembers = query(
-      collection(db, 'memberships'),
-      where('departmentCode', '==', selectedDepartment.code)
-    )
-
-    const unsubMembers = onSnapshot(qMembers, (snapMembers) => {
-      const memberDocs = snapMembers.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
-      const userIds = Array.from(new Set(memberDocs.map(m => m.userId).filter(Boolean)))
-
-      if (userIds.length === 0) {
-        setMembers([])
-        setLoadingMembers(false)
-        return
-      }
+    const unsubMembers = onSnapshot(collection(db, 'memberships'), (snapMembers) => {
+      const allMemberDocs = snapMembers.docs.map(d => ({ id: d.id, ...d.data() }))
 
       const unsubUsers = onSnapshot(collection(db, 'users'), (snapUsers) => {
         const usersMap = new Map()
@@ -197,23 +191,38 @@ export function DepartmentSchedulesPage() {
           usersMap.set(doc.id, { id: doc.id, ...doc.data() })
         })
 
-        const fetched: Member[] = memberDocs.map(data => {
-          const u = usersMap.get(data.userId) || {}
-          return {
-            id: data.userId || data.id,
-            membershipId: data.id,
-            name: u.fullName || 'No Name',
-            email: u.email || '',
-            role: data.role || 'Instructor',
-            status: u.isActive === false ? 'Inactive' : 'Active',
-            department: data.departmentCode || '',
-            avatar: u.profilePicture || '',
-            joinedDate: data.joinedAt?.toDate
-              ? new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(data.joinedAt.toDate())
-              : 'N/A',
-            joinedAt: data.joinedAt?.toDate ? data.joinedAt.toDate() : null
-          } as Member
-        })
+        const fetched: Member[] = allMemberDocs
+          .filter((d: any) => {
+            const isTargetDept = d.department === selectedDepartment.code
+            const hasRegisteredUser = Boolean(d.userId && usersMap.has(d.userId))
+            return isTargetDept && hasRegisteredUser
+          })
+          .map((data: any) => {
+            const u = usersMap.get(data.userId) || {}
+            const dateObj = data.joinedAt?.toDate ? data.joinedAt.toDate() : null
+            
+            let computedStatus = 'Active'
+            if (u.isActive === false) {
+              computedStatus = 'Deactivated'
+            } else if (data.status === 'pending') {
+              computedStatus = 'Pending'
+            }
+
+            return {
+              id: data.userId || data.id,
+              membershipId: data.id,
+              name: u.fullName || data.fullName || '',
+              email: u.email || data.email || '',
+              role: data.role || 'Instructor',
+              status: computedStatus,
+              department: data.department || '',
+              avatar: u.profilePicture || '',
+              joinedDate: dateObj
+                ? new Intl.DateTimeFormat('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).format(dateObj)
+                : '— — — — —',
+              joinedAt: dateObj
+            } as Member
+          })
 
         setMembers(fetched)
         setLoadingMembers(false)
@@ -233,19 +242,25 @@ export function DepartmentSchedulesPage() {
 
   // Filtered members for DataTable
   const filteredMembers = useMemo(() => {
-    return members.filter(member => {
-      if (selectedRoles.length > 0 && !selectedRoles.includes(member.role)) return false
-      if (selectedStatuses.length > 0 && !selectedStatuses.includes(member.status)) return false
+    return members
+      .filter(member => {
+        if (selectedRoles.length > 0 && !selectedRoles.includes(member.role)) return false
+        if (selectedStatuses.length > 0 && !selectedStatuses.includes(member.status)) return false
 
-      if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase()
-        const match = [member.name, member.email, member.role, member.status].some(
-          val => val?.toLowerCase().includes(term)
-        )
-        if (!match) return false
-      }
-      return true
-    })
+        if (searchTerm.trim()) {
+          const term = searchTerm.toLowerCase()
+          const match = [member.name, member.email, member.role, member.status].some(
+            val => val?.toLowerCase().includes(term)
+          )
+          if (!match) return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        if (a.role === 'Dean') return -1
+        if (b.role === 'Dean') return 1
+        return a.name.localeCompare(b.name)
+      })
   }, [members, selectedRoles, selectedStatuses, searchTerm])
 
   // Member columns for DataTable
@@ -288,16 +303,19 @@ export function DepartmentSchedulesPage() {
       header: 'Role',
       width: '23%',
       render: (member) => (
-        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${roleClasses[member.role] || 'bg-gray-100 text-gray-700'}`}>
-          {member.role}
-        </span>
+        <div className={`flex items-center gap-2 ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
+          <div className="h-2 w-2 rounded-full bg-current" />
+          <span className="text-[0.7rem] font-bold uppercase tracking-widest">
+            {member.role}
+          </span>
+        </div>
       )
     },
     {
       header: 'Status',
       width: '23%',
       render: (member) => (
-        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
+        <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
           {member.status}
         </span>
       )
@@ -412,7 +430,7 @@ export function DepartmentSchedulesPage() {
                   {
                     id: 'status',
                     title: 'Status',
-                    options: ['Active', 'Inactive', 'Pending'],
+                    options: ['Active', 'Deactivated', 'Pending'],
                     selectedValues: selectedStatuses,
                     onChange: setSelectedStatuses
                   }
@@ -432,7 +450,10 @@ export function DepartmentSchedulesPage() {
                   value={selectedDepartment?.code || ''}
                   onChange={(code) => {
                     const dept = departments.find(d => d.code === code)
-                    if (dept) setSelectedDepartment(dept)
+                    if (dept) {
+                      setSelectedDepartment(dept)
+                      localStorage.setItem('rorms_selected_department_code', code)
+                    }
                   }}
                   className="w-full sm:w-34 min-w-[12rem]"
                 />

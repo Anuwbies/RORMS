@@ -1694,7 +1694,7 @@ export function AnthillColonyQueue({ members, users, invites }: AnthillColonyQue
         }}
       >
         <div
-          className="w-[1200px] h-[800px] relative shrink-0 shadow-2xl rounded-3xl overflow-hidden border-4 border-[#253e16]"
+          className="w-[1200px] h-[800px] relative shrink-0 shadow-2xl rounded-2xl overflow-hidden border-4 border-[#253e16]"
           style={{
             background: `
               radial-gradient(circle 110px at 50% 50%, rgba(85, 56, 30, 0.35) 0%, rgba(72, 48, 26, 0.15) 50%, transparent 100%),

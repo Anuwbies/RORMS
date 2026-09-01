@@ -80,7 +80,6 @@ function App() {
       sessionStorage.removeItem('rorms_verification_cooldown')
       window.history.replaceState({}, '', '/')
       setIsSignupMode(false)
-      setIsVerificationPreview(false)
       setJustSignedUp(false)
       await auth.signOut()
       setIsAuthenticated(false)
@@ -104,15 +103,6 @@ function App() {
     )
   }
 
-  if (isVerificationPreview) {
-    return (
-      <EmailVerificationPage 
-        onSignOut={() => setIsVerificationPreview(false)} 
-        isNewSignup={true} 
-      />
-    )
-  }
-
   if (isAuthenticated) {
     if (!isEmailVerified) {
       return <EmailVerificationPage onSignOut={handleSignOut} isNewSignup={justSignedUp} />
@@ -132,8 +122,6 @@ function App() {
   return (
     <SignInPage 
       onSignIn={handleSignIn} 
-      onNavigateToSignup={() => setIsSignupMode(true)}
-      onNavigateToVerification={() => setIsVerificationPreview(true)}
     />
   )
 }

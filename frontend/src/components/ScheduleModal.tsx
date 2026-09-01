@@ -396,7 +396,8 @@ export function ScheduleModal({
           map.set(mDoc.id, name)
           if (mem.userId) {
             map.set(mem.userId, name)
-            if (mem.departmentCode) deptMap.set(mem.userId, mem.departmentCode)
+            const dept = mem.department
+            if (dept) deptMap.set(mem.userId, dept)
           }
         })
         usersDataMap.forEach((user, uid) => {

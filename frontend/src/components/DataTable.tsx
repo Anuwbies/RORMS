@@ -31,6 +31,9 @@ export interface DataTableProps<T> {
 
   // Loading State
   isLoading?: boolean
+
+  // Custom styling
+  className?: string
 }
 
 export function DataTable<T>({
@@ -45,7 +48,8 @@ export function DataTable<T>({
   emptyDescription = 'Try adjusting your filters or search terms.',
   emptyIcon,
   onRowClick,
-  isLoading
+  isLoading,
+  className = ''
 }: DataTableProps<T>) {
   const [currentPage, setCurrentPage] = useState(1)
   const [rowsPerPage, setRowsPerPage] = useState(15)
@@ -76,7 +80,7 @@ export function DataTable<T>({
   const hasControls = searchPlaceholder || filters || primaryAction
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-0 overflow-visible w-full animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
+    <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm flex flex-col gap-0 overflow-visible w-full animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150 ${className}`}>
       {hasControls && (
         <div className="flex flex-col lg:flex-row items-center justify-between gap-4 w-full relative z-20 p-4 bg-white rounded-t-2xl">
           <div className="flex items-center gap-3 w-full lg:w-auto flex-1">
@@ -99,14 +103,14 @@ export function DataTable<T>({
         </div>
       )}
 
-      <div className="overflow-x-auto w-full">
-        <table className="w-full text-left border-collapse min-w-[600px]">
-          <thead className="bg-slate-50/80 border-y border-slate-200">
+      <div className="overflow-auto custom-scrollbar w-full max-h-[495px] flex-1">
+        <table className="w-full text-left border-separate border-spacing-0 min-w-[600px]">
+          <thead className="sticky top-0 z-10">
             <tr>
               {columns.map((col, i) => (
                 <th 
                   key={i} 
-                  className={`px-6 py-4 text-[0.7rem] font-bold uppercase tracking-[0.15em] text-black whitespace-nowrap ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+                  className={`px-6 py-4 text-[0.7rem] font-bold uppercase tracking-[0.15em] text-black whitespace-nowrap bg-slate-50 border-t border-b border-slate-200 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
                   style={{ width: col.width }}
                 >
                   {col.header}
@@ -117,7 +121,7 @@ export function DataTable<T>({
           <tbody className="bg-white">
             {isLoading ? (
               <tr>
-                <td colSpan={columns.length} className="px-6 py-20 text-center text-slate-400">
+                <td colSpan={columns.length} className="px-6 py-20 text-center text-slate-400 border-b border-slate-100">
                   <div className="flex flex-col items-center justify-center gap-3">
                     <SpinnerIcon className="h-8 w-8 text-[var(--brand-color)]" />
                     <p className="text-base font-bold text-slate-700">Loading data...</p>
@@ -127,7 +131,7 @@ export function DataTable<T>({
               </tr>
             ) : currentData.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-6 py-20 text-center text-slate-400">
+                <td colSpan={columns.length} className="px-6 py-20 text-center text-slate-400 border-b border-slate-100">
                   <div className="flex flex-col items-center justify-center">
                     {emptyIcon && <div className="mb-4 text-slate-200">{emptyIcon}</div>}
                     <p className="text-base font-bold text-slate-600">{emptyTitle}</p>
@@ -139,13 +143,13 @@ export function DataTable<T>({
               currentData.map((row, rowIndex) => (
                 <tr 
                   key={rowIndex} 
-                  className={`group border-b border-slate-100 last:border-transparent transition-colors hover:bg-slate-50/80 ${onRowClick ? 'cursor-pointer' : ''}`}
+                  className={`group transition-colors hover:bg-slate-50/80 ${onRowClick ? 'cursor-pointer' : ''}`}
                   onClick={() => onRowClick?.(row)}
                 >
                   {columns.map((col, colIndex) => (
                     <td 
                       key={colIndex} 
-                      className={`whitespace-nowrap px-6 py-4 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
+                      className={`whitespace-nowrap px-6 py-4 border-b border-slate-100 ${col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left'}`}
                     >
                       {col.render(row)}
                     </td>
@@ -155,50 +159,51 @@ export function DataTable<T>({
             )}
           </tbody>
         </table>
+      </div>
 
-        {/* Pagination Footer */}
-        <div className="flex flex-col sm:flex-row items-center justify-between border-t border-slate-200/50 gap-4 p-4 bg-white rounded-b-2xl">
-          <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-start">
-            <div className="flex items-center gap-2.5">
-              <span className="text-xs font-bold text-slate-500">Rows per page:</span>
-              <div ref={rowsDropdownRef} className="relative">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setIsRowsDropdownOpen(o => !o);
-                  }}
-                  className="inline-flex h-8 w-16 items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50 focus:outline-none transition-colors cursor-pointer select-none"
-                >
-                  {rowsPerPage}
-                  <ChevronDownIcon className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${isRowsDropdownOpen ? 'rotate-180' : ''}`} />
-                </button>
-                {isRowsDropdownOpen && (
-                  <div className="absolute bottom-full left-0 mb-1 z-50 w-16 rounded-lg border border-slate-200 bg-white shadow-lg animate-in fade-in zoom-in-95 duration-100">
-                    {[10, 15, 20, 50].map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRowsPerPage(n)
-                          setCurrentPage(1)
-                          setIsRowsDropdownOpen(false)
-                        }}
-                        className={`flex w-full items-center justify-between px-3 py-1 text-xs font-bold cursor-pointer transition-colors ${
-                          rowsPerPage === n
-                            ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)]'
-                            : 'text-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        {n}
-                        {rowsPerPage === n && <CheckIcon className="h-3.5 w-3.5" />}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+      {/* Pagination Footer */}
+      <div className="flex flex-col sm:flex-row items-center justify-between border-t border-slate-200/50 gap-4 p-4 bg-white rounded-b-2xl mt-auto shrink-0 z-10">
+        <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-start">
+          <div className="flex items-center gap-2.5">
+            <span className="text-xs font-bold text-slate-500">Rows per page:</span>
+            <div ref={rowsDropdownRef} className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsRowsDropdownOpen(o => !o);
+                }}
+                className="inline-flex h-8 w-16 items-center justify-between gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50 focus:outline-none transition-colors cursor-pointer select-none"
+              >
+                {rowsPerPage}
+                <ChevronDownIcon className={`h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${isRowsDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {isRowsDropdownOpen && (
+                <div className="absolute bottom-full left-0 mb-1 z-50 w-16 rounded-lg border border-slate-200 bg-white shadow-lg animate-in fade-in zoom-in-95 duration-100">
+                  {[15, 20, 50].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRowsPerPage(n)
+                        setCurrentPage(1)
+                        setIsRowsDropdownOpen(false)
+                      }}
+                      className={`flex w-full items-center justify-between px-3 py-1 text-xs font-bold cursor-pointer transition-colors ${
+                        rowsPerPage === n
+                          ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)]'
+                          : 'text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {n}
+                      {rowsPerPage === n && <CheckIcon className="h-3.5 w-3.5" />}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
+          </div>
             <span className="text-xs font-medium text-slate-500">
               {totalRows > 0 ? (
                 <>
@@ -278,7 +283,6 @@ export function DataTable<T>({
             </button>
           </div>
         </div>
-      </div>
     </div>
   )
 }

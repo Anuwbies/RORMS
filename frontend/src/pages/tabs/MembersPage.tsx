@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
-import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy, writeBatch, doc } from 'firebase/firestore'
+import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy, writeBatch, doc, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '../../firebase'
-import { UsersIcon, UserIcon, EditIcon, TrashIcon, ChevronDownIcon, CheckIcon, SearchIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, FilterIcon, BellIcon } from '../../components/Icons'
+import { UsersIcon, UserIcon, EditIcon, TrashIcon, MinusCircleIcon, ChevronDownIcon, CheckIcon, SearchIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, FilterIcon, BellIcon, MailIcon, CloseIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TextInput } from '../../components/TextInput'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
@@ -26,7 +26,7 @@ const rolePriority: Record<MemberRole, number> = {
 const statusPriority: Record<MemberStatus, number> = {
   Active: 0,
   Pending: 1,
-  Inactive: 2,
+  Deactivated: 2,
 }
 
 const roleClasses: Record<MemberRole, string> = {
@@ -39,7 +39,7 @@ const roleClasses: Record<MemberRole, string> = {
 
 const statusClasses: Record<MemberStatus, string> = {
   Active: 'bg-emerald-100 text-emerald-700',
-  Inactive: 'bg-rose-100 text-rose-700',
+  Deactivated: 'bg-rose-100 text-rose-700',
   Pending: 'bg-amber-100 text-amber-700',
 }
 
@@ -630,16 +630,17 @@ function PendingPlatformVisual({ invites }: { invites: Member[] }) {
 
 function MembersPage() {
   const [users, setUsers] = useState<Member[]>([])
-  const [invites, setInvites] = useState<Member[]>([])
+  const [rawMemberships, setRawMemberships] = useState<any[]>([])
+  const [rawInvites, setRawInvites] = useState<any[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<MemberRole[]>([])
   const [selectedStatuses, setSelectedStatuses] = useState<MemberStatus[]>([])
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([])
   const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
-  
+
   // Pagination state is now handled internally by DataTable
-  
+
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<MemberRole>('Instructor')
@@ -656,6 +657,9 @@ function MembersPage() {
   const [isRemovingMember, setIsRemovingMember] = useState(false)
   const [removeError, setRemoveError] = useState('')
   const [removeConfirmText, setRemoveConfirmText] = useState('')
+
+  const [memberToReinvite, setMemberToReinvite] = useState<Member | null>(null)
+  const [isReinvitingMember, setIsReinvitingMember] = useState(false)
 
   const [activeDropdowns, setActiveDropdowns] = useState(0)
   const [currentUserId, setCurrentUserId] = useState<string>(() => auth.currentUser?.uid || '')
@@ -727,25 +731,38 @@ function MembersPage() {
       unsubscribeMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
         const activeUserIdsWithMembership = new Set<string>()
         const membersData: Member[] = []
+        const rawMList: any[] = []
 
         mSnap.docs.forEach(mDoc => {
           const mData = mDoc.data()
+          rawMList.push({ id: mDoc.id, ...mData })
+
+          // Skip pending memberships where userId is empty (these belong to pending invites and will be merged into the invites list)
+          if (!mData.userId || !usersMap.has(mData.userId)) {
+            return
+          }
+
           const userData = usersMap.get(mData.userId) || {}
           activeUserIdsWithMembership.add(mData.userId)
-          
+
+          const resolvedDept = mData.department || (
+            mData.role === 'Admin' ? 'Administrative Office' :
+            mData.role === 'Registrar' ? "Registrar's Office" : ''
+          )
+
           membersData.push({
             id: mData.userId,
             membershipId: mDoc.id,
-            name: userData.fullName || '',
-            email: userData.email || '',
+            name: userData.fullName || mData.fullName || '',
+            email: userData.email || mData.email || '',
             role: (mData.role as MemberRole) || 'Instructor',
-            status: (userData.isActive !== false) ? 'Active' : 'Inactive',
-            department: mData.departmentCode || '',
+            status: (userData.isActive !== false) ? 'Active' : 'Deactivated',
+            department: resolvedDept,
             joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
               month: 'short',
               day: '2-digit',
               year: 'numeric'
-            }) : '—',
+            }) : '— — — — —',
             avatar: userData.profilePicture || '',
           })
         })
@@ -758,20 +775,21 @@ function MembersPage() {
               membershipId: '',
               name: userData.fullName || '',
               email: userData.email || '',
-              role: (userData.role as MemberRole) || 'Instructor',
-              status: 'Inactive',
-              department: userData.departmentCode || '',
+              role: 'Instructor',
+              status: 'Deactivated',
+              department: '',
               joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
                 month: 'short',
                 day: '2-digit',
                 year: 'numeric'
-              }) : '—',
+              }) : '— — — — —',
               avatar: userData.profilePicture || '',
             })
           }
         })
 
         setUsers(membersData)
+        setRawMemberships(rawMList)
         membershipsLoaded = true
         checkFinishedLoading()
       }, () => {
@@ -785,7 +803,7 @@ function MembersPage() {
 
     // 3. Listener for pending invitations
     const invitesQuery = query(
-      collection(db, 'invitations'), 
+      collection(db, 'invitations'),
       where('status', '==', 'pending')
     )
     unsubscribeInvites = onSnapshot(invitesQuery, (snapshot) => {
@@ -798,16 +816,13 @@ function MembersPage() {
 
         return {
           id: doc.id,
-          name: '', // No name for pending invites
+          membershipId: data.membershipId || '',
           email: data.email || '',
-          role: (data.role as MemberRole) || 'Instructor',
-          status: 'Pending',
+          role: (data.role as MemberRole) || '',
           department: data.department || '',
-          joinedDate: '—', // No joined date for pending invites
-          avatar: '',
         }
-      }).filter(Boolean) as Member[]
-      setInvites(invitesData)
+      }).filter(Boolean) as any[]
+      setRawInvites(invitesData)
       invitesLoaded = true
       checkFinishedLoading()
     }, () => {
@@ -844,16 +859,64 @@ function MembersPage() {
     }
   }, [])
 
+  const invites = useMemo<Member[]>(() => {
+    const memsById = new Map(rawMemberships.map(m => [m.id, m]))
+    const memsByEmail = new Map(rawMemberships.map(m => [m.email?.toLowerCase(), m]))
+
+    return rawInvites.map((inv: any) => {
+      const memData = (inv.membershipId ? memsById.get(inv.membershipId) : null) || memsByEmail.get(inv.email?.toLowerCase())
+      const role = (memData?.role || inv.role || 'Instructor') as MemberRole
+      const department = memData?.department || inv.department || (
+        role === 'Admin' ? 'Administrative Office' :
+        role === 'Registrar' ? "Registrar's Office" : ''
+      )
+      const isReactivation = Boolean(
+        inv.isReactivation ||
+        (memData?.userId && memData.userId !== '') ||
+        users.some(u => u.email.toLowerCase() === inv.email?.toLowerCase())
+      )
+
+      return {
+        id: inv.id,
+        membershipId: inv.membershipId || memData?.id || '',
+        name: memData?.fullName || '',
+        email: inv.email,
+        role,
+        status: 'Pending' as MemberStatus,
+        department,
+        joinedDate: '— — — — —',
+        avatar: '',
+        isReactivation,
+      }
+    })
+  }, [rawInvites, rawMemberships, users])
+
   const members = useMemo(() => {
+    const userByEmail = new Map(users.map(u => [u.email.toLowerCase(), u]))
     const pendingEmails = new Set(invites.map(inv => inv.email.toLowerCase()))
     const filteredUsers = users.filter(u => {
-      // If an inactive user has an active pending reinvitation, hide the duplicate inactive row
-      if (u.status === 'Inactive' && pendingEmails.has(u.email.toLowerCase())) {
+      // If a deactivated user has an active pending reinvitation, hide the duplicate deactivated row
+      if (u.status === 'Deactivated' && pendingEmails.has(u.email.toLowerCase())) {
         return false
       }
       return true
     })
-    return [...filteredUsers, ...invites]
+
+    const mergedInvites = invites.map(inv => {
+      const existingUser = userByEmail.get(inv.email.toLowerCase())
+      if (existingUser) {
+        return {
+          ...inv,
+          isReactivation: true,
+          name: existingUser.name || inv.name,
+          joinedDate: (existingUser.joinedDate && !existingUser.joinedDate.includes('—')) ? existingUser.joinedDate : inv.joinedDate,
+          avatar: existingUser.avatar || inv.avatar,
+        }
+      }
+      return inv
+    })
+
+    return [...filteredUsers, ...mergedInvites]
   }, [users, invites])
 
   const filteredMembers = members
@@ -863,7 +926,7 @@ function MembersPage() {
       )
       const matchesRole = selectedRoles.length === 0 || selectedRoles.includes(member.role)
       const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(member.status)
-      
+
       const memberDept = member.department || (member.role === 'Admin' ? 'Administrative Office' : member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned')
       const matchesDepartment = selectedDepartments.length === 0 || selectedDepartments.includes(memberDept)
 
@@ -872,12 +935,22 @@ function MembersPage() {
     .sort((a, b) => {
       const statusDiff = (statusPriority[a.status] ?? 0) - (statusPriority[b.status] ?? 0)
       if (statusDiff !== 0) return statusDiff
+
+      // For Pending status: pending re-activations come above pending new user invites
+      if (a.status === 'Pending' && b.status === 'Pending') {
+        const isReactivationA = a.isReactivation ? 0 : 1
+        const isReactivationB = b.isReactivation ? 0 : 1
+        if (isReactivationA !== isReactivationB) {
+          return isReactivationA - isReactivationB
+        }
+      }
+
       return (rolePriority[a.role] ?? 99) - (rolePriority[b.role] ?? 99)
     })
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!inviteEmail.trim()) {
       setHasEmailError(true)
       showNotification('Email address is required.', 'error', 'Missing Information')
@@ -903,6 +976,25 @@ function MembersPage() {
       return
     }
 
+    // Validation for Dean and Program Head assignment
+    if ((inviteRole === 'Dean' || inviteRole === 'Program Head') && inviteDepartment && inviteDepartment !== 'None') {
+      if (emailList.length > 1) {
+        showNotification(`Cannot invite multiple users as ${inviteRole} for a single department.`, 'error', 'Assignment Conflict')
+        return
+      }
+
+      const existingConflict = members.find(m => 
+        m.role === inviteRole && 
+        m.department === inviteDepartment &&
+        !emailList.includes(m.email.toLowerCase())
+      )
+      
+      if (existingConflict) {
+        showNotification(`A ${inviteRole} already exists for ${inviteDepartment}.`, 'error', 'Assignment Conflict')
+        return
+      }
+    }
+
     setIsInviting(true)
     setHasEmailError(false)
 
@@ -914,90 +1006,23 @@ function MembersPage() {
       }
 
       for (const normalizedEmail of emailList) {
-        // 1. Check if user already exists in 'users' collection
+        // 1. Check if user already exists in 'users' collection (active or deactivated)
         const userQuery = query(collection(db, 'users'), where('email', '==', normalizedEmail))
         const userSnapshot = await getDocs(userQuery)
-        
+
         if (!userSnapshot.empty) {
-          const userData = userSnapshot.docs[0].data()
-          if (userData.isActive !== false) {
-            results.exists.push(normalizedEmail)
-            continue
-          } else {
-            // User exists but is INACTIVE. Create a reactivation invite.
-            const expiresAt = new Date()
-            expiresAt.setDate(expiresAt.getDate() + 7)
-
-            const inviteRef = await addDoc(collection(db, 'invitations'), {
-              email: normalizedEmail,
-              role: inviteRole,
-              department: (inviteRole === 'Instructor' || inviteRole === 'Dean' || inviteRole === 'Program Head') ? (inviteDepartment === 'None' ? '' : inviteDepartment) : '',
-              status: 'pending',
-              isReactivation: true,
-              invitedBy: auth.currentUser?.uid || 'system',
-              createdAt: serverTimestamp(),
-              expiresAt: Timestamp.fromDate(expiresAt),
-            })
-
-            const signupLink = `${window.location.origin}/signup?token=${inviteRef.id}`
-            
-            await addDoc(collection(db, 'mail'), {
-              to: normalizedEmail,
-              message: {
-                subject: `Welcome back to RORMS - ${normalizedEmail}`,
-                html: `
-                  <div style="background-color: #f4f7f6; padding: 40px 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0;">
-                    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-                      <!-- Brand Header -->
-                      <div style="background-color: #62853e; padding: 30px 20px; text-align: center;">
-                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">RORMS</h1>
-                        <p style="color: #e0ead6; margin: 5px 0 0 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Registrar Office Room Management System</p>
-                      </div>
-                      <!-- Email Body -->
-                      <div style="padding: 40px 30px;">
-                        <h2 style="color: #333333; margin-top: 0; font-size: 22px;">Welcome Back!</h2>
-                        <p style="color: #555555; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
-                          Hello,<br><br>
-                          Your account has been officially invited back to the <strong>RORMS</strong> platform as a <strong>${inviteRole}</strong>.
-                        </p>
-                        <!-- CTA Button -->
-                        <div style="text-align: center; margin: 40px 0;">
-                          <a href="${signupLink}" style="background-color: #62853e; color: #ffffff; padding: 16px 36px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(98, 133, 62, 0.25);">
-                            Accept & Reactivate Account
-                          </a>
-                        </div>
-                        <!-- Security Callout -->
-                        <div style="background-color: #f9f9f9; border-left: 4px solid #e0e0e0; padding: 15px; margin-bottom: 30px;">
-                          <p style="margin: 0; color: #666666; font-size: 14px; line-height: 1.5;">
-                            <strong>Security Note:</strong> This reactivation link is strictly tied to your email address and will automatically expire in <strong>7 days</strong>.
-                          </p>
-                        </div>
-                      </div>
-                      <!-- Footer -->
-                      <div style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eeeeee;">
-                        <p style="color: #aaaaaa; font-size: 12px; margin: 0;">
-                          &copy; ${new Date().getFullYear()} PHINMA University of Pangasinan. All rights reserved.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                `,
-              },
-            })
-            
-            results.sent.push(normalizedEmail)
-            continue
-          }
+          results.exists.push(normalizedEmail)
+          continue
         }
 
         // 2. Check for existing active invitations
         const inviteQuery = query(
-          collection(db, 'invitations'), 
+          collection(db, 'invitations'),
           where('email', '==', normalizedEmail),
           where('status', '==', 'pending')
         )
         const inviteSnapshot = await getDocs(inviteQuery)
-        
+
         const now = new Date()
         const activeInvite = inviteSnapshot.docs.find(doc => {
           const data = doc.data()
@@ -1012,11 +1037,30 @@ function MembersPage() {
         const expiresAt = new Date()
         expiresAt.setDate(expiresAt.getDate() + 7)
 
-        // 3. Create the invitation tracking document
-        const inviteRef = await addDoc(collection(db, 'invitations'), {
+        const assignedDept = inviteRole === 'Admin'
+          ? 'Administrative Office'
+          : inviteRole === 'Registrar'
+            ? "Registrar's Office"
+            : (inviteRole === 'Instructor' || inviteRole === 'Dean' || inviteRole === 'Program Head')
+              ? (inviteDepartment === 'None' ? '' : inviteDepartment || '')
+              : ''
+
+        // 1. Create the membership document for the invited user
+        const membershipRef = await addDoc(collection(db, 'memberships'), {
+          userId: '',
+          fullName: '',
           email: normalizedEmail,
           role: inviteRole,
-          department: (inviteRole === 'Instructor' || inviteRole === 'Dean' || inviteRole === 'Program Head') ? (inviteDepartment === 'None' ? '' : inviteDepartment) : '',
+          department: assignedDept,
+          status: assignedDept ? 'accepted' : '',
+          joinedAt: '',
+          createdAt: serverTimestamp()
+        })
+
+        // 2. Create the invitation tracking document
+        const inviteRef = await addDoc(collection(db, 'invitations'), {
+          email: normalizedEmail,
+          membershipId: membershipRef.id,
           status: 'pending',
           invitedBy: auth.currentUser?.uid || 'system',
           createdAt: serverTimestamp(),
@@ -1025,7 +1069,7 @@ function MembersPage() {
 
         // 4. Create the mail document to trigger the extension
         const signupLink = `${window.location.origin}/signup?token=${inviteRef.id}`
-        
+
         await addDoc(collection(db, 'mail'), {
           to: normalizedEmail,
           message: {
@@ -1095,13 +1139,23 @@ function MembersPage() {
       } else {
         const parts = []
         if (results.sent.length > 0) parts.push(`Sent ${results.sent.length}`)
-        if (results.exists.length > 0) parts.push(`${results.exists.length} already members`)
+        if (results.exists.length > 0) parts.push(`${results.exists.length} already a user`)
         if (results.pending.length > 0) parts.push(`${results.pending.length} already invited`)
-        
+
         // Filter out successfully sent emails from the textarea
         const remainingEmails = emailList.filter(e => !results.sent.includes(e))
         setInviteEmail(remainingEmails.join(', '))
-        showNotification(parts.join(', '), results.sent.length > 0 ? 'info' : 'warning', 'Invitation Status')
+        if (results.sent.length === 0 && results.exists.length === emailList.length) {
+          showNotification(
+            emailList.length === 1
+              ? `"${emailList[0]}" is already a registered user.`
+              : 'All specified emails are already registered users.',
+            'warning',
+            'User Already Exists'
+          )
+        } else {
+          showNotification(parts.join(', '), results.sent.length > 0 ? 'info' : 'warning', 'Invitation Status')
+        }
       }
     } catch (error) {
       console.error('Error sending invitation:', error)
@@ -1120,16 +1174,17 @@ function MembersPage() {
   }
 
   const openEditModal = (member: Member) => {
-    if (member.status === 'Pending') return // Cannot edit pending invites here
     setEditingMember(member)
     setEditRole(member.role)
-    setEditDept(member.department || '')
+    const isOfficeDept = member.department === 'Administrative Office' || member.department === "Registrar's Office"
+    setEditDept(isOfficeDept ? '' : (member.department || ''))
   }
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!editingMember) return
 
+    const isPending = editingMember.status === 'Pending'
     const wasDean = editingMember.role === 'Dean'
     const isNowDean = editRole === 'Dean'
     const wasProgramHead = editingMember.role === 'Program Head'
@@ -1139,7 +1194,7 @@ function MembersPage() {
 
     // 1. Validation for Dean and Program Head assignment
     if (isNowDean && newDeptCode) {
-      const existingDean = members.find(m => m.role === 'Dean' && m.department === newDeptCode && m.id !== editingMember.id && m.status !== 'Inactive')
+      const existingDean = members.find(m => m.role === 'Dean' && m.department === newDeptCode && m.id !== editingMember.id && m.email.toLowerCase() !== editingMember.email.toLowerCase())
       if (existingDean) {
         showNotification(`A Dean already exists for ${newDeptCode}.`, 'warning', 'Assignment Conflict')
         return
@@ -1147,7 +1202,7 @@ function MembersPage() {
     }
 
     if (isNowProgramHead && newDeptCode) {
-      const existingProgramHead = members.find(m => m.role === 'Program Head' && m.department === newDeptCode && m.id !== editingMember.id && m.status !== 'Inactive')
+      const existingProgramHead = members.find(m => m.role === 'Program Head' && m.department === newDeptCode && m.id !== editingMember.id && m.email.toLowerCase() !== editingMember.email.toLowerCase())
       if (existingProgramHead) {
         showNotification(`A Program Head already exists for ${newDeptCode}.`, 'warning', 'Assignment Conflict')
         return
@@ -1159,86 +1214,114 @@ function MembersPage() {
       const batch = writeBatch(db)
 
       const canHaveDept = editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head'
-      const finalDept = canHaveDept ? editDept : ''
+      const isOffice = editDept === 'Administrative Office' || editDept === "Registrar's Office"
+      const finalDept = editRole === 'Admin'
+        ? 'Administrative Office'
+        : editRole === 'Registrar'
+          ? "Registrar's Office"
+          : (canHaveDept && !isOffice)
+            ? editDept
+            : ''
 
-      if (wasDean && (!isNowDean || oldDeptCode !== finalDept)) {
-        // Clear old department's dean field
-        const oldDept = departments.find(d => d.code === oldDeptCode)
-        if (oldDept) {
-          batch.update(doc(db, 'departments', oldDept.id), {
-            dean: '',
-            updatedAt: serverTimestamp()
+      if (isPending) {
+        // Update the membership document created for this pending invite
+        if (editingMember.membershipId) {
+          batch.update(doc(db, 'memberships', editingMember.membershipId), {
+            role: editRole,
+            department: finalDept,
+            status: finalDept ? 'accepted' : '',
           })
         }
-      }
-
-      if (isNowDean && finalDept) {
-        const newDept = departments.find(d => d.code === finalDept)
-        if (newDept) {
-          // Set new department's dean field
-          batch.update(doc(db, 'departments', newDept.id), {
-            dean: editingMember.id,
-            updatedAt: serverTimestamp()
-          })
-        }
-      }
-
-      if (wasProgramHead && (!isNowProgramHead || oldDeptCode !== finalDept)) {
-        // Clear old department's programHead field
-        const oldDept = departments.find(d => d.code === oldDeptCode)
-        if (oldDept) {
-          batch.update(doc(db, 'departments', oldDept.id), {
-            programHead: '',
-            updatedAt: serverTimestamp()
-          })
-        }
-      }
-
-      if (isNowProgramHead && finalDept) {
-        const newDept = departments.find(d => d.code === finalDept)
-        if (newDept) {
-          // Set new department's programHead field
-          batch.update(doc(db, 'departments', newDept.id), {
-            programHead: editingMember.id,
-            updatedAt: serverTimestamp()
-          })
-        }
-      }
-
-      // 2. Update or create membership document
-      if (editingMember.membershipId) {
-        const updateData: any = {
-          role: editRole,
-          departmentCode: finalDept,
-        }
-
-        // Update joinedAt only if the department has changed (including unassigned to department or vice versa)
-        if (oldDeptCode !== finalDept) {
-          updateData.joinedAt = serverTimestamp()
-        }
-
-        batch.update(doc(db, 'memberships', editingMember.membershipId), updateData)
       } else {
-        const newMembershipRef = doc(collection(db, 'memberships'))
-        batch.set(newMembershipRef, {
-          userId: editingMember.id,
-          role: editRole,
-          departmentCode: finalDept,
-          joinedAt: serverTimestamp(),
-          createdAt: serverTimestamp()
-        })
-        batch.update(doc(db, 'users', editingMember.id), {
-          isActive: true,
-          role: editRole,
-          departmentCode: finalDept,
-          updatedAt: serverTimestamp()
-        })
+        if (wasDean && (!isNowDean || oldDeptCode !== finalDept)) {
+          // Clear old department's dean field
+          const oldDept = departments.find(d => d.code === oldDeptCode)
+          if (oldDept && oldDept.dean === editingMember.id) {
+            batch.update(doc(db, 'departments', oldDept.id), {
+              dean: '',
+              updatedAt: serverTimestamp()
+            })
+          }
+        }
+
+        if (isNowDean && finalDept) {
+          const newDept = departments.find(d => d.code === finalDept)
+          if (newDept) {
+            // Set new department's dean field
+            batch.update(doc(db, 'departments', newDept.id), {
+              dean: editingMember.id,
+              updatedAt: serverTimestamp()
+            })
+          }
+        }
+
+        if (wasProgramHead && (!isNowProgramHead || oldDeptCode !== finalDept)) {
+          // Clear old department's programHead field
+          const oldDept = departments.find(d => d.code === oldDeptCode)
+          if (oldDept && oldDept.programHead === editingMember.id) {
+            batch.update(doc(db, 'departments', oldDept.id), {
+              programHead: '',
+              updatedAt: serverTimestamp()
+            })
+          }
+        }
+
+        if (isNowProgramHead && finalDept) {
+          const newDept = departments.find(d => d.code === finalDept)
+          if (newDept) {
+            // Set new department's programHead field
+            batch.update(doc(db, 'departments', newDept.id), {
+              programHead: editingMember.id,
+              updatedAt: serverTimestamp()
+            })
+          }
+        }
+
+        // 2. Update or create membership document
+        if (editingMember.membershipId) {
+          const updateData: any = {
+            role: editRole,
+            department: finalDept,
+            status: finalDept ? 'accepted' : '',
+            fullName: editingMember.name || '',
+            email: editingMember.email || '',
+          }
+
+          // Update joinedAt only if the department has changed (including unassigned to department or vice versa)
+          if (oldDeptCode !== finalDept) {
+            updateData.joinedAt = finalDept ? serverTimestamp() : ''
+          }
+
+          batch.update(doc(db, 'memberships', editingMember.membershipId), updateData)
+          batch.update(doc(db, 'users', editingMember.id), {
+            updatedAt: serverTimestamp()
+          })
+        } else {
+          const newMembershipRef = doc(collection(db, 'memberships'))
+          batch.set(newMembershipRef, {
+            userId: editingMember.id,
+            fullName: editingMember.name || '',
+            email: editingMember.email || '',
+            role: editRole,
+            department: finalDept,
+            status: finalDept ? 'accepted' : '',
+            joinedAt: finalDept ? serverTimestamp() : '',
+            createdAt: serverTimestamp()
+          })
+          batch.update(doc(db, 'users', editingMember.id), {
+            updatedAt: serverTimestamp()
+          })
+        }
       }
 
       await batch.commit()
       const memberName = editingMember.name || editingMember.email
       setEditingMember(null)
-      showNotification(`Member "${memberName}" updated successfully.`, 'success', 'Member Updated')
+      showNotification(
+        isPending ? `Invitation for "${memberName}" updated successfully.` : `Member "${memberName}" updated successfully.`,
+        'success',
+        isPending ? 'Invitation Updated' : 'Member Updated'
+      )
     } catch (error) {
       console.error('Error updating member:', error)
       showNotification('Failed to update member. Please try again.', 'error', 'Error Updating Member')
@@ -1258,53 +1341,36 @@ function MembersPage() {
       if (memberToRemove.status === 'Pending') {
         // 1. Delete the invitation document
         batch.delete(doc(db, 'invitations', memberToRemove.id))
-        
-        // 2. Delete the associated mail document (find by email)
+
+        // 2. Delete the associated membership document only if this was a new user invite (not an existing registered/deactivated user)
+        if (memberToRemove.membershipId) {
+          const mem = rawMemberships.find(m => m.id === memberToRemove.membershipId)
+          const isExistingUser = Boolean(mem?.userId && mem.userId !== '') || users.some(u => u.email.toLowerCase() === memberToRemove.email.toLowerCase())
+          if (!isExistingUser) {
+            batch.delete(doc(db, 'memberships', memberToRemove.membershipId))
+          }
+        }
+
+        // 3. Delete the associated mail document (find by email)
         const mailQuery = query(collection(db, 'mail'), where('to', '==', memberToRemove.email))
         const mailSnapshot = await getDocs(mailQuery)
         mailSnapshot.forEach((mDoc) => {
           batch.delete(doc(db, 'mail', mDoc.id))
         })
       } else {
-        // 1. If member is a dean or program head, clear the department's respective field
-        if (memberToRemove.role === 'Dean' && memberToRemove.department) {
-          const dept = departments.find(d => d.code === memberToRemove.department)
-          if (dept && dept.dean === memberToRemove.id) {
-            batch.update(doc(db, 'departments', dept.id), {
-              dean: '',
-              updatedAt: serverTimestamp()
-            })
-          }
-        } else if (memberToRemove.role === 'Program Head' && memberToRemove.department) {
-          const dept = departments.find(d => d.code === memberToRemove.department)
-          if (dept && dept.programHead === memberToRemove.id) {
-            batch.update(doc(db, 'departments', dept.id), {
-              programHead: '',
-              updatedAt: serverTimestamp()
-            })
-          }
-        }
-
-        // 2. Soft delete the user document (do not completely delete from Firestore)
+        // 1. Soft delete the user document (do not completely delete from Firestore)
         batch.update(doc(db, 'users', memberToRemove.id), {
           isActive: false,
           updatedAt: serverTimestamp()
         })
 
-        // 3. Delete all membership documents for this user
-        const membershipsQuery = query(collection(db, 'memberships'), where('userId', '==', memberToRemove.id))
-        const membershipsSnapshot = await getDocs(membershipsQuery)
-        membershipsSnapshot.forEach((mDoc) => {
-          batch.delete(doc(db, 'memberships', mDoc.id))
-        })
-
-        // 4. Clean up any lingering mail and invitations
+        // 2. Clean up any lingering mail and invitations
         const mailQuery = query(collection(db, 'mail'), where('to', '==', memberToRemove.email))
         const mailSnapshot = await getDocs(mailQuery)
         mailSnapshot.forEach((mDoc) => {
           batch.delete(doc(db, 'mail', mDoc.id))
         })
-        
+
         const inviteQuery = query(collection(db, 'invitations'), where('email', '==', memberToRemove.email))
         const inviteSnapshot = await getDocs(inviteQuery)
         inviteSnapshot.forEach((iDoc) => {
@@ -1315,19 +1381,156 @@ function MembersPage() {
       await batch.commit()
       const memberLabel = memberToRemove.name || memberToRemove.email
       const isPending = memberToRemove.status === 'Pending'
+      const mem = rawMemberships.find(m => m.id === memberToRemove.membershipId)
+      const isReactivation = isPending && Boolean(
+        memberToRemove.isReactivation ||
+        (mem?.userId && mem.userId !== '') ||
+        users.some(u => u.email.toLowerCase() === memberToRemove.email.toLowerCase())
+      )
+
       setMemberToRemove(null)
       setRemoveConfirmText('')
-      showNotification(
-        isPending ? `Invitation for "${memberLabel}" revoked.` : `Member "${memberLabel}" removed successfully.`,
-        'success',
-        isPending ? 'Invitation Revoked' : 'Member Removed'
-      )
+
+      const successTitle = !isPending
+        ? 'Member Deactivated'
+        : isReactivation
+          ? 'Re-invitation Cancelled'
+          : 'Invitation Cancelled'
+
+      const successMsg = !isPending
+        ? `Member "${memberLabel}" deactivated successfully.`
+        : isReactivation
+          ? `Re-invitation for "${memberLabel}" cancelled.`
+          : `Invitation for "${memberLabel}" cancelled.`
+
+      showNotification(successMsg, 'success', successTitle)
     } catch (error) {
-      console.error('Error removing member:', error)
-      setRemoveError('Failed to remove member.')
-      showNotification('Failed to remove member. Please try again.', 'error', 'Error Removing Member')
+      console.error('Error processing member remove action:', error)
+      const isPending = memberToRemove?.status === 'Pending'
+      const isReactivation = isPending && Boolean(memberToRemove?.isReactivation)
+      
+      const errorMsg = !isPending
+        ? 'Failed to deactivate member. Please try again.'
+        : isReactivation
+          ? 'Failed to cancel re-invitation. Please try again.'
+          : 'Failed to cancel invitation. Please try again.'
+
+      const errorTitle = !isPending
+        ? 'Error Deactivating Member'
+        : isReactivation
+          ? 'Error Cancelling Re-invitation'
+          : 'Error Cancelling Invitation'
+
+      setRemoveError(errorMsg)
+      showNotification(errorMsg, 'error', errorTitle)
     } finally {
       setIsRemovingMember(false)
+    }
+  }
+
+  const handleReinviteSubmit = async () => {
+    if (!memberToReinvite) return
+
+    setIsReinvitingMember(true)
+    try {
+      const normalizedEmail = memberToReinvite.email.trim().toLowerCase()
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + 7)
+
+      const assignedDept = memberToReinvite.role === 'Admin'
+        ? 'Administrative Office'
+        : memberToReinvite.role === 'Registrar'
+          ? "Registrar's Office"
+          : (memberToReinvite.role === 'Instructor' || memberToReinvite.role === 'Dean' || memberToReinvite.role === 'Program Head')
+            ? (memberToReinvite.department === 'None' ? '' : memberToReinvite.department || '')
+            : ''
+
+      let membershipId = memberToReinvite.membershipId
+      if (membershipId) {
+        await updateDoc(doc(db, 'memberships', membershipId), {
+          role: memberToReinvite.role,
+          department: assignedDept,
+          fullName: memberToReinvite.name || '',
+          email: normalizedEmail,
+        })
+      } else {
+        const memRef = await addDoc(collection(db, 'memberships'), {
+          userId: memberToReinvite.id,
+          fullName: memberToReinvite.name || '',
+          email: normalizedEmail,
+          role: memberToReinvite.role,
+          department: assignedDept,
+          status: '',
+          joinedAt: '',
+          createdAt: serverTimestamp()
+        })
+        membershipId = memRef.id
+      }
+
+      const inviteRef = await addDoc(collection(db, 'invitations'), {
+        email: normalizedEmail,
+        membershipId: membershipId,
+        status: 'pending',
+        isReactivation: true,
+        invitedBy: auth.currentUser?.uid || 'system',
+        createdAt: serverTimestamp(),
+        expiresAt: Timestamp.fromDate(expiresAt),
+      })
+
+      const signupLink = `${window.location.origin}/signup?token=${inviteRef.id}`
+
+      await addDoc(collection(db, 'mail'), {
+        to: normalizedEmail,
+        message: {
+          subject: `Welcome back to RORMS - ${normalizedEmail}`,
+          html: `
+            <div style="background-color: #f4f7f6; padding: 40px 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0;">
+              <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
+                <!-- Brand Header -->
+                <div style="background-color: #62853e; padding: 30px 20px; text-align: center;">
+                  <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">RORMS</h1>
+                  <p style="color: #e0ead6; margin: 5px 0 0 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Registrar Office Room Management System</p>
+                </div>
+                <!-- Email Body -->
+                <div style="padding: 40px 30px;">
+                  <h2 style="color: #333333; margin-top: 0; font-size: 22px;">Welcome Back!</h2>
+                  <p style="color: #555555; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
+                    Hello,<br><br>
+                    Your account has been officially invited back to the <strong>RORMS</strong> platform as a <strong>${memberToReinvite.role}</strong>.
+                  </p>
+                  <!-- CTA Button -->
+                  <div style="text-align: center; margin: 40px 0;">
+                    <a href="${signupLink}" style="background-color: #62853e; color: #ffffff; padding: 16px 36px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(98, 133, 62, 0.25);">
+                      Accept & Reactivate Account
+                    </a>
+                  </div>
+                  <!-- Security Callout -->
+                  <div style="background-color: #f9f9f9; border-left: 4px solid #e0e0e0; padding: 15px; margin-bottom: 30px;">
+                    <p style="margin: 0; color: #666666; font-size: 14px; line-height: 1.5;">
+                      <strong>Security Note:</strong> This reactivation link is strictly tied to your email address and will automatically expire in <strong>7 days</strong>.
+                    </p>
+                  </div>
+                </div>
+                <!-- Footer -->
+                <div style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eeeeee;">
+                  <p style="color: #aaaaaa; font-size: 12px; margin: 0;">
+                    &copy; ${new Date().getFullYear()} PHINMA University of Pangasinan. All rights reserved.
+                  </p>
+                </div>
+              </div>
+            </div>
+          `,
+        },
+      })
+
+      const memberLabel = memberToReinvite.name || memberToReinvite.email
+      setMemberToReinvite(null)
+      showNotification(`Re-invitation sent to "${memberLabel}".`, 'success', 'Re-invitation Sent')
+    } catch (error) {
+      console.error('Error sending re-invitation:', error)
+      showNotification('Failed to send re-invitation. Please try again.', 'error', 'Error Sending Re-invitation')
+    } finally {
+      setIsReinvitingMember(false)
     }
   }
 
@@ -1337,7 +1540,7 @@ function MembersPage() {
       {/* Edit Member Modal */}
       {editingMember && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div 
+          <div
             className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1345,7 +1548,7 @@ function MembersPage() {
               <h3 className="text-xl font-bold">Edit Member</h3>
               <p className="mt-1 text-sm text-white/80">Update role and department for {editingMember.name || editingMember.email}.</p>
             </div>
-            
+
             <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-4">
                 <div className="sm:w-1/2">
@@ -1356,8 +1559,9 @@ function MembersPage() {
                     options={['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor']}
                     value={editRole}
                     onChange={(val) => {
+                      const prevRole = editRole
                       setEditRole(val)
-                      if (val !== 'Dean' && val !== 'Instructor' && val !== 'Program Head') {
+                      if (val === 'Admin' || val === 'Registrar' || prevRole === 'Admin' || prevRole === 'Registrar') {
                         setEditDept('')
                       }
                     }}
@@ -1367,9 +1571,8 @@ function MembersPage() {
                 </div>
 
                 <div className="sm:w-1/2">
-                  <label htmlFor="edit-dept" className={`block text-xs font-bold uppercase tracking-widest mb-2 transition-colors ${
-                    (editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head') ? 'text-gray-500' : 'text-gray-300'
-                  }`}>
+                  <label htmlFor="edit-dept" className={`block text-xs font-bold uppercase tracking-widest mb-2 transition-colors ${(editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head') ? 'text-gray-500' : 'text-gray-300'
+                    }`}>
                     Department
                   </label>
                   <SingleSelectDropdown
@@ -1406,112 +1609,207 @@ function MembersPage() {
               </div>
             </form>
           </div>
-          <div 
-            className="absolute inset-0 -z-10" 
+          <div
+            className="absolute inset-0 -z-10"
             onMouseDown={() => {
               if (activeDropdowns > 0) return
               if (!isSavingEdit) setEditingMember(null)
-            }} 
+            }}
           />
         </div>
       )}
 
-      {/* Remove Member Modal */}
-      {memberToRemove && (
+      {/* Deactivate Member / Cancel Invitation / Cancel Re-invitation Modal */}
+      {memberToRemove && (() => {
+        const isPending = memberToRemove.status === 'Pending'
+        const mem = rawMemberships.find(m => m.id === memberToRemove.membershipId)
+        const isReactivation = isPending && Boolean(
+          memberToRemove.isReactivation ||
+          (mem?.userId && mem.userId !== '') ||
+          users.some(u => u.email.toLowerCase() === memberToRemove.email.toLowerCase())
+        )
+
+        const modalTitle = !isPending
+          ? 'Deactivate Member'
+          : isReactivation
+            ? 'Cancel Re-invitation'
+            : 'Cancel Invitation'
+
+        const modalSubtitle = !isPending
+          ? 'Are you sure you want to deactivate this member?'
+          : isReactivation
+            ? 'Are you sure you want to cancel this re-invitation?'
+            : 'Are you sure you want to cancel this invitation?'
+
+        const modalWarning = !isPending
+          ? 'This action will deactivate their account and remove their access to the system.'
+          : isReactivation
+            ? 'This action will cancel the pending re-invitation. The user will remain deactivated until invited again.'
+            : 'This action will cancel the pending invitation and prevent this user from completing registration.'
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+            <div
+              className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="bg-rose-600 p-6 text-white">
+                <h3 className="text-xl font-bold">{modalTitle}</h3>
+                <p className="mt-1 text-sm text-white/80">{modalSubtitle}</p>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden">
+                    {memberToRemove.avatar && !avatarErrors[memberToRemove.avatar] ? (
+                      <img
+                        src={memberToRemove.avatar}
+                        alt=""
+                        className="h-full w-full object-cover"
+                        onError={() => setAvatarErrors(prev => ({ ...prev, [memberToRemove.avatar]: true }))}
+                      />
+                    ) : (
+                      <UserIcon className="h-7 w-7" />
+                    )}
+                  </div>
+                  <div>
+                    {memberToRemove.name && <p className="text-sm font-bold text-gray-900">{memberToRemove.name}</p>}
+                    <p className={memberToRemove.name ? "text-xs font-medium text-gray-500" : "text-sm font-bold text-gray-900"}>
+                      {memberToRemove.email}
+                     </p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
+                  <p className="text-xs leading-relaxed text-rose-700">
+                    <span className="font-bold uppercase tracking-wider">Warning:</span>{' '}
+                    {modalWarning}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="confirm-remove-input" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-1">
+                    To confirm, please type <span className="text-rose-600">"confirm"</span>
+                  </label>
+                  <TextInput
+                    id="confirm-remove-input"
+                    value={removeConfirmText}
+                    onChange={(val) => setRemoveConfirmText(val)}
+                    placeholder="Type confirm here..."
+                    autoFocus
+                  />
+                </div>
+
+                {removeError && (
+                  <p className="text-xs font-bold text-rose-600 text-center animate-in fade-in slide-in-from-top-1">
+                    {removeError}
+                  </p>
+                )}
+
+                <div className="flex items-center gap-3 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setMemberToRemove(null)
+                      setRemoveConfirmText('')
+                    }}
+                    disabled={isRemovingMember}
+                    className="flex-1"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handleRemoveSubmit}
+                    disabled={isRemovingMember || removeConfirmText.toLowerCase() !== 'confirm'}
+                    className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white shadow-md shadow-rose-600/20 hover:shadow-lg"
+                  >
+                    {isRemovingMember ? (isPending ? 'Cancelling...' : 'Deactivating...') : 'Confirm'}
+                  </Button>
+                </div>
+              </div>
+            </div>
+            <div
+              className="absolute inset-0 -z-10"
+              onMouseDown={() => {
+                if (!isRemovingMember) {
+                  setMemberToRemove(null)
+                  setRemoveConfirmText('')
+                }
+              }}
+            />
+          </div>
+        )
+      })()}
+
+      {/* Re-invite Member Modal */}
+      {memberToReinvite && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div 
+          <div
             className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white">
-              <h3 className="text-xl font-bold">Remove Member</h3>
-              <p className="mt-1 text-sm text-white/80">Are you sure you want to remove this member from the system?</p>
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+              <h3 className="text-xl font-bold">Re-invite Member</h3>
+              <p className="mt-1 text-sm text-white/80">Send a reactivation invitation to restore access.</p>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden">
-                  {memberToRemove.avatar && !avatarErrors[memberToRemove.avatar] ? (
-                    <img 
-                      src={memberToRemove.avatar} 
-                      alt="" 
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden shrink-0">
+                  {memberToReinvite.avatar && !avatarErrors[memberToReinvite.avatar] ? (
+                    <img
+                      src={memberToReinvite.avatar}
+                      alt=""
                       className="h-full w-full object-cover"
-                      onError={() => setAvatarErrors(prev => ({ ...prev, [memberToRemove.avatar]: true }))}
+                      onError={() => setAvatarErrors(prev => ({ ...prev, [memberToReinvite.avatar]: true }))}
                     />
                   ) : (
                     <UserIcon className="h-7 w-7" />
                   )}
                 </div>
-                <div>
-                  {memberToRemove.name && <p className="text-sm font-bold text-gray-900">{memberToRemove.name}</p>}
-                  <p className={memberToRemove.name ? "text-xs font-medium text-gray-500" : "text-sm font-bold text-gray-900"}>
-                    {memberToRemove.email}
+                <div className="flex-1 min-w-0">
+                  {memberToReinvite.name && <p className="text-sm font-bold text-gray-900 truncate">{memberToReinvite.name}</p>}
+                  <p className={memberToReinvite.name ? "text-xs font-medium text-gray-500 truncate" : "text-sm font-bold text-gray-900 truncate"}>
+                    {memberToReinvite.email}
                   </p>
                 </div>
               </div>
 
-              <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
-                <p className="text-xs leading-relaxed text-rose-700">
-                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete their account, all membership records, and access to the system.
+              <div className="rounded-xl bg-emerald-50 p-4 border border-emerald-100">
+                <p className="text-xs leading-relaxed text-emerald-800">
+                  A reactivation email with a 7-day secure access link will be sent to <strong>{memberToReinvite.email}</strong>. Once accepted, their account will be restored.
                 </p>
               </div>
-
-              <div className="space-y-2">
-                <label className="text-xs font-bold uppercase tracking-widest text-gray-500">
-                  To confirm, please type <span className="text-rose-600">"confirm"</span>
-                </label>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck="false"
-                  value={removeConfirmText}
-                  onChange={(e) => setRemoveConfirmText(e.target.value)}
-                  placeholder="Type confirm here..."
-                  className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-xs"
-                  autoFocus
-                />
-              </div>
-
-              {removeError && (
-                <p className="text-xs font-bold text-rose-600 text-center animate-in fade-in slide-in-from-top-1">
-                  {removeError}
-                </p>
-              )}
 
               <div className="flex items-center gap-3 pt-2">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => {
-                    setMemberToRemove(null)
-                    setRemoveConfirmText('')
-                  }}
-                  disabled={isRemovingMember}
+                  onClick={() => setMemberToReinvite(null)}
+                  disabled={isReinvitingMember}
                   className="flex-1"
                 >
                   Cancel
                 </Button>
-                <button
+                <Button
                   type="button"
-                  onClick={handleRemoveSubmit}
-                  disabled={isRemovingMember || removeConfirmText.toLowerCase() !== 'confirm'}
-                  className="flex-1 h-12 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white shadow-md transition-all hover:bg-rose-700 active:scale-95 active:shadow-none disabled:opacity-50 disabled:cursor-not-allowed"
+                  variant="brand"
+                  onClick={handleReinviteSubmit}
+                  disabled={isReinvitingMember}
+                  className="flex-1"
                 >
-                  {isRemovingMember ? 'Removing...' : 'Confirm Remove'}
-                </button>
+                  {isReinvitingMember ? 'Sending...' : 'Send Re-invitation'}
+                </Button>
               </div>
             </div>
           </div>
-          <div 
-            className="absolute inset-0 -z-10" 
+          <div
+            className="absolute inset-0 -z-10"
             onMouseDown={() => {
-              if (!isRemovingMember) {
-                setMemberToRemove(null)
-                setRemoveConfirmText('')
-              }
-            }} 
+              if (!isReinvitingMember) setMemberToReinvite(null)
+            }}
           />
         </div>
       )}
@@ -1519,7 +1817,7 @@ function MembersPage() {
       {/* Invite Member Modal Overlay */}
       {isInviteModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
-          <div 
+          <div
             className="w-full max-w-md rounded-2xl border border-gray-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible"
             onClick={(e) => e.stopPropagation()}
           >
@@ -1527,7 +1825,7 @@ function MembersPage() {
               <h3 className="text-xl font-bold">Invite New Member</h3>
               <p className="mt-1 text-sm text-white/80">Send an invitation link to join the team.</p>
             </div>
-            
+
             <form onSubmit={handleInvite} className="p-6 space-y-5" noValidate>
               <div className="flex flex-col gap-5">
                 <div className="relative flex-1">
@@ -1555,12 +1853,17 @@ function MembersPage() {
                     <SingleSelectDropdown
                       options={['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor']}
                       value={inviteRole}
-                      onChange={setInviteRole}
+                      onChange={(val) => {
+                        setInviteRole(val)
+                        if (val === 'Admin' || val === 'Registrar') {
+                          setInviteDepartment('None')
+                        }
+                      }}
                       onToggle={handleDropdownToggle}
                       className="w-full"
                     />
                   </div>
-                  
+
                   <div className="w-full">
                     <label htmlFor="invite-department" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                       Department
@@ -1599,18 +1902,18 @@ function MembersPage() {
             </form>
           </div>
           {/* Click outside to close */}
-          <div 
-            className="absolute inset-0 -z-10" 
+          <div
+            className="absolute inset-0 -z-10"
             onMouseDown={() => {
               if (activeDropdowns > 0) return
               setIsInviteModalOpen(false)
-            }} 
+            }}
           />
         </div>
       )}
 
       <div className="space-y-6">
-        <SectionHeader 
+        <SectionHeader
           title="User Directory"
           description="Manage system access, roles, and department assignments for all users in a centralized hub."
         />
@@ -1690,51 +1993,28 @@ function MembersPage() {
                 )
               },
               {
-                header: 'Assigned Role',
-                width: '20%',
-                render: (member) => {
-                  if (member.status === 'Inactive') {
-                    return (
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 w-2 rounded-full bg-slate-300" />
-                        <span className="text-[0.7rem] font-bold uppercase tracking-widest text-slate-400">
-                          None
-                        </span>
-                      </div>
-                    )
-                  }
-
-                  return (
-                    <div className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full ${roleClasses[member.role]?.split(' ')[0] || 'bg-gray-200'}`} />
-                      <span className={`text-[0.7rem] font-bold uppercase tracking-widest ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
-                        {member.role}
-                      </span>
-                    </div>
-                  )
-                }
+                header: 'Role',
+                width: '16%',
+                render: (member) => (
+                  <div className={`flex items-center gap-2 ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
+                    <div className="h-2 w-2 rounded-full bg-current" />
+                    <span className="text-[0.7rem] font-bold uppercase tracking-widest">
+                      {member.role}
+                    </span>
+                  </div>
+                )
               },
               {
                 header: 'Department',
-                width: '16%',
-                render: (member) => {
-                  if (member.status === 'Inactive') {
-                    return (
-                      <span className="text-sm font-semibold text-slate-400">
-                        Unassigned
-                      </span>
-                    )
-                  }
-
-                  return (
-                    <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
-                      {member.department || (
-                        member.role === 'Admin' ? 'Administrative Office' :
+                width: '18%',
+                render: (member) => (
+                  <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
+                    {member.department || (
+                      member.role === 'Admin' ? 'Administrative Office' :
                         member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
-                      )}
-                    </span>
-                  )
-                }
+                    )}
+                  </span>
+                )
               },
               {
                 header: 'Status',
@@ -1760,35 +2040,55 @@ function MembersPage() {
                 align: 'right',
                 render: (member) => {
                   const isSelf = member.id === currentUserId
-                  const isEditDisabled = isSelf || member.status === 'Pending' || member.status === 'Inactive'
-                  const isRemoveDisabled = isSelf || member.status === 'Inactive'
+                  const isEditDisabled = isSelf
+                  const isRemoveDisabled = isSelf
 
                   return (
                     <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
                       <IconButton
                         label="Edit member"
                         onClick={() => openEditModal(member)}
-                        className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
-                          isEditDisabled
-                            ? 'opacity-30 cursor-default text-slate-400' 
-                            : 'text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
-                        }`}
+                        className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${isEditDisabled
+                          ? 'opacity-30 cursor-default text-slate-400'
+                          : 'text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
+                          }`}
                         disabled={isEditDisabled}
                       >
                         <EditIcon className="h-4 w-4" />
                       </IconButton>
-                      <IconButton
-                        label="Remove member"
-                        onClick={() => setMemberToRemove(member)}
-                        className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
-                          isRemoveDisabled
+                      {member.status === 'Deactivated' ? (
+                        <IconButton
+                          label="Re-invite member"
+                          onClick={() => setMemberToReinvite(member)}
+                          className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 text-[var(--brand-color)] hover:border-[var(--brand-color)]/40 hover:bg-[var(--brand-color)]/5 hover:text-[var(--brand-color-hover)] hover:shadow hover:-translate-y-0.5 transition-all"
+                        >
+                          <MailIcon className="h-4 w-4" />
+                        </IconButton>
+                      ) : member.status === 'Pending' ? (
+                        <IconButton
+                          label={member.isReactivation ? 'Cancel re-invitation' : 'Cancel invitation'}
+                          onClick={() => setMemberToRemove(member)}
+                          className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${isRemoveDisabled
                             ? 'opacity-30 cursor-default text-slate-400'
                             : 'text-rose-500 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
-                        }`}
-                        disabled={isRemoveDisabled}
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </IconButton>
+                            }`}
+                          disabled={isRemoveDisabled}
+                        >
+                          <CloseIcon className="h-4 w-4" />
+                        </IconButton>
+                      ) : (
+                        <IconButton
+                          label="Deactivate member"
+                          onClick={() => setMemberToRemove(member)}
+                          className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${isRemoveDisabled
+                            ? 'opacity-30 cursor-default text-slate-400'
+                            : 'text-rose-500 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
+                            }`}
+                          disabled={isRemoveDisabled}
+                        >
+                          <MinusCircleIcon className="h-4 w-4" />
+                        </IconButton>
+                      )}
                     </div>
                   )
                 }
@@ -1817,7 +2117,7 @@ function MembersPage() {
                   {
                     id: 'status',
                     title: 'Status',
-                    options: ['Active', 'Inactive', 'Pending'],
+                    options: ['Active', 'Deactivated', 'Pending'],
                     selectedValues: selectedStatuses,
                     onChange: (newSelected) => setSelectedStatuses(newSelected as MemberStatus[])
                   }

@@ -109,7 +109,7 @@ export function Snackbar({
     >
       <div 
         style={{ minWidth: minWidth || undefined }}
-        className={`pointer-events-auto flex items-center gap-4 rounded-2xl border p-4.5 shadow-2xl transition-all duration-300 min-w-[18rem] sm:min-w-[340px] max-w-lg ${
+        className={`pointer-events-auto flex items-center gap-3.5 sm:gap-4 rounded-2xl border p-4.5 shadow-2xl transition-all duration-300 w-max max-w-[calc(100vw-2rem)] sm:max-w-[calc(100vw-3rem)] ${
           style.container
         } ${
           isTop 
@@ -123,15 +123,16 @@ export function Snackbar({
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-w-0 pr-1">
+        <div className="flex items-center gap-2 whitespace-nowrap min-w-0 pr-1">
           {title && (
-            <h5 className="text-sm font-bold text-gray-900 leading-snug truncate">
+            <span className="text-sm font-bold text-gray-900 shrink-0">
               {title}
-            </h5>
+            </span>
           )}
-          <p className={`text-sm font-medium text-gray-700 ${title ? 'mt-0.5' : ''}`}>
+          {title && <span className="text-gray-300 text-xs select-none">•</span>}
+          <span className="text-sm font-medium text-gray-700 whitespace-nowrap">
             {message}
-          </p>
+          </span>
         </div>
 
         {/* Action Button */}

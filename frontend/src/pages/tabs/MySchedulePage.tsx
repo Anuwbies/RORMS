@@ -579,7 +579,7 @@ function MySchedulePage() {
               name: currentUserDoc?.fullName || currentUser?.displayName || 'Instructor',
               email: currentUser?.email || '',
               role: userRole || currentMembership?.role || 'Instructor',
-              department: currentMembership?.departmentCode || currentMembership?.department || '',
+              department: currentMembership?.department || '',
               departmentName: currentMembership?.departmentName || ''
             }}
             showWeekCalendar={true}

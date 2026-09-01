@@ -6,63 +6,13 @@ import { auth, db, storage } from '../firebase'
 import { BellIcon, CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DepartmentIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
 import { CropModal } from './CropModal'
-
-type NotificationType =
-  | 'booking_created'
-  | 'booking_approved'
-  | 'booking_rejected'
-  | 'booking_cancelled'
-  | 'system'
-
-interface NotificationItem {
-  id: string
-  title: string
-  message: string
-  createdAt: string
-  isRead: boolean
-  type: NotificationType
-}
+import { type NotificationItem, MOCK_NOTIFICATIONS } from '../types/notifications'
 
 interface RightSidebarProps {
   isExpanded: boolean
   onExpandChange: (isExpanded: boolean) => void
   onSignOut: () => void
 }
-
-const initialNotifications: NotificationItem[] = [
-  {
-    id: 'notif-1',
-    title: 'Room request received',
-    message: 'A new registrar room request for Meeting Room A needs review before 3:00 PM.',
-    createdAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-    isRead: false,
-    type: 'booking_created',
-  },
-  {
-    id: 'notif-2',
-    title: 'Assignment approved',
-    message: 'The revised allocation for Computer Lab 2 was approved and published to staff.',
-    createdAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    isRead: false,
-    type: 'booking_approved',
-  },
-  {
-    id: 'notif-3',
-    title: 'Schedule conflict flagged',
-    message: 'Two overlapping reservations were detected for the registrar interview room.',
-    createdAt: new Date(Date.now() - 26 * 60 * 60 * 1000).toISOString(),
-    isRead: true,
-    type: 'booking_rejected',
-  },
-  {
-    id: 'notif-4',
-    title: 'System summary ready',
-    message: 'The weekly room utilization digest is ready for the registrar office to review.',
-    createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    isRead: true,
-    type: 'system',
-  },
-]
 
 function formatRelativeTime(timestamp: string) {
   const elapsedMs = Math.max(Date.now() - new Date(timestamp).getTime(), 0)
@@ -81,42 +31,6 @@ function formatRelativeTime(timestamp: string) {
   return `${days}d ago`
 }
 
-function getNotificationConfig(type: NotificationType) {
-  switch (type) {
-    case 'booking_created':
-      return {
-        color: 'text-blue-600 dark:text-blue-300',
-        bg: 'bg-blue-50 dark:bg-blue-500/10',
-        border: 'bg-blue-500',
-      }
-    case 'booking_approved':
-      return {
-        color: 'text-emerald-600 dark:text-emerald-300',
-        bg: 'bg-emerald-50 dark:bg-emerald-500/10',
-        border: 'bg-emerald-500',
-      }
-    case 'booking_rejected':
-      return {
-        color: 'text-red-600 dark:text-red-300',
-        bg: 'bg-red-50 dark:bg-red-500/10',
-        border: 'bg-red-500',
-      }
-    case 'booking_cancelled':
-      return {
-        color: 'text-amber-600 dark:text-amber-300',
-        bg: 'bg-amber-50 dark:bg-amber-500/10',
-        border: 'bg-amber-500',
-      }
-    case 'system':
-    default:
-      return {
-        color: 'text-purple-600 dark:text-purple-300',
-        bg: 'bg-purple-50 dark:bg-purple-500/10',
-        border: 'bg-purple-500',
-      }
-  }
-}
-
 const roleClasses: Record<string, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
@@ -130,7 +44,7 @@ export const RightSidebar = memo(function RightSidebar({
   onExpandChange,
   onSignOut,
 }: RightSidebarProps) {
-  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications)
+  const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [profileImage, setProfileImage] = useState<string | null>(null)
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false)
@@ -195,7 +109,7 @@ export const RightSidebar = memo(function RightSidebar({
             const data = snapshot.docs[0].data()
             setUserData((prev) => ({
               ...prev,
-              department: data.departmentCode || '',
+              department: data.department || '',
               role: data.role || 'member'
             }))
           }
@@ -343,10 +257,10 @@ export const RightSidebar = memo(function RightSidebar({
       {isSignOutModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-3xl relative">
+            <div className="bg-rose-600 p-6 text-white rounded-t-2xl relative">
               <h3 className="text-xl font-bold">Sign Out</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to sign out?</p>
             </div>
@@ -381,10 +295,10 @@ export const RightSidebar = memo(function RightSidebar({
       {isClearNotificationsModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-sm rounded-3xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-3xl relative">
+            <div className="bg-rose-600 p-6 text-white rounded-t-2xl relative">
               <h3 className="text-xl font-bold">Clear All</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to clear all notifications?</p>
             </div>
@@ -641,8 +555,6 @@ export const RightSidebar = memo(function RightSidebar({
 
             <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
               {notifications.map((notification) => {
-                const config = getNotificationConfig(notification.type)
-
                 return (
                   <div
                     key={notification.id}
@@ -650,10 +562,9 @@ export const RightSidebar = memo(function RightSidebar({
                     tabIndex={0}
                     className={joinClasses(
                       'group relative flex w-full flex-col overflow-hidden rounded-2xl border text-left transition-all duration-300 hover:shadow-md cursor-pointer',
-                      config.bg,
-                      config.color,
-                      'border-secondary-100 dark:border-secondary-800',
-                      !notification.isRead && 'ring-1 ring-primary-500/20 shadow-sm',
+                      notification.isRead ? 'bg-slate-50 dark:bg-slate-800/50' : 'bg-[var(--brand-color)]/5 dark:bg-[var(--brand-color)]/10',
+                      'border-slate-200 dark:border-slate-700',
+                      !notification.isRead && 'ring-1 ring-[var(--brand-color)]/20 shadow-sm',
                     )}
                     onClick={() => markAsRead(notification.id)}
                     onKeyDown={(e) => {
@@ -663,7 +574,10 @@ export const RightSidebar = memo(function RightSidebar({
                       }
                     }}
                   >
-                    <div className={joinClasses('absolute top-0 bottom-0 left-0 w-1.5', config.border)} />
+                    <div className={joinClasses(
+                      'absolute top-0 bottom-0 left-0 w-1.5',
+                      notification.isRead ? 'bg-slate-300 dark:bg-slate-600' : 'bg-[var(--brand-color)]'
+                    )} />
 
                     <div className="p-4 pl-6">
                       <div className="flex min-w-0 flex-col gap-1">
@@ -673,33 +587,33 @@ export const RightSidebar = memo(function RightSidebar({
                               className={joinClasses(
                                 'truncate text-sm font-black tracking-tight',
                                 notification.isRead
-                                  ? 'text-secondary-900 dark:text-secondary-100'
-                                  : 'text-primary-600 dark:text-primary-400',
+                                  ? 'text-slate-700 dark:text-slate-300'
+                                  : 'text-slate-900 dark:text-slate-100',
                               )}
                             >
                               {notification.title}
                             </p>
                             {!notification.isRead && (
-                              <span className="h-3.5 shrink-0 rounded-full bg-primary-500 px-1 text-[0.5rem] leading-[0.875rem] font-black uppercase tracking-widest text-white">
+                              <span className="h-3.5 shrink-0 rounded-full bg-[var(--brand-color)] px-1 text-[0.5rem] leading-[0.875rem] font-black uppercase tracking-widest text-white">
                                 New
                               </span>
                             )}
                           </div>
 
-                          <span className="ml-auto shrink-0 whitespace-nowrap text-[0.625rem] font-bold text-secondary-400 dark:text-secondary-500">
+                          <span className="ml-auto shrink-0 whitespace-nowrap text-[0.625rem] font-bold text-slate-500 dark:text-slate-400">
                             {formatRelativeTime(notification.createdAt)}
                           </span>
                         </div>
 
                         <div className="flex items-end justify-between gap-4">
-                          <p className="line-clamp-2 flex-1 text-[0.6875rem] font-semibold leading-relaxed text-secondary-500 dark:text-secondary-400">
+                          <p className="line-clamp-2 flex-1 text-[0.6875rem] font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
                             {notification.message}
                           </p>
 
                           <button
                             type="button"
                             aria-label={`Delete ${notification.title}`}
-                            className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-secondary-300 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
+                            className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
                             onClick={(event) => {
                               event.stopPropagation()
                               deleteNotification(notification.id)

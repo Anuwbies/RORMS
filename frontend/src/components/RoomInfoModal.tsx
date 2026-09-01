@@ -19,7 +19,7 @@ export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton }: R
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
       <div 
-        className="w-full max-w-lg rounded-3xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
+        className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">

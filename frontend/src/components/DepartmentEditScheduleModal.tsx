@@ -273,6 +273,7 @@ function DepartmentEditScheduleModal({
   const [revertedCellKeys, setRevertedCellKeys] = useState<Set<string>>(new Set())
   const undoHighlightTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [pendingUndoIndex, setPendingUndoIndex] = useState<number | null>(null)
+  const [allInstructorsNameMap, setAllInstructorsNameMap] = useState<Map<string, string>>(new Map())
 
   // Drag-and-drop reordering state (pointer-based, smooth CSS transform animation)
   const [dragState, setDragState] = useState<{
@@ -768,6 +769,42 @@ function DepartmentEditScheduleModal({
     return () => unsubscribe()
   }, [isOpen, selectedAcademicYear?.academicYear, selectedSemesterPhase?.name])
 
+  useEffect(() => {
+    if (!isOpen) return
+
+    let unsubUsers: (() => void) | null = null
+    const unsubMemberships = onSnapshot(collection(db, 'memberships'), (mSnap) => {
+      unsubUsers = onSnapshot(collection(db, 'users'), (uSnap) => {
+        const usersDataMap = new Map<string, any>()
+        uSnap.forEach(uDoc => usersDataMap.set(uDoc.id, uDoc.data()))
+
+        const map = new Map<string, string>()
+        mSnap.forEach(mDoc => {
+          const mem = mDoc.data()
+          const user = usersDataMap.get(mem.userId)
+          const name = user?.fullName || mem.fullName || user?.email || mem.email || ''
+          if (name) {
+            map.set(mDoc.id, name)
+            if (mem.userId) {
+              map.set(mem.userId, name)
+            }
+          }
+        })
+        usersDataMap.forEach((user, uid) => {
+          if (!map.has(uid)) {
+            map.set(uid, user.fullName || user.email || '')
+          }
+        })
+        setAllInstructorsNameMap(map)
+      })
+    })
+
+    return () => {
+      if (unsubMemberships) unsubMemberships()
+      if (unsubUsers) unsubUsers()
+    }
+  }, [isOpen])
+
   const timeRangesOverlap = (startA: string, endA: string, startB: string, endB: string): boolean => {
     if (!startA || !endA || !startB || !endB) return false
     return startA < endB && startB < endA
@@ -938,13 +975,14 @@ function DepartmentEditScheduleModal({
 
     // 3. Helper to format names & validate active instructors
     const getRoomName = (rId: string) => rooms.find(r => r.id === rId)?.name || rooms.find(r => r.id === rId)?.code || 'Room'
-    const getInstructorName = (iId: string) => members.find(m => (m as any).membershipId === iId || m.id === iId)?.name || 'Instructor'
+    const getInstructorName = (iId: string) => members.find(m => (m as any).membershipId === iId || m.id === iId || (m as any).userId === iId)?.name || allInstructorsNameMap.get(iId) || 'Instructor'
 
     const validInstructorsMap = new Map<string, DepartmentMember>()
     members.forEach(m => {
       if (m.status === 'Active' && (m.role === 'Instructor' || m.role === 'Program Head')) {
         if (m.membershipId) validInstructorsMap.set(m.membershipId, m)
         if (m.id) validInstructorsMap.set(m.id, m)
+        if ((m as any).userId) validInstructorsMap.set((m as any).userId, m)
       }
     })
 
@@ -956,19 +994,23 @@ function DepartmentEditScheduleModal({
         if (!instId) return
         const isValid = validInstructorsMap.has(instId)
         if (!isValid) {
-          const memberRecord = members.find(m => (m as any).membershipId === instId || m.id === instId)
-          const instName = memberRecord?.name || 'Assigned instructor'
+          const memberRecord = members.find(m => (m as any).membershipId === instId || m.id === instId || (m as any).userId === instId)
+          const instName = memberRecord?.name || allInstructorsNameMap.get(instId)
           let reason = 'is no longer in this department'
           if (memberRecord) {
-            if (memberRecord.status !== 'Active') {
-              reason = 'is currently Inactive'
+            if (memberRecord.status === 'Deactivated') {
+              reason = 'is currently deactivated'
+            } else if (memberRecord.status === 'Pending') {
+              reason = 'has a pending department invitation'
             } else if (memberRecord.role !== 'Instructor' && memberRecord.role !== 'Program Head') {
               reason = `has role '${memberRecord.role}' (must be Instructor or Program Head)`
             }
           }
           const isSplitInstructor = !!(schedule as any).instructorId2 && (schedule as any).instructorId2 !== schedule.instructorId
           const prefix = isSplitInstructor ? `[${sessionNum === 1 ? '1st Session' : '2nd Session'}] ` : ''
-          const msg = `${prefix}Instructor ${instName} ${reason}`
+          const msg = instName
+            ? `${prefix}Instructor "${instName}" ${reason}`
+            : `${prefix}Assigned instructor ${reason}`
 
           const targetIndices = [rowIndex]
           if (schedule.type === 'parallel' && !schedule.parentId) {
@@ -997,7 +1039,7 @@ function DepartmentEditScheduleModal({
             section: schedule.classSection || '',
             type: 'instructor',
             sessionNum,
-            conflictTarget: instName,
+            conflictTarget: instName || 'Assigned Instructor',
             message: msg
           })
         }
@@ -2929,13 +2971,13 @@ function DepartmentEditScheduleModal({
                             <div className="px-3 py-3 text-sm text-gray-900 font-medium cursor-default flex items-center justify-between gap-1.5 overflow-hidden w-full">
                               <div className="flex items-center min-w-0 truncate">
                                 <span className="truncate min-w-0 leading-none">
-                                  {members.find(m => (m as any).membershipId === schedule.instructorId || m.id === schedule.instructorId)?.name || '----'}
+                                  {members.find(m => (m as any).membershipId === schedule.instructorId || m.id === schedule.instructorId || (m as any).userId === schedule.instructorId)?.name || allInstructorsNameMap.get(schedule.instructorId) || '----'}
                                 </span>
                                 {(schedule as any).instructorId2 && ((schedule as any).instructorId2 !== schedule.instructorId || !isSecondSessionUnlocked) ? (
                                   <>
                                     <span className="shrink-0 whitespace-pre leading-none">{' / '}</span>
                                     <span className={`truncate min-w-0 leading-none ${!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}`}>
-                                      {members.find(m => (m as any).membershipId === (schedule as any).instructorId2 || m.id === (schedule as any).instructorId2)?.name || '?'}
+                                      {members.find(m => (m as any).membershipId === (schedule as any).instructorId2 || m.id === (schedule as any).instructorId2 || (m as any).userId === (schedule as any).instructorId2)?.name || allInstructorsNameMap.get((schedule as any).instructorId2) || '?'}
                                     </span>
                                   </>
                                 ) : (missingInstructor2 ? <> <span className="shrink-0 whitespace-pre leading-none">{' / '}</span> <span>----</span></> : '')}
@@ -2952,14 +2994,14 @@ function DepartmentEditScheduleModal({
                                     <span className="text-amber-500 font-bold shrink-0 inline-block leading-none">?</span>
                                   ) : (
                                     <span className="truncate min-w-0 leading-none">
-                                      {members.find(m => m.membershipId === schedule.instructorId)?.name || '?'}
+                                      {members.find(m => (m as any).membershipId === schedule.instructorId || m.id === schedule.instructorId || (m as any).userId === schedule.instructorId)?.name || allInstructorsNameMap.get(schedule.instructorId) || '?'}
                                     </span>
                                   )}
                                   {(schedule as any).instructorId2 && ((schedule as any).instructorId2 !== schedule.instructorId || !isSecondSessionUnlocked) ? (
                                     <>
                                       <span className="shrink-0 whitespace-pre leading-none">{' / '}</span>
                                       <span className={`truncate min-w-0 leading-none ${!isSecondSessionUnlocked ? "text-gray-400 font-normal" : ""}`}>
-                                        {members.find(m => m.membershipId === (schedule as any).instructorId2)?.name || '?'}
+                                        {members.find(m => (m as any).membershipId === (schedule as any).instructorId2 || m.id === (schedule as any).instructorId2 || (m as any).userId === (schedule as any).instructorId2)?.name || allInstructorsNameMap.get((schedule as any).instructorId2) || '?'}
                                       </span>
                                     </>
                                   ) : (missingInstructor2 ? <> <span className="shrink-0 whitespace-pre leading-none">{' / '}</span> <span className="text-amber-500 font-bold ml-1 inline-block leading-none">?</span></> : '')}
@@ -4159,11 +4201,10 @@ function DepartmentEditScheduleModal({
             </div>
 
             {/* Modal Footer */}
-            <div className="px-8 py-4 border-t border-gray-200 bg-gray-50/80 flex items-center justify-between gap-3 shrink-0 rounded-b-2xl">
+            <div className="p-4 border-t border-gray-200 bg-gray-50/80 flex items-center justify-between gap-3 shrink-0 rounded-b-2xl">
               <div className="text-xs text-gray-600 flex items-center gap-2">
                 {scheduleConflicts.hardConflictsCount > 0 ? (
                   <span className="text-rose-600 font-bold flex items-center gap-1.5">
-                    <ExclamationIcon className="h-3.5 w-3.5 shrink-0" />
                     {scheduleConflicts.hardConflictsCount} blocking conflict{scheduleConflicts.hardConflictsCount > 1 ? 's' : ''} must be resolved before saving.
                   </span>
                 ) : scheduleConflicts.missingCount > 0 ? (

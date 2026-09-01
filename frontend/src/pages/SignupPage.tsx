@@ -37,10 +37,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
       const token = params.get('token')
 
       if (!token) {
-        // In preview/testing mode without a token, populate sample values so the UI can be tested
-        setEmail('test.instructor@phinmaed.com')
-        setRole('Instructor')
-        setDepartment('CITE')
+        setError('This invitation link is invalid or missing.')
         setIsValidating(false)
         return
       }
@@ -70,11 +67,32 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
         }
 
         setEmail(data.email)
-        setRole(data.role)
-        setDepartment(data.department || '')
         if (data.isReactivation) {
           setIsReactivation(true)
         }
+
+        let assignedRole = data.role || 'Instructor'
+        let assignedDepartment = data.department || ''
+
+        if (data.membershipId) {
+          const memDoc = await getDoc(doc(db, 'memberships', data.membershipId))
+          if (memDoc.exists()) {
+            const memData = memDoc.data()
+            assignedRole = memData.role || assignedRole
+            assignedDepartment = memData.department || assignedDepartment
+          }
+        } else {
+          const memQ = query(collection(db, 'memberships'), where('email', '==', data.email))
+          const memSnap = await getDocs(memQ)
+          if (!memSnap.empty) {
+            const memData = memSnap.docs[0].data()
+            assignedRole = memData.role || assignedRole
+            assignedDepartment = memData.department || assignedDepartment
+          }
+        }
+
+        setRole(assignedRole)
+        setDepartment(assignedDepartment)
       } catch (err) {
         console.error('Error validating invitation:', err)
         setError('Failed to validate invitation. Please try again later.')
@@ -88,11 +106,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
 
   const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!inviteId) {
-      setError('You are in test/preview mode. Use a valid invitation link to register a live account.')
-      return
-    }
-    if (!email || !role) {
+    if (!inviteId || !email || !role) {
       setError('Invalid registration state.')
       return
     }
@@ -113,22 +127,71 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
         
         const userId = userSnap.docs[0].id
         
+        const userDocData = userSnap.docs[0].data()
+        
         const batch = writeBatch(db)
         batch.update(doc(db, 'users', userId), { 
           isActive: true, 
           updatedAt: serverTimestamp() 
         })
         
-        const membershipRef = doc(collection(db, 'memberships'))
-        batch.set(membershipRef, { 
-          userId, 
-          role, 
-          departmentCode: department, 
-          joinedAt: serverTimestamp() 
-        })
+        const assignedDept = role === 'Admin'
+          ? 'Administrative Office'
+          : role === 'Registrar'
+            ? "Registrar's Office"
+            : (department || '')
+
+        const inviteDocSnap = await getDoc(doc(db, 'invitations', inviteId))
+        const inviteData = inviteDocSnap.exists() ? inviteDocSnap.data() : null
+        const targetMembershipId = inviteData?.membershipId
+
+        let existingStatus: string | undefined = undefined
+        let existingJoinedAt: any = undefined
+
+        if (targetMembershipId) {
+          const existingMemDoc = await getDoc(doc(db, 'memberships', targetMembershipId))
+          if (existingMemDoc.exists()) {
+            const data = existingMemDoc.data()
+            existingStatus = data.status
+            existingJoinedAt = data.joinedAt
+          }
+        }
+
+        const finalStatus = existingStatus !== undefined ? existingStatus : (assignedDept ? 'accepted' : '')
+        const finalJoinedAt = existingJoinedAt !== undefined ? existingJoinedAt : (assignedDept ? serverTimestamp() : '')
+
+        if (targetMembershipId) {
+          batch.set(doc(db, 'memberships', targetMembershipId), { 
+            userId, 
+            fullName: userDocData.fullName || '',
+            email: userDocData.email || email,
+            role, 
+            department: assignedDept, 
+            status: finalStatus,
+            joinedAt: finalJoinedAt 
+          }, { merge: true })
+        } else {
+          const membershipRef = doc(collection(db, 'memberships'))
+          batch.set(membershipRef, { 
+            userId, 
+            fullName: userDocData.fullName || '',
+            email: userDocData.email || email,
+            role, 
+            department: assignedDept, 
+            status: finalStatus,
+            joinedAt: finalJoinedAt 
+          })
+        }
         
         batch.update(doc(db, 'invitations', inviteId), { 
           status: 'accepted' 
+        })
+
+        // Clean up any associated mail documents for this email
+        const mailQuery = query(collection(db, 'mail'), where('to', '==', email))
+        const mailSnapshot = await getDocs(mailQuery)
+        mailSnapshot.forEach((mDoc) => {
+          batch.delete(doc(db, 'mail', mDoc.id))
         })
         
         await batch.commit()
@@ -162,7 +225,12 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
       // Use a batch to create both documents atomically and update invitation
       const batch = writeBatch(db)
       const userRef = doc(db, 'users', user.uid)
-      const membershipRef = doc(collection(db, 'memberships'))
+
+      const assignedDept = role === 'Admin'
+        ? 'Administrative Office'
+        : role === 'Registrar'
+          ? "Registrar's Office"
+          : (department || '')
 
       batch.set(userRef, {
         email: email,
@@ -174,16 +242,46 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
         isActive: true
       })
 
-      batch.set(membershipRef, {
-        userId: user.uid,
-        departmentCode: department,
-        role: role,
-        joinedAt: serverTimestamp()
-      })
+      const inviteDocSnap = await getDoc(doc(db, 'invitations', inviteId))
+      const inviteData = inviteDocSnap.exists() ? inviteDocSnap.data() : null
+      const targetMembershipId = inviteData?.membershipId
+
+      const finalStatus = assignedDept ? 'accepted' : ''
+      const finalJoinedAt = assignedDept ? serverTimestamp() : ''
+
+      if (targetMembershipId) {
+        batch.set(doc(db, 'memberships', targetMembershipId), {
+          userId: user.uid,
+          fullName: fullName,
+          email: email,
+          department: assignedDept,
+          role: role,
+          status: finalStatus,
+          joinedAt: finalJoinedAt
+        }, { merge: true })
+      } else {
+        const membershipRef = doc(collection(db, 'memberships'))
+        batch.set(membershipRef, {
+          userId: user.uid,
+          fullName: fullName,
+          email: email,
+          department: assignedDept,
+          role: role,
+          status: finalStatus,
+          joinedAt: finalJoinedAt
+        })
+      }
 
       // Mark invitation as accepted
       batch.update(doc(db, 'invitations', inviteId), {
         status: 'accepted'
+      })
+
+      // Clean up any associated mail documents for this email
+      const mailQuery = query(collection(db, 'mail'), where('to', '==', email))
+      const mailSnapshot = await getDocs(mailQuery)
+      mailSnapshot.forEach((mDoc) => {
+        batch.delete(doc(db, 'mail', mDoc.id))
       })
 
       await batch.commit()
@@ -269,7 +367,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
         </nav>
 
         <div className="relative flex w-full min-h-0 flex-1 items-stretch">
-          <div className="h-full w-full rounded-3xl border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
+          <div className="h-full w-full rounded-2xl border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
             <InfoTabContent activeTab={activeTab} />
           </div>
         </div>
@@ -279,7 +377,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
         <div aria-hidden className="pointer-events-none absolute -top-40 -right-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
         <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
 
-        <div className="relative w-full max-w-md animate-in rounded-3xl border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
+        <div className="relative w-full max-w-md animate-in rounded-2xl border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
           <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-color)]">
             {isReactivation ? 'Reactivate' : 'Sign Up'}
           </p>

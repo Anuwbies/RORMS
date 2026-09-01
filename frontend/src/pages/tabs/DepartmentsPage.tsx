@@ -39,6 +39,12 @@ const roleClasses: Record<string, string> = {
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
+const statusClasses: Record<string, string> = {
+  Active: 'bg-emerald-100 text-emerald-700',
+  Deactivated: 'bg-rose-100 text-rose-700',
+  Pending: 'bg-amber-100 text-amber-700',
+}
+
 type PersonType = {
   id: string;
   direction: 'right' | 'left';
@@ -1951,14 +1957,14 @@ function DepartmentsPage() {
           return {
             id: mData.userId,
             membershipId: mDoc.id,
-            name: userData.fullName || '',
-            email: userData.email || '',
+            name: userData.fullName || mData.fullName || '',
+            email: userData.email || mData.email || '',
             role: (mData.role as any) || 'Instructor',
-            status: (userData.isActive !== false) ? 'Active' : 'Inactive',
-            department: mData.departmentCode || '',
+            status: (userData.isActive !== false) ? 'Active' : 'Deactivated',
+            department: mData.department || '',
             joinedDate: userData.createdAt ? userData.createdAt.toDate().toLocaleDateString('en-US', {
               month: 'short', day: '2-digit', year: 'numeric'
-            }) : '—',
+            }) : '— — — — —',
             avatar: userData.profilePicture || '',
           }
         }) as Member[]
@@ -1972,7 +1978,9 @@ function DepartmentsPage() {
     }
   }, [])
 
-  const availableDeans = useMemo(() => allUsers.filter(u => u.role === 'Dean'), [allUsers])
+  const availableDeans = useMemo(() => {
+    return allUsers.filter(u => u.role === 'Dean' && u.id && u.name && u.name.trim() !== '' && u.status !== 'Deactivated')
+  }, [allUsers])
 
   // Fetch Departments
   useEffect(() => {
@@ -2213,8 +2221,9 @@ function DepartmentsPage() {
           const oldDeanMember = allUsers.find(u => u.id === oldDeanUID)
           if (oldDeanMember?.membershipId) {
             batch.update(doc(db, 'memberships', oldDeanMember.membershipId), {
-              departmentCode: '',
-              joinedAt: serverTimestamp()
+              department: '',
+              status: '',
+              joinedAt: ''
             })
           }
         }
@@ -2223,7 +2232,8 @@ function DepartmentsPage() {
           const newDeanMember = allUsers.find(u => u.id === newDeanUID)
           if (newDeanMember?.membershipId) {
             batch.update(doc(db, 'memberships', newDeanMember.membershipId), {
-              departmentCode: finalCode,
+              department: finalCode,
+              status: 'accepted',
               joinedAt: serverTimestamp()
             })
           }
@@ -2231,7 +2241,8 @@ function DepartmentsPage() {
            const currentDeanMember = allUsers.find(u => u.id === oldDeanUID)
            if (currentDeanMember?.membershipId) {
              batch.update(doc(db, 'memberships', currentDeanMember.membershipId), {
-              departmentCode: finalCode,
+              department: finalCode,
+              status: 'accepted',
               joinedAt: serverTimestamp()
             })
            }
@@ -2266,7 +2277,8 @@ function DepartmentsPage() {
           const newDeanMember = allUsers.find(u => u.id === newDeptDean)
           if (newDeanMember?.membershipId) {
             batch.update(doc(db, 'memberships', newDeanMember.membershipId), {
-              departmentCode: finalCode,
+              department: finalCode,
+              status: 'accepted',
               joinedAt: serverTimestamp()
             })
           }
@@ -2306,13 +2318,14 @@ function DepartmentsPage() {
       const batch = writeBatch(db)
       batch.delete(doc(db, 'departments', deptToDelete.id))
 
-      // Clear departmentCode for all members of this department
+      // Clear department for all members of this department
       const membersToUpdate = allUsers.filter(u => u.department === deptToDelete.code)
       membersToUpdate.forEach(member => {
         if (member.membershipId) {
           batch.update(doc(db, 'memberships', member.membershipId), {
-            departmentCode: '',
-            joinedAt: serverTimestamp()
+            department: '',
+            status: '',
+            joinedAt: ''
           })
         }
       })
@@ -2328,21 +2341,23 @@ function DepartmentsPage() {
     }
   }
 
-  const deanOptions = [
-    'None',
-    ...availableDeans
+  const deanOptions = useMemo(() => {
+    const deanNames = availableDeans
       .filter(dean => {
         const assignedDept = departments.find(d => d.deanUID === dean.id)
         return !(assignedDept && assignedDept.id !== editingDept?.id)
       })
       .map(dean => dean.name)
+      .filter(name => name && name.trim() !== '' && name !== 'None')
       .sort((a, b) => a.localeCompare(b))
-  ]
+
+    return ['None', ...Array.from(new Set(deanNames))]
+  }, [availableDeans, departments, editingDept?.id])
 
   const deptMemberColumns: ColumnDef<Member>[] = [
     {
       header: 'Member Info',
-      width: '48%',
+      width: '45%',
       render: (member) => (
         <div className="flex items-center gap-4">
           {member.avatar && !avatarErrors[member.avatar] ? (
@@ -2371,12 +2386,12 @@ function DepartmentsPage() {
       )
     },
     {
-      header: 'Assigned Role',
-      width: '27%',
+      header: 'Role',
+      width: '25%',
       render: (member) => (
-        <div className="flex items-center gap-2">
-          <div className={`h-2 w-2 rounded-full ${roleClasses[member.role]?.split(' ')[0] || 'bg-gray-200'}`} />
-          <span className={`text-[0.7rem] font-bold uppercase tracking-widest ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
+        <div className={`flex items-center gap-2 ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
+          <div className="h-2 w-2 rounded-full bg-current" />
+          <span className="text-[0.7rem] font-bold uppercase tracking-widest">
             {member.role}
           </span>
         </div>
@@ -2384,21 +2399,22 @@ function DepartmentsPage() {
     },
     {
       header: 'Status',
-      width: '23%',
+      width: '20%',
       render: (member) => (
-        <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${
-          member.status === 'Active' ? 'bg-emerald-100 text-emerald-700' :
-          member.status === 'Inactive' ? 'bg-gray-100 text-gray-700' : 'bg-amber-100 text-amber-700'
-        }`}>
+        <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
           {member.status}
         </span>
       )
     },
     {
       header: 'Joined Date',
-      width: '2%',
+      width: '1%',
       align: 'right',
-      render: (member) => <span className="text-sm font-medium text-gray-500 whitespace-nowrap">{member.joinedDate}</span>
+      render: (member) => (
+        <span className="text-sm font-semibold text-gray-600 whitespace-nowrap">
+          {member.joinedDate}
+        </span>
+      )
     }
   ];
 
@@ -2690,16 +2706,16 @@ function DepartmentsPage() {
       {isDeleteModalOpen && deptToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-md rounded-md border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-rose-600 p-6 text-white rounded-t-md">
+            <div className="bg-rose-600 p-6 text-white">
               <h3 className="text-xl font-bold">Delete Department</h3>
               <p className="mt-1 text-sm text-white/80">Are you sure you want to delete this department from the system?</p>
             </div>
             
             <div className="p-6 space-y-4">
-              <div className="flex items-center gap-4 rounded-md border border-gray-100 bg-gray-50 p-4">
+              <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50 p-4">
                 <div className="flex h-12 w-12 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-400 overflow-hidden shrink-0">
                   {deptToDelete.logo && !logoErrors[deptToDelete.logo] ? (
                     <img 
@@ -2718,7 +2734,7 @@ function DepartmentsPage() {
                 </div>
               </div>
 
-              <div className="rounded-md bg-rose-50 p-4 border border-rose-100">
+              <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
                 <p className="text-xs leading-relaxed text-rose-700">
                   <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this department and unassign all its members. This action cannot be undone.
                 </p>
@@ -2727,39 +2743,39 @@ function DepartmentsPage() {
               <form onSubmit={handleDeleteSubmit} className="space-y-4">
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-widest text-gray-500">
+                    <label htmlFor="delete-dept-confirm" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-1">
                       To confirm, please type:
                     </label>
-                    <p className="mt-0.5 text-sm font-bold text-rose-600">
+                    <p className="text-sm font-bold text-rose-600 mb-2">
                       "{deptToDelete.name}"
                     </p>
+                    <TextInput
+                      id="delete-dept-confirm"
+                      value={deleteConfirmName}
+                      onChange={(val) => setDeleteConfirmName(val)}
+                      placeholder="Enter department name..."
+                      autoFocus
+                    />
                   </div>
-                  <input
-                    type="text"
-                    value={deleteConfirmName}
-                    onChange={(e) => setDeleteConfirmName(e.target.value)}
-                    placeholder="Enter department name..."
-                    className="w-full rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition placeholder:text-gray-400 focus:border-rose-300 focus:ring-4 focus:ring-rose-50 shadow-sm"
-                    autoFocus
-                  />
                 </div>
 
                 <div className="flex items-center gap-3 pt-2">
-                  <button
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={handleCloseDeleteModal}
                     disabled={isDeleting}
-                    className="flex-1 rounded-md border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300 disabled:opacity-50"
+                    className="flex-1"
                   >
                     Cancel
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="submit"
                     disabled={isDeleting || deleteConfirmName !== deptToDelete.name}
-                    className="flex-1 rounded-md bg-rose-600 py-3 text-sm font-bold text-white shadow-md transition enabled:hover:bg-rose-700 enabled:hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white shadow-md shadow-rose-600/20 hover:shadow-lg"
                   >
                     {isDeleting ? 'Deleting...' : 'Confirm Delete'}
-                  </button>
+                  </Button>
                 </div>
               </form>
             </div>
@@ -2779,39 +2795,33 @@ function DepartmentsPage() {
       {selectedDept && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
-            className="w-full max-w-4xl rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col max-h-[90vh]"
+            className="w-full max-w-4xl h-[65vh] min-h-[480px] max-h-[85vh] rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white flex justify-between items-start shrink-0">
+            <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white shrink-0">
               <div className="flex items-center gap-4">
                 {selectedDept.logo && !logoErrors[selectedDept.logo] ? (
                   <img
                     src={selectedDept.logo}
                     alt={selectedDept.name}
-                    className="h-14 w-14 rounded-full border-2 border-white/20 object-cover bg-white/10"
+                    className="h-14 w-14 rounded-full border-2 border-white/20 object-cover bg-white/10 shrink-0"
                     onError={() => setLogoErrors(prev => ({ ...prev, [selectedDept.logo]: true }))}
                   />
                 ) : (
-                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white/20 bg-white/10 text-white/80">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white/20 bg-white/10 text-white/80 shrink-0">
                     <DepartmentIcon className="h-8 w-8" />
                   </div>
                 )}
                 <div>
                   <h3 className="text-xl font-bold leading-tight">{selectedDept.name}</h3>
-                  <p className="mt-1 text-sm text-white/80">{selectedDept.code} • {selectedDept.memberCount} Members</p>
+                  <p className="mt-1 text-sm text-white/80">{selectedDept.code} • {deptMembers.length} {deptMembers.length === 1 ? 'Member' : 'Members'}</p>
                 </div>
               </div>
-              <IconButton 
-                label="Close modal" 
-                onClick={() => setSelectedDept(null)}
-                className="text-white/80 hover:text-white hover:bg-white/10"
-              >
-                <CloseIcon className="h-6 w-6" />
-              </IconButton>
             </div>
             
-            <div className="overflow-y-auto custom-scrollbar bg-slate-50">
+            <div className="flex-1 overflow-hidden bg-white flex flex-col min-h-0">
               <DataTable
+                className="h-full flex-1 border-none shadow-none rounded-none"
                 data={deptMembers}
                 columns={deptMemberColumns}
                 emptyTitle="No members found"
