@@ -3,6 +3,7 @@
 This document provides essential guidelines and standards for developers and AI agents (like Gemini CLI) working on the **RORMS** repository.
 
 ## 🤖 Agent-Specific Instructions
+- **No Git Commands**: **NEVER** run any `git` command (including `git commit`, `git push`, `git add`, `git checkout`, `git status`, `git diff`, etc.) under any circumstances. All git operations and repository management must be handled exclusively by the user.
 - **Context First**: Always consult `FIRESTORE_COLLECTIONS.md` for database schema and `SYSTEM_ROLES.md` for business logic before implementing features.
 - **Surgical Edits**: When modifying React components, keep changes localized strictly to the requested functionality.
 - **Preserve User Styling & Dimensions**: **NEVER** alter, reset, or overwrite styling and layout values (such as `height`, `min-height`, `max-height`, `width`, `padding`, `margin`, `gap`, font sizing, alignment, or dimensions) that the user has already set or customized, unless the user explicitly asks to modify those specific styles/dimensions.
@@ -89,5 +90,6 @@ Alongside the primary PHINMA Olive Green, use these supporting colors for status
 - **Firebase**: Ensure all Firestore queries align with the security rules and indexed fields.
 
 ## 📝 Commit Practices
+- **User-Managed Only**: AI agents must **NEVER** run `git` commands. Git commits and branch operations are strictly performed manually by the user. Agents may suggest commit messages if asked.
 - **Style**: Use conventional, present-tense messages (e.g., `feat: add instructor dashboard`, `fix: resolve overlap in schedule logic`).
 - **Scope**: Keep commits atomic and focused on a single logical change.

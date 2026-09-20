@@ -254,8 +254,17 @@ export function DepartmentSchedulesPage() {
         return true
       })
       .sort((a, b) => {
-        if (a.role === 'Dean') return -1
-        if (b.role === 'Dean') return 1
+        const roleOrder: Record<string, number> = { 'Dean': 1, 'Program Head': 2, 'Instructor': 3 }
+        const statusOrder: Record<string, number> = { 'Active': 1, 'Pending': 2, 'Deactivated': 3 }
+        
+        const roleA = roleOrder[a.role] || 99
+        const roleB = roleOrder[b.role] || 99
+        if (roleA !== roleB) return roleA - roleB
+
+        const statusA = statusOrder[a.status] || 99
+        const statusB = statusOrder[b.status] || 99
+        if (statusA !== statusB) return statusA - statusB
+
         return a.name.localeCompare(b.name)
       })
   }, [members, selectedRoles, selectedStatuses, searchTerm])

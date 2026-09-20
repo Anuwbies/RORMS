@@ -33,6 +33,7 @@ interface DepartmentEditScheduleModalProps {
   hideAddRemoveButtons?: boolean
   hidePlotAllReadyButton?: boolean
   showStatusOnNumberColumn?: boolean
+  readOnly?: boolean
   onlyAllowDraftEditing?: boolean
   onlyAllowTimeDaysRoomStatusEditing?: boolean
   allowMissingFieldsInRevision?: boolean
@@ -225,11 +226,12 @@ function DepartmentEditScheduleModal({
   hideAddRemoveButtons = false,
   hidePlotAllReadyButton = false,
   showStatusOnNumberColumn = false,
+  readOnly = false,
   onlyAllowDraftEditing = false,
   onlyAllowTimeDaysRoomStatusEditing = false,
   allowMissingFieldsInRevision = false,
 }: DepartmentEditScheduleModalProps) {
-  const isEditable = selectedSemesterPhase?.phase ? editablePhases.includes(selectedSemesterPhase.phase) : false;
+  const isEditable = !readOnly && (selectedSemesterPhase?.phase ? editablePhases.includes(selectedSemesterPhase.phase) : false);
 
   const [rooms, setRooms] = useState<{ id: string, code: string, name: string, buildingId: string }[]>([])
   const [buildings, setBuildings] = useState<{ id: string, name: string, code?: string }[]>([])
@@ -2388,7 +2390,7 @@ function DepartmentEditScheduleModal({
                 {selectedAcademicYear?.academicYear} - {selectedSemesterPhase?.name} Schedules
               </h3>
               <p className="mt-0.5 text-xs text-white/80 font-medium">
-                {isEditable ? 'Add multiple schedules and assign them to instructors in your department.' : `Schedules can only be edited during ${editablePhases.length > 1 ? `${editablePhases.slice(0, -1).join(', ')}, and ${editablePhases[editablePhases.length - 1]}` : (editablePhases[0] || 'Drafting and Revision')} phases. Current phase: ${selectedSemesterPhase?.phase}.`}
+                {isEditable ? 'Add multiple schedules and assign them to instructors in your department.' : readOnly ? 'Department schedules are available for viewing only.' : `Schedules can only be edited during ${editablePhases.length > 1 ? `${editablePhases.slice(0, -1).join(', ')}, and ${editablePhases[editablePhases.length - 1]}` : (editablePhases[0] || 'Drafting and Revision')} phases. Current phase: ${selectedSemesterPhase?.phase}.`}
               </p>
             </div>
             <div className="shrink-0 flex items-center gap-2 flex-wrap">
@@ -2433,7 +2435,7 @@ function DepartmentEditScheduleModal({
               )}
               {!isEditable && (
                 <span className="inline-flex items-center rounded-lg bg-white/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-white border border-white/30 backdrop-blur-sm">
-                  Read Only ({selectedSemesterPhase?.phase})
+                  {readOnly ? 'Read Only' : `Read Only (${selectedSemesterPhase?.phase})`}
                 </span>
               )}
             </div>

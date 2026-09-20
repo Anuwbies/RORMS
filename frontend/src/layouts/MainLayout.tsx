@@ -8,6 +8,7 @@ interface MainLayoutProps {
   activeSection: DashboardSection
   onSectionChange: (section: DashboardSection) => void
   onSignOut: () => void
+  onReorder?: (items: NavItem[]) => void
   children: ReactNode
 }
 
@@ -16,6 +17,7 @@ export function MainLayout({
   activeSection,
   onSectionChange,
   onSignOut,
+  onReorder,
   children,
 }: MainLayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -49,6 +51,7 @@ export function MainLayout({
         setIsSidebarOpen={setIsSidebarOpen}
         isSidebarExpanded={isSidebarExpanded}
         setIsSidebarExpanded={handleLeftSidebarExpandChange}
+        onReorder={onReorder}
       />
 
       <div

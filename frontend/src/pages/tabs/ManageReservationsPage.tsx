@@ -6,6 +6,7 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
+import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { db } from '../../firebase'
 import { 
   collection, 
@@ -47,6 +48,8 @@ interface Reservation {
   date: string
   startTime: string
   endTime: string
+  duration?: number
+  attendees?: number
   status: ReservationStatus
   purpose?: string
   createdAt: any
@@ -121,6 +124,7 @@ interface StatusUpdateModalProps {
 function StatusUpdateModal({ reservation, onClose, onUpdate }: StatusUpdateModalProps) {
   const [selectedStatus, setSelectedStatus] = useState<ReservationStatus>(reservation.status)
   const [isUpdating, setIsUpdating] = useState(false)
+  const [avatarError, setAvatarError] = useState(false)
 
   const handleUpdate = async () => {
     setIsUpdating(true)
@@ -148,11 +152,18 @@ function StatusUpdateModal({ reservation, onClose, onUpdate }: StatusUpdateModal
         <div className="p-6">
           <div className="mb-6">
             <div className="mb-4 flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/50 p-3">
-              <img
-                src={reservation.requester?.avatar}
-                alt={reservation.requester?.name}
-                className="h-10 w-10 rounded-full border border-slate-300 object-cover"
-              />
+              {reservation.requester?.avatar && !avatarError ? (
+                <img
+                  src={reservation.requester.avatar}
+                  alt={reservation.requester.name}
+                  className="h-10 w-10 shrink-0 rounded-full border border-slate-300 object-cover"
+                  onError={() => setAvatarError(true)}
+                />
+              ) : (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-slate-100 text-slate-400">
+                  <UserIcon className="h-5 w-5" />
+                </div>
+              )}
               <div>
                 <p className="text-sm font-bold text-slate-900">{reservation.requester?.name}</p>
                 <p className="text-xs font-medium text-slate-500">{reservation.roomName}</p>
@@ -304,153 +315,6 @@ function ConfirmationModal({ reservation, type, onConfirm, onClose }: Confirmati
   )
 }
 
-interface ReservationDetailsModalProps {
-  reservation: Reservation
-  onClose: () => void
-  onViewRoom: () => void
-}
-
-function ReservationDetailsModal({ reservation, onClose, onViewRoom }: ReservationDetailsModalProps) {
-  const formatDateFull = (dateStr: string) => {
-    const d = new Date(dateStr)
-    return d.toLocaleDateString('en-US', { 
-      weekday: 'long',
-      month: 'long', 
-      day: 'numeric', 
-      year: 'numeric' 
-    })
-  }
-
-  const formatTimestamp = (timestamp: any) => {
-    if (!timestamp) return 'N/A'
-    const d = timestamp.toDate ? timestamp.toDate() : new Date(timestamp)
-    return d.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
-  return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50">
-      <div 
-        className="w-full max-w-lg rounded-2xl border border-slate-100 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
-          <h3 className="text-xl font-bold leading-tight">Reservation Information</h3>
-          <p className="mt-1 text-sm text-white/80">Comprehensive details of the booking request</p>
-        </div>
-
-        <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
-          <div className="p-6 space-y-5">
-            <div className="flex gap-5">
-              <div className="w-[9.5rem] h-[9.5rem] shrink-0 rounded-full border border-slate-200 bg-slate-100 overflow-hidden shadow-sm">
-                <img 
-                  src={reservation.requester?.avatar} 
-                  alt={reservation.requester?.name} 
-                  className="h-full w-full object-cover" 
-                />
-              </div>
-              
-              <div className="flex-1 flex flex-col justify-between py-0.5">
-                <div>
-                  <h4 className="text-xl font-bold text-slate-900 leading-tight">{reservation.requester?.name}</h4>
-                  <p className="text-sm text-slate-500 font-medium mt-1">{reservation.requester?.email}</p>
-                  <div className="mt-3">
-                    <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[reservation.status]}`}>
-                      {reservation.status}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 mt-3">
-                  <div className="space-y-1">
-                    <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Reservation ID</p>
-                    <p className="text-sm font-mono text-slate-700">{reservation.id}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h5 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Location</h5>
-                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-slate-700 bg-slate-50/80 h-[2.875rem] rounded-xl border border-slate-200/80">
-                    <DoorIcon className="h-4 w-4 text-[var(--brand-color)]" />
-                    <div className="truncate">
-                      <span>{reservation.roomName} • {reservation.buildingName}</span>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <h5 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Schedule</h5>
-                  <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-slate-700 bg-slate-50/80 h-[2.875rem] rounded-xl border border-slate-200/80">
-                    <ClockIcon className="h-4 w-4 text-[var(--brand-color)]" />
-                    <span>{reservation.startTime} - {reservation.endTime}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h5 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Date</h5>
-                <div className="flex items-center justify-start px-3 gap-2 text-sm font-bold text-slate-700 bg-slate-50/80 h-[2.875rem] rounded-xl border border-slate-200/80">
-                  <CalendarIcon className="h-4 w-4 text-[var(--brand-color)]" />
-                  <span>{formatDateFull(reservation.date)}</span>
-                </div>
-              </div>
-
-              <div>
-                <h5 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Purpose</h5>
-                <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-4">
-                  <p className="text-sm text-slate-600 leading-relaxed italic">
-                    "{reservation.purpose || 'No purpose provided.'}"
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <h5 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-2">Metadata</h5>
-                <div className="grid grid-cols-1 gap-2">
-                  <div className="flex justify-between text-xs">
-                    <span className="font-bold text-slate-400 uppercase tracking-tight">Created At:</span>
-                    <span className="text-slate-600 font-medium">{formatTimestamp(reservation.createdAt)}</span>
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="font-bold text-slate-400 uppercase tracking-tight">Updated At:</span>
-                    <span className="text-slate-600 font-medium">{formatTimestamp(reservation.updatedAt)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-3 pt-2">
-              <Button
-                variant="outline"
-                onClick={onClose}
-                className="flex-1 h-12 text-base"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="brand"
-                className="flex-1 h-12 text-base flex items-center justify-center gap-2"
-                onClick={onViewRoom}
-              >
-                <DoorIcon className="h-4 w-4" />
-                View Room Information
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="absolute inset-0 -z-10" onMouseDown={onClose} />
-    </div>
-  )
-}
 
 interface RoomDetailsModalProps {
   room: Room
@@ -935,9 +799,13 @@ function ManageReservationsPage() {
         </div>
 
       {viewingReservation && (
-        <ReservationDetailsModal
-          reservation={viewingReservation}
+        <ReservationInfoModal
+          isOpen={!!viewingReservation}
           onClose={() => setViewingReservation(null)}
+          reservation={viewingReservation}
+          roomName={viewingReservation.roomName || 'Unknown Room'}
+          buildingName={viewingReservation.buildingName || 'Unknown Building'}
+          requester={viewingReservation.requester}
           onViewRoom={() => {
             handleViewRoomInfo(viewingReservation.roomId)
             setViewingReservation(null)

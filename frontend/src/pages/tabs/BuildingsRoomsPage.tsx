@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
-import { WeatherOverlay, type TimeOfDay, type MoonPhaseKey, getAstronomicalMoonPhase } from '../../components/WeatherOverlay'
+import { WeatherOverlay, type TimeOfDay, type MoonPhaseKey, getAstronomicalMoonPhase } from '../../visualizations/WeatherOverlay'
 import { BarChart, Bar, Tooltip, ResponsiveContainer, YAxis } from 'recharts'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
 export type EntranceSide = 'top' | 'bottom' | 'left' | 'right';
@@ -36,7 +36,8 @@ import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
 import { Snackbar } from '../../components/Snackbar'
 
-import { db, storage } from '../../firebase'
+import { auth, db, storage } from '../../firebase'
+import { onAuthStateChanged } from 'firebase/auth'
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import {
   collection,
@@ -49,11 +50,13 @@ import {
   serverTimestamp,
   onSnapshot,
   query,
-  orderBy
+  orderBy,
+  where,
+  limit
 } from 'firebase/firestore'
 import { CropModal } from '../../components/CropModal'
 
-type RoomStatus = 'Available' | 'Occupied' | 'Maintenance'
+type RoomStatus = 'Available' | 'Unavailable' | 'Maintenance'
 
 function createRoomImage() {
   const svg = `
@@ -123,7 +126,7 @@ interface Building {
 
 const roomStatusClasses: Record<RoomStatus, string> = {
   Available: 'bg-emerald-100 text-emerald-700',
-  Occupied: 'bg-amber-100 text-amber-700',
+  Unavailable: 'bg-amber-100 text-amber-700',
   Maintenance: 'bg-rose-100 text-rose-700',
 }
 
@@ -1339,6 +1342,7 @@ function BuildingsRoomsPage() {
 
   const [rooms, setRooms] = useState<Room[]>([])
   const [mapData, setMapData] = useState<MapData | null>(null)
+  const [currentUserRole, setCurrentUserRole] = useState('')
 
   const cycleWeather = () => {
     setWeatherData(prev => {
@@ -1382,6 +1386,34 @@ function BuildingsRoomsPage() {
   useEffect(() => {
     localStorage.setItem('rorms_buildings_expanded', JSON.stringify(expandedBuildingIds))
   }, [expandedBuildingIds])
+
+  useEffect(() => {
+    let unsubscribeMembership: (() => void) | undefined
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      unsubscribeMembership?.()
+
+      if (!user) {
+        setCurrentUserRole('')
+        return
+      }
+
+      const membershipQuery = query(
+        collection(db, 'memberships'),
+        where('userId', '==', user.uid),
+        limit(1)
+      )
+
+      unsubscribeMembership = onSnapshot(membershipQuery, (snapshot) => {
+        setCurrentUserRole(snapshot.empty ? '' : snapshot.docs[0].data().role || '')
+      })
+    })
+
+    return () => {
+      unsubscribeAuth()
+      unsubscribeMembership?.()
+    }
+  }, [])
 
   useEffect(() => {
     const buildingsQuery = query(collection(db, 'buildings'), orderBy('createdAt', 'desc'))
@@ -2056,6 +2088,7 @@ function BuildingsRoomsPage() {
     }
   }
 
+  const canManageBuildings = currentUserRole === 'Admin' || currentUserRole === 'Registrar'
 
 
   return (
@@ -2392,7 +2425,7 @@ function BuildingsRoomsPage() {
                         Status
                       </label>
                       <SingleSelectDropdown
-                        options={['Available', 'Occupied', 'Maintenance']}
+                        options={['Available', 'Unavailable', 'Maintenance']}
                         value={newRoomStatus}
                         onChange={(val) => setNewRoomStatus(val as RoomStatus)}
                         onToggle={handleDropdownToggle}
@@ -3394,17 +3427,19 @@ function BuildingsRoomsPage() {
                   />
                 </>
               )}
-              <Button
-                variant="brand"
-                icon={<PlusIcon className="h-4 w-4" />}
-                onClick={() => handleOpenBuildingModal()}
-                className="w-full lg:w-auto"
-              >
-                Add Building
-              </Button>
+              {canManageBuildings && (
+                <Button
+                  variant="brand"
+                  icon={<PlusIcon className="h-4 w-4" />}
+                  onClick={() => handleOpenBuildingModal()}
+                  className="w-full lg:w-auto"
+                >
+                  Add Building
+                </Button>
+              )}
             </div>
           }
-          renderBuildingActions={(building) => (
+          renderBuildingActions={canManageBuildings ? (building) => (
             <div className="relative">
               <IconButton
                 label="Building options"
@@ -3458,8 +3493,8 @@ function BuildingsRoomsPage() {
                 </div>
               )}
             </div>
-          )}
-          renderRoomActions={(room, buildingId) => (
+          ) : undefined}
+          renderRoomActions={canManageBuildings ? (room, buildingId) => (
             <div className="relative">
               <IconButton
                 label="Room options"
@@ -3502,7 +3537,7 @@ function BuildingsRoomsPage() {
                 </div>
               )}
             </div>
-          )}
+          ) : undefined}
         />    </div>
       {/* Crop Modal */}
       {cropModalData.isOpen && (

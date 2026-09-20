@@ -72,3 +72,15 @@ firebase deploy --only functions
 
 ## Future Planned Functions
 *(Additional background tasks, notifications, audit logging, and timetable automated operations will be documented here as development continues.)*
+
+---
+
+## 2. Delivered Email Queue Cleanup
+
+### `deleteDeliveredMail` (Firestore Update Trigger)
+
+- **Trigger**: Updates to `mail/{mailId}`.
+- **Condition**: The Firebase Trigger Email extension has set `delivery.state` to `"SUCCESS"`.
+- **Action**: Deletes that `mail` document. Documents that are pending or have failed delivery remain available for the extension or for troubleshooting.
+
+The `mail` document must not be deleted by the client immediately after creation, because the extension needs it as its delivery queue item.

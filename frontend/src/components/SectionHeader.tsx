@@ -12,7 +12,7 @@ export function SectionHeader({ title, description }: SectionHeaderProps) {
         <h1 className="text-3xl font-bold tracking-tight text-black">
           {title}
         </h1>
-        <p className="text-md text-gray-600 max-w-4xl leading-relaxed">
+        <p className="w-full max-w-4xl truncate whitespace-nowrap text-md leading-relaxed text-gray-600" title={description}>
           {description}
         </p>
       </div>

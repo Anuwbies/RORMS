@@ -330,8 +330,17 @@ function MyDepartmentPage() {
       return matchSearch && matchRole && matchStatus
     })
     .sort((a, b) => {
-      if (a.role === 'Dean') return -1
-      if (b.role === 'Dean') return 1
+      const roleOrder: Record<string, number> = { 'Dean': 1, 'Program Head': 2, 'Instructor': 3 }
+      const statusOrder: Record<string, number> = { 'Active': 1, 'Pending': 2, 'Deactivated': 3 }
+      
+      const roleA = roleOrder[a.role] || 99
+      const roleB = roleOrder[b.role] || 99
+      if (roleA !== roleB) return roleA - roleB
+
+      const statusA = statusOrder[a.status] || 99
+      const statusB = statusOrder[b.status] || 99
+      if (statusA !== statusB) return statusA - statusB
+
       return a.name.localeCompare(b.name)
     })
 
@@ -759,7 +768,7 @@ function MyDepartmentPage() {
 
           setIsAddScheduleModalOpen(true)
         }}
-        editablePhases={['Drafting', 'Revision']}
+        editablePhases={currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? ['Drafting', 'Revision'] : []}
       />
 
       {/* Revised Schedules Review Modal */}
@@ -790,6 +799,7 @@ function MyDepartmentPage() {
         hideStatusColumn={true}
         hidePlotAllReadyButton={true}
         showStatusOnNumberColumn={true}
+        readOnly={currentUserRole !== 'Dean' && currentUserRole !== 'Program Head'}
         onlyAllowDraftEditing={true}
       />
 
@@ -1084,10 +1094,20 @@ function MyDepartmentPage() {
             emptyDescription={loading ? 'Loading members...' : 'No members found matching your search.'}
             primaryAction={
               <div className="flex gap-2">
-                {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head') && (
+                {(currentUserRole === 'Admin' || currentUserRole === 'Dean' || currentUserRole === 'Program Head') && (
                   <Button
                     type="button"
                     variant="outline"
+                    icon={<PlusIcon className="h-5 w-5" />}
+                    onClick={() => setIsAddModalOpen(true)}
+                  >
+                    Add Instructor
+                  </Button>
+                )}
+                {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head' || currentUserRole === 'Instructor') && (
+                  <Button
+                    type="button"
+                    variant="brand"
                     icon={<CalendarIcon className="h-5 w-5" />}
                     onClick={() => {
                       const active = academicYears.find((y: any) => y.isActive)
@@ -1095,17 +1115,9 @@ function MyDepartmentPage() {
                       setIsSchoolYearModalOpen(true)
                     }}
                   >
-                    Manage Schedule
+                    Department Schedule
                   </Button>
                 )}
-                <Button
-                  type="button"
-                  variant="brand"
-                  icon={<PlusIcon className="h-5 w-5" />}
-                  onClick={() => setIsAddModalOpen(true)}
-                >
-                  Add Instructor
-                </Button>
               </div>
             }
           />

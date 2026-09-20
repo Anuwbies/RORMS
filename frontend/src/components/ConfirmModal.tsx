@@ -1,6 +1,4 @@
 import React from 'react'
-import { Button } from './Button'
-import { AlertCircleIcon, CloseIcon } from './Icons'
 
 interface ConfirmModalProps {
   isOpen: boolean
@@ -28,39 +26,35 @@ export function ConfirmModal({
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
       <div 
-        className="w-full max-w-md rounded-2xl border border-slate-100 bg-white p-6 md:p-7 shadow-2xl animate-in zoom-in-95 duration-200 relative overflow-hidden"
+        className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-4 text-left">
-          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ring-4 ${isDestructive ? 'bg-rose-100 text-rose-600 ring-rose-50' : 'bg-amber-100 text-amber-600 ring-amber-50'}`}>
-            <AlertCircleIcon className="h-7 w-7" strokeWidth={3} />
-          </div>
-          
-          <div>
-            <h3 className="text-xl font-bold text-slate-900 leading-snug">{title}</h3>
-            <p className="mt-0.5 text-sm text-slate-600 font-medium whitespace-normal">
-              {message}
-            </p>
-          </div>
+        <div className={`${isDestructive ? 'bg-rose-600' : 'bg-[var(--brand-color)]'} p-6 text-white rounded-t-2xl relative`}>
+          <h3 className="text-xl font-bold">{title}</h3>
+          <p className="mt-1 text-sm text-white/80">{message}</p>
         </div>
-
-        <div className="flex gap-3 mt-8">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onCancel}
-            className="flex-1"
-          >
-            {cancelText}
-          </Button>
-          <Button
-            type="button"
-            variant={isDestructive ? 'outline' : 'brand'}
-            onClick={onConfirm}
-            className={isDestructive ? "flex-1 !text-white !bg-rose-600 !border-rose-600 hover:!bg-rose-700" : "flex-1"}
-          >
-            {confirmText}
-          </Button>
+        
+        <div className="p-6">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="flex-1 rounded-xl border border-gray-200 bg-white py-3 text-sm font-bold text-gray-600 transition hover:bg-gray-50 hover:border-gray-300"
+            >
+              {cancelText}
+            </button>
+            <button
+              type="button"
+              onClick={onConfirm}
+              className={`flex-1 rounded-xl py-3 text-sm font-bold text-white shadow-md transition hover:shadow-lg ${
+                isDestructive 
+                  ? 'bg-rose-600 hover:bg-rose-700' 
+                  : 'bg-[var(--brand-color)] hover:opacity-90'
+              }`}
+            >
+              {confirmText}
+            </button>
+          </div>
         </div>
       </div>
       <div className="absolute inset-0 -z-10" onMouseDown={onCancel} />

@@ -84,7 +84,7 @@ Centralized inventory of all campus rooms and their real-time status.
   - `type`: string (Lecture Room, Laboratory, Office, Meeting Room, or Studio)
   - `floor`: number (The specific floor where the room is located)
   - `capacity`: number (Room seating/standing capacity)
-  - `status`: string (`"Available"`, `"Occupied"`, or `"Maintenance"`)
+  - `status`: string (`"Available"`, `"Unavailable"`, or `"Maintenance"`)
   - `image`: string (URL to the room's photo)
   - `description`: string (Detailed description of the room)
   - `amenities`: array (Flat array of strings, e.g., `["WiFi", "Projector"]`)

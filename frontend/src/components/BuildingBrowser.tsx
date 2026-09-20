@@ -130,7 +130,7 @@ export function BuildingBrowser({
                 {
                   id: 'status',
                   title: 'Status',
-                  options: ['Available', 'Occupied', 'Maintenance'],
+                  options: ['Available', 'Unavailable', 'Maintenance'],
                   selectedValues: selectedStatuses,
                   onChange: (newSelected) => setSelectedStatuses(newSelected as RoomStatus[])
                 }

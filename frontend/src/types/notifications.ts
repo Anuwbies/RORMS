@@ -4,6 +4,7 @@ export type NotificationType =
   | 'booking_rejected'
   | 'booking_cancelled'
   | 'booking_completed'
+  | 'booking_reminder'
   | 'system'
   | 'system_added'
   | 'invitation'
@@ -13,6 +14,8 @@ export type NotificationType =
   | 'schedule_returned'
   | 'department_removed'
   | 'phase_changed'
+  | 'member_joined'
+  | 'member_deactivated'
 
 export interface NotificationItem {
   id: string
@@ -29,6 +32,7 @@ export function getNotificationConfig(type: NotificationType) {
     case 'system_added':
     case 'schedule_revised':
     case 'phase_changed':
+    case 'booking_reminder':
       return {
         color: 'text-blue-600 dark:text-blue-300',
         bg: 'bg-blue-50 dark:bg-blue-500/10',
@@ -36,6 +40,7 @@ export function getNotificationConfig(type: NotificationType) {
       }
     case 'booking_approved':
     case 'schedule_plotted':
+    case 'member_joined':
       return {
         color: 'text-emerald-600 dark:text-emerald-300',
         bg: 'bg-emerald-50 dark:bg-emerald-500/10',
@@ -43,6 +48,7 @@ export function getNotificationConfig(type: NotificationType) {
       }
     case 'booking_rejected':
     case 'department_removed':
+    case 'member_deactivated':
       return {
         color: 'text-rose-600 dark:text-rose-300',
         bg: 'bg-rose-50 dark:bg-rose-500/10',
@@ -87,6 +93,30 @@ export const MOCK_NOTIFICATIONS: NotificationItem[] = [
     createdAt: new Date().toISOString(),
     isRead: false,
     type: 'booking_approved',
+  },
+  {
+    id: 'notif-1a',
+    title: 'Booking Reminder',
+    message: 'Your reservation for MBA Hall starts in 15 minutes.',
+    createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    isRead: false,
+    type: 'booking_reminder',
+  },
+  {
+    id: 'notif-1b',
+    title: 'Member Joined',
+    message: 'John Doe has accepted the invitation and joined your department.',
+    createdAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+    isRead: false,
+    type: 'member_joined',
+  },
+  {
+    id: 'notif-1c',
+    title: 'Member Deactivated',
+    message: 'A member of your department has been deactivated.',
+    createdAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+    isRead: false,
+    type: 'member_deactivated',
   },
   {
     id: 'notif-2',

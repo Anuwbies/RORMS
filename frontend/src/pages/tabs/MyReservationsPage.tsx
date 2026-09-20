@@ -39,7 +39,7 @@ interface Reservation {
   isHidden?: boolean
 }
 
-type RoomStatus = 'Available' | 'Occupied' | 'Maintenance'
+type RoomStatus = 'Available' | 'Unavailable' | 'Maintenance'
 
 interface Room {
   id: string
@@ -76,7 +76,7 @@ const statusClasses: Record<ReservationStatus, string> = {
 
 const roomStatusClasses: Record<RoomStatus, string> = {
   Available: 'bg-emerald-100 text-emerald-700',
-  Occupied: 'bg-amber-100 text-amber-700',
+  Unavailable: 'bg-amber-100 text-amber-700',
   Maintenance: 'bg-rose-100 text-rose-700',
 }
 

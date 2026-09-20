@@ -9,26 +9,43 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from '../firebase'
-import InfoTabContent from '../components/InfoTabContent'
 import { Button } from '../components/Button'
 import { TextInput } from '../components/TextInput'
 import { ExclamationIcon } from '../components/Icons'
+import { ArchitecturalBackground } from '../components/ArchitecturalBackground'
 
-type TabKey = 'home' | 'about' | 'contact'
+const heroSlides = [
+  {
+    image: '/upang_main_building.jpg',
+    headline: 'University of Pangasinan\nRoom Management System',
+    subtitle: 'Streamlined classroom and laboratory scheduling for PHINMA UPang faculty and students.',
+  },
+  {
+    image: '/upang_campus_stairs.jpg',
+    headline: 'Modern Campus Facilities,\nConnected Academic Spaces',
+    subtitle: 'Empowering academic heads and instructors with real-time room reservations and scheduling clarity.',
+  },
+  {
+    image: '/upang_classroom_halls.jpg',
+    headline: 'Smart Room Allocation,\nEfficient Hallway Management',
+    subtitle: 'Transparent workflows for administrators, deans, program heads, and instructors across campus.',
+  },
+]
 
 interface SignInPageProps {
   onSignIn: () => void
+  onForgotPassword: () => void
+  currentSlide: number
+  onSlideChange: (slide: number) => void
 }
 
-function SignInPage({ onSignIn }: SignInPageProps) {
+function SignInPage({ onSignIn, onForgotPassword, currentSlide, onSlideChange }: SignInPageProps) {
   const [showPassword, setShowPassword] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabKey>('home')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-
   const checkAndCreateUserDoc = async (user: any) => {
     const userDocRef = doc(db, 'users', user.uid)
     const userDocSnap = await getDoc(userDocRef)
@@ -72,7 +89,7 @@ function SignInPage({ onSignIn }: SignInPageProps) {
       console.error('Sign in error:', err)
       if (err.message === 'account-inactive') {
         await signOut(auth)
-        setError('Your account has been deactivated. Please contact an administrator.')
+        setError('This account has been deactivated.')
         return
       }
       switch (err.code) {
@@ -96,199 +113,217 @@ function SignInPage({ onSignIn }: SignInPageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--brand-surface)] lg:grid lg:grid-cols-[3fr_2fr]">
-      <section className="relative flex min-h-[36vh] flex-col gap-8 overflow-hidden bg-[linear-gradient(150deg,#526f34_0%,var(--brand-color)_45%,#7b9d4f_100%)] px-6 py-6 text-[var(--brand-color)] lg:min-h-screen lg:p-10">
-        <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-2xl"></div>
-        <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-black/15 blur-3xl"></div>
-        <div aria-hidden className="pointer-events-none absolute top-1/2 right-12 hidden h-44 w-44 rounded-full border-[12px] border-white/10 lg:block"></div>
+    <main className="relative h-screen w-screen max-h-screen overflow-hidden flex p-3 sm:p-4 lg:p-5 gap-6 lg:gap-8">
+      {/* Architectural Blueprint & Topographic Campus Matrix Background */}
+      <ArchitecturalBackground />
 
-        <nav className="relative flex w-full flex-wrap items-center justify-between gap-5 rounded-2xl border border-gray-200/20 bg-[var(--card-surface)] px-4 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.12)]">
-          <div className="flex min-w-0 items-center gap-4">
+      {/* Left Hero Banner (60% Width) with Animated Carousel */}
+      <section className="relative z-10 hidden lg:flex lg:w-[60%] h-full flex-col justify-between overflow-hidden rounded-2xl sm:rounded-3xl p-6 sm:p-8 lg:p-12 text-white shadow-2xl shrink-0 select-none border border-slate-200/40">
+        {/* Background Image Carousel with Cross-fade */}
+        {heroSlides.map((slide, idx) => (
+          <div
+            key={slide.image}
+            className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ease-in-out ${
+              idx === currentSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+            style={{ backgroundImage: `url('${slide.image}')` }}
+          />
+        ))}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/50" />
+
+        {/* Top Branding */}
+        <div className="relative z-10 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
             <img
               src="/logo2.png"
               alt="PHINMA UPang seal"
-              className="h-14 w-14 shrink-0 object-contain"
+              className="h-12 w-12 shrink-0 rounded-full bg-white p-0.5 object-contain drop-shadow"
             />
-            <div className="min-w-0 space-y-0.5">
-              <p className="text-xs font-semibold uppercase leading-none tracking-[0.3em] text-[var(--brand-color)] sm:text-sm">
+            <div className="space-y-0.5">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-white/90">
                 PHINMA UPANG
               </p>
-              <h1 className="text-sm font-semibold leading-none text-black sm:text-base">
+              <h1 className="text-sm font-semibold leading-tight text-white drop-shadow">
                 Registrar Office Room Management System
               </h1>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-4 text-sm font-medium text-black">
-            {(['home', 'about', 'contact'] as const).map((tab) => {
-              const isActive = activeTab === tab
-              const label = tab.charAt(0).toUpperCase() + tab.slice(1)
-
-              return (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={`relative px-2 py-1.5 transition after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-[var(--brand-color)] after:transition-transform after:content-[''] ${
-                    isActive
-                      ? 'text-[var(--brand-color)] after:scale-x-100'
-                      : 'text-black after:origin-center after:scale-x-0 hover:text-[var(--brand-color)] hover:after:scale-x-100'
-                  }`}
-                >
-                  {label}
-                </button>
-              )
-            })}
+          <div className="hidden sm:inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-xs font-medium text-white backdrop-blur-md">
+            PHINMA Education
           </div>
-        </nav>
+        </div>
 
-        <div className="relative flex w-full min-h-0 flex-1 items-stretch">
-          <div className="h-full w-full rounded-2xl border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
-            <InfoTabContent activeTab={activeTab} />
+        {/* Bottom Headline & Interactive Carousel Indicators */}
+        <div className="relative z-10 space-y-4">
+          <div className="min-h-[100px] flex flex-col justify-end">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-white drop-shadow-md whitespace-pre-line transition-all duration-500">
+              {heroSlides[currentSlide].headline}
+            </h2>
+            <p className="mt-2 text-xs sm:text-sm text-white/80 font-normal drop-shadow transition-all duration-500">
+              {heroSlides[currentSlide].subtitle}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 pt-1">
+            {heroSlides.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                aria-label={`Go to slide ${idx + 1}`}
+                onClick={() => onSlideChange(idx)}
+                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                  idx === currentSlide
+                    ? 'w-10 bg-white'
+                    : 'w-6 bg-white/40 hover:bg-white/70'
+                }`}
+              />
+            ))}
           </div>
         </div>
       </section>
 
-      <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-10 sm:px-10 lg:px-12">
-        <div aria-hidden className="pointer-events-none absolute -top-40 -right-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
-        <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
-
-        <div className="relative w-full max-w-md animate-in rounded-2xl border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
-          <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-color)]">
+      {/* Right Form Area (40% Width) */}
+      <section className="relative z-10 w-full lg:w-[40%] h-full flex flex-col justify-center px-2 sm:px-6 lg:px-8 overflow-y-auto">
+        <div className="w-full max-w-md mx-auto my-auto rounded-2xl sm:rounded-3xl bg-white/85 backdrop-blur-xl p-6 sm:p-8 md:p-10 shadow-[0_15px_45px_rgba(49,70,30,0.08)] border border-white/90 sm:border-slate-200/50">
+          <p className="text-xs font-bold uppercase tracking-[0.28em] text-[var(--brand-color)]">
             Sign In
           </p>
-          <h2 className="mt-3 text-center text-3xl font-semibold text-black">
+          <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-slate-900">
             Welcome back
           </h2>
-          <p className="mt-1 text-center text-sm leading-6 text-[var(--hint-color)]">
+          <p className="mt-1 text-sm text-[var(--hint-color)]">
             Access the system with your account.
           </p>
 
-          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-            {error && (
-              <div className="flex items-start gap-2.5 animate-in rounded-xl border border-red-100 bg-red-50 p-3 text-xs font-medium leading-relaxed text-red-600">
-                <ExclamationIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-black">
-                Email <span className="text-red-500">*</span>
-              </span>
-              <TextInput
-                type="email"
-                value={email}
-                onChange={setEmail}
-                placeholder="example.up@phinmaed.com"
-                required
-                autoComplete="email"
-                rightIcon={
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    className="h-5 w-5"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M4 6.75h16A1.25 1.25 0 0 1 21.25 8v8A1.25 1.25 0 0 1 20 17.25H4A1.25 1.25 0 0 1 2.75 16V8A1.25 1.25 0 0 1 4 6.75Z" />
-                    <path d="m3.5 8 8.01 6.01a.83.83 0 0 0 .98 0L20.5 8" />
-                  </svg>
-                }
-              />
-            </label>
-
-            <label className="block">
-              <span className="mb-2 block text-sm font-medium text-black">
-                Password <span className="text-red-500">*</span>
-              </span>
-              <TextInput
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={setPassword}
-                placeholder="Enter your password"
-                required
-                autoComplete="current-password"
-                rightElement={
-                  <button
-                    type="button"
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    onClick={() => setShowPassword((current) => !current)}
-                    className="flex items-center text-[var(--hint-color)] transition hover:text-black focus:outline-none"
-                  >
-                    {showPassword ? (
-                      <svg
-                        aria-hidden="true"
-                        viewBox="0 0 24 24"
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M3 3l18 18" />
-                        <path d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58" />
-                        <path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.91c5.05 0 9.27 3.11 10.5 7.09a11.8 11.8 0 0 1-2.41 3.97" />
-                        <path d="M6.61 6.61A11.84 11.84 0 0 0 1.5 12c1.23 3.98 5.45 7.09 10.5 7.09 1.8 0 3.51-.39 5.04-1.09" />
-                      </svg>
-                    ) : (
-                      <svg
-                        aria-hidden="true"
-                        viewBox="0 0 24 24"
-                        className="h-5 w-5"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="1.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M1.5 12S5.5 4.91 12 4.91 22.5 12 22.5 12 18.5 19.09 12 19.09 1.5 12 1.5 12Z" />
-                        <circle cx="12" cy="12" r="3" />
-                      </svg>
-                    )}
-                  </button>
-                }
-              />
-            </label>
-
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="h-4 w-4 rounded border-gray-300 text-[var(--brand-color)] focus:ring-[var(--brand-color)] transition cursor-pointer"
-                />
-                <span className="text-sm font-medium text-black group-hover:text-[var(--brand-color)] transition">
-                  Remember me
+            <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+              {error && (
+                <div className="flex items-start gap-2.5 animate-in rounded-xl border border-red-100 bg-red-50 p-3 text-xs font-medium leading-relaxed text-red-600">
+                  <ExclamationIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+              <fieldset disabled={loading} className="m-0 min-w-0 space-y-5 border-0 p-0">
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-black">
+                  Email <span className="text-red-500">*</span>
                 </span>
+                <TextInput
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  placeholder="example.up@phinmaed.com"
+                  required
+                  autoComplete="email"
+                  rightIcon={
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      className="h-5 w-5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M4 6.75h16A1.25 1.25 0 0 1 21.25 8v8A1.25 1.25 0 0 1 20 17.25H4A1.25 1.25 0 0 1 2.75 16V8A1.25 1.25 0 0 1 4 6.75Z" />
+                      <path d="m3.5 8 8.01 6.01a.83.83 0 0 0 .98 0L20.5 8" />
+                    </svg>
+                  }
+                />
               </label>
-              <span
-                role="button"
-                className="text-sm font-medium text-[var(--brand-color)] cursor-pointer transition hover:text-[var(--brand-color-hover)] hover:underline"
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-black">
+                  Password <span className="text-red-500">*</span>
+                </span>
+                <TextInput
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={setPassword}
+                  placeholder="Enter your password"
+                  required
+                  autoComplete="current-password"
+                  rightElement={
+                    <button
+                      type="button"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      onClick={() => setShowPassword((current) => !current)}
+                      className="flex items-center text-[var(--hint-color)] transition hover:text-black focus:outline-none"
+                    >
+                      {showPassword ? (
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M3 3l18 18" />
+                          <path d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58" />
+                          <path d="M9.88 5.09A10.94 10.94 0 0 1 12 4.91c5.05 0 9.27 3.11 10.5 7.09a11.8 11.8 0 0 1-2.41 3.97" />
+                          <path d="M6.61 6.61A11.84 11.84 0 0 0 1.5 12c1.23 3.98 5.45 7.09 10.5 7.09 1.8 0 3.51-.39 5.04-1.09" />
+                        </svg>
+                      ) : (
+                        <svg
+                          aria-hidden="true"
+                          viewBox="0 0 24 24"
+                          className="h-5 w-5"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M1.5 12S5.5 4.91 12 4.91 22.5 12 22.5 12 18.5 19.09 12 19.09 1.5 12 1.5 12Z" />
+                          <circle cx="12" cy="12" r="3" />
+                        </svg>
+                      )}
+                    </button>
+                  }
+                />
+              </label>
+
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-[var(--brand-color)] focus:ring-[var(--brand-color)] transition cursor-pointer"
+                  />
+                  <span className="text-sm font-medium text-black group-hover:text-[var(--brand-color)] transition">
+                    Remember me
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={onForgotPassword}
+                  className="text-sm font-medium text-[var(--brand-color)] cursor-pointer transition hover:text-[var(--brand-color-hover)] hover:underline"
+                >
+                  Forgot password?
+                </button>
+              </div>
+
+              <Button
+                type="submit"
+                variant="brand"
+                disabled={loading}
+                className="w-full"
               >
-                Forgot password?
-              </span>
-            </div>
+                {loading ? 'Signing in...' : 'Sign in'}
+              </Button>
+              </fieldset>
+            </form>
 
-            <Button
-              type="submit"
-              variant="brand"
-              disabled={loading}
-              className="w-full"
-            >
-              {loading ? 'Signing in...' : 'Sign in'}
-            </Button>
-          </form>
-
-          <p className="mt-8 text-center text-xs font-medium text-gray-400">
-            &copy; 2026 RORMS &middot; PHINMA Education
-          </p>
-        </div>
-      </section>
+            <p className="mt-8 text-center text-xs font-medium text-gray-400">
+              &copy; 2026 RORMS &middot; PHINMA Education
+            </p>
+          </div>
+        </section>
     </main>
   )
 }

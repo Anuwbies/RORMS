@@ -1,4 +1,4 @@
-export type RoomStatus = 'Available' | 'Occupied' | 'Maintenance'
+export type RoomStatus = 'Available' | 'Unavailable' | 'Maintenance'
 
 export function createRoomImage() {
   const svg = `
@@ -47,7 +47,7 @@ export interface Building {
 
 export const roomStatusClasses: Record<RoomStatus, string> = {
   Available: 'bg-emerald-100 text-emerald-700',
-  Occupied: 'bg-amber-100 text-amber-700',
+  Unavailable: 'bg-amber-100 text-amber-700',
   Maintenance: 'bg-rose-100 text-rose-700',
 }
 

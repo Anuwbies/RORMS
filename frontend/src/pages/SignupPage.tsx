@@ -3,13 +3,28 @@ import type { SyntheticEvent } from 'react'
 import { createUserWithEmailAndPassword, updateProfile, sendEmailVerification } from 'firebase/auth'
 import { doc, getDoc, updateDoc, setDoc, serverTimestamp, collection, writeBatch, query, where, getDocs } from 'firebase/firestore'
 import { auth, db } from '../firebase'
-import InfoTabContent from '../components/InfoTabContent'
 import { Button } from '../components/Button'
 import { TextInput } from '../components/TextInput'
 import { ExclamationIcon } from '../components/Icons'
+import { ArchitecturalBackground } from '../components/ArchitecturalBackground'
 
-
-type TabKey = 'home' | 'about' | 'contact'
+const heroSlides = [
+  {
+    image: '/upang_main_building.jpg',
+    headline: 'University of Pangasinan\nRoom Management System',
+    subtitle: 'Streamlined classroom and laboratory scheduling for PHINMA UPang faculty and students.',
+  },
+  {
+    image: '/upang_campus_stairs.jpg',
+    headline: 'Modern Campus Facilities,\nConnected Academic Spaces',
+    subtitle: 'Empowering academic heads and instructors with real-time room reservations and scheduling clarity.',
+  },
+  {
+    image: '/upang_classroom_halls.jpg',
+    headline: 'Smart Room Allocation,\nEfficient Hallway Management',
+    subtitle: 'Transparent workflows for administrators, deans, program heads, and instructors across campus.',
+  },
+]
 
 interface SignUpPageProps {
   onSignup: () => void
@@ -18,7 +33,6 @@ interface SignUpPageProps {
 
 function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
   const [showPassword, setShowPassword] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabKey>('home')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
@@ -30,6 +44,14 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
   const [loading, setLoading] = useState(false)
   const [isValidating, setIsValidating] = useState(true)
   const [isReactivation, setIsReactivation] = useState(false)
+  const [currentSlide, setCurrentSlide] = useState(0)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSlide((prev) => (prev + 1) % heroSlides.length)
+    }, 4500)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const validateInvitation = async () => {
@@ -320,68 +342,93 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
   }
 
   return (
-    <main className="min-h-screen bg-[var(--brand-surface)] lg:grid lg:grid-cols-[3fr_2fr]">
-      <section className="relative flex min-h-[36vh] flex-col gap-8 overflow-hidden bg-[linear-gradient(150deg,#526f34_0%,var(--brand-color)_45%,#7b9d4f_100%)] px-6 py-6 text-[var(--brand-color)] lg:min-h-screen lg:p-10">
-        <div aria-hidden className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-white/10 blur-2xl"></div>
-        <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-black/15 blur-3xl"></div>
-        <div aria-hidden className="pointer-events-none absolute top-1/2 right-12 hidden h-44 w-44 rounded-full border-[12px] border-white/10 lg:block"></div>
+    <main className="relative h-screen w-screen max-h-screen overflow-hidden flex p-3 sm:p-4 lg:p-5 gap-6 lg:gap-8">
+      {/* Architectural Blueprint & Topographic Campus Matrix Background */}
+      <ArchitecturalBackground />
 
-        <nav className="relative flex w-full flex-wrap items-center justify-between gap-5 rounded-2xl border border-gray-200/20 bg-[var(--card-surface)] px-4 py-2 shadow-[0_16px_40px_rgba(0,0,0,0.12)]">
-          <div className="flex min-w-0 items-center gap-4">
+      {/* Left Hero Banner (60% Width) with Animated Carousel */}
+      <section className="relative z-10 hidden lg:flex lg:w-[60%] h-full flex-col justify-between overflow-hidden rounded-2xl sm:rounded-3xl p-6 sm:p-8 lg:p-12 text-white shadow-2xl shrink-0 select-none border border-slate-200/40">
+        {/* Background Image Carousel with Cross-fade */}
+        {heroSlides.map((slide, idx) => (
+          <div
+            key={slide.image}
+            className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ease-in-out ${
+              idx === currentSlide ? 'opacity-100' : 'opacity-0 pointer-events-none'
+            }`}
+            style={{ backgroundImage: `url('${slide.image}')` }}
+          />
+        ))}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-black/50" />
+
+        {/* Top Branding */}
+        <div className="relative z-10 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
             <img
               src="/logo2.png"
               alt="PHINMA UPang seal"
-              className="h-14 w-14 shrink-0 object-contain"
+              className="h-12 w-12 shrink-0 rounded-full bg-white p-0.5 object-contain drop-shadow"
             />
-            <div className="min-w-0 space-y-0.5">
-              <p className="text-xs font-semibold uppercase leading-none tracking-[0.3em] text-[var(--brand-color)] sm:text-sm">
+            <div className="space-y-0.5">
+              <p className="text-xs font-bold uppercase tracking-[0.25em] text-white/90">
                 PHINMA UPANG
               </p>
-              <h1 className="text-sm font-semibold leading-none text-black sm:text-base">
+              <h1 className="text-sm font-semibold leading-tight text-white drop-shadow">
                 Registrar Office Room Management System
               </h1>
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-4 text-sm font-medium text-black">
-            {(['home', 'about', 'contact'] as const).map((tab) => {
-              const isActive = activeTab === tab
-              const label = tab.charAt(0).toUpperCase() + tab.slice(1)
+          {onBackToSignIn ? (
+            <button
+              type="button"
+              onClick={onBackToSignIn}
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-xs font-medium text-white backdrop-blur-md hover:bg-white/20 transition cursor-pointer"
+            >
+              ← Back to Sign In
+            </button>
+          ) : (
+            <div className="hidden sm:inline-flex items-center rounded-full border border-white/20 bg-white/10 px-3.5 py-1.5 text-xs font-medium text-white backdrop-blur-md">
+              PHINMA Education
+            </div>
+          )}
+        </div>
 
-              return (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={`relative px-2 py-1.5 transition after:absolute after:bottom-0 after:left-2 after:right-2 after:h-0.5 after:rounded-full after:bg-[var(--brand-color)] after:transition-transform after:content-[''] ${
-                    isActive
-                      ? 'text-[var(--brand-color)] after:scale-x-100'
-                      : 'text-black after:origin-center after:scale-x-0 hover:text-[var(--brand-color)] hover:after:scale-x-100'
-                  }`}
-                >
-                  {label}
-                </button>
-              )
-            })}
+        {/* Bottom Headline & Interactive Carousel Indicators */}
+        <div className="relative z-10 space-y-4">
+          <div className="min-h-[100px] flex flex-col justify-end">
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-white drop-shadow-md whitespace-pre-line transition-all duration-500">
+              {heroSlides[currentSlide].headline}
+            </h2>
+            <p className="mt-2 text-xs sm:text-sm text-white/80 font-normal drop-shadow transition-all duration-500">
+              {heroSlides[currentSlide].subtitle}
+            </p>
           </div>
-        </nav>
 
-        <div className="relative flex w-full min-h-0 flex-1 items-stretch">
-          <div className="h-full w-full rounded-2xl border border-gray-200/20 bg-[var(--brand-surface)] p-8 shadow-[0_24px_50px_rgba(0,0,0,0.12)]">
-            <InfoTabContent activeTab={activeTab} />
+          <div className="flex items-center gap-2 pt-1">
+            {heroSlides.map((_, idx) => (
+              <button
+                key={idx}
+                type="button"
+                aria-label={`Go to slide ${idx + 1}`}
+                onClick={() => setCurrentSlide(idx)}
+                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                  idx === currentSlide
+                    ? 'w-10 bg-white'
+                    : 'w-6 bg-white/40 hover:bg-white/70'
+                }`}
+              />
+            ))}
           </div>
         </div>
       </section>
 
-      <section className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-10 sm:px-10 lg:px-12">
-        <div aria-hidden className="pointer-events-none absolute -top-40 -right-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
-        <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-40 h-[28rem] w-[28rem] rounded-full bg-[var(--brand-color)]/5 blur-3xl"></div>
-
-        <div className="relative w-full max-w-md animate-in rounded-2xl border border-gray-200 bg-[var(--card-surface)] p-8 shadow-[0_32px_64px_rgba(0,0,0,0.14)] sm:p-10">
-          <p className="text-center text-sm font-semibold uppercase tracking-[0.28em] text-[var(--brand-color)]">
+      {/* Right Form Area (40% Width) */}
+      <section className="relative z-10 w-full lg:w-[40%] h-full flex flex-col justify-center px-2 sm:px-6 lg:px-8 overflow-y-auto">
+        <div className="w-full max-w-md mx-auto my-auto rounded-2xl sm:rounded-3xl bg-white/85 backdrop-blur-xl p-6 sm:p-8 md:p-10 shadow-[0_15px_45px_rgba(49,70,30,0.08)] border border-white/90 sm:border-slate-200/50">
+          <p className="text-xs font-bold uppercase tracking-[0.28em] text-[var(--brand-color)]">
             {isReactivation ? 'Reactivate' : 'Sign Up'}
           </p>
-          <h2 className="mt-3 text-center text-3xl font-semibold text-black">
+          <h2 className="mt-2 text-2xl sm:text-3xl font-bold text-slate-900">
             {isReactivation ? 'Welcome Back' : 'Create Account'}
           </h2>
           {role && (
@@ -573,7 +620,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
           </p>
         </div>
       </section>
-    </main>
+  </main>
   )
 }
 

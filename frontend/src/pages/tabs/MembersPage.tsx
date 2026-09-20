@@ -2,14 +2,16 @@ import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } fr
 import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy, writeBatch, doc, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '../../firebase'
-import { UsersIcon, UserIcon, EditIcon, TrashIcon, MinusCircleIcon, ChevronDownIcon, CheckIcon, SearchIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, FilterIcon, BellIcon, MailIcon, CloseIcon } from '../../components/Icons'
+import { UsersIcon, UserIcon, EditIcon, TrashIcon, MinusCircleIcon, ChevronDownIcon, CheckIcon, SearchIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, FilterIcon, MailIcon, CloseIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TextInput } from '../../components/TextInput'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
-import { AnthillColonyQueue } from '../../components/AnthillColonyQueue'
+import { AnthillColonyQueue } from '../../visualizations/AnthillColonyQueue'
+import { MemberPrison, getPrisonResidents } from '../../visualizations/MemberPrison'
+import { MemberRoleMountain } from '../../visualizations/MemberRoleMountain'
 import type { MemberRole, MemberStatus, Department, Member } from '../../types/member'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -49,6 +51,73 @@ const ROLE_HEX: Record<MemberRole, string> = {
   Dean: '#d97706',
   'Program Head': '#e11d48',
   Instructor: '#059669',
+}
+
+function buildInvitationEmail({
+  role,
+  actionUrl,
+  isReactivation = false,
+}: {
+  role: MemberRole
+  actionUrl: string
+  isReactivation?: boolean
+}) {
+  const heading = isReactivation ? 'Welcome Back!' : "You've been invited!"
+  const message = isReactivation
+    ? `Your account has been officially invited back to the <strong>RORMS</strong> platform as a <strong>${role}</strong>.`
+    : `You have been officially invited to join the <strong>RORMS</strong> platform as a <strong>${role}</strong>.<br />Through this system, you will be able to seamlessly manage and track university resources.`
+  const actionLabel = isReactivation ? 'Accept &amp; Reactivate Account' : 'Accept Invitation &amp; Sign Up'
+  const fallback = isReactivation ? '' : `
+                    <tr>
+                      <td style="padding: 24px 24px 28px; border-top: 1px solid #e5e7eb; color: #737373; font-family: Arial, sans-serif; font-size: 11px; line-height: 18px; text-align: center;">
+                        If the button above doesn't work, copy and paste the following URL into your browser:<br />
+                        <a href="${actionUrl}" style="color: #62853e; word-break: break-all;">${actionUrl}</a>
+                      </td>
+                    </tr>`
+
+  return `<!doctype html>
+<html lang="en">
+  <body style="margin: 0; padding: 0; background-color: #ffffff;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #ffffff;">
+      <tr>
+        <td align="center" style="padding: 16px 12px 30px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #ffffff; border: 1px solid #dadce0; border-radius: 9px; overflow: hidden;">
+            <tr>
+              <td align="center" style="padding: 29px 24px 25px; background-color: #62853e; color: #ffffff; font-family: Arial, sans-serif;">
+                <div style="font-size: 19px; font-weight: 500; letter-spacing: 1.5px; line-height: 24px;">RORMS</div>
+                <div style="margin-top: 7px; font-size: 10px; letter-spacing: 1.25px; line-height: 15px;">REGISTRAR OFFICE ROOM MANAGEMENT SYSTEM</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 31px 24px 22px; color: #2f2f2f; font-family: Arial, sans-serif;">
+                <h1 style="margin: 0 0 20px; color: #2f2f2f; font-size: 18px; line-height: 24px;">${heading}</h1>
+                <p style="margin: 0 0 21px; font-size: 13px; line-height: 20px;">Hello,</p>
+                <p style="margin: 0; font-size: 13px; line-height: 20px;">${message}</p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding: 4px 24px 30px;">
+                <a href="${actionUrl}" style="display: inline-block; padding: 13px 27px; background-color: #62853e; border-radius: 6px; color: #ffffff; font-family: Arial, sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 0.15px; line-height: 18px; text-decoration: none;">${actionLabel}</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 0 24px 28px;">
+                <div style="border-left: 4px solid #e5e7eb; background-color: #f8f8f8; padding: 12px 12px; color: #4a4a4a; font-family: Arial, sans-serif; font-size: 11px; line-height: 17px;">
+                  <strong>Security Note:</strong> This ${isReactivation ? 'reactivation link' : 'invitation'} is strictly tied to your email address and will automatically expire in <strong>7 days.</strong>
+                </div>
+              </td>
+            </tr>${fallback}
+            <tr>
+              <td style="padding: 17px 24px; border-top: 1px solid #e5e7eb; background-color: #fcfcfc; color: #8a8a8a; font-family: Arial, sans-serif; font-size: 10px; line-height: 16px; text-align: center;">
+                © 2026 PHINMA University of Pangasinan. All rights reserved.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
 }
 
 // Deterministic dust motes (no re-render randomness)
@@ -919,6 +988,8 @@ function MembersPage() {
     return [...filteredUsers, ...mergedInvites]
   }, [users, invites])
 
+  const prisonResidents = getPrisonResidents(members)
+
   const filteredMembers = members
     .filter((member) => {
       const matchesSearch = [member.name, member.email].some((val) =>
@@ -1073,51 +1144,8 @@ function MembersPage() {
         await addDoc(collection(db, 'mail'), {
           to: normalizedEmail,
           message: {
-            subject: `Invitation to join RORMS - ${normalizedEmail}`,
-            html: `
-                  <div style="background-color: #f4f7f6; padding: 40px 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0;">
-                    <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-                      <!-- Brand Header -->
-                      <div style="background-color: #62853e; padding: 30px 20px; text-align: center;">
-                        <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">RORMS</h1>
-                        <p style="color: #e0ead6; margin: 5px 0 0 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Registrar Office Room Management System</p>
-                      </div>
-                      <!-- Email Body -->
-                      <div style="padding: 40px 30px;">
-                        <h2 style="color: #333333; margin-top: 0; font-size: 22px;">You've been invited!</h2>
-                        <p style="color: #555555; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
-                          Hello,<br><br>
-                          You have been officially invited to join the <strong>RORMS</strong> platform as a <strong>${inviteRole}</strong>. 
-                          Through this system, you will be able to seamlessly manage and track university resources.
-                        </p>
-                        <!-- CTA Button -->
-                        <div style="text-align: center; margin: 40px 0;">
-                          <a href="${signupLink}" style="background-color: #62853e; color: #ffffff; padding: 16px 36px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(98, 133, 62, 0.25);">
-                            Accept Invitation & Sign Up
-                          </a>
-                        </div>
-                        <!-- Security Callout -->
-                        <div style="background-color: #f9f9f9; border-left: 4px solid #e0e0e0; padding: 15px; margin-bottom: 30px;">
-                          <p style="margin: 0; color: #666666; font-size: 14px; line-height: 1.5;">
-                            <strong>Security Note:</strong> This invitation is strictly tied to your email address and will automatically expire in <strong>7 days</strong>.
-                          </p>
-                        </div>
-                        <hr style="border: none; border-top: 1px solid #eeeeee; margin: 30px 0;" />
-                        <!-- Fallback Link -->
-                        <p style="color: #999999; font-size: 13px; text-align: center; line-height: 1.5; margin: 0;">
-                          If the button above doesn't work, copy and paste the following URL into your browser:<br>
-                          <a href="${signupLink}" style="color: #62853e; word-break: break-all;">${signupLink}</a>
-                        </p>
-                      </div>
-                      <!-- Footer -->
-                      <div style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eeeeee;">
-                        <p style="color: #aaaaaa; font-size: 12px; margin: 0;">
-                          &copy; ${new Date().getFullYear()} PHINMA University of Pangasinan. All rights reserved.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                `,
+            subject: 'Your RORMS invitation',
+            html: buildInvitationEmail({ role: inviteRole, actionUrl: signupLink }),
           },
         })
         results.sent.push(normalizedEmail)
@@ -1480,46 +1508,14 @@ function MembersPage() {
       const signupLink = `${window.location.origin}/signup?token=${inviteRef.id}`
 
       await addDoc(collection(db, 'mail'), {
-        to: normalizedEmail,
-        message: {
-          subject: `Welcome back to RORMS - ${normalizedEmail}`,
-          html: `
-            <div style="background-color: #f4f7f6; padding: 40px 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0;">
-              <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.05);">
-                <!-- Brand Header -->
-                <div style="background-color: #62853e; padding: 30px 20px; text-align: center;">
-                  <h1 style="color: #ffffff; margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.5px;">RORMS</h1>
-                  <p style="color: #e0ead6; margin: 5px 0 0 0; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Registrar Office Room Management System</p>
-                </div>
-                <!-- Email Body -->
-                <div style="padding: 40px 30px;">
-                  <h2 style="color: #333333; margin-top: 0; font-size: 22px;">Welcome Back!</h2>
-                  <p style="color: #555555; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
-                    Hello,<br><br>
-                    Your account has been officially invited back to the <strong>RORMS</strong> platform as a <strong>${memberToReinvite.role}</strong>.
-                  </p>
-                  <!-- CTA Button -->
-                  <div style="text-align: center; margin: 40px 0;">
-                    <a href="${signupLink}" style="background-color: #62853e; color: #ffffff; padding: 16px 36px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; display: inline-block; box-shadow: 0 4px 6px rgba(98, 133, 62, 0.25);">
-                      Accept & Reactivate Account
-                    </a>
-                  </div>
-                  <!-- Security Callout -->
-                  <div style="background-color: #f9f9f9; border-left: 4px solid #e0e0e0; padding: 15px; margin-bottom: 30px;">
-                    <p style="margin: 0; color: #666666; font-size: 14px; line-height: 1.5;">
-                      <strong>Security Note:</strong> This reactivation link is strictly tied to your email address and will automatically expire in <strong>7 days</strong>.
-                    </p>
-                  </div>
-                </div>
-                <!-- Footer -->
-                <div style="background-color: #f8f8f8; padding: 20px; text-align: center; border-top: 1px solid #eeeeee;">
-                  <p style="color: #aaaaaa; font-size: 12px; margin: 0;">
-                    &copy; ${new Date().getFullYear()} PHINMA University of Pangasinan. All rights reserved.
-                  </p>
-                </div>
-              </div>
-            </div>
-          `,
+          to: normalizedEmail,
+          message: {
+            subject: 'Your RORMS reactivation invitation',
+            html: buildInvitationEmail({
+              role: memberToReinvite.role,
+              actionUrl: signupLink,
+              isReactivation: true,
+            }),
         },
       })
 
@@ -1921,7 +1917,7 @@ function MembersPage() {
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <SummaryCard
-              title="Colony Directory"
+              title="Total Members"
               subtitle={`${users.filter(u => u.status === 'Active').length} Active • ${invites.length} Pending`}
               icon={<UsersIcon className="h-4.5 w-4.5 text-[var(--brand-color)]" />}
               gradientClasses="from-[var(--brand-color)]/20 to-[var(--brand-color)]/10"
@@ -1936,24 +1932,24 @@ function MembersPage() {
               />
             </SummaryCard>
             <SummaryCard
-              title="Homeroom Roster"
-              subtitle={`${members.filter(m => m.status === 'Active').length} Seated • ${invites.length} On Waitlist`}
-              icon={<UserIcon className="h-4.5 w-4.5 text-amber-600" />}
-              gradientClasses="from-amber-200 to-amber-100"
-              outlineClasses="bg-amber-500"
-              blobClasses="bg-amber-500/5"
+              title="Role Distribution"
+              subtitle="Five roles • One member landscape"
+              icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-4.5 w-4.5 text-[var(--brand-color)]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="m2 20 7-13 4 7 3-5 6 11ZM7 11l2 2 2-2" /></svg>}
+              gradientClasses="from-[#e3edda] to-[#f3f7ee]"
+              outlineClasses="bg-[var(--brand-color)]"
+              blobClasses="bg-[var(--brand-color)]/5"
             >
-              <HomeroomRosterVisual members={members} />
+              <MemberRoleMountain members={members} />
             </SummaryCard>
             <SummaryCard
-              title="Pending Platform"
-              subtitle={`${invites.length} awaiting boarding`}
-              icon={<BellIcon className="h-4.5 w-4.5 text-sky-600" />}
+              title="Deactivated & Pending Members"
+              subtitle={`${prisonResidents.prisoners.length} Deactivated • ${prisonResidents.guards.length} Pending`}
+              icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-4.5 w-4.5 text-sky-700" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 3h16v18H4ZM8 3v18M16 3v18M4 8h16M4 16h16" /></svg>}
               gradientClasses="from-sky-200 to-sky-100"
               outlineClasses="bg-sky-500"
               blobClasses="bg-sky-500/5"
             >
-              <PendingPlatformVisual invites={invites} />
+              <MemberPrison members={members} />
             </SummaryCard>
           </div>
         </div>        {/* Unified Table Container */}

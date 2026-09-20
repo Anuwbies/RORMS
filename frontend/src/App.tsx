@@ -6,24 +6,45 @@ import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignupPage'
 import LeftSidebarController from './pages/LeftSidebarController'
 import EmailVerificationPage from './pages/EmailVerificationPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isEmailVerified, setIsEmailVerified] = useState(false)
   const [isSignupMode, setIsSignupMode] = useState(false)
+  const [isForgotPasswordMode, setIsForgotPasswordMode] = useState(false)
+  const [isResetPasswordMode, setIsResetPasswordMode] = useState(false)
   const [isVerificationPreview, setIsVerificationPreview] = useState(false)
   const [justSignedUp, setJustSignedUp] = useState(false)
+  const [currentAuthSlide, setCurrentAuthSlide] = useState(0)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    // Check if we should be in signup mode based on URL
-    const params = new URLSearchParams(window.location.search)
-    const hasToken = params.has('token')
-    const isSignupPath = window.location.pathname === '/signup'
-    
-    if (hasToken || isSignupPath) {
-      setIsSignupMode(true)
+    const timer = setInterval(() => {
+      setCurrentAuthSlide((previous) => (previous + 1) % 3)
+    }, 4500)
+
+    return () => clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    const syncAuthPageWithUrl = () => {
+      const params = new URLSearchParams(window.location.search)
+      const isResetPath = window.location.pathname === '/reset-password'
+      const isSignupPath = !isResetPath && (params.has('token') || window.location.pathname === '/signup')
+
+      setIsSignupMode(isSignupPath)
+      setIsResetPasswordMode(isResetPath)
+      setIsForgotPasswordMode(
+        !isSignupPath && !isResetPath && window.location.pathname === '/forgot-password'
+      )
     }
+
+    syncAuthPageWithUrl()
+    window.addEventListener('popstate', syncAuthPageWithUrl)
+
+    return () => window.removeEventListener('popstate', syncAuthPageWithUrl)
   }, [])
 
   useEffect(() => {
@@ -80,6 +101,8 @@ function App() {
       sessionStorage.removeItem('rorms_verification_cooldown')
       window.history.replaceState({}, '', '/')
       setIsSignupMode(false)
+      setIsForgotPasswordMode(false)
+      setIsResetPasswordMode(false)
       setJustSignedUp(false)
       await auth.signOut()
       setIsAuthenticated(false)
@@ -95,11 +118,33 @@ function App() {
     // onAuthStateChanged will handle the state update
   }
 
+  const handleForgotPassword = () => {
+    window.history.pushState({}, '', '/forgot-password')
+    setIsResetPasswordMode(false)
+    setIsForgotPasswordMode(true)
+  }
+
+  const handleBackToSignIn = () => {
+    window.history.pushState({}, '', '/')
+    setIsForgotPasswordMode(false)
+    setIsResetPasswordMode(false)
+  }
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-[var(--brand-surface)]">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-[var(--brand-color)] border-t-transparent"></div>
       </div>
+    )
+  }
+
+  if (isResetPasswordMode) {
+    return (
+      <ResetPasswordPage
+        onBackToSignIn={handleBackToSignIn}
+        currentSlide={currentAuthSlide}
+        onSlideChange={setCurrentAuthSlide}
+      />
     )
   }
 
@@ -119,9 +164,22 @@ function App() {
     )
   }
 
+  if (isForgotPasswordMode) {
+    return (
+      <ForgotPasswordPage
+        onBackToSignIn={handleBackToSignIn}
+        currentSlide={currentAuthSlide}
+        onSlideChange={setCurrentAuthSlide}
+      />
+    )
+  }
+
   return (
     <SignInPage 
-      onSignIn={handleSignIn} 
+      onSignIn={handleSignIn}
+      onForgotPassword={handleForgotPassword}
+      currentSlide={currentAuthSlide}
+      onSlideChange={setCurrentAuthSlide}
     />
   )
 }

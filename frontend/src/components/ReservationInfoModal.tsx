@@ -1,7 +1,14 @@
-import { CalendarIcon, ClockIcon, UserIcon, HourglassIcon } from './Icons'
+import { useState, useEffect } from 'react'
+import { CalendarIcon, ClockIcon, UserIcon, HourglassIcon, DoorIcon } from './Icons'
 import { Button } from './Button'
 
 type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+
+export interface RequesterInfo {
+  name: string
+  email?: string
+  avatar?: string
+}
 
 interface ReservationInfoModalProps {
   isOpen: boolean
@@ -11,16 +18,19 @@ interface ReservationInfoModalProps {
     date: string
     startTime: string
     endTime: string
-    duration: number
+    duration?: number
     attendees?: number
-    purpose: string
+    purpose?: string
     status: ReservationStatus
     createdAt?: any
+    updatedAt?: any
   }
   roomName: string
   buildingName: string
+  requester?: RequesterInfo
   onCancel?: (reservationId: string) => void
   onDelete?: (reservationId: string) => void
+  onViewRoom?: () => void
   isCanceling?: boolean
 }
 
@@ -32,11 +42,51 @@ const statusClasses: Record<ReservationStatus, string> = {
   Completed: 'bg-blue-100 text-blue-700',
 }
 
-export function ReservationInfoModal({ isOpen, onClose, onCancel, onDelete, isCanceling, reservation, roomName, buildingName }: ReservationInfoModalProps) {
+export function ReservationInfoModal({
+  isOpen,
+  onClose,
+  onCancel,
+  onDelete,
+  onViewRoom,
+  isCanceling,
+  reservation,
+  roomName,
+  buildingName,
+  requester
+}: ReservationInfoModalProps) {
+  const [avatarError, setAvatarError] = useState(false)
+
+  useEffect(() => {
+    setAvatarError(false)
+  }, [reservation?.id, requester?.avatar])
+
   if (!isOpen || !reservation) return null
 
-  const canCancel = reservation.status === 'Pending' || reservation.status === 'Approved'
-  const canDelete = reservation.status === 'Cancelled' || reservation.status === 'Completed' || reservation.status === 'Declined'
+  const canCancel = !!onCancel && (reservation.status === 'Pending' || reservation.status === 'Approved')
+  const canDelete = !!onDelete && (reservation.status === 'Cancelled' || reservation.status === 'Completed' || reservation.status === 'Declined')
+
+  const calculateDuration = () => {
+    if (reservation.duration) return reservation.duration
+    if (reservation.startTime && reservation.endTime) {
+      const [startH, startM] = reservation.startTime.split(':').map(Number)
+      const [endH, endM] = reservation.endTime.split(':').map(Number)
+      if (!isNaN(startH) && !isNaN(endH)) {
+        const diff = (endH * 60 + (endM || 0)) - (startH * 60 + (startM || 0))
+        if (diff > 0) return diff
+      }
+    }
+    return 60
+  }
+
+  const formatDateDisplay = (dateStr: string) => {
+    if (!dateStr) return ''
+    const parts = dateStr.split('-')
+    if (parts.length === 3) {
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+      return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    }
+    return new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
@@ -46,7 +96,9 @@ export function ReservationInfoModal({ isOpen, onClose, onCancel, onDelete, isCa
       >
         <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
           <h3 className="text-xl font-bold leading-tight">Reservation Details</h3>
-          <p className="mt-1 text-sm text-white/80">View information about your reservation</p>
+          <p className="mt-1 text-sm text-white/80">
+            {requester ? 'Review booking request and requester details' : 'View information about your reservation'}
+          </p>
         </div>
 
         <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
@@ -62,13 +114,39 @@ export function ReservationInfoModal({ isOpen, onClose, onCancel, onDelete, isCa
                  </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 mt-2">
+              {requester && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Reserved By</p>
+                  <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 flex items-center gap-3">
+                    <div className="relative h-9 w-9 shrink-0 rounded-full border border-slate-200 bg-white overflow-hidden shadow-sm flex items-center justify-center">
+                      {requester.avatar && !avatarError ? (
+                        <img
+                          src={requester.avatar}
+                          alt={requester.name}
+                          className="h-full w-full object-cover"
+                          onError={() => setAvatarError(true)}
+                        />
+                      ) : (
+                        <UserIcon className="h-4 w-4 text-slate-400" />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-bold text-slate-700 truncate leading-tight">{requester.name}</p>
+                      {requester.email && (
+                        <p className="text-xs font-medium text-slate-500 truncate">{requester.email}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3 mt-1">
                  <div className="space-y-1.5">
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Date</p>
                     <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 flex items-center gap-2">
                       <CalendarIcon className="h-4 w-4 text-[var(--brand-color)] shrink-0" />
                       <p className="text-sm font-bold text-slate-700">
-                         {new Date(reservation.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                         {formatDateDisplay(reservation.date)}
                       </p>
                     </div>
                  </div>
@@ -95,7 +173,7 @@ export function ReservationInfoModal({ isOpen, onClose, onCancel, onDelete, isCa
                     <p className="text-xs font-bold uppercase tracking-widest text-slate-500">Duration</p>
                     <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 flex items-center gap-2">
                       <HourglassIcon className="h-4 w-4 text-[var(--brand-color)] shrink-0" />
-                      <p className="text-sm font-bold text-slate-700">{reservation.duration} mins</p>
+                      <p className="text-sm font-bold text-slate-700">{calculateDuration()} mins</p>
                     </div>
                  </div>
               </div>
@@ -125,6 +203,17 @@ export function ReservationInfoModal({ isOpen, onClose, onCancel, onDelete, isCa
               >
                 Close
               </Button>
+              {onViewRoom && (
+                <Button
+                  type="button"
+                  variant="brand"
+                  onClick={onViewRoom}
+                  className="flex-1 h-12 text-base flex items-center justify-center gap-2"
+                >
+                  <DoorIcon className="h-4 w-4" />
+                  <span>Room Information</span>
+                </Button>
+              )}
               {canCancel && (
                 <Button
                   type="button"

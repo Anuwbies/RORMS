@@ -554,7 +554,7 @@ export const RightSidebar = memo(function RightSidebar({
             </div>
 
             <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
-              {notifications.map((notification) => {
+              {[...notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((notification) => {
                 return (
                   <div
                     key={notification.id}
@@ -593,11 +593,6 @@ export const RightSidebar = memo(function RightSidebar({
                             >
                               {notification.title}
                             </p>
-                            {!notification.isRead && (
-                              <span className="h-3.5 shrink-0 rounded-full bg-[var(--brand-color)] px-1 text-[0.5rem] leading-[0.875rem] font-black uppercase tracking-widest text-white">
-                                New
-                              </span>
-                            )}
                           </div>
 
                           <span className="ml-auto shrink-0 whitespace-nowrap text-[0.625rem] font-bold text-slate-500 dark:text-slate-400">
@@ -610,17 +605,31 @@ export const RightSidebar = memo(function RightSidebar({
                             {notification.message}
                           </p>
 
-                          <button
-                            type="button"
-                            aria-label={`Delete ${notification.title}`}
-                            className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              deleteNotification(notification.id)
-                            }}
-                          >
-                            <TrashIcon className="h-3.5 w-3.5" />
-                          </button>
+                          {notification.isRead ? (
+                            <button
+                              type="button"
+                              aria-label={`Delete ${notification.title}`}
+                              className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                deleteNotification(notification.id)
+                              }}
+                            >
+                              <TrashIcon className="h-3.5 w-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              aria-label={`Mark ${notification.title} as read`}
+                              className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-slate-400 opacity-0 transition-all hover:bg-[var(--brand-color)]/10 hover:text-[var(--brand-color)] group-hover:opacity-100 dark:hover:bg-[var(--brand-color)]/20"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                markAsRead(notification.id)
+                              }}
+                            >
+                              <CheckIcon className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
