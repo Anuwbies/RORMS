@@ -1,18 +1,36 @@
 import { useState, useEffect } from 'react'
 import { auth, db } from '../../firebase'
-import { collection, query, where, onSnapshot, limit } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, limit, getDocs, doc, updateDoc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
+import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import AdminDashboardPage from './AdminDashboardPage'
-import RegistrarDashboardPage from './RegistrarDashboardPage'
 import FacultyDashboardPage from './FacultyDashboardPage'
 
 interface DashboardPageProps {
   userRole?: string | null
 }
 
+const ROLE_SWITCHER_EMAIL = 'llme.rodas.up@phinmaed.com'
+const ROLE_OPTIONS = ['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor'] as const
+type DashboardRole = typeof ROLE_OPTIONS[number]
+
+const ROLE_DEPARTMENTS: Record<DashboardRole, string> = {
+  Admin: 'Administrative Office',
+  Registrar: "Registrar's Office",
+  Dean: 'BITE',
+  'Program Head': 'BITE',
+  Instructor: 'BITE',
+}
+
 export function DashboardPage({ userRole }: DashboardPageProps = {}) {
   const [role, setRole] = useState<string | null>(userRole || null)
   const [isLoading, setIsLoading] = useState(!userRole)
+  const [userEmail, setUserEmail] = useState(auth.currentUser?.email || '')
+  const [isRoleUpdating, setIsRoleUpdating] = useState(false)
+
+  useEffect(() => (
+    onAuthStateChanged(auth, user => setUserEmail(user?.email || ''))
+  ), [])
 
   useEffect(() => {
     if (userRole) {
@@ -55,6 +73,37 @@ export function DashboardPage({ userRole }: DashboardPageProps = {}) {
     }
   }, [userRole])
 
+  const handleRoleChange = async (nextRole: DashboardRole) => {
+    const user = auth.currentUser
+    if (!user || user.email?.toLowerCase() !== ROLE_SWITCHER_EMAIL) return
+
+    const previousRole = role
+    setRole(nextRole)
+    setIsRoleUpdating(true)
+
+    try {
+      const membershipQuery = query(
+        collection(db, 'memberships'),
+        where('userId', '==', user.uid),
+        limit(1)
+      )
+      const membershipSnapshot = await getDocs(membershipQuery)
+      if (membershipSnapshot.empty) {
+        throw new Error('No membership record found for role switcher account')
+      }
+
+      await updateDoc(doc(db, 'memberships', membershipSnapshot.docs[0].id), {
+        role: nextRole,
+        department: ROLE_DEPARTMENTS[nextRole],
+      })
+    } catch (error) {
+      console.error('Error changing dashboard role:', error)
+      setRole(previousRole)
+    } finally {
+      setIsRoleUpdating(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
@@ -72,18 +121,20 @@ export function DashboardPage({ userRole }: DashboardPageProps = {}) {
     )
   }
 
-  // 1. Admin Dashboard
-  if (role === 'Admin') {
-    return <AdminDashboardPage />
-  }
+  const selectedRole = ROLE_OPTIONS.includes(role as DashboardRole) ? role as DashboardRole : 'Instructor'
+  const headerAction = userEmail.toLowerCase() === ROLE_SWITCHER_EMAIL ? (
+    <SingleSelectDropdown
+      options={ROLE_OPTIONS}
+      value={selectedRole}
+      onChange={handleRoleChange}
+      isDisabled={isRoleUpdating}
+    />
+  ) : undefined
+  const dashboard = role === 'Admin' || role === 'Registrar'
+    ? <AdminDashboardPage headerAction={headerAction} />
+    : <FacultyDashboardPage userRole={role || 'Instructor'} headerAction={headerAction} />
 
-  // 2. Registrar Dashboard
-  if (role === 'Registrar') {
-    return <RegistrarDashboardPage />
-  }
-
-  // 3. Dean, Program Head, and Instructor Dashboard
-  return <FacultyDashboardPage userRole={role || 'Instructor'} />
+  return dashboard
 }
 
 export default DashboardPage

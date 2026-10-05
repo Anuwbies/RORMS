@@ -10,6 +10,7 @@ import { RevisedSchedulesModal } from '../../components/RevisedSchedulesModal'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
+import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -86,6 +87,7 @@ function MyDepartmentPage() {
   const [loading, setLoading] = useState(true)
   const [isAdding, setIsAdding] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
+  const areMemberActionsDisabled = currentUserRole === 'Program Head' || currentUserRole === 'Instructor'
 
   // Calculate new members (joined in last 7 days)
   const newMembersCount = members.filter(m => {
@@ -407,7 +409,7 @@ function MyDepartmentPage() {
   }
 
   const handleAddInstructors = async () => {
-    if (!departmentInfo?.code) return
+    if (currentUserRole !== 'Dean' || !departmentInfo?.code) return
 
     setIsAdding(true)
     try {
@@ -437,6 +439,8 @@ function MyDepartmentPage() {
   }
 
   const handleRemoveMember = (member: Member) => {
+    if (areMemberActionsDisabled) return
+
     if (member.role === 'Dean') {
       alert('You cannot remove the Dean from the department.')
       return
@@ -446,7 +450,7 @@ function MyDepartmentPage() {
   }
 
   const confirmRemoveMember = async () => {
-    if (!memberToRemove) return
+    if (areMemberActionsDisabled || !memberToRemove) return
 
     setIsRemoving(true)
     setRemoveError('')
@@ -477,6 +481,8 @@ function MyDepartmentPage() {
   }
 
   const handleEditMember = (member: Member) => {
+    if (areMemberActionsDisabled) return
+
     setEditingMember(member)
     setEditRole(member.role)
     setEditError('')
@@ -484,7 +490,7 @@ function MyDepartmentPage() {
 
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!editingMember || !departmentInfo) return
+    if (areMemberActionsDisabled || !editingMember || !departmentInfo) return
 
     setEditError('')
     const isNowProgramHead = editRole === 'Program Head'
@@ -606,9 +612,9 @@ function MyDepartmentPage() {
             <IconButton
               label="Edit member"
               onClick={() => handleEditMember(member)}
-              disabled={member.id === currentUserData?.id}
+              disabled={areMemberActionsDisabled || member.id === currentUserData?.id}
               className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
-                member.id === currentUserData?.id
+                areMemberActionsDisabled || member.id === currentUserData?.id
                   ? 'opacity-30 cursor-default text-slate-400'
                   : 'text-slate-500 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
               }`}
@@ -617,9 +623,9 @@ function MyDepartmentPage() {
             </IconButton>
             <IconButton
               label="Remove member"
-              disabled={member.id === currentUserData?.id}
+              disabled={areMemberActionsDisabled || member.id === currentUserData?.id}
               className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${
-                member.id === currentUserData?.id
+                areMemberActionsDisabled || member.id === currentUserData?.id
                   ? 'opacity-30 cursor-default text-slate-400'
                   : 'text-rose-500 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
               }`}
@@ -633,7 +639,7 @@ function MyDepartmentPage() {
     ];
 
     return cols;
-  }, [currentUserData, avatarErrors]);
+  }, [currentUserData, avatarErrors, areMemberActionsDisabled]);
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
@@ -899,7 +905,7 @@ function MyDepartmentPage() {
         </div>
       )}
 
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader
           title="My Department"
           description="Overview of your department's members, rooms, and activity."
@@ -907,17 +913,21 @@ function MyDepartmentPage() {
 
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 mb-6">
           {(() => {
-            const totalMembers = members.length;
             const activeCount = members.filter(m => m.status === 'Active').length;
-            const deanCount = members.filter(m => m.role === 'Dean').length;
-            const programHeadCount = members.filter(m => m.role === 'Program Head').length;
-            const instructorCount = members.filter(m => m.role === 'Instructor').length;
-
-            const roleStats = [
-              { label: 'Dean', count: deanCount, color: 'bg-amber-400' },
-              { label: 'Prog. Head', count: programHeadCount, color: 'bg-rose-400' },
-              { label: 'Instructor', count: instructorCount, color: 'bg-emerald-400' },
-            ];
+            const pendingCount = members.filter(m => m.status === 'Pending').length;
+            const memberStatusTotal = activeCount + pendingCount;
+            const activeAcademicYear = academicYears.find((year: any) => year.isActive)?.academicYear || '';
+            const normalizeAcademicYear = (value: unknown) => String(value || '')
+              .replace(/[–—]/g, '-')
+              .replace(/\s+/g, '')
+              .toLowerCase();
+            const normalizedActiveYear = normalizeAcademicYear(activeAcademicYear);
+            const activeYearSchedules = normalizedActiveYear
+              ? deptSchedules.filter(schedule => {
+                const scheduleYear = normalizeAcademicYear(schedule.academicYear || schedule.academicTerm);
+                return scheduleYear.includes(normalizedActiveYear);
+              })
+              : [];
 
             const DAY_FULL_NAMES: Record<string, string> = {
               Mon: 'Monday',
@@ -934,7 +944,7 @@ function MyDepartmentPage() {
             };
 
             const dayCounts: Record<string, number> = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
-            deptSchedules.forEach(s => {
+            activeYearSchedules.forEach(s => {
               if (Array.isArray(s.days)) {
                 s.days.forEach((day: string) => {
                   if (dayCounts[day] !== undefined) {
@@ -961,7 +971,7 @@ function MyDepartmentPage() {
               ];
 
             const deptBuildingIds = Array.from(new Set(
-              deptSchedules.flatMap(s => {
+              activeYearSchedules.flatMap(s => {
                 const bIds: string[] = []
                 if (s.buildingId) bIds.push(s.buildingId)
                 if (s.buildingId2) bIds.push(s.buildingId2)
@@ -979,33 +989,55 @@ function MyDepartmentPage() {
 
             const deptBuildings = deptBuildingIds
               .map(bId => buildings.find(b => b.id === bId))
-              .filter(Boolean) as { id: string; name: string }[]
+              .filter(Boolean) as { id: string; name: string; code?: string }[]
 
             const displayBuildings = deptBuildings.length > 0 ? deptBuildings : buildings.slice(0, 2)
 
             return (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
                 <SummaryCard
-                  title="Card 1"
-                  subtitle="Subtitle 1"
-                  icon={<UsersIcon className="w-4.5 h-4.5 text-white" />}
+                  className="animate-in"
+                  title="Department Members"
+                  subtitle={`${activeCount} active · ${pendingCount} pending`}
+                  icon={<UsersIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
                   gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
                   blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-                />
+                >
+                  <SummaryGraph variant="pie" total={memberStatusTotal} points={[
+                    { label: 'Active', value: activeCount },
+                    { label: 'Pending', value: pendingCount },
+                  ]} />
+                </SummaryCard>
                 <SummaryCard
-                  title="Card 2"
-                  subtitle="Subtitle 2"
-                  icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+                  className="animate-in"
+                  title="Schedule Activity"
+                  subtitle={`${activeYearSchedules.length} active-year department schedules`}
+                  icon={<CalendarIcon className="w-4.5 h-4.5 text-amber-600" />}
                   gradientClasses="from-amber-400 to-orange-500"
                   blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-                />
+                >
+                  <SummaryGraph variant="line" total={activeYearSchedules.length} points={Object.entries(dayCounts).map(([day, count]) => ({ label: day, value: count }))} tone="amber" />
+                </SummaryCard>
                 <SummaryCard
-                  title="Card 3"
-                  subtitle="Subtitle 3"
-                  icon={<BuildingIcon className="w-4.5 h-4.5 text-white" />}
+                  className="animate-in"
+                  title="Buildings Used"
+                  subtitle={`${deptBuildings.length} buildings in active-year schedules`}
+                  icon={<BuildingIcon className="w-4.5 h-4.5 text-blue-600" />}
                   gradientClasses="from-blue-400 to-indigo-500"
                   blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-                />
+                >
+                  <SummaryGraph variant="bar" total={deptBuildings.length} points={displayBuildings.slice(0, 3).map(building => ({
+                    label: building.code || building.name,
+                    value: activeYearSchedules.filter(schedule => {
+                      const primaryRoomBuilding = rooms.find(room => room.id === schedule.roomId)?.buildingId
+                      const secondaryRoomBuilding = rooms.find(room => room.id === schedule.roomId2)?.buildingId
+                      return schedule.buildingId === building.id
+                        || schedule.buildingId2 === building.id
+                        || primaryRoomBuilding === building.id
+                        || secondaryRoomBuilding === building.id
+                    }).length,
+                  }))} tone="sky" />
+                </SummaryCard>
               </div>
             );
           })()}
@@ -1094,7 +1126,7 @@ function MyDepartmentPage() {
             emptyDescription={loading ? 'Loading members...' : 'No members found matching your search.'}
             primaryAction={
               <div className="flex gap-2">
-                {(currentUserRole === 'Admin' || currentUserRole === 'Dean' || currentUserRole === 'Program Head') && (
+                {currentUserRole === 'Dean' && (
                   <Button
                     type="button"
                     variant="outline"

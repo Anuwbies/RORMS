@@ -10,6 +10,7 @@ import { db } from '../../firebase'
 import { collection, doc, setDoc, deleteDoc, writeBatch, query, orderBy, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { PlusIcon, CheckCircleIcon, CalendarIcon, LayersIcon, ClipboardIcon, DashboardIcon, TrashIcon, EditIcon, SpinnerIcon, CloseIcon, UserIcon, ClockIcon, BuildingIcon } from '../../components/Icons'
 import { SummaryCard } from '../../components/SummaryCard'
+import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 
 interface SemesterDetails {
   startMonth: string
@@ -482,7 +483,7 @@ function AcademicCalendarPage() {
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         
         <SectionHeader 
           title="Academic Calendar" 
@@ -490,26 +491,47 @@ function AcademicCalendarPage() {
         />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
           <SummaryCard
-            title="Card 1"
-            subtitle="Subtitle 1"
-            icon={<UserIcon className="w-4.5 h-4.5 text-white" />}
+            className="animate-in"
+            title="Academic Years"
+            subtitle={`${years.length} years on record`}
+            icon={<UserIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
             gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
             blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          />
+          >
+            <SummaryGraph variant="bar" total={years.length} points={[
+              { label: 'Early Start', value: years.filter(year => ['January', 'February', 'March', 'April', 'May', 'June'].includes(year.sem1?.startMonth)).length },
+              { label: 'Regular Start', value: years.filter(year => ['July', 'August', 'September'].includes(year.sem1?.startMonth)).length },
+              { label: 'Late Start', value: years.filter(year => ['October', 'November', 'December'].includes(year.sem1?.startMonth)).length },
+            ]} />
+          </SummaryCard>
           <SummaryCard
-            title="Card 2"
-            subtitle="Subtitle 2"
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+            className="animate-in"
+            title="First Semester"
+            subtitle={`${years.length} first-semester phases`}
+            icon={<CalendarIcon className="w-4.5 h-4.5 text-amber-600" />}
             gradientClasses="from-amber-400 to-orange-500"
             blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          />
+          >
+            <SummaryGraph variant="pie" total={years.length} points={[
+              { label: 'Closed', value: years.filter(year => year.sem1?.phase === 'Closed').length },
+              { label: 'In progress', value: years.filter(year => !['Closed', 'Ended'].includes(year.sem1?.phase)).length },
+              { label: 'Ended', value: years.filter(year => year.sem1?.phase === 'Ended').length },
+            ]} tone="amber" />
+          </SummaryCard>
           <SummaryCard
-            title="Card 3"
-            subtitle="Subtitle 3"
-            icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
+            className="animate-in"
+            title="Second Semester"
+            subtitle={`${years.length} second-semester phases`}
+            icon={<ClockIcon className="w-4.5 h-4.5 text-blue-600" />}
             gradientClasses="from-blue-400 to-indigo-500"
             blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-          />
+          >
+            <SummaryGraph variant="pie" total={years.length} points={[
+              { label: 'Closed', value: years.filter(year => year.sem2?.phase === 'Closed').length },
+              { label: 'In progress', value: years.filter(year => !['Closed', 'Ended'].includes(year.sem2?.phase)).length },
+              { label: 'Ended', value: years.filter(year => year.sem2?.phase === 'Ended').length },
+            ]} tone="sky" />
+          </SummaryCard>
         </div>
         <DataTable
           data={filteredYears}

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { CalendarIcon, ClockIcon, LayersIcon, SpinnerIcon, DownloadIcon } from '../../components/Icons'
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
+import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { Button } from '../../components/Button'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { ScheduleModal, resolveCurrentSemester } from '../../components/ScheduleModal'
@@ -248,7 +249,7 @@ function MySchedulePage() {
         if (s.semester !== selectedSemester) return false
       }
       const status = s.status || 'Draft'
-      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised'].includes(status)) return false
+      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised', 'Return', 'Returned'].includes(status)) return false
       return true
     })
   }, [schedules, selectedAcademicYear?.academicYear, selectedSemester])
@@ -284,6 +285,14 @@ function MySchedulePage() {
     })
     return (totalMinutes / 60).toFixed(1)
   }, [filteredSchedules])
+
+  const teachingHoursByDay = useMemo(() => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => ({
+    label: day,
+    value: Math.round(filteredSchedules.reduce((hours, schedule) => {
+      if (!Array.isArray(schedule.days) || !schedule.days.some((scheduledDay: string) => normalizeDay(scheduledDay) === day)) return hours
+      return hours + Math.max(0, timeToMins(schedule.endTime) - timeToMins(schedule.startTime)) / 60
+    }, 0) * 10) / 10,
+  })), [filteredSchedules])
 
   // Build Time Slots
   const timeSlots = useMemo(() => {
@@ -544,7 +553,7 @@ function MySchedulePage() {
         </div>
       </div>
 
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader 
           title="My Schedule" 
           description={`View and manage your assigned classes, weekly timetable, and room schedule for ${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}.`}
@@ -552,31 +561,50 @@ function MySchedulePage() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
           <SummaryCard
-            title={totalSessions.toString()}
-            subtitle="Total Assigned Classes"
-            icon={<LayersIcon className="w-4.5 h-4.5 text-white" />}
+            className="animate-in"
+            title="Total Assigned Classes"
+            subtitle={`${totalSessions} assigned classes`}
+            icon={<LayersIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
             gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
             blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          />
+          >
+            <SummaryGraph variant="pie" total={totalSessions} points={[
+              { label: 'Drafted', value: filteredSchedules.filter(schedule => ['Draft', 'Drafted'].includes(schedule.status || 'Draft')).length },
+              { label: 'Plotted', value: filteredSchedules.filter(schedule => ['Plot', 'Plotted'].includes(schedule.status)).length },
+              { label: 'Revised', value: filteredSchedules.filter(schedule => ['Revise', 'Revised'].includes(schedule.status)).length },
+              { label: 'Returned', value: filteredSchedules.filter(schedule => ['Return', 'Returned'].includes(schedule.status)).length },
+            ]} />
+          </SummaryCard>
           <SummaryCard
-            title={`${daysActive.size} Days`}
-            subtitle="Active Teaching Days"
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+            className="animate-in"
+            title="Active Teaching Days"
+            subtitle={`${daysActive.size} teaching days`}
+            icon={<CalendarIcon className="w-4.5 h-4.5 text-amber-600" />}
             gradientClasses="from-amber-400 to-orange-500"
             blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          />
+          >
+            <SummaryGraph variant="bar" total={filteredSchedules.length} points={[
+              'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
+            ].map(day => ({
+              label: day,
+              value: filteredSchedules.filter(schedule => schedule.days?.some((scheduleDay: string) => scheduleDay.slice(0, 3) === day)).length,
+            }))} unit="classes" tone="amber" />
+          </SummaryCard>
           <SummaryCard
-            title={`${totalWeeklyHours} hrs`}
-            subtitle="Weekly Teaching Load"
-            icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
+            className="animate-in"
+            title="Weekly Teaching Load"
+            subtitle={`${totalWeeklyHours} hours per week`}
+            icon={<ClockIcon className="w-4.5 h-4.5 text-blue-600" />}
             gradientClasses="from-blue-400 to-indigo-500"
             blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-          />
+          >
+            <SummaryGraph variant="line" total={Number(totalWeeklyHours)} points={teachingHoursByDay} unit="hours/week" tone="sky" />
+          </SummaryCard>
         </div>
 
         {/* Main Weekly Schedule Timetable Card */}
         {userRole === 'Dean' ? (
-          <div className="rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-sm flex flex-col items-center justify-center">
+            <div className="animate-in rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-sm flex flex-col items-center justify-center">
             <div className="h-16 w-16 rounded-2xl bg-amber-50 flex items-center justify-center border border-amber-200 shadow-sm mb-4">
               <CalendarIcon className="h-8 w-8 text-amber-600" />
             </div>

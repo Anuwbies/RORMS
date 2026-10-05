@@ -140,7 +140,7 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
                   </span>
                 </p>
                 <p className="text-sm text-gray-500 leading-relaxed">
-                  Please check your inbox (and spam folder) and click the link to activate your account. Once verified, you'll gain full access to the RORMS platform.
+                  Please check your inbox (and spam folder) and click the link to activate your account. Once verified, you'll gain full access to Room Track.
                 </p>
               </>
             ) : (
@@ -153,7 +153,7 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
                   </span>
                 </p>
                 <p className="text-sm text-gray-500 leading-relaxed">
-                  Your account is almost ready! Please click the button below to receive a verification link. Once verified, you'll gain full access to the RORMS platform.
+                  Your account is almost ready! Please click the button below to receive a verification link. Once verified, you'll gain full access to Room Track.
                 </p>
               </>
             )}
@@ -223,7 +223,7 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
 
       <div className="fixed bottom-6 text-center w-full">
         <p className="text-xs font-medium text-gray-400">
-          &copy; 2026 RORMS - Phinma Ed. All rights reserved.
+          &copy; 2026 Room Track - Phinma Ed. All rights reserved.
         </p>
       </div>
     </div>

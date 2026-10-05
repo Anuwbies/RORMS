@@ -222,7 +222,7 @@ export function LeftSidebar({
               >
                 <img
                   src="/logo2.png"
-                  alt="RORMS Logo"
+                  alt="Room Track logo"
                   className={joinClasses(
                     'shrink-0 object-cover transition-transform group-hover:scale-105',
                     isSidebarExpanded ? 'h-12 w-12' : 'h-10 w-10',
@@ -232,7 +232,7 @@ export function LeftSidebar({
                 {isSidebarExpanded && (
                   <div className="w-[10.625rem] shrink-0 overflow-hidden">
                     <h1 className="text-[0.9375rem] font-medium leading-tight tracking-tight text-black group-hover:text-[var(--brand-color)] transition-colors">
-                      <span className="block whitespace-nowrap">Registrar Office Room</span>
+                      <span className="block whitespace-nowrap">Phinma UPANG Room</span>
                       <span className="block whitespace-nowrap">Management System</span>
                     </h1>
                   </div>

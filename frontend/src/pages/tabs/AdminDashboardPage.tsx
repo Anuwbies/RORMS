@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Button } from '../../components/Button'
-import { SummaryCard } from '../../components/SummaryCard'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
 import {
   AlertCircleIcon,
@@ -11,7 +9,6 @@ import {
   ClockIcon,
   DepartmentIcon,
   DoorIcon,
-  PlusIcon,
   UsersIcon,
 } from '../../components/Icons'
 import { db } from '../../firebase'
@@ -39,12 +36,6 @@ interface ReservationRecord {
 interface UserRecord {
   id: string
   isActive?: boolean
-}
-
-interface InvitationRecord {
-  id: string
-  status?: string
-  expiresAt?: unknown
 }
 
 interface ScheduleRecord {
@@ -110,19 +101,6 @@ function formatTime(time?: string) {
   return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`
 }
 
-function timestampToDate(value: unknown) {
-  if (!value) return null
-  if (typeof value === 'object' && 'toDate' in value) {
-    const converter = (value as { toDate?: unknown }).toDate
-    if (typeof converter === 'function') return converter.call(value) as Date
-  }
-  if (typeof value === 'string' || typeof value === 'number') {
-    const date = new Date(value)
-    return Number.isNaN(date.getTime()) ? null : date
-  }
-  return null
-}
-
 const reservationStatusClasses: Record<string, string> = {
   Approved: 'bg-emerald-100 text-emerald-700',
   Pending: 'bg-amber-100 text-amber-700',
@@ -139,110 +117,18 @@ const phaseDescriptions: Record<string, string> = {
   Closed: 'Scheduling activity for this semester is currently closed.',
 }
 
-const summaryCardGroups = [
-  {
-    source: 'Members',
-    description: 'People, roles, and account status',
-    icon: UsersIcon,
-    accent: 'bg-purple-500',
-    badge: 'border-purple-100 bg-purple-50 text-purple-700',
-    cards: [
-      { title: 'Total Members', description: 'Active members and pending invitations' },
-      { title: 'Member Role Distribution', description: 'Role counts shown as a mountain landscape' },
-      { title: 'Member Prison', description: 'Deactivated and pending account activity' },
-    ],
-  },
-  {
-    source: 'Buildings & Rooms',
-    description: 'Campus spaces and capacity',
-    icon: BuildingIcon,
-    accent: 'bg-emerald-500',
-    badge: 'border-emerald-100 bg-emerald-50 text-emerald-700',
-    cards: [
-      { title: 'Total Buildings', description: 'Interactive overview of campus buildings' },
-      { title: 'Total Rooms', description: 'Managed rooms with environmental context' },
-      { title: 'Total Capacity', description: 'Campus-wide seating capacity' },
-    ],
-  },
-  {
-    source: 'Departments',
-    description: 'Academic units and leadership',
-    icon: DepartmentIcon,
-    accent: 'bg-amber-500',
-    badge: 'border-amber-100 bg-amber-50 text-amber-700',
-    cards: [
-      { title: 'Total Departments', description: 'Registered academic departments' },
-      { title: 'Total Members', description: 'Faculty enrolled across departments' },
-      { title: 'Dean Coverage', description: 'Department leadership coverage' },
-    ],
-  },
-  {
-    source: 'Reserve a Room',
-    description: 'Bookable rooms and availability',
-    icon: DoorIcon,
-    accent: 'bg-sky-500',
-    badge: 'border-sky-100 bg-sky-50 text-sky-700',
-    cards: [
-      { title: 'Available Rooms', description: 'Rooms currently ready to reserve' },
-      { title: 'Total Buildings', description: 'Facilities available for reservations' },
-      { title: 'Total Capacity', description: 'Maximum occupancy across bookable rooms' },
-    ],
-  },
-  {
-    source: 'Department Schedules',
-    description: 'Proposal and plotting workflow',
-    icon: CalendarIcon,
-    accent: 'bg-rose-500',
-    badge: 'border-rose-100 bg-rose-50 text-rose-700',
-    cards: [
-      { title: 'Plot Schedules', description: 'Schedules ready for room plotting' },
-      { title: 'Drafted Proposals', description: 'Department schedules still in draft' },
-      { title: 'Revised & Returned', description: 'Schedules requiring another review' },
-    ],
-  },
-  {
-    source: 'My Schedule',
-    description: 'Personal teaching workload',
-    icon: CalendarIcon,
-    accent: 'bg-blue-500',
-    badge: 'border-blue-100 bg-blue-50 text-blue-700',
-    cards: [
-      { title: 'Total Assigned Classes', description: 'Classes assigned for the active term' },
-      { title: 'Active Teaching Days', description: 'Days containing scheduled classes' },
-      { title: 'Weekly Teaching Load', description: 'Total scheduled teaching hours' },
-    ],
-  },
-]
+interface AdminDashboardPageProps {
+  headerAction?: ReactNode
+}
 
-const emptySlotStyles = [
-  {
-    gradient: 'from-[var(--brand-color)]/20 to-[#7b9d4f]/10',
-    outline: 'bg-[var(--brand-color)]',
-    icon: 'text-[var(--brand-color)]',
-  },
-  {
-    gradient: 'from-amber-200 to-amber-100',
-    outline: 'bg-amber-500',
-    icon: 'text-amber-600',
-  },
-  {
-    gradient: 'from-sky-200 to-sky-100',
-    outline: 'bg-sky-500',
-    icon: 'text-sky-600',
-  },
-]
-
-export function AdminDashboardPage() {
+export function AdminDashboardPage({ headerAction }: AdminDashboardPageProps = {}) {
   const { activeAcademicYear, currentSemester, isLoading: isAcademicYearLoading } = useAcademicSemester()
   const { records: rooms, isLoading: areRoomsLoading, hasError: roomsError } = useCollectionData<RoomRecord>('rooms')
   const { records: reservations, isLoading: areReservationsLoading, hasError: reservationsError } = useCollectionData<ReservationRecord>('reservations')
   const { records: users, isLoading: areUsersLoading, hasError: usersError } = useCollectionData<UserRecord>('users')
-  const { records: invitations, isLoading: areInvitationsLoading, hasError: invitationsError } = useCollectionData<InvitationRecord>('invitations')
   const { records: schedules, isLoading: areSchedulesLoading, hasError: schedulesError } = useCollectionData<ScheduleRecord>('schedule')
   const { records: departments, isLoading: areDepartmentsLoading, hasError: departmentsError } = useCollectionData<NamedRecord>('departments')
   const { records: buildings, isLoading: areBuildingsLoading, hasError: buildingsError } = useCollectionData<NamedRecord>('buildings')
-  const [activeSlot, setActiveSlot] = useState<number | null>(null)
-  const [selectedCard, setSelectedCard] = useState<string | null>(null)
   const [now, setNow] = useState(() => new Date())
 
   useEffect(() => {
@@ -250,32 +136,16 @@ export function AdminDashboardPage() {
     return () => window.clearInterval(clock)
   }, [])
 
-  useEffect(() => {
-    if (activeSlot === null) return
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setActiveSlot(null)
-    }
-
-    window.addEventListener('keydown', closeOnEscape)
-    return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [activeSlot])
-
-  const openCardPicker = (slot: number) => {
-    setActiveSlot(slot)
-    setSelectedCard(null)
-  }
-
   const navigateTo = (tabId: string) => {
     window.dispatchEvent(new CustomEvent('navigate-tab', { detail: tabId }))
   }
 
   const roomStats = useMemo(() => {
     const available = rooms.filter(room => (room.status || 'Available').toLowerCase() === 'available').length
-    const occupied = rooms.filter(room => room.status?.toLowerCase() === 'occupied').length
+    const unavailable = rooms.filter(room => room.status?.toLowerCase() === 'unavailable').length
     const maintenance = rooms.filter(room => room.status?.toLowerCase() === 'maintenance').length
     const totalCapacity = rooms.reduce((total, room) => total + (Number(room.capacity) || 0), 0)
-    return { available, occupied, maintenance, total: rooms.length, totalCapacity }
+    return { available, unavailable, maintenance, total: rooms.length, totalCapacity }
   }, [rooms])
 
   const todayKey = formatDateKey(now)
@@ -288,14 +158,7 @@ export function AdminDashboardPage() {
     .sort((first, second) => timeToMinutes(first.startTime) - timeToMinutes(second.startTime)), [reservations, todayKey])
   const pendingReservations = reservations.filter(reservation => reservation.status?.toLowerCase() === 'pending').length
 
-  const pendingInvitations = invitations.filter(invitation => {
-    if (invitation.status?.toLowerCase() !== 'pending') return false
-    const expiry = timestampToDate(invitation.expiresAt)
-    return !expiry || expiry.getTime() > now.getTime()
-  }).length
-
   const activeUsers = users.filter(user => user.isActive !== false).length
-  const deactivatedUsers = users.length - activeUsers
 
   const currentSchedules = useMemo(() => {
     const activeYear = activeAcademicYear?.academicYear?.toLowerCase()
@@ -322,8 +185,9 @@ export function AdminDashboardPage() {
     const normalizedStatus = (schedule: ScheduleRecord) => (schedule.status || 'Draft').toLowerCase()
     const plotted = currentSchedules.filter(schedule => ['plot', 'plotted'].includes(normalizedStatus(schedule))).length
     const drafted = currentSchedules.filter(schedule => ['draft', 'drafted'].includes(normalizedStatus(schedule))).length
-    const needsReview = currentSchedules.filter(schedule => ['revise', 'revised', 'return', 'returned', 'removed'].includes(normalizedStatus(schedule))).length
-    return { plotted, drafted, needsReview, total: currentSchedules.length }
+    const revised = currentSchedules.filter(schedule => ['revise', 'revised'].includes(normalizedStatus(schedule))).length
+    const returned = currentSchedules.filter(schedule => ['return', 'returned'].includes(normalizedStatus(schedule))).length
+    return { plotted, drafted, revised, returned, total: currentSchedules.length }
   }, [currentSchedules])
 
   const upcomingReservationDays = useMemo(() => Array.from({ length: 7 }, (_, offset) => {
@@ -354,37 +218,30 @@ export function AdminDashboardPage() {
 
   const roomsById = useMemo(() => new Map(rooms.map(room => [room.id, room.name || room.code || 'Room'])), [rooms])
   const isDashboardLoading = areRoomsLoading || areReservationsLoading || areUsersLoading
-    || areInvitationsLoading || areSchedulesLoading || areDepartmentsLoading
+    || areSchedulesLoading || areDepartmentsLoading
     || areBuildingsLoading || isAcademicYearLoading
-  const hasDataError = roomsError || reservationsError || usersError || invitationsError
+  const hasDataError = roomsError || reservationsError || usersError
     || schedulesError || departmentsError || buildingsError
 
   const attentionItems = [
     {
-      label: 'Pending reservation requests',
+      label: 'Pending requests',
       description: 'Waiting for an approval decision',
       count: pendingReservations,
       tab: 'manageReservations',
       color: 'border-amber-200 bg-amber-50 text-amber-700',
     },
     {
-      label: 'Rooms under maintenance',
-      description: 'Unavailable until facilities are restored',
-      count: roomStats.maintenance,
+      label: 'Unavailable or maintenance rooms',
+      description: 'Rooms that are not currently available',
+      count: roomStats.unavailable + roomStats.maintenance,
       tab: 'buildingsRooms',
       color: 'border-rose-200 bg-rose-50 text-rose-700',
     },
     {
-      label: 'Pending member invitations',
-      description: 'Active invitations awaiting acceptance',
-      count: pendingInvitations,
-      tab: 'members',
-      color: 'border-sky-200 bg-sky-50 text-sky-700',
-    },
-    {
       label: 'Schedules needing review',
-      description: 'Revised or returned schedule records',
-      count: scheduleStats.needsReview,
+      description: 'Draft schedules awaiting review',
+      count: scheduleStats.drafted,
       tab: 'departmentSchedules',
       color: 'border-purple-200 bg-purple-50 text-purple-700',
     },
@@ -392,10 +249,11 @@ export function AdminDashboardPage() {
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader
           title="Admin Dashboard"
           description="A live overview of campus operations, requests, people, rooms, and scheduling activity."
+          action={headerAction}
         />
 
         {hasDataError && (
@@ -408,38 +266,9 @@ export function AdminDashboardPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          {emptySlotStyles.map((style, index) => (
-            <button
-              key={style.outline}
-              type="button"
-              onClick={() => openCardPicker(index)}
-              className="block h-full w-full cursor-pointer rounded-2xl text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-color)] focus-visible:ring-offset-2"
-              aria-label={`Choose content for summary card ${index + 1}`}
-            >
-              <SummaryCard
-                title={`Summary Card ${index + 1}`}
-                subtitle="Empty slot · Click to choose"
-                icon={<PlusIcon className={`h-5 w-5 ${style.icon}`} />}
-                gradientClasses={style.gradient}
-                outlineClasses={style.outline}
-                blobClasses="bg-slate-100"
-              >
-                <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/70 text-center transition-colors group-hover:border-[var(--brand-color)]/40 group-hover:bg-[#f3f7ee]">
-                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-400 shadow-sm transition-transform group-hover:scale-105 group-hover:text-[var(--brand-color)]">
-                    <PlusIcon className="h-6 w-6" />
-                  </span>
-                  <span className="mt-3 text-sm font-bold text-slate-600">Choose a summary card</span>
-                  <span className="mt-1 text-xs text-slate-400">Browse cards from other tabs</span>
-                </div>
-              </SummaryCard>
-            </button>
-          ))}
-        </div>
-
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-7">
-            <header className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+          <section className="animate-in flex min-h-64 max-h-96 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-7">
+            <header className="flex shrink-0 items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><ClockIcon className="h-5 w-5" /></span>
                 <div className="min-w-0">
@@ -452,13 +281,13 @@ export function AdminDashboardPage() {
               </button>
             </header>
 
-            <div className="divide-y divide-slate-100">
+            <div className="custom-scrollbar min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto">
               {areReservationsLoading ? (
                 <div className="space-y-3 p-5">
                   {[1, 2, 3].map(item => <div key={item} className="h-14 animate-pulse rounded-xl bg-slate-100" />)}
                 </div>
               ) : todayReservations.length === 0 ? (
-                <div className="flex min-h-56 flex-col items-center justify-center px-6 py-10 text-center">
+                <div className="flex h-full flex-col items-center justify-center px-6 text-center">
                   <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400"><CalendarIcon className="h-6 w-6" /></span>
                   <p className="mt-3 text-sm font-black text-slate-700">No reservations scheduled today</p>
                   <p className="mt-1 text-xs text-slate-400">New bookings will appear here automatically.</p>
@@ -490,8 +319,8 @@ export function AdminDashboardPage() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-5">
-            <header className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+          <section className="animate-in flex min-h-64 max-h-96 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-5">
+            <header className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><AlertCircleIcon className="h-5 w-5" /></span>
                 <div>
@@ -502,11 +331,11 @@ export function AdminDashboardPage() {
               {!isDashboardLoading && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-600">{attentionItems.reduce((total, item) => total + item.count, 0)}</span>}
             </header>
 
-            <div className="p-4">
+            <div className="custom-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
               {isDashboardLoading ? (
                 <div className="space-y-3">{[1, 2, 3].map(item => <div key={item} className="h-16 animate-pulse rounded-xl bg-slate-100" />)}</div>
               ) : attentionItems.length === 0 ? (
-                <div className="flex min-h-56 flex-col items-center justify-center text-center">
+                <div className="flex h-full flex-col items-center justify-center text-center">
                   <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><CheckIcon className="h-6 w-6" /></span>
                   <p className="mt-3 text-sm font-black text-slate-800">Everything is caught up</p>
                   <p className="mt-1 text-xs text-slate-400">No records currently require attention.</p>
@@ -530,7 +359,7 @@ export function AdminDashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-5">
+          <section className="animate-in overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-5">
             <header className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600"><CalendarIcon className="h-5 w-5" /></span>
@@ -583,7 +412,7 @@ export function AdminDashboardPage() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-4">
+          <section className="animate-in overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-4">
             <header className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
               <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><DoorIcon className="h-5 w-5" /></span>
@@ -618,8 +447,8 @@ export function AdminDashboardPage() {
                           surface: 'border-emerald-100 bg-emerald-50 text-emerald-700',
                         },
                         {
-                          label: 'Occupied',
-                          value: roomStats.occupied,
+                          label: 'Unavailable',
+                          value: roomStats.unavailable,
                           color: 'bg-amber-400',
                           surface: 'border-amber-100 bg-amber-50 text-amber-700',
                         },
@@ -645,13 +474,13 @@ export function AdminDashboardPage() {
                   <div className="mt-auto border-t border-slate-100 pt-4">
                     <p className="mb-2 text-[0.65rem] font-black uppercase tracking-[0.14em] text-slate-400">Rooms to watch</p>
                     <div className="flex flex-wrap gap-2">
-                      {rooms.filter(room => ['maintenance', 'occupied'].includes(room.status?.toLowerCase() || '')).slice(0, 4).map(room => (
+                      {rooms.filter(room => ['maintenance', 'unavailable'].includes(room.status?.toLowerCase() || '')).slice(0, 4).map(room => (
                         <span key={room.id} className={`rounded-lg border px-2.5 py-1 text-[0.65rem] font-bold ${room.status?.toLowerCase() === 'maintenance' ? 'border-rose-100 bg-rose-50 text-rose-700' : 'border-amber-100 bg-amber-50 text-amber-700'}`}>
                           {room.name || room.code || 'Unnamed room'}
                         </span>
                       ))}
-                      {roomStats.occupied + roomStats.maintenance === 0 && <span className="text-xs font-bold text-emerald-600">All rooms are clear.</span>}
-                      {roomStats.occupied + roomStats.maintenance > 4 && <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[0.65rem] font-bold text-slate-500">+{roomStats.occupied + roomStats.maintenance - 4} more</span>}
+                      {roomStats.unavailable + roomStats.maintenance === 0 && <span className="text-xs font-bold text-emerald-600">All rooms are clear.</span>}
+                      {roomStats.unavailable + roomStats.maintenance > 4 && <span className="rounded-lg bg-slate-100 px-2.5 py-1 text-[0.65rem] font-bold text-slate-500">+{roomStats.unavailable + roomStats.maintenance - 4} more</span>}
                     </div>
                   </div>
                 </>
@@ -659,7 +488,7 @@ export function AdminDashboardPage() {
             </div>
           </section>
 
-          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-3">
+          <section className="animate-in overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-3">
             <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-purple-50 text-purple-600"><CalendarIcon className="h-5 w-5" /></span>
@@ -686,21 +515,19 @@ export function AdminDashboardPage() {
                   <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100">
                     <span className="block h-full rounded-full bg-gradient-to-r from-purple-500 to-emerald-500" style={{ width: `${scheduleCompletion}%` }} />
                   </div>
-                  <div className="mt-4 grid grid-cols-3 gap-2 text-center">
-                    <div className="rounded-lg bg-emerald-50 py-2"><p className="text-sm font-black text-emerald-700">{scheduleStats.plotted}</p><p className="text-[0.6rem] text-emerald-600">Plotted</p></div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 text-center">
                     <div className="rounded-lg bg-amber-50 py-2"><p className="text-sm font-black text-amber-700">{scheduleStats.drafted}</p><p className="text-[0.6rem] text-amber-600">Drafted</p></div>
-                    <div className="rounded-lg bg-purple-50 py-2"><p className="text-sm font-black text-purple-700">{scheduleStats.needsReview}</p><p className="text-[0.6rem] text-purple-600">Review</p></div>
+                    <div className="rounded-lg bg-emerald-50 py-2"><p className="text-sm font-black text-emerald-700">{scheduleStats.plotted}</p><p className="text-[0.6rem] text-emerald-600">Plotted</p></div>
+                    <div className="rounded-lg bg-purple-50 py-2"><p className="text-sm font-black text-purple-700">{scheduleStats.revised}</p><p className="text-[0.6rem] text-purple-600">Revised</p></div>
+                    <div className="rounded-lg bg-rose-50 py-2"><p className="text-sm font-black text-rose-700">{scheduleStats.returned}</p><p className="text-[0.6rem] text-rose-600">Returned</p></div>
                   </div>
-                  <button type="button" onClick={() => navigateTo('departmentSchedules')} className="group mt-3 flex w-full shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition-colors hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700">
-                    Open schedules <ArrowRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-                  </button>
                 </>
               )}
             </div>
           </section>
         </div>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-4">
             <div>
               <h2 className="font-black text-slate-900">Campus snapshot</h2>
@@ -710,10 +537,10 @@ export function AdminDashboardPage() {
           </div>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
-              { label: 'Active users', value: activeUsers, detail: `${deactivatedUsers} deactivated`, icon: UsersIcon, color: 'bg-purple-50 text-purple-700' },
-              { label: 'Departments', value: departments.length, detail: 'academic units', icon: DepartmentIcon, color: 'bg-amber-50 text-amber-700' },
-              { label: 'Buildings', value: buildings.length, detail: `${roomStats.total} rooms`, icon: BuildingIcon, color: 'bg-emerald-50 text-emerald-700' },
-              { label: 'Room capacity', value: roomStats.totalCapacity.toLocaleString(), detail: 'total seats', icon: DoorIcon, color: 'bg-sky-50 text-sky-700' },
+              { label: 'Active users', value: activeUsers, icon: UsersIcon, color: 'bg-purple-50 text-purple-700' },
+              { label: 'Departments', value: departments.length, icon: DepartmentIcon, color: 'bg-amber-50 text-amber-700' },
+              { label: 'Buildings', value: buildings.length, icon: BuildingIcon, color: 'bg-emerald-50 text-emerald-700' },
+              { label: 'Room capacity', value: roomStats.totalCapacity.toLocaleString(), icon: DoorIcon, color: 'bg-sky-50 text-sky-700' },
             ].map(item => {
               const SnapshotIcon = item.icon
               return (
@@ -722,7 +549,6 @@ export function AdminDashboardPage() {
                   <div className="min-w-0">
                     <p className="text-xl font-black tracking-tight text-slate-900">{isDashboardLoading ? '—' : item.value}</p>
                     <p className="truncate text-xs font-bold text-slate-600">{item.label}</p>
-                    <p className="truncate text-[0.65rem] text-slate-400">{item.detail}</p>
                   </div>
                 </div>
               )
@@ -731,113 +557,6 @@ export function AdminDashboardPage() {
         </section>
       </div>
 
-      {activeSlot !== null && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="summary-card-picker-title"
-        >
-          <button
-            type="button"
-            aria-label="Close summary card picker"
-            onClick={() => setActiveSlot(null)}
-            className="absolute inset-0 cursor-default bg-slate-950/55"
-          />
-
-          <div className="relative z-10 flex max-h-[min(52rem,calc(100vh-2rem))] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl sm:max-h-[min(52rem,calc(100vh-3rem))]">
-            <header className="border-b border-[#526f34] bg-gradient-to-br from-[var(--brand-color)] to-[#7b9d4f] px-5 py-4 sm:px-6 sm:py-5">
-              <div>
-                <h2 id="summary-card-picker-title" className="text-xl font-black tracking-tight text-white sm:text-2xl">
-                  Choose a summary card
-                </h2>
-                <p className="mt-1 text-sm text-white/90">Select an existing card from another tab to place in this slot.</p>
-              </div>
-            </header>
-
-            <div className="custom-scrollbar flex-1 overflow-y-auto bg-white px-5 py-5 sm:px-6">
-              <div className="space-y-6">
-                {summaryCardGroups.map(group => {
-                  const SourceIcon = group.icon
-                  return (
-                    <section key={group.source} aria-labelledby={`summary-source-${group.source.replaceAll(' ', '-').toLowerCase()}`}>
-                      <div className="mb-3 flex items-center gap-3">
-                        <span className={`flex h-9 w-9 items-center justify-center rounded-xl border ${group.badge}`}>
-                          <SourceIcon className="h-4.5 w-4.5" />
-                        </span>
-                        <div>
-                          <h3 id={`summary-source-${group.source.replaceAll(' ', '-').toLowerCase()}`} className="text-sm font-black text-slate-900">{group.source}</h3>
-                          <p className="text-xs text-slate-400">{group.description}</p>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                        {group.cards.map(card => {
-                          const optionId = `${group.source}:${card.title}`
-                          const isSelected = selectedCard === optionId
-                          return (
-                            <button
-                              key={optionId}
-                              type="button"
-                              aria-pressed={isSelected}
-                              onClick={() => setSelectedCard(optionId)}
-                              className={`group/option relative cursor-pointer overflow-hidden rounded-xl border bg-white p-4 text-left shadow-sm transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-color)] ${
-                                isSelected
-                                  ? 'border-[var(--brand-color)] ring-2 ring-[var(--brand-color)]/15'
-                                  : 'border-slate-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md'
-                              }`}
-                            >
-                              <span className={`absolute inset-x-0 top-0 h-1 ${group.accent}`} />
-                              <div className="flex items-start justify-between gap-3">
-                                <span className="min-w-0">
-                                  <span className="block truncate text-sm font-black text-slate-900">{card.title}</span>
-                                  <span className="mt-1 block text-xs leading-5 text-slate-500">{card.description}</span>
-                                </span>
-                                <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                                  isSelected
-                                    ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white'
-                                    : 'border-slate-200 bg-white text-transparent group-hover/option:border-slate-300'
-                                }`}>
-                                  <CheckIcon className="h-3.5 w-3.5" />
-                                </span>
-                              </div>
-                              <div className="mt-4 flex h-12 items-end gap-1.5 overflow-hidden rounded-lg border border-slate-100 bg-slate-50 px-3 py-2" aria-hidden="true">
-                                {[45, 72, 56, 88, 64].map((height, barIndex) => (
-                                  <span key={barIndex} className={`flex-1 rounded-sm opacity-55 ${group.accent}`} style={{ height: `${height}%` }} />
-                                ))}
-                              </div>
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </section>
-                  )
-                })}
-              </div>
-            </div>
-
-            <footer className="flex flex-col gap-3 border-t border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <p className="text-xs text-slate-400">Prototype picker only — applying selections will be added later.</p>
-              <div className="flex items-center justify-end gap-2">
-                <Button
-                  type="button"
-                  onClick={() => setActiveSlot(null)}
-                  variant="outline"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  disabled
-                  variant="brand"
-                >
-                  Add to dashboard
-                </Button>
-              </div>
-            </footer>
-          </div>
-        </div>
-      )}
     </section>
   )
 }

@@ -91,8 +91,10 @@ const ANALYTICS_OPTIONS: Array<{
 
 const ANALYTICS_KIND_STORAGE_KEY = 'rorms-analytics-selected-kind'
 const MEMBER_STATUS_OPTIONS = ['Active', 'Deactivated', 'Pending']
+const MEMBER_DEPARTMENT_PREFIXES = ['Administrative Office', "Registrar's Office", 'Unassigned']
 const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Returned', 'Revised', 'Plotted']
 const DATE_RANGE_OPTIONS = [
+  { value: '7', label: 'Last 7 days' },
   { value: '30', label: 'Last 30 days' },
   { value: '90', label: 'Last 90 days' },
   { value: '365', label: 'Last 12 months' },
@@ -188,7 +190,7 @@ function AnalyticsPanel({
   isHighlighted?: boolean
 }) {
   return (
-    <article className={`overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all ${isHighlighted ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''} ${className}`}>
+    <article className={`animate-in overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition-all ${isHighlighted ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''} ${className}`}>
       <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f3f7ee] text-[var(--brand-color)]">
           {icon}
@@ -384,7 +386,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     { label: 'Pending members', value: pendingMembers.toLocaleString(), detail: 'active, unexpired invitations' },
     { label: 'Deactivated members', value: deactivatedMembers.toLocaleString(), detail: 'accounts currently deactivated' },
   ] : [
-    { label: 'Reservation demand', value: matchingReservations.length.toLocaleString(), detail: `${demandChange >= 0 ? '+' : ''}${demandChange}% versus the prior comparable period` },
+    { label: 'Reservation demand', value: matchingReservations.length.toLocaleString(), detail: `${demandChange >= 0 ? '+' : ''}${demandChange}% vs. prior period` },
     { label: 'Approval rate', value: `${percent(approvedReservations, decidedReservations)}%`, detail: `${decidedReservations} requests received a decision` },
     { label: 'Reserved time', value: `${(totalReservedMinutes / 60).toFixed(totalReservedMinutes % 60 === 0 ? 0 : 1)}h`, detail: `${matchingReservations.length > 0 ? (totalReservedMinutes / matchingReservations.length / 60).toFixed(1) : '0'} hours per request on average` },
     { label: 'Schedule completion', value: `${percent(allPlottedSchedules, parentSchedules.length)}%`, detail: `${allPlottedSchedules} of ${parentSchedules.length} schedules plotted` },
@@ -416,20 +418,21 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         ]
   const statusBreakdownTotal = statusBreakdown.reduce((total, item) => total + item.count, 0)
 
-  const departmentOptions = useMemo(() => {
-    const availableDepartments = new Set<string>()
-    departments.forEach(department => {
-      const value = department.code?.trim() || department.name?.trim()
-      if (value) availableDepartments.add(value)
-    })
-    memberships.forEach(member => {
-      if (member.department?.trim()) availableDepartments.add(member.department.trim())
-    })
-    parentSchedules.forEach(schedule => {
-      if (schedule.department?.trim()) availableDepartments.add(schedule.department.trim())
-    })
-    return Array.from(availableDepartments).sort((first, second) => first.localeCompare(second))
-  }, [departments, memberships, parentSchedules])
+  const departmentOptions = useMemo(
+    () => Array.from(new Set(
+      departments
+        .map((department) => department.code?.trim() || department.name?.trim())
+        .filter((department): department is string => Boolean(department)),
+    )).sort((first, second) => first.localeCompare(second)),
+    [departments],
+  )
+  const memberDepartmentOptions = useMemo(
+    () => [
+      ...MEMBER_DEPARTMENT_PREFIXES,
+      ...departmentOptions.filter(department => !MEMBER_DEPARTMENT_PREFIXES.includes(department)),
+    ],
+    [departmentOptions],
+  )
   const filterGroups: FilterGroup[] = [
     {
       id: 'date-range',
@@ -444,7 +447,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     {
       id: 'department',
       title: 'Department',
-      options: departmentOptions,
+      options: analyticsKind === 'members' ? memberDepartmentOptions : departmentOptions,
       selectedValues: departmentFilters,
       onChange: setDepartmentFilters,
     },
@@ -1007,13 +1010,13 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader
           title="Analytics"
           description="Review operational metrics across reservations, rooms, schedules, and member records."
         />
 
-        <div className={`grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableAnalyticsOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Analytics categories">
+        <div className={`animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableAnalyticsOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Analytics categories">
           {availableAnalyticsOptions.map(option => {
             const AnalyticsIcon = option.icon
             const isActive = analyticsKind === option.id
@@ -1041,8 +1044,8 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         </div>
 
         <div id="analytics-metrics" role="tabpanel" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {metrics.map(metric => (
-            <article key={metric.label} className={`relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all ${isCardHighlighted(metric.label) ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
+          {metrics.map((metric, metricIndex) => (
+            <article key={metricIndex} className={`animate-in relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all ${isCardHighlighted(metric.label) ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
                   <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">{metric.label}</p>
@@ -1055,7 +1058,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         </div>
 
         <div className="grid grid-cols-1 gap-x-4 gap-y-6 xl:grid-cols-12">
-          <section className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all xl:col-span-9 ${isCardHighlighted('Status breakdown') ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
+          <section className={`animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all xl:col-span-9 ${isCardHighlighted('Status breakdown') ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-700"><ClipboardIcon className="h-5 w-5" /></span>
               <div>
@@ -1082,7 +1085,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
             </div>
           </section>
 
-          <aside className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all xl:col-span-3 ${isCardHighlighted('Analytics scope') ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
+          <aside className={`animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all xl:col-span-3 ${isCardHighlighted('Analytics scope') ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
             <p className="text-sm font-bold text-slate-700">Analytics scope</p>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex justify-between gap-3"><dt className="font-bold text-slate-600">Date range</dt><dd className="font-black text-slate-900">{selectedDateRangeLabel}</dd></div>
@@ -1091,7 +1094,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
           </aside>
         </div>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label={`${activeAnalyticsOption.label} analytics controls`}>
+        <section className="animate-in rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label={`${activeAnalyticsOption.label} analytics controls`}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row">
               <TextInput

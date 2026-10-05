@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
-import { SummaryCard } from '../../components/SummaryCard'
 import {
   BuildingIcon, DoorIcon, CalendarIcon, ChevronRightIcon,
   ClockIcon, ClipboardIcon, UsersIcon, CheckCircleIcon, BookIcon
@@ -126,7 +125,11 @@ const timeToMinutes = (timeStr?: string): number => {
   return hours * 60 + (mins || 0)
 }
 
-export function RegistrarDashboardPage() {
+interface RegistrarDashboardPageProps {
+  headerAction?: ReactNode
+}
+
+export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageProps = {}) {
   const { activeAcademicYear, currentSemester } = useAcademicSemester()
 
   const [rooms, setRooms] = useState<RoomItem[]>([])
@@ -362,41 +365,17 @@ export function RegistrarDashboardPage() {
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader 
           title="Registrar Dashboard" 
           description="Campus-wide scheduling status, weekly timetable allocations, room inventories, and booking approvals." 
+          action={headerAction}
         />
-
-        {/* 3 Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
-          <SummaryCard
-            title="Card 1"
-            subtitle="Subtitle 1"
-            icon={<BuildingIcon className="w-4.5 h-4.5 text-white" />}
-            gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
-            blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          />
-          <SummaryCard
-            title="Card 2"
-            subtitle="Subtitle 2"
-            icon={<DoorIcon className="w-4.5 h-4.5 text-white" />}
-            gradientClasses="from-amber-400 to-orange-500"
-            blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          />
-          <SummaryCard
-            title="Card 3"
-            subtitle="Subtitle 3"
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
-            gradientClasses="from-blue-400 to-indigo-500"
-            blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-          />
-        </div>
 
         {/* Row 2: Academic Calendar Term & Phase + Weekly Master Timetable At-A-Glance */}
         <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
           {/* Card 1: Academic Calendar & Term Phase (matches 'academicCalendar' tab) */}
-          <div className="lg:col-span-4 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+          <div className="animate-in lg:col-span-4 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
             <div className="border-b border-gray-100 bg-gray-50/50 px-5 sm:px-6 py-4 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="font-semibold text-gray-900 leading-tight truncate">Academic Term & Phase</h3>
@@ -469,7 +448,7 @@ export function RegistrarDashboardPage() {
           </div>
 
           {/* Card 2: Weekly Master Timetable At-A-Glance (matches 'departmentSchedules' tab) */}
-          <div className="lg:col-span-8 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+          <div className="animate-in lg:col-span-8 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
             <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4 flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-gray-900 leading-tight">Weekly Master Timetable At-A-Glance</h3>
@@ -552,7 +531,7 @@ export function RegistrarDashboardPage() {
         {/* Row 3: Campus Room Status & Utilization + Campus Reservations This Week */}
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Card 3: Campus Room Status & Availability (matches 'buildingsRooms' tab) */}
-          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[24rem]">
+          <div className="animate-in rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[24rem]">
             <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4 flex items-center justify-between shrink-0">
               <div>
                 <div className="flex items-center gap-2">
@@ -664,7 +643,7 @@ export function RegistrarDashboardPage() {
           </div>
 
           {/* Card 4: Campus Reservations This Week (matches 'manageReservations' tab) */}
-          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[24rem]">
+          <div className="animate-in rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[24rem]">
             <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4 flex items-center justify-between shrink-0">
               <div>
                 <div className="flex items-center gap-2">

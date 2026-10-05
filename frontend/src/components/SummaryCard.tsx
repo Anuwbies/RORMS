@@ -26,7 +26,7 @@ export function SummaryCard({
   onIconClick,
 }: SummaryCardProps) {
   return (
-    <div className={`group relative z-10 hover:z-50 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 p-4 flex flex-col h-full ${className}`}>
+    <div className={`group relative z-10 min-h-0 flex-1 hover:z-50 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-300 p-4 flex flex-col ${className}`}>
 
       <div
         className={`absolute top-0 left-[1%] right-[1%] h-[3px] rounded-t-sm ${outlineClasses || `bg-gradient-to-r ${gradientClasses}`}`}
@@ -42,19 +42,21 @@ export function SummaryCard({
           </p>
         </div>
         <div
-          className={`flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br shadow-sm shrink-0 ${gradientClasses}`}
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm ${blobClasses}`}
           onClick={onIconClick}
         >
           {icon}
         </div>
       </div>
 
-      <div className={`flex-1 flex flex-col mt-4 w-full relative ${contentAspectRatio}`}>
-        {children ? (
-          children
-        ) : (
-          <div className="w-full h-full rounded-xl bg-slate-100 animate-pulse" />
-        )}
+      <div className={`relative mt-4 w-full shrink-0 ${contentAspectRatio}`}>
+        <div className="absolute inset-0">
+          {children ? (
+            children
+          ) : (
+            <div className="h-full w-full rounded-xl bg-slate-100 animate-pulse" />
+          )}
+        </div>
       </div>
     </div>
   );

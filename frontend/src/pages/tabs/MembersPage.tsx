@@ -9,9 +9,8 @@ import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
-import { AnthillColonyQueue } from '../../visualizations/AnthillColonyQueue'
-import { MemberPrison, getPrisonResidents } from '../../visualizations/MemberPrison'
-import { MemberRoleMountain } from '../../visualizations/MemberRoleMountain'
+import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
+import { getPrisonResidents } from '../../visualizations/MemberPrison'
 import type { MemberRole, MemberStatus, Department, Member } from '../../types/member'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -64,8 +63,8 @@ function buildInvitationEmail({
 }) {
   const heading = isReactivation ? 'Welcome Back!' : "You've been invited!"
   const message = isReactivation
-    ? `Your account has been officially invited back to the <strong>RORMS</strong> platform as a <strong>${role}</strong>.`
-    : `You have been officially invited to join the <strong>RORMS</strong> platform as a <strong>${role}</strong>.<br />Through this system, you will be able to seamlessly manage and track university resources.`
+    ? `Your account has been officially invited back to <strong>Room Track</strong> as a <strong>${role}</strong>.`
+    : `You have been officially invited to join <strong>Room Track</strong> as a <strong>${role}</strong>.<br />Through this system, you will be able to seamlessly manage and track university resources.`
   const actionLabel = isReactivation ? 'Accept &amp; Reactivate Account' : 'Accept Invitation &amp; Sign Up'
   const fallback = isReactivation ? '' : `
                     <tr>
@@ -84,8 +83,8 @@ function buildInvitationEmail({
           <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 600px; background-color: #ffffff; border: 1px solid #dadce0; border-radius: 9px; overflow: hidden;">
             <tr>
               <td align="center" style="padding: 29px 24px 25px; background-color: #62853e; color: #ffffff; font-family: Arial, sans-serif;">
-                <div style="font-size: 19px; font-weight: 500; letter-spacing: 1.5px; line-height: 24px;">RORMS</div>
-                <div style="margin-top: 7px; font-size: 10px; letter-spacing: 1.25px; line-height: 15px;">REGISTRAR OFFICE ROOM MANAGEMENT SYSTEM</div>
+                <div style="font-size: 19px; font-weight: 500; letter-spacing: 1.5px; line-height: 24px;">Room Track</div>
+                <div style="margin-top: 7px; font-size: 10px; letter-spacing: 1.25px; line-height: 15px;">PHINMA UPANG ROOM MANAGEMENT SYSTEM</div>
               </td>
             </tr>
             <tr>
@@ -480,7 +479,7 @@ function PendingPlatformVisual({ invites }: { invites: Member[] }) {
           <div className="relative h-[6.4cqw] w-[19cqw] rounded-md border-2 border-slate-700 bg-gradient-to-b from-[#5b83ba] to-[#4a72a8]">
             <div className="absolute inset-x-[0.6cqw] top-[0.35cqw] h-[0.55cqw] rounded-sm bg-slate-600" />
             <p className="absolute inset-x-0 top-[1.7cqw] text-center text-[0.78cqw] font-black uppercase tracking-[0.3em] text-white/90">
-              RORMS Express
+              Room Track Express
             </p>
             <div className="absolute inset-x-[1cqw] bottom-[1cqw] flex justify-between">
               {[0, 1, 2].map(w => (
@@ -988,6 +987,25 @@ function MembersPage() {
     return [...filteredUsers, ...mergedInvites]
   }, [users, invites])
 
+  const departmentMemberStats = useMemo(() => {
+    const normalizeDepartment = (department?: string) => (department || '')
+      .trim()
+      .toLowerCase()
+      .replaceAll('’', "'")
+    const administrativeOffice = members.filter(member => normalizeDepartment(member.department) === 'administrative office').length
+    const registrarsOffice = members.filter(member => normalizeDepartment(member.department) === "registrar's office").length
+    const academic = members.filter(member => {
+      const department = normalizeDepartment(member.department)
+      return Boolean(department) && department !== 'administrative office' && department !== "registrar's office"
+    }).length
+    return {
+      administrativeOffice,
+      registrarsOffice,
+      academic,
+      total: administrativeOffice + registrarsOffice + academic,
+    }
+  }, [members])
+
   const prisonResidents = getPrisonResidents(members)
 
   const filteredMembers = members
@@ -1144,7 +1162,7 @@ function MembersPage() {
         await addDoc(collection(db, 'mail'), {
           to: normalizedEmail,
           message: {
-            subject: 'Your RORMS invitation',
+            subject: 'Your Room Track invitation',
             html: buildInvitationEmail({ role: inviteRole, actionUrl: signupLink }),
           },
         })
@@ -1510,7 +1528,7 @@ function MembersPage() {
       await addDoc(collection(db, 'mail'), {
           to: normalizedEmail,
           message: {
-            subject: 'Your RORMS reactivation invitation',
+            subject: 'Your Room Track reactivation invitation',
             html: buildInvitationEmail({
               role: memberToReinvite.role,
               actionUrl: signupLink,
@@ -1908,7 +1926,7 @@ function MembersPage() {
         </div>
       )}
 
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader
           title="User Directory"
           description="Manage system access, roles, and department assignments for all users in a centralized hub."
@@ -1917,6 +1935,7 @@ function MembersPage() {
         <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <SummaryCard
+              className="animate-in"
               title="Total Members"
               subtitle={`${users.filter(u => u.status === 'Active').length} Active • ${invites.length} Pending`}
               icon={<UsersIcon className="h-4.5 w-4.5 text-[var(--brand-color)]" />}
@@ -1924,32 +1943,43 @@ function MembersPage() {
               outlineClasses="bg-[var(--brand-color)]"
               blobClasses="bg-[var(--brand-color)]/5"
             >
-              <AnthillColonyQueue
-                members={members}
-                users={users}
-                invites={invites}
-                departments={departments}
-              />
+              <SummaryGraph variant="bar" total={users.length + invites.length} points={[
+                { label: 'Active', value: users.filter(user => user.status === 'Active').length },
+                { label: 'Pending', value: invites.length },
+                { label: 'Deact.', value: prisonResidents.prisoners.length },
+              ]} />
             </SummaryCard>
             <SummaryCard
+              className="animate-in"
               title="Role Distribution"
-              subtitle="Five roles • One member landscape"
+              subtitle={`${members.length} members across five roles`}
               icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-4.5 w-4.5 text-[var(--brand-color)]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="m2 20 7-13 4 7 3-5 6 11ZM7 11l2 2 2-2" /></svg>}
               gradientClasses="from-[#e3edda] to-[#f3f7ee]"
               outlineClasses="bg-[var(--brand-color)]"
               blobClasses="bg-[var(--brand-color)]/5"
-            >
-              <MemberRoleMountain members={members} />
+              >
+              <SummaryGraph variant="line" total={members.length} points={[
+                { label: 'Admin', value: members.filter(member => member.role === 'Admin').length },
+                { label: 'Reg.', value: members.filter(member => member.role === 'Registrar').length },
+                { label: 'Dean', value: members.filter(member => member.role === 'Dean').length },
+                { label: 'Prog. Head', value: members.filter(member => member.role === 'Program Head').length },
+                { label: 'Instr.', value: members.filter(member => member.role === 'Instructor').length },
+              ]} tone="emerald" />
             </SummaryCard>
             <SummaryCard
-              title="Deactivated & Pending Members"
-              subtitle={`${prisonResidents.prisoners.length} Deactivated • ${prisonResidents.guards.length} Pending`}
+              className="animate-in"
+              title="Department Members"
+              subtitle={`${departmentMemberStats.total} members across three groups`}
               icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-4.5 w-4.5 text-sky-700" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 3h16v18H4ZM8 3v18M16 3v18M4 8h16M4 16h16" /></svg>}
               gradientClasses="from-sky-200 to-sky-100"
               outlineClasses="bg-sky-500"
               blobClasses="bg-sky-500/5"
             >
-              <MemberPrison members={members} />
+              <SummaryGraph variant="pie" total={departmentMemberStats.total} points={[
+                { label: 'Administrative Office', value: departmentMemberStats.administrativeOffice },
+                { label: "Registrar's Office", value: departmentMemberStats.registrarsOffice },
+                { label: 'Academic', value: departmentMemberStats.academic },
+              ]} tone="sky" />
             </SummaryCard>
           </div>
         </div>        {/* Unified Table Container */}
@@ -2036,8 +2066,9 @@ function MembersPage() {
                 align: 'right',
                 render: (member) => {
                   const isSelf = member.id === currentUserId
-                  const isEditDisabled = isSelf
-                  const isRemoveDisabled = isSelf
+                  const isAdminAccount = member.role === 'Admin'
+                  const isEditDisabled = isSelf || isAdminAccount
+                  const isRemoveDisabled = isSelf || isAdminAccount
 
                   return (
                     <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
@@ -2056,7 +2087,11 @@ function MembersPage() {
                         <IconButton
                           label="Re-invite member"
                           onClick={() => setMemberToReinvite(member)}
-                          className="h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 text-[var(--brand-color)] hover:border-[var(--brand-color)]/40 hover:bg-[var(--brand-color)]/5 hover:text-[var(--brand-color-hover)] hover:shadow hover:-translate-y-0.5 transition-all"
+                          className={`h-8 w-8 rounded-lg bg-white shadow-sm border border-slate-200 transition-all ${isRemoveDisabled
+                            ? 'opacity-30 cursor-default text-slate-400'
+                            : 'text-[var(--brand-color)] hover:border-[var(--brand-color)]/40 hover:bg-[var(--brand-color)]/5 hover:text-[var(--brand-color-hover)] hover:shadow hover:-translate-y-0.5'
+                            }`}
+                          disabled={isRemoveDisabled}
                         >
                           <MailIcon className="h-4 w-4" />
                         </IconButton>

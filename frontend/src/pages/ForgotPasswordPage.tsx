@@ -102,10 +102,10 @@ function ForgotPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: For
             />
             <div className="space-y-0.5">
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-white/90">
-                PHINMA UPANG
+                Room Track
               </p>
               <h1 className="text-sm font-semibold leading-tight text-white drop-shadow">
-                Registrar Office Room Management System
+                Phinma UPANG Room Management System
               </h1>
             </div>
           </div>
@@ -267,7 +267,7 @@ function ForgotPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: For
           )}
 
           <p className="mt-8 text-center text-xs font-medium text-gray-400">
-            &copy; 2026 RORMS &middot; PHINMA Education
+            &copy; 2026 Room Track &middot; PHINMA Education
           </p>
         </div>
       </section>

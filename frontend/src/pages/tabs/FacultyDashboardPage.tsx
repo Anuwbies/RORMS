@@ -1,6 +1,5 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, type ReactNode } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
-import { SummaryCard } from '../../components/SummaryCard'
 import {
   UserIcon, CalendarIcon, ClockIcon, DoorIcon, ArrowRightIcon, ChevronRightIcon, BookIcon, BuildingIcon, UsersIcon, DepartmentIcon
 } from '../../components/Icons'
@@ -11,6 +10,7 @@ import { useAcademicSemester } from '../../utils/academicSemester'
 
 interface FacultyDashboardProps {
   userRole?: string
+  headerAction?: ReactNode
 }
 
 interface ScheduleItem {
@@ -40,6 +40,14 @@ interface ReservationItem {
   endTime: string
   purpose: string
   status: string
+  isHidden?: boolean
+}
+
+interface RoomItem {
+  id: string
+  buildingId: string
+  status: string
+  capacity: number
 }
 
 interface DepartmentData {
@@ -48,6 +56,9 @@ interface DepartmentData {
   code: string
   logo?: string
   memberCount?: number
+  deanCount?: number
+  programHeadCount?: number
+  instructorCount?: number
 }
 
 const statusBadgeClasses: Record<string, string> = {
@@ -85,11 +96,13 @@ const timeToMinutes = (timeStr?: string): number => {
   return hours * 60 + (mins || 0)
 }
 
-export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardProps = {}) {
+export function FacultyDashboardPage({ userRole: _userRole, headerAction }: FacultyDashboardProps = {}) {
   const [roomsMap, setRoomsMap] = useState<Map<string, string>>(new Map())
+  const [rooms, setRooms] = useState<RoomItem[]>([])
   const [buildingsMap, setBuildingsMap] = useState<Map<string, string>>(new Map())
   const [rawTodaySchedules, setRawTodaySchedules] = useState<ScheduleItem[]>([])
   const [allSemesterSchedules, setAllSemesterSchedules] = useState<ScheduleItem[]>([])
+  const [allReservations, setAllReservations] = useState<ReservationItem[]>([])
   const [upcomingReservations, setUpcomingReservations] = useState<ReservationItem[]>([])
   const [departmentInfo, setDepartmentInfo] = useState<DepartmentData | null>(null)
   const [userMembershipRole, setUserMembershipRole] = useState<string>('')
@@ -107,6 +120,29 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
   const currentMinutes = useMemo(() => {
     return currentTime.getHours() * 60 + currentTime.getMinutes()
   }, [currentTime])
+
+  const effectiveRole = userMembershipRole || _userRole || 'Instructor'
+
+  const roomStats = useMemo(() => {
+    const available = rooms.filter(room => room.status.toLowerCase() === 'available').length
+    const unavailable = rooms.filter(room => room.status.toLowerCase() === 'unavailable').length
+    const maintenance = rooms.filter(room => room.status.toLowerCase() === 'maintenance').length
+    const totalCapacity = rooms.reduce((total, room) => total + room.capacity, 0)
+    const availablePercent = rooms.length > 0 ? Math.round(available / rooms.length * 100) : 0
+    return { available, unavailable, maintenance, total: rooms.length, totalCapacity, availablePercent }
+  }, [rooms])
+
+  const reservationStats = useMemo(() => {
+    const count = (status: string) => allReservations.filter(reservation => reservation.status.toLowerCase() === status).length
+    return {
+      pending: count('pending'),
+      approved: count('approved'),
+      declined: count('declined'),
+      cancelled: count('cancelled'),
+      completed: count('completed'),
+      total: allReservations.length,
+    }
+  }, [allReservations])
 
   const getClassStatus = (startTimeStr?: string, endTimeStr?: string) => {
     if (!startTimeStr || !endTimeStr) return 'upcoming'
@@ -255,11 +291,19 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
   useEffect(() => {
     const unsubRooms = onSnapshot(collection(db, 'rooms'), (snap) => {
       const map = new Map<string, string>()
+      const roomList: RoomItem[] = []
       snap.forEach(d => {
         const data = d.data()
         map.set(d.id, data.name || data.code || 'Room')
+        roomList.push({
+          id: d.id,
+          buildingId: data.buildingId || '',
+          status: data.status || 'Available',
+          capacity: Number(data.capacity) || 0,
+        })
       })
       setRoomsMap(map)
+      setRooms(roomList)
     })
 
     const unsubBuildings = onSnapshot(collection(db, 'buildings'), (snap) => {
@@ -338,10 +382,20 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
             if (unsubDeptMembers) unsubDeptMembers()
             const qDeptMembers = query(collection(db, 'memberships'), where('department', '==', deptCode))
             unsubDeptMembers = onSnapshot(qDeptMembers, (membersSnap) => {
-              setDepartmentInfo(prev => prev ? { ...prev, memberCount: membersSnap.docs.length } : {
+              const activeMembers = membersSnap.docs
+                .map(memberDoc => memberDoc.data())
+                .filter(member => Boolean(member.userId) && member.status?.toLowerCase() !== 'pending')
+              const roleCount = (role: string) => activeMembers.filter(member => member.role === role).length
+              const memberStats = {
+                memberCount: activeMembers.length,
+                deanCount: roleCount('Dean'),
+                programHeadCount: roleCount('Program Head'),
+                instructorCount: roleCount('Instructor'),
+              }
+              setDepartmentInfo(prev => prev ? { ...prev, ...memberStats } : {
                 name: deptCode,
                 code: deptCode,
-                memberCount: membersSnap.docs.length
+                ...memberStats,
               })
             })
           }
@@ -404,19 +458,24 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
       )
       unsubRes = onSnapshot(qRes, (snapshot) => {
         const resList: ReservationItem[] = []
+        const visibleReservations: ReservationItem[] = []
         snapshot.docs.forEach(doc => {
           const d = doc.data()
-          if (d.date && d.date >= weekStartStr && d.date <= weekEndStr) {
-            resList.push({
-              id: doc.id,
-              roomId: d.roomId || '',
-              buildingId: d.buildingId || '',
-              date: d.date || '',
-              startTime: d.startTime || '',
-              endTime: d.endTime || '',
-              purpose: d.purpose || 'Class / Meeting',
-              status: d.status || 'Pending'
-            })
+          if (d.isHidden) return
+          const reservation: ReservationItem = {
+            id: doc.id,
+            roomId: d.roomId || '',
+            buildingId: d.buildingId || '',
+            date: d.date || '',
+            startTime: d.startTime || '',
+            endTime: d.endTime || '',
+            purpose: d.purpose || 'Class / Meeting',
+            status: d.status || 'Pending',
+            isHidden: false,
+          }
+          visibleReservations.push(reservation)
+          if (reservation.date && reservation.date >= weekStartStr && reservation.date <= weekEndStr) {
+            resList.push(reservation)
           }
         })
         // Sort chronologically: date ascending, then startTime ascending
@@ -424,6 +483,7 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
           if (a.date !== b.date) return a.date.localeCompare(b.date)
           return (a.startTime || '').localeCompare(b.startTime || '')
         })
+        setAllReservations(visibleReservations)
         setUpcomingReservations(resList)
       })
     })
@@ -440,41 +500,124 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader 
-          title="Faculty Dashboard" 
-          description="Academic overview and personal scheduling summaries." 
+          title={`${effectiveRole} Dashboard`}
+          description={effectiveRole === 'Instructor'
+            ? 'Your teaching schedule, department, room access, and reservation activity in one place.'
+            : 'Department leadership, teaching schedule, room access, and reservation activity in one place.'}
+          action={headerAction}
         />
 
-        {/* 3 Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
-          <SummaryCard
-            title="Card 1"
-            subtitle="Subtitle 1"
-            icon={<UserIcon className="w-4.5 h-4.5 text-white" />}
-            gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
-            blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          />
-          <SummaryCard
-            title="Card 2"
-            subtitle="Subtitle 2"
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
-            gradientClasses="from-amber-400 to-orange-500"
-            blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          />
-          <SummaryCard
-            title="Card 3"
-            subtitle="Subtitle 3"
-            icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
-            gradientClasses="from-blue-400 to-indigo-500"
-            blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-          />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+          <section className="animate-in overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-5">
+            <header className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><BuildingIcon className="h-5 w-5" /></span>
+                <div className="min-w-0">
+                  <h2 className="font-black text-slate-900">Campus room availability</h2>
+                  <p className="truncate text-xs text-slate-400">Live spaces available to reserve</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => navigateTo('buildingsRooms')} className="group flex shrink-0 cursor-pointer items-center gap-1 text-xs font-bold text-slate-400 hover:text-[var(--brand-color)]">
+                Browse <ChevronRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </header>
+
+            <div className="p-5">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-3xl font-black tracking-tight text-slate-900">{roomStats.available}</p>
+                  <p className="text-xs font-bold text-emerald-700">of {roomStats.total} rooms available</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-lg font-black text-slate-800">{roomStats.availablePercent}%</p>
+                  <p className="text-[0.65rem] font-bold uppercase tracking-wider text-slate-400">Ready</p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex h-2.5 overflow-hidden rounded-full bg-slate-100" aria-label={`${roomStats.availablePercent}% of rooms are available`}>
+                <span className="bg-emerald-500" style={{ width: `${roomStats.total ? roomStats.available / roomStats.total * 100 : 0}%` }} />
+                <span className="bg-amber-400" style={{ width: `${roomStats.total ? roomStats.unavailable / roomStats.total * 100 : 0}%` }} />
+                <span className="bg-rose-500" style={{ width: `${roomStats.total ? roomStats.maintenance / roomStats.total * 100 : 0}%` }} />
+              </div>
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Available', value: roomStats.available, color: 'text-emerald-700', surface: 'border-emerald-100 bg-emerald-50' },
+                  { label: 'Unavailable', value: roomStats.unavailable, color: 'text-amber-700', surface: 'border-amber-100 bg-amber-50' },
+                  { label: 'Maintenance', value: roomStats.maintenance, color: 'text-rose-700', surface: 'border-rose-100 bg-rose-50' },
+                ].map(item => (
+                  <div key={item.label} className={`rounded-xl border px-3 py-2.5 ${item.surface}`}>
+                    <p className={`text-lg font-black ${item.color}`}>{item.value}</p>
+                    <p className="truncate text-[0.65rem] font-bold text-slate-500">{item.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                <span><strong className="text-slate-700">{buildingsMap.size}</strong> buildings</span>
+                <span><strong className="text-slate-700">{roomStats.totalCapacity.toLocaleString()}</strong> total seats</span>
+                <button type="button" onClick={() => navigateTo('reserveRoom')} className="cursor-pointer font-black text-[var(--brand-color)] hover:text-[var(--brand-color-hover)]">Reserve a room</button>
+              </div>
+            </div>
+          </section>
+
+          <section className="animate-in overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm lg:col-span-7">
+            <header className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><ClockIcon className="h-5 w-5" /></span>
+                <div className="min-w-0">
+                  <h2 className="font-black text-slate-900">My reservation activity</h2>
+                  <p className="truncate text-xs text-slate-400">{reservationStats.total} visible request{reservationStats.total === 1 ? '' : 's'}</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => navigateTo('myReservations')} className="group flex shrink-0 cursor-pointer items-center gap-1 text-xs font-bold text-slate-400 hover:text-[var(--brand-color)]">
+                View all <ChevronRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </header>
+
+            <div className="p-5">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
+                {[
+                  { label: 'Pending', value: reservationStats.pending, surface: 'border-amber-100 bg-amber-50', color: 'text-amber-700' },
+                  { label: 'Approved', value: reservationStats.approved, surface: 'border-emerald-100 bg-emerald-50', color: 'text-emerald-700' },
+                  { label: 'Completed', value: reservationStats.completed, surface: 'border-blue-100 bg-blue-50', color: 'text-blue-700' },
+                  { label: 'Declined', value: reservationStats.declined, surface: 'border-rose-100 bg-rose-50', color: 'text-rose-700' },
+                  { label: 'Cancelled', value: reservationStats.cancelled, surface: 'border-slate-200 bg-slate-50', color: 'text-slate-700' },
+                ].map(item => (
+                  <div key={item.label} className={`rounded-xl border px-3 py-3 ${item.surface}`}>
+                    <p className={`text-xl font-black ${item.color}`}>{item.value}</p>
+                    <p className="mt-0.5 truncate text-[0.65rem] font-bold text-slate-500">{item.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-black text-slate-800">Current request queue</p>
+                    <p className="mt-0.5 text-xs text-slate-400">Approved and pending requests remain active in your reservation history.</p>
+                  </div>
+                  <p className="text-2xl font-black text-slate-900">{reservationStats.approved + reservationStats.pending}</p>
+                </div>
+                <div className="mt-3 flex h-2 overflow-hidden rounded-full bg-slate-200">
+                  <span className="bg-emerald-500" style={{ width: `${reservationStats.approved + reservationStats.pending > 0 ? reservationStats.approved / (reservationStats.approved + reservationStats.pending) * 100 : 0}%` }} />
+                  <span className="bg-amber-400" style={{ width: `${reservationStats.approved + reservationStats.pending > 0 ? reservationStats.pending / (reservationStats.approved + reservationStats.pending) * 100 : 0}%` }} />
+                </div>
+                <div className="mt-2 flex items-center gap-4 text-[0.65rem] font-bold text-slate-500">
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-emerald-500" />Approved</span>
+                  <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-400" />Pending</span>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
 
         {/* Row 2: My Department & Weekly Timetable At-A-Glance */}
         <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
           {/* Card: My Department (Compact width) */}
-          <div className="lg:col-span-4 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+          <div className="animate-in lg:col-span-4 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
             <div className="border-b border-gray-100 bg-gray-50/50 px-5 sm:px-6 py-4 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="font-semibold text-gray-900 leading-tight truncate">My Department</h3>
@@ -482,10 +625,10 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
               </div>
               <button 
                 onClick={() => navigateTo('myDepartment')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white text-xs font-semibold text-slate-700 hover:text-[var(--brand-color)] hover:border-[var(--brand-color)]/30 hover:bg-[var(--brand-color)]/5 shadow-2xs transition-all duration-200 cursor-pointer group shrink-0"
+                className="group flex shrink-0 cursor-pointer items-center gap-1 text-xs font-bold text-slate-400 hover:text-[var(--brand-color)]"
               >
                 <span>Department Hub</span>
-                <ChevronRightIcon className="h-3.5 w-3.5 text-slate-400 group-hover:text-[var(--brand-color)] transition-all duration-200 group-hover:translate-x-0.5" />
+                <ChevronRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </button>
             </div>
 
@@ -550,6 +693,19 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
                       </span>
                     </div>
                   </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: 'Dean', value: departmentInfo.deanCount ?? 0, color: 'text-amber-700', surface: 'bg-amber-50' },
+                      { label: 'Program Head', value: departmentInfo.programHeadCount ?? 0, color: 'text-rose-700', surface: 'bg-rose-50' },
+                      { label: 'Instructor', value: departmentInfo.instructorCount ?? 0, color: 'text-emerald-700', surface: 'bg-emerald-50' },
+                    ].map(item => (
+                      <div key={item.label} className={`rounded-lg px-2 py-2 text-center ${item.surface}`}>
+                        <p className={`text-sm font-black ${item.color}`}>{item.value}</p>
+                        <p className="truncate text-[0.58rem] font-bold text-slate-500" title={item.label}>{item.label}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 <div className="p-6 text-center flex flex-col items-center justify-center flex-1">
@@ -564,7 +720,7 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
           </div>
 
           {/* Card: Weekly Schedule Overview (Expanded width for 7 days) */}
-          <div className="lg:col-span-8 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
+          <div className="animate-in lg:col-span-8 rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col">
             <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4 flex items-center justify-between">
               <div>
                 <h3 className="font-semibold text-gray-900 leading-tight">Weekly Timetable At-A-Glance</h3>
@@ -572,10 +728,10 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
               </div>
               <button 
                 onClick={() => navigateTo('mySchedule')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white text-xs font-semibold text-slate-700 hover:text-[var(--brand-color)] hover:border-[var(--brand-color)]/30 hover:bg-[var(--brand-color)]/5 shadow-2xs transition-all duration-200 cursor-pointer group shrink-0"
+                className="group flex shrink-0 cursor-pointer items-center gap-1 text-xs font-bold text-slate-400 hover:text-[var(--brand-color)]"
               >
                 <span>Open Timetable</span>
-                <ChevronRightIcon className="h-3.5 w-3.5 text-slate-400 group-hover:text-[var(--brand-color)] transition-all duration-200 group-hover:translate-x-0.5" />
+                <ChevronRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </button>
             </div>
 
@@ -643,7 +799,7 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
         {/* Row 3: Today's Schedule & Upcoming Reservations for the Week */}
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Card: Today's Schedule */}
-          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[24rem]">
+          <div className="animate-in rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[24rem]">
             <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4 flex items-center justify-between shrink-0">
               <div>
                 <div className="flex items-center gap-2">
@@ -660,10 +816,10 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
               </div>
               <button 
                 onClick={() => navigateTo('mySchedule')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white text-xs font-semibold text-slate-700 hover:text-[var(--brand-color)] hover:border-[var(--brand-color)]/30 hover:bg-[var(--brand-color)]/5 shadow-2xs transition-all duration-200 cursor-pointer group shrink-0"
+                className="group flex shrink-0 cursor-pointer items-center gap-1 text-xs font-bold text-slate-400 hover:text-[var(--brand-color)]"
               >
                 <span>Full Timetable</span>
-                <ChevronRightIcon className="h-3.5 w-3.5 text-slate-400 group-hover:text-[var(--brand-color)] transition-all duration-200 group-hover:translate-x-0.5" />
+                <ChevronRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </button>
             </div>
 
@@ -749,7 +905,7 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
           </div>
 
           {/* Card: Upcoming Reservations for the Week */}
-          <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[24rem]">
+          <div className="animate-in rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden flex flex-col h-[24rem]">
             <div className="border-b border-gray-100 bg-gray-50/50 px-6 py-4 flex items-center justify-between shrink-0">
               <div>
                 <h3 className="font-semibold text-gray-900 leading-tight">Upcoming Reservations</h3>
@@ -757,10 +913,10 @@ export function FacultyDashboardPage({ userRole: _userRole }: FacultyDashboardPr
               </div>
               <button 
                 onClick={() => navigateTo('myReservations')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200/90 bg-white text-xs font-semibold text-slate-700 hover:text-[var(--brand-color)] hover:border-[var(--brand-color)]/30 hover:bg-[var(--brand-color)]/5 shadow-2xs transition-all duration-200 cursor-pointer group shrink-0"
+                className="group flex shrink-0 cursor-pointer items-center gap-1 text-xs font-bold text-slate-400 hover:text-[var(--brand-color)]"
               >
                 <span>View All</span>
-                <ChevronRightIcon className="h-3.5 w-3.5 text-slate-400 group-hover:text-[var(--brand-color)] transition-all duration-200 group-hover:translate-x-0.5" />
+                <ChevronRightIcon className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
               </button>
             </div>
 

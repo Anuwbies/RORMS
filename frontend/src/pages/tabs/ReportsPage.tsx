@@ -546,7 +546,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
       .filter(department => department !== 'Unassigned' && !OFFICE_DEPARTMENTS.includes(department))
       .sort()
 
-    return [...OFFICE_DEPARTMENTS, ...academicDepartments, 'Unassigned']
+    return [...OFFICE_DEPARTMENTS, 'Unassigned', ...academicDepartments]
   }, [reportKind, reportRows, departments])
   const academicYearOptions = useMemo(() => Array.from(new Set(
     academicYears
@@ -829,7 +829,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader
           title="Reports"
           description="Review what happened across reservations, rooms, schedules, and member records, then export the exact results you need."
@@ -845,7 +845,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
           </div>
         )}
 
-        <div className={`grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableReportOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Report categories">
+        <div className={`animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableReportOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Report categories">
           {availableReportOptions.map(option => {
             const ReportIcon = option.icon
             const isActive = reportKind === option.id
@@ -873,13 +873,13 @@ function ReportsPage({ userRole }: ReportsPageProps) {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {metrics.map(metric => {
+          {metrics.map((metric, metricIndex) => {
             return (
-              <article key={metric.label} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <article key={metricIndex} className="animate-in relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0">
                     <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">{metric.label}</p>
-                    <p className="mt-1 text-xs text-slate-500">{metric.detail}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500">{metric.detail}</p>
                   </div>
                   <p className="shrink-0 text-3xl font-black tracking-tight text-slate-900">{isLoading ? '—' : metric.value}</p>
                 </div>
@@ -889,7 +889,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
         </div>
 
         <div className="grid grid-cols-1 gap-x-4 gap-y-6 xl:grid-cols-12">
-          <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-9">
+          <aside className="animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-9">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-700"><ClipboardIcon className="h-5 w-5" /></span>
               <div>
@@ -917,7 +917,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
             </div>
           </aside>
 
-          <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-3">
+          <aside className="animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-3">
             <p className="text-sm font-bold text-slate-700">Report scope</p>
             <dl className="mt-3 space-y-2 text-sm">
               <div className="flex justify-between gap-3"><dt className="font-bold text-slate-600">Date range</dt><dd className="max-w-32 truncate font-black text-slate-900" title={dateRanges.map(value => DATE_RANGE_OPTIONS.find(option => option.value === value)?.label || value).join(', ')}>{dateRanges.length === 0 ? 'All dates' : dateRanges.map(value => DATE_RANGE_OPTIONS.find(option => option.value === value)?.label || value).join(', ')}</dd></div>

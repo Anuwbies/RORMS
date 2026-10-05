@@ -1,17 +1,24 @@
 import * as admin from "firebase-admin";
-import { onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 
 let _db: admin.firestore.Firestore | null = null;
 
-function getDb(): admin.firestore.Firestore {
-  if (admin.apps.length === 0) {
-    admin.initializeApp();
+function getDefaultAdminApp(): admin.app.App {
+  try {
+    return admin.app();
+  } catch {
+    return admin.initializeApp();
   }
+}
+
+const defaultAdminApp = getDefaultAdminApp();
+
+function getDb(): admin.firestore.Firestore {
   if (!_db) {
-    _db = admin.firestore();
+    _db = admin.firestore(defaultAdminApp);
   }
   return _db;
 }
@@ -109,12 +116,8 @@ export const requestPasswordReset = onCall(async (request) => {
   const passwordResetHandlerUrl = `${appOrigin}/reset-password`;
 
   try {
-    if (admin.apps.length === 0) {
-      admin.initializeApp();
-    }
-
     try {
-      await admin.auth().getUserByEmail(email);
+      await admin.auth(defaultAdminApp).getUserByEmail(email);
     } catch (error: unknown) {
       if (isUserNotFoundError(error)) {
         // Return the same response for unknown addresses to avoid email enumeration.
@@ -123,7 +126,7 @@ export const requestPasswordReset = onCall(async (request) => {
       throw error;
     }
 
-    const generatedResetLink = await admin.auth().generatePasswordResetLink(email);
+    const generatedResetLink = await admin.auth(defaultAdminApp).generatePasswordResetLink(email);
     const resetLink = createCustomPasswordResetLink(generatedResetLink, passwordResetHandlerUrl);
     const safeEmail = escapeHtml(email);
     const safeResetLink = escapeHtml(resetLink);
@@ -336,6 +339,7 @@ export const autoUpdateReservationStatus = onSchedule(
     retryCount: 3,
   },
   async () => {
+    await processReservationReminders();
     await processReservationStatusUpdates();
   }
 );
@@ -347,11 +351,12 @@ export const checkReservationsNow = onRequest(
   { cors: true },
   async (_req, res) => {
     try {
+      const remindersCreated = await processReservationReminders();
       const result = await processReservationStatusUpdates();
       res.status(200).json({
         success: true,
         message: "Reservation statuses successfully processed.",
-        result,
+        result: { ...result, remindersCreated },
       });
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Internal server error";
@@ -360,6 +365,521 @@ export const checkReservationsNow = onRequest(
         success: false,
         error: errorMessage,
       });
+    }
+  }
+);
+
+type NotificationType =
+  | "booking_approved"
+  | "booking_rejected"
+  | "booking_cancelled"
+  | "booking_completed"
+  | "booking_reminder"
+  | "building_added"
+  | "building_updated"
+  | "room_added"
+  | "room_updated"
+  | "room_status_changed"
+  | "department_invited"
+  | "department_member_removed"
+  | "department_invitation_accepted"
+  | "department_reinvitation_accepted"
+  | "member_department_assigned"
+  | "member_role_changed"
+  | "academic_year_changed"
+  | "academic_phase_changed";
+
+type UserRole = "Admin" | "Registrar" | "Dean" | "Program Head" | "Instructor";
+
+interface NotificationPayload {
+  title: string;
+  message: string;
+  type: NotificationType;
+  sourceCollection: string;
+  sourceId: string;
+}
+
+function notificationDocumentId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function timestampsEqual(first: unknown, second: unknown): boolean {
+  const firstTimestamp = first as { toMillis?: () => number } | null | undefined;
+  const secondTimestamp = second as { toMillis?: () => number } | null | undefined;
+  const firstMillis = firstTimestamp?.toMillis?.();
+  const secondMillis = secondTimestamp?.toMillis?.();
+
+  if (typeof firstMillis === "number" || typeof secondMillis === "number") {
+    return firstMillis === secondMillis;
+  }
+
+  return first === second;
+}
+
+async function createUserNotifications(
+  userIds: string[],
+  payload: NotificationPayload,
+  notificationId: string
+): Promise<number> {
+  const db = getDb();
+  const uniqueUserIds = [...new Set(userIds.filter(Boolean))];
+  const safeNotificationId = notificationDocumentId(notificationId);
+
+  for (let offset = 0; offset < uniqueUserIds.length; offset += 450) {
+    const batch = db.batch();
+    uniqueUserIds.slice(offset, offset + 450).forEach((userId) => {
+      const notificationRef = db
+        .collection("users")
+        .doc(userId)
+        .collection("notifications")
+        .doc(safeNotificationId);
+
+      batch.set(notificationRef, {
+        ...payload,
+        isRead: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    });
+    await batch.commit();
+  }
+
+  return uniqueUserIds.length;
+}
+
+async function getUserIdsForRoles(roles: UserRole[]): Promise<string[]> {
+  if (roles.length === 0) return [];
+
+  const snapshot = await getDb().collection("memberships").where("role", "in", roles).get();
+  return [...new Set(snapshot.docs
+    .map((membership) => membership.data())
+    .filter((membership) => membership.status === "accepted")
+    .map((membership) => stringValue(membership.userId))
+    .filter(Boolean))];
+}
+
+async function getManagerUserIds(department: string, excludedUserId: string): Promise<string[]> {
+  const snapshot = await getDb()
+    .collection("memberships")
+    .where("role", "in", ["Admin", "Registrar", "Dean", "Program Head"])
+    .get();
+
+  return [...new Set(snapshot.docs
+    .map((membership) => membership.data())
+    .filter((membership) => {
+      if (membership.status !== "accepted") return false;
+      if (membership.role === "Admin" || membership.role === "Registrar") return true;
+      return Boolean(department) && stringValue(membership.department) === department;
+    })
+    .map((membership) => stringValue(membership.userId))
+    .filter((userId) => Boolean(userId) && userId !== excludedUserId))];
+}
+
+async function getRoomName(roomId: string): Promise<string> {
+  if (!roomId) return "the selected room";
+  const room = await getDb().collection("rooms").doc(roomId).get();
+  return room.exists ? stringValue(room.data()?.name) || "the selected room" : "the selected room";
+}
+
+async function getDepartmentName(departmentCode: string): Promise<string> {
+  if (!departmentCode) return "the assigned department";
+  const departments = await getDb()
+    .collection("departments")
+    .where("code", "==", departmentCode)
+    .limit(1)
+    .get();
+  if (departments.empty) return departmentCode;
+  return stringValue(departments.docs[0].data().name) || departmentCode;
+}
+
+async function processReservationReminders(): Promise<number> {
+  const db = getDb();
+  const reservations = await db.collection("reservations").where("status", "==", "Approved").get();
+  const now = Date.now();
+  let remindersCreated = 0;
+
+  for (const reservation of reservations.docs) {
+    const data = reservation.data();
+    const userId = stringValue(data.userId);
+    const date = stringValue(data.date);
+    const startTime = normalizeTime(stringValue(data.startTime));
+    if (!userId || !date) continue;
+
+    const startAt = new Date(`${date}T${startTime}:00+08:00`).getTime();
+    const minutesUntilStart = Math.ceil((startAt - now) / (60 * 1000));
+    if (minutesUntilStart <= 0 || minutesUntilStart > 15) continue;
+
+    const roomName = await getRoomName(stringValue(data.roomId));
+    remindersCreated += await createUserNotifications(
+      [userId],
+      {
+        title: "Booking reminder",
+        message: `Your reservation for ${roomName} starts in ${minutesUntilStart} minutes.`,
+        type: "booking_reminder",
+        sourceCollection: "reservations",
+        sourceId: reservation.id,
+      },
+      `booking_reminder_${reservation.id}`
+    );
+  }
+
+  return remindersCreated;
+}
+
+export const notifyReservationStatusChanged = onDocumentUpdated(
+  "reservations/{reservationId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after || before.status === after.status) return;
+
+    const userId = stringValue(after.userId);
+    if (!userId) return;
+
+    const roomName = await getRoomName(stringValue(after.roomId));
+    const status = stringValue(after.status);
+    let notification: Pick<NotificationPayload, "title" | "message" | "type"> | null = null;
+
+    if (status === "Approved") {
+      notification = {
+        title: "Reservation approved",
+        message: `Your reservation for ${roomName} has been approved.`,
+        type: "booking_approved",
+      };
+    } else if (status === "Declined") {
+      const reason = stringValue(after.declinedReason);
+      notification = {
+        title: "Reservation declined",
+        message: reason
+          ? `Your request for ${roomName} was declined. ${reason}`
+          : `Your request for ${roomName} was declined.`,
+        type: "booking_rejected",
+      };
+    } else if (status === "Cancelled") {
+      notification = {
+        title: "Reservation cancelled",
+        message: `Your reservation for ${roomName} has been cancelled.`,
+        type: "booking_cancelled",
+      };
+    } else if (status === "Completed") {
+      notification = {
+        title: "Reservation completed",
+        message: `Your session in ${roomName} has concluded.`,
+        type: "booking_completed",
+      };
+    }
+
+    if (!notification) return;
+    await createUserNotifications(
+      [userId],
+      {
+        ...notification,
+        sourceCollection: "reservations",
+        sourceId: event.params.reservationId,
+      },
+      `${event.id}_${status}`
+    );
+  }
+);
+
+export const notifyBuildingCreated = onDocumentCreated("buildings/{buildingId}", async (event) => {
+  const building = event.data?.data();
+  if (!building) return;
+
+  const recipients = await getUserIdsForRoles(["Instructor", "Dean", "Program Head"]);
+  const buildingName = stringValue(building.name) || "A new building";
+  await createUserNotifications(
+    recipients,
+    {
+      title: "Building added",
+      message: `${buildingName} has been added to the system.`,
+      type: "building_added",
+      sourceCollection: "buildings",
+      sourceId: event.params.buildingId,
+    },
+    event.id
+  );
+});
+
+export const notifyBuildingUpdated = onDocumentUpdated("buildings/{buildingId}", async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+  if (before.name === after.name && before.code === after.code) return;
+
+  const recipients = await getUserIdsForRoles(["Instructor", "Dean", "Program Head"]);
+  const buildingName = stringValue(after.name) || "A building";
+  await createUserNotifications(
+    recipients,
+    {
+      title: "Building updated",
+      message: `${buildingName} details have been updated.`,
+      type: "building_updated",
+      sourceCollection: "buildings",
+      sourceId: event.params.buildingId,
+    },
+    event.id
+  );
+});
+
+export const notifyRoomCreated = onDocumentCreated("rooms/{roomId}", async (event) => {
+  const room = event.data?.data();
+  if (!room) return;
+
+  const recipients = await getUserIdsForRoles(["Instructor", "Dean", "Program Head"]);
+  const roomName = stringValue(room.name) || "A new room";
+  await createUserNotifications(
+    recipients,
+    {
+      title: "Room added",
+      message: `${roomName} has been added and is now available for scheduling.`,
+      type: "room_added",
+      sourceCollection: "rooms",
+      sourceId: event.params.roomId,
+    },
+    event.id
+  );
+});
+
+export const notifyRoomUpdated = onDocumentUpdated("rooms/{roomId}", async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
+
+  const recipients = await getUserIdsForRoles(["Instructor", "Dean", "Program Head"]);
+  const roomName = stringValue(after.name) || "A room";
+  const statusChanged = before.status !== after.status;
+  const detailFields = [
+    "buildingId", "name", "code", "type", "floor", "capacity", "description",
+    "amenities", "availableDays", "startTime", "endTime", "minBookingMins", "maxBookingMins",
+  ];
+  const detailsChanged = detailFields.some((field) =>
+    JSON.stringify(before[field]) !== JSON.stringify(after[field])
+  ) || (
+    before.image !== after.image && !timestampsEqual(before.updatedAt, after.updatedAt)
+  );
+
+  if (statusChanged) {
+    const newStatus = stringValue(after.status) || "Unavailable";
+    const statusMessage = newStatus === "Maintenance"
+      ? `${roomName} has been placed under maintenance.`
+      : `${roomName} is now ${newStatus.toLowerCase()} for reservations.`;
+    await createUserNotifications(
+      recipients,
+      {
+        title: `Room status changed: ${newStatus}`,
+        message: statusMessage,
+        type: "room_status_changed",
+        sourceCollection: "rooms",
+        sourceId: event.params.roomId,
+      },
+      `${event.id}_status`
+    );
+  }
+
+  if (detailsChanged) {
+    await createUserNotifications(
+      recipients,
+      {
+        title: "Room updated",
+        message: `${roomName} details have been updated.`,
+        type: "room_updated",
+        sourceCollection: "rooms",
+        sourceId: event.params.roomId,
+      },
+      `${event.id}_details`
+    );
+  }
+});
+
+export const notifyMembershipUpdated = onDocumentUpdated(
+  "memberships/{membershipId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    const userId = stringValue(after.userId) || stringValue(before.userId);
+    if (!userId) return;
+
+    const beforeDepartment = stringValue(before.department);
+    const afterDepartment = stringValue(after.department);
+    const beforeRole = stringValue(before.role);
+    const afterRole = stringValue(after.role);
+    const departmentName = await getDepartmentName(afterDepartment || beforeDepartment);
+
+    if (after.status === "pending" && before.status !== "pending" && afterDepartment) {
+      await createUserNotifications(
+        [userId],
+        {
+          title: "Department invitation",
+          message: `You have been invited to join ${departmentName} as ${afterRole || "a member"}.`,
+          type: "department_invited",
+          sourceCollection: "memberships",
+          sourceId: event.params.membershipId,
+        },
+        `${event.id}_invited`
+      );
+    }
+
+    if (beforeDepartment && !afterDepartment) {
+      await createUserNotifications(
+        [userId],
+        {
+          title: "Removed from department",
+          message: `You have been removed from the ${departmentName} department.`,
+          type: "department_member_removed",
+          sourceCollection: "memberships",
+          sourceId: event.params.membershipId,
+        },
+        `${event.id}_removed`
+      );
+    } else if (
+      afterDepartment &&
+      after.status !== "pending" &&
+      (beforeDepartment !== afterDepartment || (!before.userId && after.userId))
+    ) {
+      await createUserNotifications(
+        [userId],
+        {
+          title: "Department assignment updated",
+          message: `You have been assigned to ${departmentName} as ${afterRole || "a member"}.`,
+          type: "member_department_assigned",
+          sourceCollection: "memberships",
+          sourceId: event.params.membershipId,
+        },
+        `${event.id}_assigned`
+      );
+    }
+
+    if (beforeRole && afterRole && beforeRole !== afterRole) {
+      await createUserNotifications(
+        [userId],
+        {
+          title: "Role updated",
+          message: `Your role${afterDepartment ? ` in ${afterDepartment}` : ""} has changed from ${beforeRole} to ${afterRole}.`,
+          type: "member_role_changed",
+          sourceCollection: "memberships",
+          sourceId: event.params.membershipId,
+        },
+        `${event.id}_role`
+      );
+    }
+  }
+);
+
+export const notifyMembershipCreated = onDocumentCreated(
+  "memberships/{membershipId}",
+  async (event) => {
+    const membership = event.data?.data();
+    if (!membership) return;
+
+    const userId = stringValue(membership.userId);
+    const department = stringValue(membership.department);
+    const role = stringValue(membership.role);
+    if (!userId || !department || membership.status === "pending") return;
+
+    const departmentName = await getDepartmentName(department);
+    await createUserNotifications(
+      [userId],
+      {
+        title: "Department assignment updated",
+        message: `You have been assigned to ${departmentName} as ${role || "a member"}.`,
+        type: "member_department_assigned",
+        sourceCollection: "memberships",
+        sourceId: event.params.membershipId,
+      },
+      `${event.id}_assigned`
+    );
+  }
+);
+
+export const notifyInvitationAccepted = onDocumentUpdated(
+  "invitations/{invitationId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after || before.status === "accepted" || after.status !== "accepted") return;
+
+    const membershipId = stringValue(after.membershipId);
+    if (!membershipId) return;
+
+    const membership = await getDb().collection("memberships").doc(membershipId).get();
+    if (!membership.exists) return;
+    const membershipData = membership.data() || {};
+    const acceptedUserId = stringValue(membershipData.userId);
+    const department = stringValue(membershipData.department);
+    const role = stringValue(membershipData.role) || "Member";
+    const memberName = stringValue(membershipData.fullName) || stringValue(membershipData.email) || "A user";
+    const recipients = await getManagerUserIds(department, acceptedUserId);
+    const isReactivation = after.isReactivation === true;
+
+    await createUserNotifications(
+      recipients,
+      {
+        title: isReactivation ? "Re-invitation accepted" : "Invitation accepted",
+        message: isReactivation
+          ? `${memberName} accepted the re-invitation and reactivated their account.`
+          : `${memberName} accepted the invitation${department ? ` to join ${department} as ${role}` : ` as ${role}`}.`,
+        type: isReactivation
+          ? "department_reinvitation_accepted"
+          : "department_invitation_accepted",
+        sourceCollection: "invitations",
+        sourceId: event.params.invitationId,
+      },
+      event.id
+    );
+  }
+);
+
+export const notifyAcademicYearUpdated = onDocumentUpdated(
+  "academicYears/{academicYearId}",
+  async (event) => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!before || !after) return;
+
+    const recipients = await getUserIdsForRoles(["Admin", "Registrar", "Dean", "Program Head", "Instructor"]);
+    const academicYear = stringValue(after.academicYear) || "the selected academic year";
+
+    if (before.isActive !== true && after.isActive === true) {
+      await createUserNotifications(
+        recipients,
+        {
+          title: "Active academic year changed",
+          message: `The active academic year is now ${academicYear}.`,
+          type: "academic_year_changed",
+          sourceCollection: "academicYears",
+          sourceId: event.params.academicYearId,
+        },
+        `${event.id}_active`
+      );
+    }
+
+    if (after.isActive !== true) return;
+
+    for (const semester of [
+      { key: "sem1", label: "1st Semester" },
+      { key: "sem2", label: "2nd Semester" },
+    ]) {
+      const previousPhase = stringValue(before[semester.key]?.phase);
+      const nextPhase = stringValue(after[semester.key]?.phase);
+      if (!nextPhase || previousPhase === nextPhase) continue;
+
+      await createUserNotifications(
+        recipients,
+        {
+          title: `Semester phase changed: ${nextPhase}`,
+          message: `The ${semester.label} phase for A.Y. ${academicYear} changed from ${previousPhase || "Not Set"} to ${nextPhase}.`,
+          type: "academic_phase_changed",
+          sourceCollection: "academicYears",
+          sourceId: event.params.academicYearId,
+        },
+        `${event.id}_${semester.key}`
+      );
     }
   }
 );

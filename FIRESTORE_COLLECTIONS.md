@@ -13,6 +13,19 @@ Stores user account profile information (roles and departments are maintained in
   - `profilePicture`: string (URL to the user's profile picture) | **Default: from Auth (or empty string)**
   - `isActive`: boolean (Whether the account is active) | **Default: true**
 
+### `users/{userId}/notifications`
+Stores notifications privately beneath the recipient's user document.
+
+- **Document ID**: Firebase event ID, or a deterministic source-event ID for scheduled notifications
+- **Fields**:
+  - `title`: string (Notification heading)
+  - `message`: string (Notification body)
+  - `type`: string (Supported notification event type)
+  - `isRead`: boolean (Whether the recipient has read the notification) | **Default: false**
+  - `createdAt`: timestamp (Server timestamp used for ordering)
+  - `sourceCollection`: string (Collection that produced the event)
+  - `sourceId`: string (Source document ID)
+
 ## `invitations`
 Tracks secure onboarding invitations and activation links for members.
 
@@ -157,13 +170,18 @@ Manages schedule allocations for subjects, rooms, and instructors.
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
 
-## `academicTerms`
-Tracks current and historical academic semesters, controlling system behavior based on phase.
+## `academicYears`
+Tracks current and historical academic years and both semester phases.
 
 - **Document ID**: Auto-generated ID
 - **Fields**:
   - `academicYear`: string (e.g., `"2024-2025"`)
-  - `semester`: string (e.g., `"1st Semester"`, `"2nd Semester"`)
-  - `phase`: string (`"Drafting"`, `"Plotting"`, `"Revision"`, `"Final"`)
-  - `isCurrent`: boolean (Only one document should be true at a time)
+  - `isActive`: boolean (Only one document should be true at a time)
+  - `sem1`: object
+    - `startMonth`: string
+    - `startYear`: number
+    - `endMonth`: string
+    - `endYear`: number
+    - `phase`: string (`"Closed"`, `"Drafting"`, `"Plotting"`, `"Revision"`, `"Final"`, or `"Ended"`)
+  - `sem2`: object (Same fields and phases as `sem1`)
   - `createdAt`: timestamp | **Default: serverTimestamp()**

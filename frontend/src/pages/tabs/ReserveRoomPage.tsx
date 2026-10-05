@@ -3,6 +3,7 @@ import { SectionHeader } from '../../components/SectionHeader'
 import { UserIcon, SearchIcon, CheckIcon, ClipboardIcon, BookIcon, BuildingIcon, DoorIcon, UsersIcon, CalendarIcon, ClockIcon } from '../../components/Icons'
 import { Button } from '../../components/Button'
 import { SummaryCard } from '../../components/SummaryCard'
+import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { ScheduleModal } from '../../components/ScheduleModal'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
@@ -16,11 +17,13 @@ import { Snackbar } from '../../components/Snackbar'
 import { db, auth } from '../../firebase'
 import { 
   collection, 
+  doc,
   onSnapshot, 
   query, 
   orderBy,
-  addDoc,
-  serverTimestamp
+  runTransaction,
+  serverTimestamp,
+  setDoc,
 } from 'firebase/firestore'
 
 import type { Room, Building, RoomStatus } from '../../types/room'
@@ -83,11 +86,18 @@ const normalizeDay = (day: string): string => {
   return trimmed
 }
 
-function ReserveRoomPage() {
+interface ReserveRoomPageProps {
+  userRole: string
+}
+
+function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [buildings, setBuildings] = useState<Building[]>([])
   const [reservations, setReservations] = useState<any[]>([])
   const [schedules, setSchedules] = useState<any[]>([])
+  const [isReservationEnabled, setIsReservationEnabled] = useState(false)
+  const [isReservationAvailabilityLoading, setIsReservationAvailabilityLoading] = useState(true)
+  const [isUpdatingReservationAvailability, setIsUpdatingReservationAvailability] = useState(false)
   const [expandedBuildingIds, setExpandedBuildingIds] = useState<string[]>(() => {
     const saved = localStorage.getItem('rorms_reserve_expanded')
     return saved ? JSON.parse(saved) : []
@@ -95,6 +105,8 @@ function ReserveRoomPage() {
   const isInitialLoad = useRef(true)
   const knownBuildingIds = useRef<Set<string>>(new Set())
   const [rooms, setRooms] = useState<Room[]>([])
+  const reservationAvailabilityRef = useMemo(() => doc(db, 'settings', 'reservationAvailability'), [])
+  const canManageReservationAvailability = userRole === 'Admin' || userRole === 'Registrar'
   
   const maxAllowedDate = useMemo(() => {
     const today = new Date()
@@ -105,6 +117,19 @@ function ReserveRoomPage() {
   useEffect(() => {
     localStorage.setItem('rorms_reserve_expanded', JSON.stringify(expandedBuildingIds))
   }, [expandedBuildingIds])
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(reservationAvailabilityRef, (snapshot) => {
+      setIsReservationEnabled(snapshot.exists() ? snapshot.data().isReservationEnabled !== false : true)
+      setIsReservationAvailabilityLoading(false)
+    }, (error) => {
+      console.error('Error fetching reservation availability:', error)
+      setIsReservationEnabled(false)
+      setIsReservationAvailabilityLoading(false)
+    })
+
+    return unsubscribe
+  }, [reservationAvailabilityRef])
 
   const buildingOptions = useMemo(() => buildings.map(b => b.name).sort(), [buildings])
 
@@ -370,6 +395,29 @@ function ReserveRoomPage() {
     })
   }
 
+  const toggleReservationAvailability = async (nextValue: boolean) => {
+    if (!canManageReservationAvailability || isUpdatingReservationAvailability) return
+    if (nextValue === isReservationEnabled) return
+    setIsUpdatingReservationAvailability(true)
+    try {
+      await setDoc(reservationAvailabilityRef, {
+        isReservationEnabled: nextValue,
+        updatedAt: serverTimestamp(),
+        updatedBy: auth.currentUser?.uid || '',
+      }, { merge: true })
+      showNotification(
+        nextValue ? 'Room reservations are now available to everyone.' : 'Room reservations are now unavailable to everyone.',
+        nextValue ? 'success' : 'warning',
+        nextValue ? 'Reservations Enabled' : 'Reservations Disabled',
+      )
+    } catch (error) {
+      console.error('Error updating reservation availability:', error)
+      showNotification('Unable to update room reservation availability. Please try again.', 'error', 'Update Failed')
+    } finally {
+      setIsUpdatingReservationAvailability(false)
+    }
+  }
+
   const [isFindRoomModalOpen, setIsFindRoomModalOpen] = useState(false)
   const [isSearchResultsModalOpen, setIsSearchResultsModalOpen] = useState(false)
   const [searchResults, setSearchResults] = useState<Room[]>([])
@@ -512,6 +560,11 @@ function ReserveRoomPage() {
   }
 
   const handleOpenReservationModal = (room: Room) => {
+    if (isReservationAvailabilityLoading || !isReservationEnabled) {
+      showNotification('Room reservations are currently unavailable. Please try again later.', 'warning', 'Reservations Unavailable')
+      return
+    }
+
     setSelectedRoomInfo(room)
     setSelectedRoomForSchedule(room)
     setIsReservationModalOpen(true)
@@ -996,7 +1049,7 @@ function ReserveRoomPage() {
           }
         }}
         actionButton={
-          selectedRoomForSchedule?.status === 'Available' ? (
+          selectedRoomForSchedule?.status === 'Available' && isReservationEnabled && !isReservationAvailabilityLoading ? (
             <Button
               type="button"
               variant="brand"
@@ -1212,9 +1265,14 @@ function ReserveRoomPage() {
                 </Button>
                 <Button
                   variant="brand"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isReservationAvailabilityLoading || !isReservationEnabled}
                   className="flex-1"
                   onClick={async () => {
+                    if (isReservationAvailabilityLoading || !isReservationEnabled) {
+                      showNotification('Room reservations are currently unavailable. Please try again later.', 'warning', 'Reservations Unavailable')
+                      return
+                    }
+
                     const errors: Record<string, boolean> = {}
                     if (!reservationData.date) errors.date = true
                     if (!reservationData.startTime) errors.startTime = true
@@ -1338,19 +1396,26 @@ function ReserveRoomPage() {
 
                       const building = buildings.find(b => b.rooms.some(r => r.id === selectedRoomInfo.id))
 
-                      await addDoc(collection(db, 'reservations'), {
-                        roomId: selectedRoomInfo.id,
-                        buildingId: building?.id || '',
-                        userId: userId,
-                        date: reservationData.date,
-                        startTime: reservationData.startTime,
-                        endTime: endTimeStr,
-                        duration: reservationData.duration,
-                        attendees: Number(reservationData.attendees),
-                        purpose: reservationData.purpose.trim(),
-                        status: 'Pending',
-                        createdAt: serverTimestamp(),
-                        updatedAt: serverTimestamp()
+                      await runTransaction(db, async (transaction) => {
+                        const availabilitySnapshot = await transaction.get(reservationAvailabilityRef)
+                        if (availabilitySnapshot.exists() && availabilitySnapshot.data().isReservationEnabled === false) {
+                          throw new Error('RESERVATIONS_DISABLED')
+                        }
+
+                        transaction.set(doc(collection(db, 'reservations')), {
+                          roomId: selectedRoomInfo.id,
+                          buildingId: building?.id || '',
+                          userId: userId,
+                          date: reservationData.date,
+                          startTime: reservationData.startTime,
+                          endTime: endTimeStr,
+                          duration: reservationData.duration,
+                          attendees: Number(reservationData.attendees),
+                          purpose: reservationData.purpose.trim(),
+                          status: 'Pending',
+                          createdAt: serverTimestamp(),
+                          updatedAt: serverTimestamp()
+                        })
                       })
 
                       const submittedInfo = {
@@ -1369,8 +1434,13 @@ function ReserveRoomPage() {
                       setIsReservationModalOpen(false)
                       setSuccessDetails(submittedInfo)
                     } catch (error) {
-                      console.error("Error creating reservation:", error)
-                      alert("Failed to submit reservation. Please try again.")
+                      if (error instanceof Error && error.message === 'RESERVATIONS_DISABLED') {
+                        setIsReservationEnabled(false)
+                        showNotification('Room reservations have been disabled. Your reservation was not submitted.', 'warning', 'Reservations Unavailable')
+                      } else {
+                        console.error("Error creating reservation:", error)
+                        alert("Failed to submit reservation. Please try again.")
+                      }
                     } finally {
                       setIsSubmitting(false)
                     }
@@ -1473,50 +1543,58 @@ function ReserveRoomPage() {
         </div>
       )}
 
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader 
           title="Reserve a Room" 
           description="Find and book available rooms for classes, meetings, or special events." 
         />
 
+        {!isReservationAvailabilityLoading && !isReservationEnabled && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+            <p className="font-bold">Room reservations are temporarily unavailable.</p>
+            <p className="mt-1">You can still view rooms and schedules, but no reservation requests can be submitted right now.</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <SummaryCard
+            className="animate-in"
             title="Available Rooms"
-            subtitle="Currently ready to book"
+            subtitle={`${availableRoomsCount} currently ready to book`}
             icon={<DoorIcon className="w-5 h-5 text-emerald-600" />}
             gradientClasses="from-emerald-200 to-emerald-100"
             outlineClasses="bg-emerald-500"
             blobClasses="bg-emerald-500/5"
           >
-            <div className="flex-1 flex flex-col items-center justify-center py-3">
-              <span className="text-4xl font-black text-slate-800 tracking-tight">{availableRoomsCount}</span>
-            </div>
+            <SummaryGraph variant="pie" total={availableRoomsCount} points={[
+              { label: 'Available', value: availableRoomsCount },
+              { label: 'Unavailable', value: allRooms.filter(room => room.status === 'Unavailable').length },
+              { label: 'Maintenance', value: allRooms.filter(room => room.status === 'Maintenance').length },
+            ]} tone="emerald" />
           </SummaryCard>
 
           <SummaryCard
+            className="animate-in"
             title="Total Buildings"
-            subtitle="Campus facilities managed"
+            subtitle={`${buildings.length} campus facilities managed`}
             icon={<BuildingIcon className="w-5 h-5 text-amber-600" />}
             gradientClasses="from-amber-200 to-amber-100"
             outlineClasses="bg-amber-500"
             blobClasses="bg-amber-500/5"
           >
-            <div className="flex-1 flex flex-col items-center justify-center py-3">
-              <span className="text-4xl font-black text-slate-800 tracking-tight">{buildings.length}</span>
-            </div>
+            <SummaryGraph variant="bar" total={buildings.length} points={buildings.map(building => ({ label: building.code || building.name, value: building.rooms.length, tooltipLabel: 'Rooms' }))} unit="buildings" tone="amber" />
           </SummaryCard>
 
           <SummaryCard
+            className="animate-in"
             title="Total Capacity"
-            subtitle="Maximum campus occupancy"
+            subtitle={`${totalCapacity} maximum campus seats`}
             icon={<UsersIcon className="w-5 h-5 text-sky-600" />}
             gradientClasses="from-sky-200 to-sky-100"
             outlineClasses="bg-sky-500"
             blobClasses="bg-sky-500/5"
           >
-            <div className="flex-1 flex flex-col items-center justify-center py-3">
-              <span className="text-4xl font-black text-slate-800 tracking-tight">{totalCapacity}</span>
-            </div>
+            <SummaryGraph variant="line" total={totalCapacity} points={buildings.map(building => ({ label: building.code || building.name, value: building.capacity, tooltipLabel: 'Capacity' }))} unit="seats" tone="sky" />
           </SummaryCard>
         </div>
 
@@ -1531,14 +1609,25 @@ function ReserveRoomPage() {
           }}
           isLoading={isLoading}
           actionButton={
-            <Button
-              variant="brand"
-              icon={<SearchIcon className="h-4 w-4" />}
-              onClick={() => setIsFindRoomModalOpen(true)}
-              className="w-full lg:w-auto"
-            >
-              Find Room
-            </Button>
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              {canManageReservationAvailability && (
+                <SingleSelectDropdown
+                  options={['Reservations On', 'Reservations Off']}
+                  value={isReservationEnabled ? 'Reservations On' : 'Reservations Off'}
+                  onChange={(value) => toggleReservationAvailability(value === 'Reservations On')}
+                  isDisabled={isReservationAvailabilityLoading || isUpdatingReservationAvailability}
+                  className="w-full sm:w-auto"
+                />
+              )}
+              <Button
+                variant="brand"
+                icon={<SearchIcon className="h-4 w-4" />}
+                onClick={() => setIsFindRoomModalOpen(true)}
+                className="w-full lg:w-auto"
+              >
+                Find Room
+              </Button>
+            </div>
           }
         />
       </div>

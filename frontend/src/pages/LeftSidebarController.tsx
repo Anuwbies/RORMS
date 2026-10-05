@@ -31,20 +31,21 @@ import DepartmentSchedulesPage from './tabs/DepartmentSchedulesPage'
 
 export const ROLE_ALLOWED_TABS: Record<string, DashboardSection[]> = {
   'Admin': [
-    'dashboard', 'academicCalendar', 'buildingsRooms', 'departments', 'members',
-    'manageReservations', 'departmentSchedules', 'reports', 'analytics', 'myReservations', 'reserveRoom'
+    'dashboard', 'academicCalendar', 'members', 'departments', 'buildingsRooms',
+    'departmentSchedules', 'manageReservations', 'reserveRoom', 'myReservations', 'analytics', 'reports'
   ],
   'Registrar': [
-    'dashboard', 'academicCalendar', 'manageReservations', 'buildingsRooms', 'departmentSchedules', 'reports', 'analytics'
+    'dashboard', 'academicCalendar', 'departmentSchedules', 'buildingsRooms',
+    'manageReservations', 'reserveRoom', 'analytics', 'reports'
   ],
   'Dean': [
-    'dashboard', 'mySchedule', 'myReservations', 'reserveRoom', 'buildingsRooms', 'myDepartment'
+    'dashboard', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
   ],
   'Program Head': [
-    'dashboard', 'mySchedule', 'myReservations', 'reserveRoom', 'buildingsRooms', 'myDepartment'
+    'dashboard', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
   ],
   'Instructor': [
-    'dashboard', 'mySchedule', 'myReservations', 'reserveRoom', 'buildingsRooms', 'myDepartment'
+    'dashboard', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
   ],
 }
 
@@ -279,7 +280,7 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
       case 'mySchedule':
         return <MySchedulePage />
       case 'reserveRoom':
-        return <ReserveRoomPage />
+        return <ReserveRoomPage userRole={normRole} />
       case 'myReservations':
         return <MyReservationsPage />
       case 'manageReservations':

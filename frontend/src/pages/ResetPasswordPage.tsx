@@ -143,10 +143,10 @@ function ResetPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: Rese
             />
             <div className="space-y-0.5">
               <p className="text-xs font-bold uppercase tracking-[0.25em] text-white/90">
-                PHINMA UPANG
+                Room Track
               </p>
               <h1 className="text-sm font-semibold leading-tight text-white drop-shadow">
-                Registrar Office Room Management System
+                Phinma UPANG Room Management System
               </h1>
             </div>
           </div>
@@ -200,7 +200,7 @@ function ResetPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: Rese
                 You’re all set
               </h2>
               <p className="mt-2 text-sm leading-relaxed text-[var(--hint-color)]">
-                Your RORMS password has been changed successfully. You can now sign in with your new password.
+                Your Room Track password has been changed successfully. You can now sign in with your new password.
               </p>
               <Button type="button" variant="brand" onClick={onBackToSignIn} className="mt-8 w-full">
                 Back to sign in
@@ -215,7 +215,7 @@ function ResetPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: Rese
                 Create a new password
               </h2>
               <p className="mt-1 text-sm text-[var(--hint-color)]">
-                Choose a strong password for your RORMS account.
+                Choose a strong password for your Room Track account.
               </p>
 
               {checkingCode ? (
@@ -378,7 +378,7 @@ function ResetPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: Rese
           )}
 
           <p className="mt-8 text-center text-xs font-medium text-gray-400">
-            &copy; 2026 RORMS &middot; PHINMA Education
+            &copy; 2026 Room Track &middot; PHINMA Education
           </p>
         </div>
       </section>

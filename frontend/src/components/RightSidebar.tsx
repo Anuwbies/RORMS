@@ -1,12 +1,12 @@
 import { useRef, useState, useEffect, useCallback, type ChangeEvent, memo } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { doc, onSnapshot, updateDoc, collection, query, where, limit } from 'firebase/firestore'
+import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { auth, db, storage } from '../firebase'
 import { BellIcon, CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DepartmentIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
 import { CropModal } from './CropModal'
-import { type NotificationItem, MOCK_NOTIFICATIONS } from '../types/notifications'
+import { type NotificationItem, type NotificationType } from '../types/notifications'
 
 interface RightSidebarProps {
   isExpanded: boolean
@@ -39,12 +39,50 @@ const roleClasses: Record<string, string> = {
   Instructor: 'bg-emerald-100 text-emerald-700',
 }
 
+const notificationGroupLabels: Record<NotificationType, string> = {
+  booking_approved: 'Booking status',
+  booking_rejected: 'Booking status',
+  booking_cancelled: 'Booking status',
+  booking_completed: 'Booking status',
+  booking_reminder: 'Booking status',
+  building_added: 'Buildings & rooms',
+  building_updated: 'Buildings & rooms',
+  room_added: 'Buildings & rooms',
+  room_updated: 'Buildings & rooms',
+  room_status_changed: 'Buildings & rooms',
+  department_invited: 'Department updates',
+  department_member_removed: 'Department updates',
+  department_invitation_accepted: 'Department updates',
+  department_reinvitation_accepted: 'Department updates',
+  member_department_assigned: 'Department updates',
+  member_role_changed: 'Department updates',
+  academic_year_changed: 'Academic calendar',
+  academic_phase_changed: 'Academic calendar',
+}
+
+function groupNotifications(notifications: NotificationItem[]) {
+  return [...notifications]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .reduce<Array<{ label: string, notifications: NotificationItem[] }>>((groups, notification) => {
+      const label = notificationGroupLabels[notification.type]
+      const group = groups.find((currentGroup) => currentGroup.label === label)
+
+      if (group) {
+        group.notifications.push(notification)
+      } else {
+        groups.push({ label, notifications: [notification] })
+      }
+
+      return groups
+    }, [])
+}
+
 export const RightSidebar = memo(function RightSidebar({
   isExpanded,
   onExpandChange,
   onSignOut,
 }: RightSidebarProps) {
-  const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS)
+  const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [profileImage, setProfileImage] = useState<string | null>(null)
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false)
@@ -69,10 +107,12 @@ export const RightSidebar = memo(function RightSidebar({
   useEffect(() => {
     let unsubscribeUser: (() => void) | null = null
     let unsubscribeMembership: (() => void) | null = null
+    let unsubscribeNotifications: (() => void) | null = null
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (unsubscribeUser) unsubscribeUser()
       if (unsubscribeMembership) unsubscribeMembership()
+      if (unsubscribeNotifications) unsubscribeNotifications()
 
       if (user) {
         unsubscribeUser = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
@@ -114,6 +154,36 @@ export const RightSidebar = memo(function RightSidebar({
             }))
           }
         })
+
+        const notificationsQuery = query(
+          collection(db, 'users', user.uid, 'notifications'),
+          orderBy('createdAt', 'desc'),
+          limit(100),
+        )
+        unsubscribeNotifications = onSnapshot(
+          notificationsQuery,
+          (snapshot) => {
+            setNotifications(snapshot.docs.map((notificationDoc) => {
+              const data = notificationDoc.data()
+              const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function'
+                ? data.createdAt.toDate().toISOString()
+                : new Date().toISOString()
+
+              return {
+                id: notificationDoc.id,
+                title: data.title || 'Notification',
+                message: data.message || '',
+                createdAt,
+                isRead: data.isRead === true,
+                type: data.type as NotificationType,
+              }
+            }))
+          },
+          (error) => {
+            console.error('Error loading notifications:', error)
+            setNotifications([])
+          },
+        )
       } else {
         setUserData({
           fullName: 'No Name',
@@ -126,6 +196,7 @@ export const RightSidebar = memo(function RightSidebar({
         setProfileImage(null)
         setIsImageLoading(false)
         setHasImageError(false)
+        setNotifications([])
       }
     })
 
@@ -133,10 +204,12 @@ export const RightSidebar = memo(function RightSidebar({
       unsubscribeAuth()
       if (unsubscribeUser) unsubscribeUser()
       if (unsubscribeMembership) unsubscribeMembership()
+      if (unsubscribeNotifications) unsubscribeNotifications()
     }
   }, [])
 
   const unreadCount = notifications.filter((notification) => !notification.isRead).length
+  const groupedNotifications = groupNotifications(notifications)
 
   const toggleNotificationsEnabled = useCallback(() => {
     setNotificationsEnabled((current) => !current)
@@ -198,34 +271,62 @@ export const RightSidebar = memo(function RightSidebar({
     }
   }, [userData.profilePicture])
 
-  const markAsRead = useCallback((notificationId: string) => {
-    setNotifications((currentNotifications) =>
-      currentNotifications.map((notification) =>
-        notification.id === notificationId
-          ? { ...notification, isRead: true }
-          : notification,
-      ),
-    )
-  }, [])
+  const markAsRead = useCallback(async (notificationId: string) => {
+    const user = auth.currentUser
+    if (!user) return
 
-  const deleteNotification = useCallback((notificationId: string) => {
-    setNotifications((currentNotifications) =>
-      currentNotifications.filter((notification) => notification.id !== notificationId),
-    )
-  }, [])
-
-  const markAllAsRead = useCallback(() => {
-    setNotifications((currentNotifications) =>
-      currentNotifications.map((notification) => ({
-        ...notification,
+    try {
+      await updateDoc(doc(db, 'users', user.uid, 'notifications', notificationId), {
         isRead: true,
-      })),
-    )
+      })
+    } catch (error) {
+      console.error('Error marking notification as read:', error)
+    }
   }, [])
 
-  const clearNotifications = useCallback(() => {
-    setNotifications([])
+  const deleteNotification = useCallback(async (notificationId: string) => {
+    const user = auth.currentUser
+    if (!user) return
+
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'notifications', notificationId))
+    } catch (error) {
+      console.error('Error deleting notification:', error)
+    }
   }, [])
+
+  const markAllAsRead = useCallback(async () => {
+    const user = auth.currentUser
+    const unreadNotifications = notifications.filter((notification) => !notification.isRead)
+    if (!user || unreadNotifications.length === 0) return
+
+    try {
+      const batch = writeBatch(db)
+      unreadNotifications.forEach((notification) => {
+        batch.update(doc(db, 'users', user.uid, 'notifications', notification.id), {
+          isRead: true,
+        })
+      })
+      await batch.commit()
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error)
+    }
+  }, [notifications])
+
+  const clearNotifications = useCallback(async () => {
+    const user = auth.currentUser
+    if (!user || notifications.length === 0) return
+
+    try {
+      const batch = writeBatch(db)
+      notifications.forEach((notification) => {
+        batch.delete(doc(db, 'users', user.uid, 'notifications', notification.id))
+      })
+      await batch.commit()
+    } catch (error) {
+      console.error('Error clearing notifications:', error)
+    }
+  }, [notifications])
 
   const avatar = (
     <div className="relative h-full w-full rounded-full bg-secondary-50 dark:bg-secondary-600">
@@ -553,89 +654,95 @@ export const RightSidebar = memo(function RightSidebar({
               </span>
             </div>
 
-            <div className="custom-scrollbar flex-1 space-y-4 overflow-y-auto p-4">
-              {[...notifications].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).map((notification) => {
-                return (
-                  <div
-                    key={notification.id}
-                    role="button"
-                    tabIndex={0}
-                    className={joinClasses(
-                      'group relative flex w-full flex-col overflow-hidden rounded-2xl border text-left transition-all duration-300 hover:shadow-md cursor-pointer',
-                      notification.isRead ? 'bg-slate-50 dark:bg-slate-800/50' : 'bg-[var(--brand-color)]/5 dark:bg-[var(--brand-color)]/10',
-                      'border-slate-200 dark:border-slate-700',
-                      !notification.isRead && 'ring-1 ring-[var(--brand-color)]/20 shadow-sm',
-                    )}
-                    onClick={() => markAsRead(notification.id)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        markAsRead(notification.id)
-                      }
-                    }}
-                  >
-                    <div className={joinClasses(
-                      'absolute top-0 bottom-0 left-0 w-1.5',
-                      notification.isRead ? 'bg-slate-300 dark:bg-slate-600' : 'bg-[var(--brand-color)]'
-                    )} />
+            <div className="custom-scrollbar flex flex-1 flex-col gap-5 overflow-y-auto p-4">
+              {groupedNotifications.map((group) => (
+                <section key={group.label} aria-label={group.label} className="space-y-3">
+                  <h4 className="px-2 text-[0.625rem] font-black uppercase tracking-widest text-slate-500 dark:text-slate-400">
+                    {group.label}
+                  </h4>
 
-                    <div className="p-4 pl-6">
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <p
-                              className={joinClasses(
-                                'truncate text-sm font-black tracking-tight',
-                                notification.isRead
-                                  ? 'text-slate-700 dark:text-slate-300'
-                                  : 'text-slate-900 dark:text-slate-100',
-                              )}
-                            >
-                              {notification.title}
-                            </p>
+                  {group.notifications.map((notification) => (
+                    <div
+                      key={notification.id}
+                      role="button"
+                      tabIndex={0}
+                      className={joinClasses(
+                        'group relative flex w-full flex-col overflow-hidden rounded-2xl border text-left transition-all duration-300 hover:shadow-md cursor-pointer',
+                        notification.isRead ? 'bg-slate-50 dark:bg-slate-800/50' : 'bg-[var(--brand-color)]/5 dark:bg-[var(--brand-color)]/10',
+                        'border-slate-200 dark:border-slate-700',
+                        !notification.isRead && 'ring-1 ring-[var(--brand-color)]/20 shadow-sm',
+                      )}
+                      onClick={() => markAsRead(notification.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          markAsRead(notification.id)
+                        }
+                      }}
+                    >
+                      <div className={joinClasses(
+                        'absolute top-0 bottom-0 left-0 w-1.5',
+                        notification.isRead ? 'bg-slate-300 dark:bg-slate-600' : 'bg-[var(--brand-color)]'
+                      )} />
+
+                      <div className="p-4 pl-6">
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <p
+                                className={joinClasses(
+                                  'truncate text-sm font-black tracking-tight',
+                                  notification.isRead
+                                    ? 'text-slate-700 dark:text-slate-300'
+                                    : 'text-slate-900 dark:text-slate-100',
+                                )}
+                              >
+                                {notification.title}
+                              </p>
+                            </div>
+
+                            <span className="ml-auto shrink-0 whitespace-nowrap text-[0.625rem] font-bold text-slate-500 dark:text-slate-400">
+                              {formatRelativeTime(notification.createdAt)}
+                            </span>
                           </div>
 
-                          <span className="ml-auto shrink-0 whitespace-nowrap text-[0.625rem] font-bold text-slate-500 dark:text-slate-400">
-                            {formatRelativeTime(notification.createdAt)}
-                          </span>
-                        </div>
+                          <div className="flex items-end justify-between gap-4">
+                            <p className="line-clamp-2 flex-1 text-[0.6875rem] font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
+                              {notification.message}
+                            </p>
 
-                        <div className="flex items-end justify-between gap-4">
-                          <p className="line-clamp-2 flex-1 text-[0.6875rem] font-semibold leading-relaxed text-slate-600 dark:text-slate-300">
-                            {notification.message}
-                          </p>
-
-                          {notification.isRead ? (
-                            <button
-                              type="button"
-                              aria-label={`Delete ${notification.title}`}
-                              className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                deleteNotification(notification.id)
-                              }}
-                            >
-                              <TrashIcon className="h-3.5 w-3.5" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              aria-label={`Mark ${notification.title} as read`}
-                              className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-slate-400 opacity-0 transition-all hover:bg-[var(--brand-color)]/10 hover:text-[var(--brand-color)] group-hover:opacity-100 dark:hover:bg-[var(--brand-color)]/20"
-                              onClick={(event) => {
-                                event.stopPropagation()
-                                markAsRead(notification.id)
-                              }}
-                            >
-                              <CheckIcon className="h-3.5 w-3.5" />
-                            </button>
-                          )}
+                            {notification.isRead ? (
+                              <button
+                                type="button"
+                                aria-label={`Delete ${notification.title}`}
+                                className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-slate-400 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100 dark:hover:bg-red-950/30"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  deleteNotification(notification.id)
+                                }}
+                              >
+                                <TrashIcon className="h-3.5 w-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                aria-label={`Mark ${notification.title} as read`}
+                                className="mb-[-4px] mr-[-4px] shrink-0 rounded-xl p-1.5 text-slate-400 opacity-0 transition-all hover:bg-[var(--brand-color)]/10 hover:text-[var(--brand-color)] group-hover:opacity-100 dark:hover:bg-[var(--brand-color)]/20"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  markAsRead(notification.id)
+                                }}
+                              >
+                                <CheckIcon className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )
-              })}
+                  ))}
+                </section>
+              ))}
 
               {notifications.length === 0 && (
                 <div className="py-12 text-center">

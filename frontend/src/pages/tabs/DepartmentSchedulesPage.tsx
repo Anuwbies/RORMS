@@ -13,6 +13,7 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
+import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ScheduleModal } from '../../components/ScheduleModal'
 import { DepartmentEditScheduleModal } from '../../components/DepartmentEditScheduleModal'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
@@ -355,7 +356,7 @@ export function DepartmentSchedulesPage() {
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
-      <div className="space-y-6">
+      <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader
           title="Department Schedules"
           description="Overview of department members, schedules, and room allocations across colleges."
@@ -364,53 +365,46 @@ export function DepartmentSchedulesPage() {
         {/* 3 Summary Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
           <SummaryCard
+            className="animate-in"
             title="Plot Schedules"
-            subtitle={scheduleCounts.total > 0 ? `${scheduleCounts.plotted} of ${scheduleCounts.total} plot` : 'No schedules created yet'}
-            icon={<CheckCircleIcon className="w-4.5 h-4.5 text-white" />}
+            subtitle={`${scheduleCounts.plotted} of ${scheduleCounts.total} schedules plotted`}
+            icon={<CheckCircleIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
             gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
             blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
           >
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-900 tracking-tight">{scheduleCounts.plotted}</span>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                Finalized
-              </span>
-            </div>
+            <SummaryGraph variant="bar" total={scheduleCounts.plotted} points={[
+              { label: 'Plotted', value: scheduleCounts.plotted },
+              { label: 'Drafted', value: scheduleCounts.drafted },
+              { label: 'Needs review', value: scheduleCounts.revised + scheduleCounts.returned },
+            ]} />
           </SummaryCard>
           <SummaryCard
+            className="animate-in"
             title="Drafted Proposals"
-            subtitle={scheduleCounts.drafted > 0 ? `${scheduleCounts.drafted} pending Registrar review` : 'No pending drafts'}
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-white" />}
+            subtitle={`${scheduleCounts.drafted} pending Registrar review`}
+            icon={<CalendarIcon className="w-4.5 h-4.5 text-blue-600" />}
             gradientClasses="from-blue-500 to-indigo-600"
             blobClasses="bg-blue-500/8 group-hover:bg-blue-500/14"
           >
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-900 tracking-tight">{scheduleCounts.drafted}</span>
-              <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                Drafts
-              </span>
-            </div>
+            <SummaryGraph variant="pie" total={scheduleCounts.drafted} points={[
+              { label: 'Drafted', value: scheduleCounts.drafted },
+              { label: 'Plotted', value: scheduleCounts.plotted },
+              { label: 'Returned', value: scheduleCounts.returned },
+            ]} tone="sky" />
           </SummaryCard>
           <SummaryCard
+            className="animate-in"
             title="Revised & Returned"
-            subtitle={scheduleCounts.revised > 0 ? `${scheduleCounts.revised} awaiting Dean acceptance` : (scheduleCounts.returned > 0 ? `${scheduleCounts.returned} returned` : 'No revisions pending')}
-            icon={<ClockIcon className="w-4.5 h-4.5 text-white" />}
+            subtitle={`${scheduleCounts.revised + scheduleCounts.returned} revised or returned`}
+            icon={<ClockIcon className="w-4.5 h-4.5 text-amber-600" />}
             gradientClasses="from-amber-400 to-orange-500"
             blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
           >
-            <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-black text-slate-900 tracking-tight">{scheduleCounts.revised + scheduleCounts.returned}</span>
-              {scheduleCounts.revised > 0 && (
-                <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                  {scheduleCounts.revised} Revise
-                </span>
-              )}
-              {scheduleCounts.returned > 0 && (
-                <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-                  {scheduleCounts.returned} Return
-                </span>
-              )}
-            </div>
+            <SummaryGraph variant="bar" total={scheduleCounts.revised + scheduleCounts.returned} points={[
+              { label: 'Revised', value: scheduleCounts.revised },
+              { label: 'Returned', value: scheduleCounts.returned },
+              { label: 'Drafted', value: scheduleCounts.drafted },
+            ]} tone="amber" />
           </SummaryCard>
         </div>
 
@@ -513,6 +507,7 @@ export function DepartmentSchedulesPage() {
         onlyAllowDraftEditing={false}
         onlyAllowTimeDaysRoomStatusEditing={true}
         allowMissingFieldsInRevision={true}
+        allowSaveWithScheduleIssues={true}
       />
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}

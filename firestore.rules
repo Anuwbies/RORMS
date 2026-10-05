@@ -1,0 +1,20 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/notifications/{notificationId} {
+      allow read, update, delete: if request.auth != null && request.auth.uid == userId;
+      allow create: if false;
+    }
+
+    // Preserve the project's existing access behavior for top-level documents.
+    match /{collection}/{document} {
+      allow read, write: if true;
+    }
+
+    // Preserve existing nested-collection access except for private notifications.
+    match /{collection}/{document}/{subcollection}/{subdocument=**} {
+      allow read, write: if collection != 'users' || subcollection != 'notifications';
+    }
+  }
+}

@@ -37,6 +37,7 @@ interface DepartmentEditScheduleModalProps {
   onlyAllowDraftEditing?: boolean
   onlyAllowTimeDaysRoomStatusEditing?: boolean
   allowMissingFieldsInRevision?: boolean
+  allowSaveWithScheduleIssues?: boolean
 }
 
 const InnerDropdown = ({ value, onChange, options, disabled = false, placeholder = "Select" }: { value: string, onChange: (val: string) => void, options: { value: string, label: string }[], disabled?: boolean, placeholder?: string }) => {
@@ -230,6 +231,7 @@ function DepartmentEditScheduleModal({
   onlyAllowDraftEditing = false,
   onlyAllowTimeDaysRoomStatusEditing = false,
   allowMissingFieldsInRevision = false,
+  allowSaveWithScheduleIssues = false,
 }: DepartmentEditScheduleModalProps) {
   const isEditable = !readOnly && (selectedSemesterPhase?.phase ? editablePhases.includes(selectedSemesterPhase.phase) : false);
 
@@ -1476,19 +1478,17 @@ function DepartmentEditScheduleModal({
         updated[index].endTime = calculateEndTime(updated[index].startTime, 90);
       }
 
-      if (field === 'startTime' || field === 'endTime') {
-        const newDur = getDurationMins(updated[index].startTime, updated[index].endTime);
-        if (newDur === 180 && updated[index].days && updated[index].days.length > 1) {
-          updated[index].days = [updated[index].days[0]];
-        }
-      }
-
       if (['startTime', 'startTime2', 'instructorId', 'instructorId2'].includes(field)) {
-        const sched = updated[index];
-        const isSameTime = !!(sched as any).startTime2 && sched.startTime === (sched as any).startTime2;
-        const isSameInstructor = !(sched as any).instructorId2 || (sched as any).instructorId2 === sched.instructorId;
-        if (isSameTime && isSameInstructor && sched.days && sched.days.length > 1 && sched.days[0] === sched.days[1]) {
-          updated[index].days = [sched.days[0]];
+        const schedule = updated[index];
+        const hasMatchingSessions =
+          !!(schedule as any).startTime2 &&
+          schedule.startTime === (schedule as any).startTime2 &&
+          !!(schedule as any).instructorId2 &&
+          schedule.instructorId === (schedule as any).instructorId2;
+        const hasMatchingDays = schedule.days.length > 1 && schedule.days[0] === schedule.days[1];
+
+        if (hasMatchingSessions && hasMatchingDays) {
+          updated[index].days = [schedule.days[0]];
         }
       }
 
@@ -1605,6 +1605,34 @@ function DepartmentEditScheduleModal({
           for (let i = 0; i < updated.length; i++) {
             if (updated[i].parentId === current.id) {
               updated[i] = { ...updated[i], roomId2: '' }
+            }
+          }
+        }
+      }
+
+      // A parent edit can synchronize one or more values to its parallel
+      // children. Recheck after that synchronization so restoring the last
+      // original value restores the group's original Plotted status too.
+      if (field !== 'status' && !current.parentId && current.type === 'parallel') {
+        const parentId = current.id;
+        const origParent = originalSchedulesMap.current.get(parentId);
+        const parentSched = updated.find(schedule => schedule.id === parentId);
+        const childScheds = updated.filter(schedule => schedule.parentId === parentId);
+        const origChildCount = Array.from(originalSchedulesMap.current.values())
+          .filter((schedule: any) => schedule.parentId === parentId).length;
+        const isParentMatch = parentSched && origParent && isScheduleMatchingOriginal(parentSched, origParent);
+        const isChildrenMatch = childScheds.length === origChildCount && childScheds.every(child => {
+          const origChild = originalSchedulesMap.current.get(child.id);
+          return origChild && isScheduleMatchingOriginal(child, origChild);
+        });
+
+        if (isParentMatch && isChildrenMatch) {
+          for (let i = 0; i < updated.length; i++) {
+            if (updated[i].id === parentId || updated[i].parentId === parentId) {
+              const original = originalSchedulesMap.current.get(updated[i].id);
+              if (original) {
+                updated[i] = { ...updated[i], status: original.status || 'Draft' };
+              }
             }
           }
         }
@@ -2065,7 +2093,7 @@ function DepartmentEditScheduleModal({
   const handleSaveSchedules = async () => {
     const isStrictPhase = selectedSemesterPhase?.phase !== 'Drafting';
     const allowMissing = allowMissingFieldsInRevision && selectedSemesterPhase?.phase === 'Revision';
-    if (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && !allowMissing && scheduleConflicts.missingCount > 0)) {
+    if (!allowSaveWithScheduleIssues && (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && !allowMissing && scheduleConflicts.missingCount > 0))) {
       setConflictModalTab('all')
       setIsConflictSummaryModalOpen(true)
       return
@@ -3744,7 +3772,7 @@ function DepartmentEditScheduleModal({
                   onClick={() => {
                     const isStrictPhase = selectedSemesterPhase?.phase !== 'Drafting';
                     const allowMissing = allowMissingFieldsInRevision && selectedSemesterPhase?.phase === 'Revision';
-                    if (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && !allowMissing && scheduleConflicts.missingCount > 0)) {
+                    if (!allowSaveWithScheduleIssues && (scheduleConflicts.hardConflictsCount > 0 || (isStrictPhase && !allowMissing && scheduleConflicts.missingCount > 0))) {
                       setConflictModalTab('all');
                       setIsConflictSummaryModalOpen(true);
                       return;
@@ -3972,9 +4000,11 @@ function DepartmentEditScheduleModal({
                     Schedule Conflicts & Issues
                   </h3>
                   <p className="mt-0.5 text-xs text-white/80 font-medium">
-                    {scheduleConflicts.hardConflictsCount > 0
-                      ? 'Resolve all hard conflicts (overlaps & duplicate sections) before publishing.'
-                      : 'Incomplete fields can be saved as drafts, but will show a confirmation before saving.'}
+                    {allowSaveWithScheduleIssues
+                      ? 'Overlaps, duplicate sections, and incomplete fields remain visible as warnings and can still be saved.'
+                      : scheduleConflicts.hardConflictsCount > 0
+                        ? 'Resolve all hard conflicts (overlaps & duplicate sections) before publishing.'
+                        : 'Incomplete fields can be saved as drafts, but will show a confirmation before saving.'}
                   </p>
                 </div>
               </div>
@@ -4205,7 +4235,12 @@ function DepartmentEditScheduleModal({
             {/* Modal Footer */}
             <div className="p-4 border-t border-gray-200 bg-gray-50/80 flex items-center justify-between gap-3 shrink-0 rounded-b-2xl">
               <div className="text-xs text-gray-600 flex items-center gap-2">
-                {scheduleConflicts.hardConflictsCount > 0 ? (
+                {allowSaveWithScheduleIssues && scheduleConflicts.totalConflicts > 0 ? (
+                  <span className="text-amber-700 font-semibold flex items-center gap-1.5">
+                    <QuestionIcon className="h-3.5 w-3.5 shrink-0" />
+                    {scheduleConflicts.totalConflicts} schedule issue{scheduleConflicts.totalConflicts > 1 ? 's' : ''} can still be saved.
+                  </span>
+                ) : scheduleConflicts.hardConflictsCount > 0 ? (
                   <span className="text-rose-600 font-bold flex items-center gap-1.5">
                     {scheduleConflicts.hardConflictsCount} blocking conflict{scheduleConflicts.hardConflictsCount > 1 ? 's' : ''} must be resolved before saving.
                   </span>

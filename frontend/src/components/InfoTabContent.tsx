@@ -21,7 +21,7 @@ export default function InfoTabContent({ activeTab }: InfoTabContentProps) {
           />
         </div>
         <p className="text-sm leading-relaxed text-gray-700">
-          The <strong>Registrar Office Room Management System (RORMS)</strong> streamlines 
+          <strong>Room Track: Phinma UPANG Room Management System</strong> streamlines 
           room reservations, scheduling, and facility management across the campus. Experience 
           a modern approach to educational administration.
         </p>
@@ -33,7 +33,7 @@ export default function InfoTabContent({ activeTab }: InfoTabContentProps) {
     return (
       <div className="flex h-full flex-col text-black">
         <h2 className="mb-6 text-2xl font-bold text-[var(--brand-color)]">
-          About RORMS
+          About Room Track
         </h2>
         <div className="flex-1 space-y-5 overflow-y-auto pr-2 custom-scrollbar">
           <div className="rounded-xl bg-gray-50 p-5 shadow-sm border border-gray-100">
