@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
-import { collection, addDoc, serverTimestamp, Timestamp, query, where, getDocs, onSnapshot, orderBy, writeBatch, doc, updateDoc } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, orderBy, doc } from 'firebase/firestore'
 import { onAuthStateChanged } from 'firebase/auth'
 import { auth, db } from '../../firebase'
 import { UsersIcon, UserIcon, EditIcon, TrashIcon, MinusCircleIcon, ChevronDownIcon, CheckIcon, SearchIcon, PlusIcon, ChevronLeftIcon, ChevronRightIcon, ChevronsLeftIcon, ChevronsRightIcon, FilterIcon, MailIcon, CloseIcon } from '../../components/Icons'
@@ -16,6 +16,8 @@ import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { Snackbar } from '../../components/Snackbar'
+import { formatUserName, userNameFields } from '../../utils/userName'
+import { manageMember, memberActionError } from '../../services/memberManagement'
 const rolePriority: Record<MemberRole, number> = {
   Admin: 0,
   Registrar: 1,
@@ -821,7 +823,8 @@ function MembersPage() {
           membersData.push({
             id: mData.userId,
             membershipId: mDoc.id,
-            name: userData.fullName || mData.fullName || '',
+            name: formatUserName(userData, mData),
+            ...userNameFields(userData, mData),
             email: userData.email || mData.email || '',
             role: (mData.role as MemberRole) || 'Instructor',
             status: (userData.isActive !== false) ? 'Active' : 'Deactivated',
@@ -841,7 +844,8 @@ function MembersPage() {
             membersData.push({
               id: userId,
               membershipId: '',
-              name: userData.fullName || '',
+              name: formatUserName(userData),
+              ...userNameFields(userData),
               email: userData.email || '',
               role: 'Instructor',
               status: 'Deactivated',
@@ -947,7 +951,8 @@ function MembersPage() {
       return {
         id: inv.id,
         membershipId: inv.membershipId || memData?.id || '',
-        name: memData?.fullName || '',
+        name: formatUserName(memData),
+        ...userNameFields(memData),
         email: inv.email,
         role,
         status: 'Pending' as MemberStatus,
@@ -1065,8 +1070,8 @@ function MembersPage() {
       return
     }
 
-    // Validation for Dean and Program Head assignment
-    if ((inviteRole === 'Dean' || inviteRole === 'Program Head') && inviteDepartment && inviteDepartment !== 'None') {
+    // Only the Dean assignment is limited to one member per department.
+    if (inviteRole === 'Dean' && inviteDepartment && inviteDepartment !== 'None') {
       if (emailList.length > 1) {
         showNotification(`Cannot invite multiple users as ${inviteRole} for a single department.`, 'error', 'Assignment Conflict')
         return
@@ -1095,77 +1100,20 @@ function MembersPage() {
       }
 
       for (const normalizedEmail of emailList) {
-        // 1. Check if user already exists in 'users' collection (active or deactivated)
-        const userQuery = query(collection(db, 'users'), where('email', '==', normalizedEmail))
-        const userSnapshot = await getDocs(userQuery)
-
-        if (!userSnapshot.empty) {
+        const invitationId = doc(collection(db, 'invitations')).id
+        const signupLink = `${window.location.origin}/signup?token=${invitationId}`
+        const result = await manageMember({
+          action: 'invite', email: normalizedEmail, role: inviteRole, department: inviteDepartment,
+          invitationId, invitationHtml: buildInvitationEmail({ role: inviteRole, actionUrl: signupLink }),
+        })
+        if (result.outcome === 'exists') {
           results.exists.push(normalizedEmail)
           continue
         }
-
-        // 2. Check for existing active invitations
-        const inviteQuery = query(
-          collection(db, 'invitations'),
-          where('email', '==', normalizedEmail),
-          where('status', '==', 'pending')
-        )
-        const inviteSnapshot = await getDocs(inviteQuery)
-
-        const now = new Date()
-        const activeInvite = inviteSnapshot.docs.find(doc => {
-          const data = doc.data()
-          return data.expiresAt.toDate() > now
-        })
-
-        if (activeInvite) {
+        if (result.outcome === 'pending') {
           results.pending.push(normalizedEmail)
           continue
         }
-
-        const expiresAt = new Date()
-        expiresAt.setDate(expiresAt.getDate() + 7)
-
-        const assignedDept = inviteRole === 'Admin'
-          ? 'Administrative Office'
-          : inviteRole === 'Registrar'
-            ? "Registrar's Office"
-            : (inviteRole === 'Instructor' || inviteRole === 'Dean' || inviteRole === 'Program Head')
-              ? (inviteDepartment === 'None' ? '' : inviteDepartment || '')
-              : ''
-
-        // 1. Create the membership document for the invited user
-        const membershipRef = await addDoc(collection(db, 'memberships'), {
-          userId: '',
-          fullName: '',
-          email: normalizedEmail,
-          role: inviteRole,
-          department: assignedDept,
-          status: assignedDept ? 'accepted' : '',
-          joinedAt: '',
-          createdAt: serverTimestamp()
-        })
-
-        // 2. Create the invitation tracking document
-        const inviteRef = await addDoc(collection(db, 'invitations'), {
-          email: normalizedEmail,
-          membershipId: membershipRef.id,
-          status: 'pending',
-          invitedBy: auth.currentUser?.uid || 'system',
-          createdAt: serverTimestamp(),
-          expiresAt: Timestamp.fromDate(expiresAt),
-        })
-
-        // 4. Create the mail document to trigger the extension
-        const signupLink = `${window.location.origin}/signup?token=${inviteRef.id}`
-
-        await addDoc(collection(db, 'mail'), {
-          to: normalizedEmail,
-          message: {
-            subject: 'Your Room Track invitation',
-            html: buildInvitationEmail({ role: inviteRole, actionUrl: signupLink }),
-          },
-        })
         results.sent.push(normalizedEmail)
       }
 
@@ -1205,7 +1153,7 @@ function MembersPage() {
       }
     } catch (error) {
       console.error('Error sending invitation:', error)
-      showNotification('Failed to send invitation. Please try again.', 'error', 'Error Sending Invitation')
+      showNotification(memberActionError(error, 'Failed to send invitation. Please try again.'), 'error', 'Error Sending Invitation')
     } finally {
       setIsInviting(false)
     }
@@ -1231,14 +1179,10 @@ function MembersPage() {
     if (!editingMember) return
 
     const isPending = editingMember.status === 'Pending'
-    const wasDean = editingMember.role === 'Dean'
     const isNowDean = editRole === 'Dean'
-    const wasProgramHead = editingMember.role === 'Program Head'
-    const isNowProgramHead = editRole === 'Program Head'
-    const oldDeptCode = editingMember.department || ''
     const newDeptCode = editDept
 
-    // 1. Validation for Dean and Program Head assignment
+    // 1. Validation for the single Dean assignment
     if (isNowDean && newDeptCode) {
       const existingDean = members.find(m => m.role === 'Dean' && m.department === newDeptCode && m.id !== editingMember.id && m.email.toLowerCase() !== editingMember.email.toLowerCase())
       if (existingDean) {
@@ -1247,120 +1191,18 @@ function MembersPage() {
       }
     }
 
-    if (isNowProgramHead && newDeptCode) {
-      const existingProgramHead = members.find(m => m.role === 'Program Head' && m.department === newDeptCode && m.id !== editingMember.id && m.email.toLowerCase() !== editingMember.email.toLowerCase())
-      if (existingProgramHead) {
-        showNotification(`A Program Head already exists for ${newDeptCode}.`, 'warning', 'Assignment Conflict')
-        return
-      }
-    }
-
     setIsSavingEdit(true)
     try {
-      const batch = writeBatch(db)
-
-      const canHaveDept = editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head'
-      const isOffice = editDept === 'Administrative Office' || editDept === "Registrar's Office"
-      const finalDept = editRole === 'Admin'
-        ? 'Administrative Office'
-        : editRole === 'Registrar'
-          ? "Registrar's Office"
-          : (canHaveDept && !isOffice)
-            ? editDept
-            : ''
-
-      if (isPending) {
-        // Update the membership document created for this pending invite
-        if (editingMember.membershipId) {
-          batch.update(doc(db, 'memberships', editingMember.membershipId), {
-            role: editRole,
-            department: finalDept,
-            status: finalDept ? 'accepted' : '',
-          })
-        }
-      } else {
-        if (wasDean && (!isNowDean || oldDeptCode !== finalDept)) {
-          // Clear old department's dean field
-          const oldDept = departments.find(d => d.code === oldDeptCode)
-          if (oldDept && oldDept.dean === editingMember.id) {
-            batch.update(doc(db, 'departments', oldDept.id), {
-              dean: '',
-              updatedAt: serverTimestamp()
-            })
-          }
-        }
-
-        if (isNowDean && finalDept) {
-          const newDept = departments.find(d => d.code === finalDept)
-          if (newDept) {
-            // Set new department's dean field
-            batch.update(doc(db, 'departments', newDept.id), {
-              dean: editingMember.id,
-              updatedAt: serverTimestamp()
-            })
-          }
-        }
-
-        if (wasProgramHead && (!isNowProgramHead || oldDeptCode !== finalDept)) {
-          // Clear old department's programHead field
-          const oldDept = departments.find(d => d.code === oldDeptCode)
-          if (oldDept && oldDept.programHead === editingMember.id) {
-            batch.update(doc(db, 'departments', oldDept.id), {
-              programHead: '',
-              updatedAt: serverTimestamp()
-            })
-          }
-        }
-
-        if (isNowProgramHead && finalDept) {
-          const newDept = departments.find(d => d.code === finalDept)
-          if (newDept) {
-            // Set new department's programHead field
-            batch.update(doc(db, 'departments', newDept.id), {
-              programHead: editingMember.id,
-              updatedAt: serverTimestamp()
-            })
-          }
-        }
-
-        // 2. Update or create membership document
-        if (editingMember.membershipId) {
-          const updateData: any = {
-            role: editRole,
-            department: finalDept,
-            status: finalDept ? 'accepted' : '',
-            fullName: editingMember.name || '',
-            email: editingMember.email || '',
-          }
-
-          // Update joinedAt only if the department has changed (including unassigned to department or vice versa)
-          if (oldDeptCode !== finalDept) {
-            updateData.joinedAt = finalDept ? serverTimestamp() : ''
-          }
-
-          batch.update(doc(db, 'memberships', editingMember.membershipId), updateData)
-          batch.update(doc(db, 'users', editingMember.id), {
-            updatedAt: serverTimestamp()
-          })
-        } else {
-          const newMembershipRef = doc(collection(db, 'memberships'))
-          batch.set(newMembershipRef, {
-            userId: editingMember.id,
-            fullName: editingMember.name || '',
-            email: editingMember.email || '',
-            role: editRole,
-            department: finalDept,
-            status: finalDept ? 'accepted' : '',
-            joinedAt: finalDept ? serverTimestamp() : '',
-            createdAt: serverTimestamp()
-          })
-          batch.update(doc(db, 'users', editingMember.id), {
-            updatedAt: serverTimestamp()
-          })
-        }
+      const result = await manageMember({
+        action: 'edit', targetId: editingMember.id, targetType: isPending ? 'invitation' : 'user',
+        membershipId: editingMember.membershipId, role: editRole, department: editDept,
+        expected: { role: editingMember.role, department: editingMember.department || '' },
+      })
+      if (result.outcome === 'unchanged') {
+        setEditingMember(null)
+        showNotification('No member details changed.', 'info', 'No Changes')
+        return
       }
-
-      await batch.commit()
       const memberName = editingMember.name || editingMember.email
       setEditingMember(null)
       showNotification(
@@ -1370,7 +1212,7 @@ function MembersPage() {
       )
     } catch (error) {
       console.error('Error updating member:', error)
-      showNotification('Failed to update member. Please try again.', 'error', 'Error Updating Member')
+      showNotification(memberActionError(error, 'Failed to update member. Please try again.'), 'error', 'Error Updating Member')
     } finally {
       setIsSavingEdit(false)
     }
@@ -1382,49 +1224,10 @@ function MembersPage() {
     setIsRemovingMember(true)
     setRemoveError('')
     try {
-      const batch = writeBatch(db)
-
-      if (memberToRemove.status === 'Pending') {
-        // 1. Delete the invitation document
-        batch.delete(doc(db, 'invitations', memberToRemove.id))
-
-        // 2. Delete the associated membership document only if this was a new user invite (not an existing registered/deactivated user)
-        if (memberToRemove.membershipId) {
-          const mem = rawMemberships.find(m => m.id === memberToRemove.membershipId)
-          const isExistingUser = Boolean(mem?.userId && mem.userId !== '') || users.some(u => u.email.toLowerCase() === memberToRemove.email.toLowerCase())
-          if (!isExistingUser) {
-            batch.delete(doc(db, 'memberships', memberToRemove.membershipId))
-          }
-        }
-
-        // 3. Delete the associated mail document (find by email)
-        const mailQuery = query(collection(db, 'mail'), where('to', '==', memberToRemove.email))
-        const mailSnapshot = await getDocs(mailQuery)
-        mailSnapshot.forEach((mDoc) => {
-          batch.delete(doc(db, 'mail', mDoc.id))
-        })
-      } else {
-        // 1. Soft delete the user document (do not completely delete from Firestore)
-        batch.update(doc(db, 'users', memberToRemove.id), {
-          isActive: false,
-          updatedAt: serverTimestamp()
-        })
-
-        // 2. Clean up any lingering mail and invitations
-        const mailQuery = query(collection(db, 'mail'), where('to', '==', memberToRemove.email))
-        const mailSnapshot = await getDocs(mailQuery)
-        mailSnapshot.forEach((mDoc) => {
-          batch.delete(doc(db, 'mail', mDoc.id))
-        })
-
-        const inviteQuery = query(collection(db, 'invitations'), where('email', '==', memberToRemove.email))
-        const inviteSnapshot = await getDocs(inviteQuery)
-        inviteSnapshot.forEach((iDoc) => {
-          batch.delete(doc(db, 'invitations', iDoc.id))
-        })
-      }
-
-      await batch.commit()
+      await manageMember({
+        action: memberToRemove.status === 'Pending' ? 'cancel_invitation' : 'deactivate',
+        targetId: memberToRemove.id, membershipId: memberToRemove.membershipId,
+      })
       const memberLabel = memberToRemove.name || memberToRemove.email
       const isPending = memberToRemove.status === 'Pending'
       const mem = rawMemberships.find(m => m.id === memberToRemove.membershipId)
@@ -1455,7 +1258,7 @@ function MembersPage() {
       const isPending = memberToRemove?.status === 'Pending'
       const isReactivation = isPending && Boolean(memberToRemove?.isReactivation)
       
-      const errorMsg = !isPending
+      const fallbackError = !isPending
         ? 'Failed to deactivate member. Please try again.'
         : isReactivation
           ? 'Failed to cancel re-invitation. Please try again.'
@@ -1467,6 +1270,7 @@ function MembersPage() {
           ? 'Error Cancelling Re-invitation'
           : 'Error Cancelling Invitation'
 
+      const errorMsg = memberActionError(error, fallbackError)
       setRemoveError(errorMsg)
       showNotification(errorMsg, 'error', errorTitle)
     } finally {
@@ -1479,70 +1283,24 @@ function MembersPage() {
 
     setIsReinvitingMember(true)
     try {
-      const normalizedEmail = memberToReinvite.email.trim().toLowerCase()
-      const expiresAt = new Date()
-      expiresAt.setDate(expiresAt.getDate() + 7)
-
-      const assignedDept = memberToReinvite.role === 'Admin'
-        ? 'Administrative Office'
-        : memberToReinvite.role === 'Registrar'
-          ? "Registrar's Office"
-          : (memberToReinvite.role === 'Instructor' || memberToReinvite.role === 'Dean' || memberToReinvite.role === 'Program Head')
-            ? (memberToReinvite.department === 'None' ? '' : memberToReinvite.department || '')
-            : ''
-
-      let membershipId = memberToReinvite.membershipId
-      if (membershipId) {
-        await updateDoc(doc(db, 'memberships', membershipId), {
-          role: memberToReinvite.role,
-          department: assignedDept,
-          fullName: memberToReinvite.name || '',
-          email: normalizedEmail,
-        })
-      } else {
-        const memRef = await addDoc(collection(db, 'memberships'), {
-          userId: memberToReinvite.id,
-          fullName: memberToReinvite.name || '',
-          email: normalizedEmail,
-          role: memberToReinvite.role,
-          department: assignedDept,
-          status: '',
-          joinedAt: '',
-          createdAt: serverTimestamp()
-        })
-        membershipId = memRef.id
+      const invitationId = doc(collection(db, 'invitations')).id
+      const signupLink = `${window.location.origin}/signup?token=${invitationId}`
+      const result = await manageMember({
+        action: 'reinvite', targetId: memberToReinvite.id, membershipId: memberToReinvite.membershipId,
+        role: memberToReinvite.role, department: memberToReinvite.department || '', invitationId,
+        invitationHtml: buildInvitationEmail({ role: memberToReinvite.role, actionUrl: signupLink, isReactivation: true }),
+      })
+      if (result.outcome === 'pending') {
+        showNotification('This member already has a pending re-invitation.', 'warning', 'Already Invited')
+        return
       }
-
-      const inviteRef = await addDoc(collection(db, 'invitations'), {
-        email: normalizedEmail,
-        membershipId: membershipId,
-        status: 'pending',
-        isReactivation: true,
-        invitedBy: auth.currentUser?.uid || 'system',
-        createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(expiresAt),
-      })
-
-      const signupLink = `${window.location.origin}/signup?token=${inviteRef.id}`
-
-      await addDoc(collection(db, 'mail'), {
-          to: normalizedEmail,
-          message: {
-            subject: 'Your Room Track reactivation invitation',
-            html: buildInvitationEmail({
-              role: memberToReinvite.role,
-              actionUrl: signupLink,
-              isReactivation: true,
-            }),
-        },
-      })
 
       const memberLabel = memberToReinvite.name || memberToReinvite.email
       setMemberToReinvite(null)
       showNotification(`Re-invitation sent to "${memberLabel}".`, 'success', 'Re-invitation Sent')
     } catch (error) {
       console.error('Error sending re-invitation:', error)
-      showNotification('Failed to send re-invitation. Please try again.', 'error', 'Error Sending Re-invitation')
+      showNotification(memberActionError(error, 'Failed to send re-invitation. Please try again.'), 'error', 'Error Sending Re-invitation')
     } finally {
       setIsReinvitingMember(false)
     }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react'
+import { formatUserName } from '../utils/userName'
 import { CalendarIcon, PlusIcon, TrashIcon, CheckIcon, CheckCircleIcon, AlertCircleIcon, ExclamationIcon, DuplicateIcon, QuestionIcon, SpinnerIcon, SearchIcon, CloseIcon, UndoIcon } from './Icons'
 import { Button } from './Button'
 import { DashedButton } from './DashedButton'
@@ -786,7 +787,7 @@ function DepartmentEditScheduleModal({
         mSnap.forEach(mDoc => {
           const mem = mDoc.data()
           const user = usersDataMap.get(mem.userId)
-          const name = user?.fullName || mem.fullName || user?.email || mem.email || ''
+          const name = formatUserName(user, mem) || user?.email || mem.email || ''
           if (name) {
             map.set(mDoc.id, name)
             if (mem.userId) {
@@ -796,7 +797,7 @@ function DepartmentEditScheduleModal({
         })
         usersDataMap.forEach((user, uid) => {
           if (!map.has(uid)) {
-            map.set(uid, user.fullName || user.email || '')
+            map.set(uid, formatUserName(user) || user.email || '')
           }
         })
         setAllInstructorsNameMap(map)
@@ -2110,7 +2111,7 @@ function DepartmentEditScheduleModal({
       if (!id) return 'None';
       const m = members.find(member => (member as any).membershipId === id || member.id === id || (member as any).uid === id || (member as any).userId === id);
       if (!m) return id;
-      return m.name || (m as any).fullName || (m as any).displayName || id;
+      return m.name || formatUserName(m) || (m as any).displayName || id;
     };
     const getRoomName = (id: string) => {
       if (!id) return 'None';

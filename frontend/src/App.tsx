@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { onAuthStateChanged } from 'firebase/auth'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, onSnapshot, runTransaction, serverTimestamp } from 'firebase/firestore'
 import { auth, db } from './firebase'
 import SignInPage from './pages/SignInPage'
 import SignUpPage from './pages/SignupPage'
@@ -19,6 +19,7 @@ function App() {
   const [justSignedUp, setJustSignedUp] = useState(false)
   const [currentAuthSlide, setCurrentAuthSlide] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [sessionError, setSessionError] = useState<string | null>(null)
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -48,8 +49,54 @@ function App() {
   }, [])
 
   useEffect(() => {
+    let disposed = false
+    let authGeneration = 0
+    let unsubscribeProfile: (() => void) | undefined
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      const generation = ++authGeneration
+      unsubscribeProfile?.()
+      unsubscribeProfile = undefined
+      setIsAuthenticated(false)
+      setIsEmailVerified(false)
+
       if (user) {
+        setLoading(true)
+        setSessionError(null)
+        let blocked = false
+        let profileReady = false
+        const isCurrentSession = () => !disposed && generation === authGeneration && auth.currentUser?.uid === user.uid
+        const blockSession = (message: string) => {
+          if (!isCurrentSession() || blocked) return
+          blocked = true
+          setIsAuthenticated(false)
+          setIsEmailVerified(false)
+          setSessionError(message)
+          setLoading(false)
+          setIsSignupMode(false)
+          setIsForgotPasswordMode(false)
+          setIsResetPasswordMode(false)
+          setJustSignedUp(false)
+          sessionStorage.removeItem('rorms_verification_cooldown')
+          window.history.replaceState({}, '', '/')
+          unsubscribeProfile?.()
+          unsubscribeProfile = undefined
+          void auth.signOut().catch(error => console.error('Error ending blocked session:', error))
+        }
+
+        const userDocRef = doc(db, 'users', user.uid)
+        unsubscribeProfile = onSnapshot(userDocRef, { includeMetadataChanges: true }, snapshot => {
+          if (!isCurrentSession() || blocked || snapshot.metadata.fromCache || snapshot.metadata.hasPendingWrites) return
+          if (snapshot.data()?.isActive === false) {
+            blockSession('This account has been deactivated.')
+          } else if (profileReady && !snapshot.exists()) {
+            blockSession('Your account is unavailable. Please contact your administrator.')
+          }
+        }, error => {
+          console.error('Error monitoring account status:', error)
+          blockSession('Unable to verify your account status. Please sign in again.')
+        })
+
         try {
           const params = new URLSearchParams(window.location.search)
           if (params.has('token') || window.location.pathname === '/signup' || sessionStorage.getItem('rorms_verification_cooldown')) {
@@ -59,37 +106,49 @@ function App() {
           // Check if email is verified
           setIsEmailVerified(user.emailVerified)
 
-          const userDocRef = doc(db, 'users', user.uid)
-          const userDocSnap = await getDoc(userDocRef)
-          const userData = userDocSnap.data() || {}
-          const updates: any = {
-            updatedAt: serverTimestamp(),
-            isVerify: user.emailVerified
-          }
+          // A transaction checks the current server profile and prevents defaults
+          // from overwriting a concurrent account deactivation.
+          await runTransaction(db, async transaction => {
+            const userDocSnap = await transaction.get(userDocRef)
+            const userData = userDocSnap.data() || {}
+            if (userData.isActive === false) throw new Error('account-inactive')
+            const updates: Record<string, unknown> = {
+              updatedAt: serverTimestamp(),
+              isVerify: user.emailVerified
+            }
 
-          // Ensure these fields exist, defaulting to empty strings if Auth doesn't have them
-          if (userData.fullName === undefined) updates.fullName = user.displayName || ''
-          if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
-          if (userData.email === undefined) updates.email = user.email || ''
+            // Ensure these fields exist, defaulting to empty strings if Auth doesn't have them
+            if (userData.fullName === undefined) updates.fullName = user.displayName || ''
+            if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
+            if (userData.email === undefined) updates.email = user.email || ''
           
-          // Set initial defaults if document is new
-          if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
-          if (userData.isActive === undefined) updates.isActive = true
+            // Set initial defaults if document is new
+            if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
+            if (userData.isActive === undefined) updates.isActive = true
 
-          console.log(userDocSnap.exists() ? 'Updating existing user profile' : 'Creating new user profile')
-          await setDoc(userDocRef, updates, { merge: true })
+            transaction.set(userDocRef, updates, { merge: true })
+          })
+          if (!isCurrentSession() || blocked) return
+          profileReady = true
           setIsAuthenticated(true)
+          setLoading(false)
         } catch (error) {
           console.error('Error in Firestore user profile logic:', error)
-          setIsAuthenticated(true)
+          blockSession(error instanceof Error && error.message === 'account-inactive'
+            ? 'This account has been deactivated.'
+            : 'Unable to verify your account status. Please sign in again.')
         }
       } else {
-        setIsAuthenticated(false)
+        setLoading(false)
       }
-      setLoading(false)
     })
 
-    return () => unsubscribe()
+    return () => {
+      disposed = true
+      ++authGeneration
+      unsubscribeProfile?.()
+      unsubscribe()
+    }
   }, [])
 
   const handleSignIn = () => {
@@ -176,6 +235,7 @@ function App() {
 
   return (
     <SignInPage 
+      sessionError={sessionError}
       onSignIn={handleSignIn}
       onForgotPassword={handleForgotPassword}
       currentSlide={currentAuthSlide}

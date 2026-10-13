@@ -1,9 +1,14 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
-import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons'
+import { formatUserName } from '../utils/userName'
+import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon } from './Icons'
 import { db, auth } from '../firebase'
-import { collection, query, where, onSnapshot } from 'firebase/firestore'
+import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../utils/scheduleMeetings'
+import { useScheduleRoomPlotting, type SchedulePlottingOptions } from '../hooks/useScheduleRoomPlotting'
+import { roomScheduleInstructor, roomScheduleLabel, roomScheduleMeetings, roomScheduleRoom, roomScheduleSection, scheduleMatchesTerm } from '../utils/roomSchedule'
+import { collection, query, where, or, onSnapshot } from 'firebase/firestore'
 import type { Room } from '../types/room'
 import { Button } from './Button'
+import { ExtendedReservationBadge } from './ExtendedReservationBadge'
 import { SingleSelectDropdown } from './SingleSelectDropdown'
 import { DatePicker } from './DatePicker'
 import { toPng } from 'html-to-image'
@@ -24,7 +29,7 @@ export interface ScheduleMemberInfo {
  * 
  * The modal operates in 3 distinct scenarios depending on the provided props:
  * 1. Instructor / Program Head Schedule: Triggered when `member` is provided and `room` is null/undefined. Fetches schedules matching the member's ID.
- * 2. Room Schedule: Triggered when `room` is provided. Fetches all department schedules plotted for this specific room.
+ * 2. Room Schedule: Triggered when `room` is provided. Fetches saved schedule meetings for this room, including workbook drafts and parallel sections.
  * 3. Room Schedule + Reservations (Week View): Triggered when `room` is provided AND `showWeekCalendar` is true. Fetches room schedules PLUS any approved/pending reservations for the active week.
  */
 export interface ScheduleModalProps {
@@ -43,6 +48,9 @@ export interface ScheduleModalProps {
   forceFullDaySchedule?: boolean
   isInline?: boolean
   hideReturnedSchedules?: boolean
+  scheduleStatuses?: readonly ('Draft' | 'Plot')[]
+  hideReservationIdentity?: boolean
+  plotting?: SchedulePlottingOptions
 }
 
 import {
@@ -208,6 +216,14 @@ const formatTime = (time: string) => {
   return `${displayHours}:${(m || '00').padStart(2, '0')} ${suffix}`
 }
 
+const scheduleSectionLabel = (schedule: { classSection?: string; course?: unknown; sourceKey?: unknown; yearLevel?: unknown }) => {
+  const section = roomScheduleSection(schedule)
+  const year = schedule.yearLevel
+  if (typeof schedule.sourceKey !== 'string' || typeof year !== 'number' || !Number.isInteger(year) || year <= 0) return section
+  const suffix = year % 100 >= 11 && year % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][year % 10] ?? 'th'
+  return `${year}${suffix} Year - ${section}`
+}
+
 export function ScheduleModal({
   isOpen,
   onClose,
@@ -223,20 +239,31 @@ export function ScheduleModal({
   showStatusColors = false,
   forceFullDaySchedule = false,
   isInline = false,
-  hideReturnedSchedules = false
+  hideReturnedSchedules = false,
+  scheduleStatuses,
+  hideReservationIdentity = false,
+  plotting
 }: ScheduleModalProps) {
   const isRoomMode = Boolean(room)
   const isInstructorMode = Boolean(member && !room)
+  const scheduleRoomId = room?.id
+  const memberId = member?.id
+  const memberUserId = member?.userId
+  const memberMembershipId = member?.membershipId
+  const memberRole = member?.role
 
   const [schedules, setSchedules] = useState<any[]>([])
   const [reservations, setReservations] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [scheduleLoadError, setScheduleLoadError] = useState('')
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
   const [selectedSemester, setSelectedSemester] = useState<string>(initialSemester || '1st Semester')
   const [instructorsMap, setInstructorsMap] = useState<Map<string, string>>(new Map())
   const [userDepartmentMap, setUserDepartmentMap] = useState<Map<string, string>>(new Map())
   const [roomsMap, setRoomsMap] = useState<Map<string, string>>(new Map())
+  const roomPlot = useScheduleRoomPlotting(plotting, isOpen && isInstructorMode, selectedAcademicYear, selectedSemester,
+    [memberMembershipId, memberId, memberUserId].filter((id): id is string => Boolean(id)))
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
 
@@ -334,6 +361,7 @@ export function ScheduleModal({
     let unsubscribeMemberships: (() => void) | null = null
 
     const unsubscribeUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
+      unsubscribeMemberships?.()
       const usersDataMap = new Map<string, any>()
       usersSnap.forEach(uDoc => usersDataMap.set(uDoc.id, uDoc.data()))
 
@@ -343,7 +371,7 @@ export function ScheduleModal({
         memSnap.forEach(mDoc => {
           const mem = mDoc.data()
           const user = usersDataMap.get(mem.userId)
-          const name = user?.fullName || user?.email || 'Instructor'
+          const name = formatUserName(user, mem) || user?.email || mem.email || 'Instructor'
           map.set(mDoc.id, name)
           if (mem.userId) {
             map.set(mem.userId, name)
@@ -353,7 +381,7 @@ export function ScheduleModal({
         })
         usersDataMap.forEach((user, uid) => {
           if (!map.has(uid)) {
-            map.set(uid, user.fullName || user.email || 'Instructor')
+            map.set(uid, formatUserName(user) || user.email || 'Instructor')
           }
         })
         setInstructorsMap(map)
@@ -385,29 +413,32 @@ export function ScheduleModal({
 
   // 4. Fetch Schedules in Real-Time
   useEffect(() => {
+    setScheduleLoadError('')
     if (!isOpen) {
       setSchedules([])
       setIsLoading(false)
       return
     }
 
-    if (isRoomMode && room?.id) {
+    if (isRoomMode && scheduleRoomId) {
       setIsLoading(true)
-      const qSchedule = query(collection(db, 'schedule'), where('roomId', '==', room.id))
-      const qReservations = query(collection(db, 'reservations'), where('roomId', '==', room.id))
+      setSchedules([])
+      const qSchedule = query(collection(db, 'schedule'), or(where('roomId', '==', scheduleRoomId), where('roomIds', 'array-contains', scheduleRoomId)))
+      const qReservations = query(collection(db, 'reservations'), where('roomId', '==', scheduleRoomId))
 
       let schedulesLoaded = false
       let reservationsLoaded = !showWeekCalendar
 
       const unsubscribeSchedule = onSnapshot(qSchedule, (snapshot) => {
-        const fetched = snapshot.docs.map(d => ({ id: d.id, ...d.data() }))
-        fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
+        const fetched = roomScheduleMeetings(snapshot.docs, scheduleRoomId)
         setSchedules(fetched)
+        setScheduleLoadError('')
         schedulesLoaded = true
         if (reservationsLoaded) setIsLoading(false)
       }, (err) => {
         console.error('Error loading room schedules:', err)
         setSchedules([])
+        setScheduleLoadError('The room schedule could not be loaded. Close and reopen the schedule to retry.')
         schedulesLoaded = true
         if (reservationsLoaded) setIsLoading(false)
       })
@@ -437,15 +468,15 @@ export function ScheduleModal({
       }
     }
 
-    if (isInstructorMode && member) {
-      if (member.role === 'Dean') {
+    if (isInstructorMode) {
+      if (memberRole === 'Dean') {
         setSchedules([])
         setIsLoading(false)
         return
       }
 
       setIsLoading(true)
-      const validInstructorIds = [member.membershipId, member.id, member.userId].filter(Boolean) as string[]
+      const validInstructorIds = [memberMembershipId, memberId, memberUserId].filter(Boolean) as string[]
 
       let schedulesLoaded = false
       let reservationsLoaded = !showWeekCalendar
@@ -453,20 +484,16 @@ export function ScheduleModal({
       const q = query(collection(db, 'schedule'))
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const fetched: any[] = []
-        snapshot.docs.forEach(d => {
-          const data = d.data()
-          if (validInstructorIds.includes(data.instructorId)) {
-            fetched.push({ id: d.id, ...data })
-          }
-        })
+        const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => Boolean(item.instructorId && validInstructorIds.includes(item.instructorId)))
         fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
         setSchedules(fetched)
+        setScheduleLoadError('')
         schedulesLoaded = true
         if (reservationsLoaded) setIsLoading(false)
       }, (err) => {
         console.error('Error loading instructor schedules:', err)
         setSchedules([])
+        setScheduleLoadError('The instructor schedule could not be loaded. Close and reopen the schedule to retry.')
         schedulesLoaded = true
         if (reservationsLoaded) setIsLoading(false)
       })
@@ -504,29 +531,23 @@ export function ScheduleModal({
 
     setSchedules([])
     setIsLoading(false)
-  }, [isOpen, isRoomMode, isInstructorMode, room?.id, member])
+  }, [isOpen, isRoomMode, isInstructorMode, scheduleRoomId, memberMembershipId, memberId, memberUserId, memberRole, showWeekCalendar])
 
   // 5. Filter Schedules by Academic Year & Semester
   const filteredSchedules = useMemo(() => {
     if (!schedules.length) return []
     return schedules.filter(s => {
-      if (selectedAcademicYear?.academicYear && s.academicYear) {
-        if (s.academicYear !== selectedAcademicYear.academicYear) return false
-      }
-      if (selectedSemester && s.semester) {
-        if (s.semester !== selectedSemester) return false
-      }
+      if (!scheduleMatchesTerm(s, selectedAcademicYear, selectedSemester)) return false
       const status = s.status || 'Draft'
       
-      let allowedStatuses = ['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised', 'Return', 'Returned']
-      if (hideReturnedSchedules) {
-        allowedStatuses = ['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised']
-      }
+      const allowedStatuses: readonly string[] = scheduleStatuses ?? (hideReturnedSchedules
+        ? ['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised']
+        : ['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised', 'Return', 'Returned'])
       
       if (!allowedStatuses.includes(status)) return false
       return true
     })
-  }, [schedules, selectedAcademicYear?.academicYear, selectedSemester, hideReturnedSchedules])
+  }, [schedules, selectedAcademicYear?.id, selectedAcademicYear?.academicYear, selectedSemester, hideReturnedSchedules, scheduleStatuses])
 
   const getScheduleStatusClasses = (status?: string) => {
     if (showWeekCalendar && !showStatusColors) {
@@ -550,19 +571,34 @@ export function ScheduleModal({
     return { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' } // Draft
   }
 
-  const getInstructorName = (instructorId?: string) => {
-    if (!instructorId) return 'TBA'
-    return instructorsMap.get(instructorId) || 'TBA'
-  }
+  const getRoomName = (meeting: { roomId?: string; room?: unknown }) => roomScheduleRoom(meeting, roomsMap)
 
-  const getRoomName = (roomId?: string) => {
-    if (!roomId) return 'TBA'
-    return roomsMap.get(roomId) || 'TBA'
+  const renderMeetingRoom = (meeting: ScheduleMeetingRecord) => {
+    if (!roomPlot.enabled || meeting.source !== 'workbook' || meeting.schemaVersion !== 2) return (
+      <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(meeting)}>{getRoomName(meeting)}</span></span>
+    )
+    const selected = roomPlot.selected(meeting)
+    return <div className="flex min-w-0 items-center gap-1" onClick={event => event.stopPropagation()}>
+      <span className="shrink-0">Room:</span>
+      <SingleSelectDropdown portal searchable variant="meeting" menuAnchorSelector="[data-schedule-meeting]" ariaLabel={`Room for ${meeting.subjectCode || 'class'}, ${meeting.days?.join(', ')}, ${meeting.startTime}-${meeting.endTime}`}
+        options={roomPlot.roomOptions} value={selected} getOptionLabel={id => id ? roomPlot.labels.get(id) || 'Unnamed room' : 'TBA'}
+        onChange={id => roomPlot.select(meeting, id)}
+        isDisabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving}
+        className="w-0 min-w-0 flex-1 [&>input]:!h-7 [&>input]:!px-2 [&>input]:!text-xs" />
+    </div>
   }
 
   const getUserName = (uid?: string) => {
     if (!uid) return 'User'
+    if (isInstructorMode && member?.name) return member.name
     return instructorsMap.get(uid) || 'User'
+  }
+
+  const getReservationDepartment = (reservation: { department?: string; userId?: string }) => {
+    return reservation.department?.trim()
+      || (reservation.userId ? userDepartmentMap.get(reservation.userId) : '')
+      || (isInstructorMode ? member?.department || member?.departmentName : '')
+      || 'University'
   }
 
   const getUserDepartment = (uid?: string) => {
@@ -661,7 +697,12 @@ export function ScheduleModal({
             if (isScheduleInSlot(res, slot)) {
               if (grid[slot] && grid[slot][d]) {
                 if (!grid[slot][d].some(existing => existing.id === res.id)) {
-                  grid[slot][d].push({ ...res, _itemType: 'reservation' })
+                  grid[slot][d].push({
+                    ...res,
+                    subjectCode: typeof res.subjectCode === 'string' ? res.subjectCode.trim() || 'N/A' : 'N/A',
+                    classSection: typeof res.classSection === 'string' ? res.classSection.trim() || 'N/A' : 'N/A',
+                    _itemType: 'reservation'
+                  })
                 }
               }
             }
@@ -846,16 +887,24 @@ export function ScheduleModal({
                                       <div key={item.id || idx} style={{ gridRow: gridRowStyle, backgroundColor: bgColor, border: `1px solid ${borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                           <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                            {getUserDepartment(item.userId)}
+                                            {item.subjectCode || 'Reservation'}
                                           </span>
                                           <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
                                             {item.status || 'Booked'}
                                           </span>
                                         </div>
+                                        <ExtendedReservationBadge requestType={item.requestType} />
                                         <div style={{ marginTop: '4px', borderTop: `1px solid ${borderColor}`, paddingTop: '4px', fontSize: '10px', color: textColor, display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dur: <span style={{ color: '#1f2937' }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937' }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(item)}</span></div>
+                                          {!hideReservationIdentity && (
+                                            <>
+                                              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <span style={{ color: '#374151', fontWeight: 500 }}>{getUserName(item.userId)}</span></div>
+                                              <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{getReservationDepartment(item)}</span></div>
+                                            </>
+                                          )}
                                           {isInstructorMode && item.roomId && (
-                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#1f2937', fontWeight: 500 }}>{getRoomName(item.roomId)}</span></div>
+                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#1f2937', fontWeight: 500 }}>{getRoomName(item)}</span></div>
                                           )}
                                         </div>
                                       </div>
@@ -868,12 +917,13 @@ export function ScheduleModal({
                                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                         <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.subjectCode || 'TBA'}</span>
                                         <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
-                                          {item.format || 'N/A'}
+                                          {roomScheduleLabel(item)}
                                         </span>
                                       </div>
                                       <div style={{ marginTop: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{item.classSection || 'TBA'}</span></div>
-                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <span style={{ color: '#374151', fontWeight: 500 }}>{getInstructorName(item.instructorId)}</span></div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937', fontWeight: 500 }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(item)}</span></div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <span style={{ color: '#374151', fontWeight: 500 }}>{roomScheduleInstructor(item, instructorsMap)}</span></div>
                                         {!isInstructorMode && item.department && (
                                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{item.department}</span></div>
                                         )}
@@ -926,6 +976,32 @@ export function ScheduleModal({
                                 const endRow = Math.max(startRow + 1, Math.ceil((itemEndMins - slotStartMins) / 30) + 1)
                                 const gridRowStyle = `${startRow} / ${endRow}`
 
+                                if (group.parent._itemType === 'reservation') {
+                                  const item = group.parent
+                                  const isApproved = item.status === 'Approved'
+                                  const borderColor = isApproved ? '#6ee7b7' : '#fcd34d'
+                                  return (
+                                    <div key={item.id || idx} style={{ gridRow: gridRowStyle, backgroundColor: isApproved ? '#d1fae5' : '#fef3c7', border: `1px solid ${borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
+                                        <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.subjectCode || 'Reservation'}</span>
+                                        <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>{item.status || 'Booked'}</span>
+                                      </div>
+                                      <ExtendedReservationBadge requestType={item.requestType} />
+                                      <div style={{ marginTop: '4px', borderTop: `1px solid ${borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937', fontWeight: 500 }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(item)}</span></div>
+                                        {!hideReservationIdentity && (
+                                          <>
+                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <span style={{ color: '#374151', fontWeight: 500 }}>{getUserName(item.userId)}</span></div>
+                                            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{getReservationDepartment(item)}</span></div>
+                                          </>
+                                        )}
+                                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(item)}</span></div>
+                                      </div>
+                                    </div>
+                                  )
+                                }
+
                                 const pdfStyles = getPdfStatusStyles(group.parent.status)
 
                                 return group.parent.type === 'parallel' ? (
@@ -933,14 +1009,15 @@ export function ScheduleModal({
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                       <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.parent.subjectCode || 'TBA'}</span>
                                       <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
-                                        {group.parent.format || 'N/A'}
+                                        {roomScheduleLabel(group.parent)}
                                       </span>
                                     </div>
                                     <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px' }}>
                                       {[group.parent, ...group.children].map((item, iIdx) => (
                                         <div key={iIdx} style={{ display: 'flex', flexDirection: 'column', paddingLeft: '6px', borderLeft: `2px solid ${pdfStyles.borderColor}`, fontSize: '10px', color: '#4b5563' }}>
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{item.classSection || 'TBA'}</span></div>
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(item.roomId)}</span></div>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937', fontWeight: 500 }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(item)}</span></div>
+                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(item)}</span></div>
                                           {!isInstructorMode && item.department && (
                                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{item.department}</span></div>
                                           )}
@@ -953,12 +1030,13 @@ export function ScheduleModal({
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                       <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.parent.subjectCode || 'TBA'}</span>
                                       <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
-                                        {group.parent.format || 'N/A'}
+                                        {roomScheduleLabel(group.parent)}
                                       </span>
                                     </div>
                                     <div style={{ marginTop: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{group.parent.classSection || 'TBA'}</span></div>
-                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(group.parent.roomId)}</span></div>
+                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937', fontWeight: 500 }}>{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></div>
+                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(group.parent)}</span></div>
+                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(group.parent)}</span></div>
                                       {!isInstructorMode && group.parent.department && (
                                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{group.parent.department}</span></div>
                                       )}
@@ -1051,6 +1129,7 @@ export function ScheduleModal({
                 <div className="w-52">
                   <SingleSelectDropdown
                     options={academicYearOptions}
+                    isDisabled={roomPlot.saving}
                     value={selectedAcademicYear?.academicYear || ''}
                     onChange={(val) => {
                       const found = academicYears.find(y => y.academicYear === val)
@@ -1069,6 +1148,7 @@ export function ScheduleModal({
               <div className="w-52">
                 <SingleSelectDropdown
                   options={['1st Semester', '2nd Semester'] as const}
+                  isDisabled={roomPlot.saving}
                   value={selectedSemester as '1st Semester' | '2nd Semester'}
                   onChange={(val) => setSelectedSemester(val)}
                   className="[&>button]:!rounded-xl [&>button]:!bg-white [&>button]:!border-white/30 [&>button]:!shadow-sm"
@@ -1085,6 +1165,10 @@ export function ScheduleModal({
               <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
               <p className="text-sm font-bold text-slate-700">Loading schedule...</p>
               <p className="text-xs text-slate-400">Retrieving timetable assignments.</p>
+            </div>
+          ) : scheduleLoadError ? (
+            <div role="alert" className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
+              <p className="text-sm font-bold text-rose-700">{scheduleLoadError}</p>
             </div>
           ) : isInstructorMode && member?.role === 'Dean' ? (
             <div className="flex-1 min-h-[22rem] flex flex-col items-center justify-center p-8 text-center">
@@ -1184,7 +1268,9 @@ export function ScheduleModal({
                             timeToMins(daySchedules[0].endTime) >= slotEndMins;
 
                           const gridRowsStyle = daySchedules.length > 0
-                            ? (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`)
+                            ? daySchedules.some(item => item._itemType === 'reservation')
+                              ? `repeat(${numSubRows}, minmax(${isSingleFullSlot ? '0' : '4rem'}, 1fr))`
+                              : (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`)
                             : 'auto';
 
                           return (
@@ -1210,24 +1296,32 @@ export function ScheduleModal({
                                     <div
                                       key={item.id || idx}
                                       style={{ gridRow: gridRowStyle }}
-                                      className={`flex flex-col p-2 rounded text-sm shadow-sm transition-shadow min-w-0 min-h-0 border overflow-hidden ${isApproved
+                                      className={`flex flex-col p-2 rounded text-sm shadow-sm transition-shadow min-w-0 min-h-max border overflow-hidden ${isApproved
                                           ? 'bg-emerald-500/10 border-emerald-500/30'
                                           : 'bg-amber-500/10 border-amber-500/30'
                                         }`}
                                     >
                                       <div className="flex flex-row items-center gap-1.5 min-w-0">
                                         <span className="font-bold text-gray-900 uppercase truncate">
-                                          {getUserDepartment(item.userId)}
+                                          {item.subjectCode || 'Reservation'}
                                         </span>
                                         <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
                                           {item.status || 'Booked'}
                                         </span>
                                       </div>
+                                      <ExtendedReservationBadge requestType={item.requestType} />
                                       <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${isApproved ? 'border-emerald-500/20 text-emerald-900/80' : 'border-amber-500/20 text-amber-900/80'
                                         }`}>
-                                        <span className="truncate text-gray-500">Dur: <span className="text-gray-700 font-medium">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                        <span className="truncate text-gray-500 shrink-0">Time: <span className="text-gray-700 font-medium">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                        <span className="truncate text-gray-500 shrink-0" title={scheduleSectionLabel(item)}>Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>
+                                        {!hideReservationIdentity && (
+                                          <>
+                                            <span className="truncate text-gray-500 shrink-0" title={getUserName(item.userId)}>Inst: <span className="font-medium text-gray-700">{getUserName(item.userId)}</span></span>
+                                            <span className="truncate text-gray-500 shrink-0" title={getReservationDepartment(item)}>Dept: <span className="font-medium text-gray-600">{getReservationDepartment(item)}</span></span>
+                                          </>
+                                        )}
                                         {isInstructorMode && item.roomId && (
-                                          <span className="truncate text-gray-500">Room: <span className="text-gray-700 font-medium">{getRoomName(item.roomId)}</span></span>
+                                          <span className="truncate text-gray-500">Room: <span className="text-gray-700 font-medium">{getRoomName(item)}</span></span>
                                         )}
                                       </div>
                                     </div>
@@ -1237,15 +1331,16 @@ export function ScheduleModal({
                                 return (
                                   <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(item.status)}`}>
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
-                                      <span className="font-bold text-gray-900 uppercase truncate">{item.subjectCode || 'TBA'}</span>
+                                      <span className="font-bold text-gray-900 uppercase truncate" title={item.subjectTitle}>{item.subjectCode || 'TBA'}</span>
                                       <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                        {item.format || 'N/A'}
+                                        {roomScheduleLabel(item)}
                                       </span>
                                     </div>
                                     <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
-                                      <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                      <span className="truncate">Inst: <span className="text-gray-700 font-medium truncate" title={getInstructorName(item.instructorId)}>
-                                        {getInstructorName(item.instructorId)}
+                                      <span className="truncate" title={`${formatTime(item.startTime)} - ${formatTime(item.endTime)}`}>Time: <span className="font-medium text-gray-700">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                      <span className="truncate" title={scheduleSectionLabel(item)}>Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>
+                                      <span className="truncate">Inst: <span className="text-gray-700 font-medium truncate" title={roomScheduleInstructor(item, instructorsMap)}>
+                                        {roomScheduleInstructor(item, instructorsMap)}
                                       </span></span>
                                       {!isInstructorMode && item.department && (
                                         <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
@@ -1293,7 +1388,9 @@ export function ScheduleModal({
                           timeToMins(grouped[0].parent.endTime) >= slotEndMins;
 
                         const gridRowsStyle = grouped.length > 0
-                          ? (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`)
+                          ? grouped.some(group => group.parent._itemType === 'reservation')
+                            ? `repeat(${numSubRows}, minmax(${isSingleFullSlot ? '0' : '4rem'}, 1fr))`
+                            : (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`)
                           : 'auto';
 
                         return (
@@ -1320,31 +1417,32 @@ export function ScheduleModal({
                                   <div
                                     key={item.id || idx}
                                     style={{ gridRow: gridRowStyle }}
-                                    className={`flex flex-col p-2 rounded text-sm shadow-sm transition-shadow min-w-0 min-h-0 border overflow-hidden ${isApproved
+                                    className={`flex flex-col p-2 rounded text-sm shadow-sm transition-shadow min-w-0 min-h-max border overflow-hidden ${isApproved
                                         ? 'bg-emerald-500/10 border-emerald-500/30'
                                         : 'bg-amber-500/10 border-amber-500/30'
                                       }`}
                                   >
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate">
-                                        {isInstructorMode ? getRoomName(item.roomId) : getUserDepartment(item.userId)}
+                                        {item.subjectCode || 'Reservation'}
                                       </span>
                                       <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
                                         {item.status || 'Booked'}
                                       </span>
                                     </div>
+                                    <ExtendedReservationBadge requestType={item.requestType} />
                                     <div className={`mt-1.5 flex flex-col gap-0.5 text-xs min-w-0 border-t pt-1.5 ${isApproved ? 'border-emerald-500/20 text-emerald-900/80' : 'border-amber-500/20 text-amber-900/80'
                                       }`}>
-                                      <span className="truncate text-gray-500">Dur: <span className="text-gray-700 font-medium">
-                                        {(() => {
-                                          const diff = timeToMins(item.endTime) - timeToMins(item.startTime)
-                                          if (diff >= 60 && diff % 60 === 0) return `${diff / 60} hr${diff / 60 > 1 ? 's' : ''}`
-                                          if (diff > 60) return `${Math.floor(diff / 60)} hr ${diff % 60} mins`
-                                          return `${diff} mins`
-                                        })()}
-                                      </span></span>
+                                      <span className="truncate text-gray-500 shrink-0">Time: <span className="font-medium text-gray-700">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                        <span className="truncate text-gray-500 shrink-0" title={scheduleSectionLabel(item)}>Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>
+                                      {!hideReservationIdentity && (
+                                        <>
+                                          <span className="truncate text-gray-500 shrink-0" title={getUserName(item.userId)}>Inst: <span className="font-medium text-gray-700">{getUserName(item.userId)}</span></span>
+                                          <span className="truncate text-gray-500 shrink-0" title={getReservationDepartment(item)}>Dept: <span className="font-medium text-gray-600">{getReservationDepartment(item)}</span></span>
+                                        </>
+                                      )}
                                       {isInstructorMode && item.roomId && (
-                                        <span className="truncate text-gray-500">Room: <span className="text-gray-700 font-medium">{getRoomName(item.roomId)}</span></span>
+                                        <span className="truncate text-gray-500">Room: <span className="text-gray-700 font-medium">{getRoomName(item)}</span></span>
                                       )}
                                     </div>
                                   </div>
@@ -1352,12 +1450,12 @@ export function ScheduleModal({
                               }
 
                               return group.parent.type === 'parallel' ? (
-                                <div key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(group.parent.status)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent.status)}`}>
                                   <div className="flex flex-col focus:outline-none min-w-0">
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                       <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                        {group.parent.format || 'N/A'}
+                                        {roomScheduleLabel(group.parent)}
                                       </span>
                                     </div>
                                   </div>
@@ -1365,10 +1463,9 @@ export function ScheduleModal({
                                     {[group.parent, ...group.children].map((item, iIdx) => (
                                       <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
                                         <div className="flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{item.classSection || 'TBA'}</span></span>
-                                          <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(item.roomId)}>
-                                            {getRoomName(item.roomId)}
-                                          </span></span>
+                                          <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>
+                                          {renderMeetingRoom(item)}
                                           {!isInstructorMode && item.department && (
                                             <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
                                           )}
@@ -1378,18 +1475,17 @@ export function ScheduleModal({
                                   </div>
                                 </div>
                               ) : group.children.length > 0 ? (
-                                <div key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(group.parent.status)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent.status)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                      {group.parent.format || 'N/A'}
+                                      {roomScheduleLabel(group.parent)}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                    <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                    <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(group.parent.roomId)}>
-                                      {getRoomName(group.parent.roomId)}
-                                    </span></span>
+                                    <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></span>
+                                    <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(group.parent)}</span></span>
+                                    {renderMeetingRoom(group.parent)}
                                     {!isInstructorMode && group.parent.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
                                     )}
@@ -1399,10 +1495,9 @@ export function ScheduleModal({
                                       <div key={cIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
                                         <span className="font-bold text-gray-900 uppercase truncate">{child.subjectCode || 'TBA'}</span>
                                         <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{child.classSection || 'TBA'}</span></span>
-                                          <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(child.roomId)}>
-                                            {getRoomName(child.roomId)}
-                                          </span></span>
+                                          <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(child.startTime)} - {formatTime(child.endTime)}</span></span>
+                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(child)}</span></span>
+                                          {renderMeetingRoom(child)}
                                           {!isInstructorMode && child.department && (
                                             <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{child.department}</span></span>
                                           )}
@@ -1412,18 +1507,17 @@ export function ScheduleModal({
                                   </div>
                                 </div>
                               ) : (
-                                <div key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(group.parent.status)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent.status)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                      {group.parent.format || 'N/A'}
+                                      {roomScheduleLabel(group.parent)}
                                     </span>
                                   </div>
                                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
-                                    <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{group.parent.classSection || 'TBA'}</span></span>
-                                    <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(group.parent.roomId)}>
-                                      {getRoomName(group.parent.roomId)}
-                                    </span></span>
+                                    <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></span>
+                                    <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(group.parent)}</span></span>
+                                    {renderMeetingRoom(group.parent)}
                                     {!isInstructorMode && group.parent.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
                                     )}
@@ -1450,16 +1544,26 @@ export function ScheduleModal({
             ) : (
               <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
             )}
+            {roomPlot.enabled && <p role={roomPlot.error ? 'alert' : 'status'} className={`mt-1 max-w-xl whitespace-normal ${roomPlot.error ? 'text-rose-700' : 'text-gray-600'}`}>
+              {roomPlot.error || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} room changes ready to plot.` : 'Choose rooms for the meetings, then click Plot.')}
+            </p>}
           </div>
           <div className="flex items-center gap-3">
-            {actionButton !== undefined ? (
+            {roomPlot.enabled ? (
+              <Button type="button" variant="primary" onClick={() => { void roomPlot.save() }}
+                disabled={isLoading || Boolean(scheduleLoadError) || !roomPlot.ready || !roomPlot.permitted || roomPlot.saving || !roomPlot.pendingCount || memberRole === 'Dean'}
+                className="w-45 px-4 text-sm flex items-center justify-center gap-2 !bg-[var(--brand-color)] hover:!bg-[var(--brand-color-hover)] text-white shadow-sm disabled:opacity-50 cursor-pointer"
+                icon={roomPlot.saving ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <CheckCircleIcon className="h-4 w-4" />}>
+                {roomPlot.saving ? 'Plotting…' : 'Plot'}
+              </Button>
+            ) : actionButton !== undefined ? (
               actionButton
             ) : (
               <Button
                 type="button"
                 variant="primary"
                 onClick={handleDownloadPdf}
-                disabled={isLoading || isGeneratingPdf || (isInstructorMode && member?.role === 'Dean')}
+                disabled={isLoading || Boolean(scheduleLoadError) || isGeneratingPdf || (isInstructorMode && member?.role === 'Dean')}
                 className="w-45 px-4 text-sm flex items-center justify-center gap-2 !bg-[var(--brand-color)] hover:!bg-[var(--brand-color-hover)] text-white shadow-sm disabled:opacity-50 cursor-pointer"
                 icon={isGeneratingPdf ? undefined : <DownloadIcon className="h-4 w-4" />}
               >
@@ -1471,7 +1575,7 @@ export function ScheduleModal({
                 type="button"
                 variant="outline"
                 onClick={onBack}
-                disabled={isGeneratingPdf}
+                disabled={isGeneratingPdf || roomPlot.saving}
                 className="px-5 text-sm"
               >
                 Back
@@ -1481,7 +1585,7 @@ export function ScheduleModal({
               type="button"
               variant="outline"
               onClick={onClose}
-              disabled={isGeneratingPdf}
+              disabled={isGeneratingPdf || roomPlot.saving}
               className="px-5 text-sm"
             >
               Close
@@ -1489,7 +1593,7 @@ export function ScheduleModal({
           </div>
         </div>
       </div>
-      <div className="absolute inset-0 -z-10" onClick={onClose} />
+      <div className="absolute inset-0 -z-10" onClick={() => { if (!roomPlot.saving) onClose() }} />
     </div>
   )
 }

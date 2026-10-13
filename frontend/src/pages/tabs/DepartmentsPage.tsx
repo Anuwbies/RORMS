@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useLayoutEffect, useMemo, useCallback } from 'react'
+import { formatUserName } from '../../utils/userName'
 import { DepartmentIcon, PlusIcon, EditIcon, TrashIcon, UsersIcon, CloseIcon, UploadIcon, CheckIcon, UserIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SearchFilters } from '../../components/SearchFilters'
@@ -150,7 +151,7 @@ function DepartmentsPage() {
           return {
             id: mData.userId,
             membershipId: mDoc.id,
-            name: userData.fullName || mData.fullName || '',
+            name: formatUserName(userData, mData),
             email: userData.email || mData.email || '',
             role: (mData.role as any) || 'Instructor',
             status: (userData.isActive === false) ? 'Deactivated' : (mData.status === 'pending' ? 'Pending' : 'Active'),

@@ -1,20 +1,935 @@
 rules_version = '2';
 
+// Deployment note (user-supplied, 2026-10-12): the currently deployed rules
+// allow all top-level document reads/writes and all nested reads/writes except
+// users/{userId}/notifications/{notificationId}. Notifications require the
+// recipient's authentication for read/update/delete and deny client creation.
+// This local file contains stricter collection-specific rules; it does not
+// represent the deployed policy until explicitly deployed.
+// Firestore rules do not control HTTPS callable CORS or function deployment.
+// updateReservationStatus must be built and deployed separately; a missing
+// function endpoint can return a 404 without CORS headers even with open rules.
+
 service cloud.firestore {
   match /databases/{database}/documents {
+    function canSaveWorkbook(departmentId, yearId, semester, membershipId) {
+      let member = get(/databases/$(database)/documents/memberships/$(membershipId)).data;
+      let department = get(/databases/$(database)/documents/departments/$(departmentId)).data;
+      let year = get(/databases/$(database)/documents/academicYears/$(yearId)).data;
+      return request.auth != null && semester in ['sem1', 'sem2']
+        && member.userId == request.auth.uid && member.status == 'accepted'
+        && ((member.role == 'Admin' && year[semester].phase in ['Drafting', 'Plotting', 'Revision', 'Final'])
+          || (member.role in ['Dean', 'Program Head'] && member.department == department.code
+            && year[semester].phase in ['Drafting', 'Revision']));
+    }
+
+    function namedYear(yearId) {
+      return get(/databases/$(database)/documents/academicYears/$(yearId)).data.academicYear.replace('[ ]', '');
+    }
+
+    function testPath(data) {
+      let year = namedYear(data.academicYearId);
+      return /databases/$(database)/documents/departments/$(data.departmentId)/test_workbooks/$(year)/semesters/$(data.semester);
+    }
+
+    function legacyTestPath(data) {
+      return /databases/$(database)/documents/departments/$(data.departmentId)/scheduleYears/$(data.academicYearId)/testSemesters/$(data.semester);
+    }
+
+    function namedLegacyTestPath(data) {
+      let year = namedYear(data.academicYearId);
+      return /databases/$(database)/documents/departments/$(data.departmentId)/scheduleYears/$(year)/testSemesters/$(data.semester);
+    }
+
+    function previousTestPath(data) {
+      let year = namedYear(data.academicYearId);
+      let document = data.semester + 'data';
+      return /databases/$(database)/documents/departments/$(data.departmentId)/workbooks/$(year)/$(data.semester)/$(document);
+    }
+
+    function historicalTestManifest(data) {
+      let named = namedLegacyTestPath(data);
+      let legacy = legacyTestPath(data);
+      return exists(named) ? get(named).data : (exists(legacy) ? get(legacy).data : {});
+    }
+
+    function previousTestManifest(data) {
+      let path = previousTestPath(data);
+      return exists(path) ? get(path).data : historicalTestManifest(data);
+    }
+
+    function priorTestManifest(data) {
+      let path = testPath(data);
+      return exists(path) ? get(path).data : previousTestManifest(data);
+    }
+
+    function productionPath(data) {
+      let year = namedYear(data.academicYearId);
+      return /databases/$(database)/documents/departments/$(data.departmentId)/workbooks/$(year)/semesters/$(data.semester);
+    }
+
+    function previousProductionManifest(data) {
+      let year = namedYear(data.academicYearId);
+      let document = data.semester + 'storage';
+      let previous = /databases/$(database)/documents/departments/$(data.departmentId)/workbooks/$(year)/$(data.semester)/$(document);
+      let named = /databases/$(database)/documents/departments/$(data.departmentId)/scheduleYears/$(year)/semesters/$(data.semester);
+      let legacy = /databases/$(database)/documents/departments/$(data.departmentId)/scheduleYears/$(data.academicYearId)/semesters/$(data.semester);
+      return exists(previous) ? get(previous).data : (exists(named) ? get(named).data : (exists(legacy) ? get(legacy).data : {}));
+    }
+
+    function priorProductionManifest(data) {
+      let path = productionPath(data);
+      return exists(path) ? get(path).data : previousProductionManifest(data);
+    }
+
+    function sameOrMovedSource(before, after) {
+      return before.sourceWorkbook == after.sourceWorkbook
+        || before.sourceWorkbook == 'departments/' + after.departmentId + '/workbooks/' + namedYear(after.academicYearId) + '/' + after.semester + '/' + after.semester + 'data'
+        || before.sourceWorkbook == 'departments/' + after.departmentId + '/scheduleYears/' + after.academicYearId + '/testSemesters/' + after.semester
+        || before.sourceWorkbook == 'departments/' + after.departmentId + '/scheduleYears/' + namedYear(after.academicYearId) + '/testSemesters/' + after.semester;
+    }
+
+    match /departments/{departmentId}/scheduleYears/{yearId}/semesters/{semester} {
+      function validWorkbook() {
+        let data = request.resource.data;
+        let base = 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/revisions/';
+        let grant = get(/databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester)/uploads/$(data.revisionId)).data;
+        return data.keys().hasAll(['schemaVersion', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'workbookPath', 'editorStatePath', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'workbookPath', 'editorStatePath', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.schemaVersion == 1 && data.departmentId == departmentId && yearId in [data.academicYearId, namedYear(data.academicYearId)] && data.semester == semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.revision is int && data.revision > 0 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.workbookPath is string && data.editorStatePath == base + data.revisionId + '/editor.json'
+          && data.savedBy == request.auth.uid && data.membershipId is string
+          && data.createdAt is timestamp && data.updatedAt == request.time
+          && grant.savedBy == request.auth.uid && grant.membershipId == data.membershipId
+          && grant.createdAt > request.time - duration.value(10, 'm')
+          && canSaveWorkbook(departmentId, data.academicYearId, semester, data.membershipId);
+      }
+      allow read: if request.auth != null;
+      function legacyWorkbook() {
+        let academicId = request.resource.data.academicYearId;
+        let path = /databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(academicId)/semesters/$(semester);
+        return exists(path) ? get(path).data : {};
+      }
+      allow create: if validWorkbook()
+        && request.resource.data.revision == legacyWorkbook().get('revision', 0) + 1
+        && request.resource.data.createdAt == legacyWorkbook().get('createdAt', request.time)
+        && (request.resource.data.workbookPath == legacyWorkbook().get('workbookPath', '')
+          || request.resource.data.workbookPath == 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/revisions/' + request.resource.data.revisionId + '/original.xlsx');
+      allow update: if validWorkbook() && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.createdAt == resource.data.createdAt
+        && ((request.resource.data.workbookPath == resource.data.workbookPath && request.resource.data.fileName == resource.data.fileName)
+          || request.resource.data.workbookPath == 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/revisions/' + request.resource.data.revisionId + '/original.xlsx');
+      allow delete: if false;
+
+      // Storage rules use this short-lived authorization to stay within their
+      // two-document Firestore lookup limit while checking the current phase.
+      match /uploads/{uploadId} {
+        allow read: if request.auth != null && resource.data.savedBy == request.auth.uid;
+        allow create: if uploadId.matches('[a-zA-Z0-9_-]+')
+          && request.resource.data.keys().hasAll(['savedBy', 'membershipId', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['savedBy', 'membershipId', 'academicYearId', 'createdAt'])
+          && request.resource.data.savedBy == request.auth.uid && request.resource.data.membershipId is string
+          && request.resource.data.createdAt == request.time
+          && yearId in [request.resource.data.get('academicYearId', yearId), namedYear(request.resource.data.get('academicYearId', yearId))]
+          && canSaveWorkbook(departmentId, request.resource.data.get('academicYearId', yearId), semester, request.resource.data.membershipId);
+        allow update: if false;
+        allow delete: if request.auth != null && resource.data.savedBy == request.auth.uid;
+      }
+    }
+    // Isolated Firestore-only workbooks used by the testing tab.
+    match /departments/{departmentId}/scheduleYears/{yearId}/testSemesters/{semester} {
+      function validTestWorkbook() {
+        let data = request.resource.data;
+        let grant = get(/databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/testSemesters/$(semester)/revisions/$(data.revisionId)).data;
+        return request.auth != null
+          && data.keys().hasAll(['schemaVersion', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.schemaVersion == 1 && data.departmentId == departmentId && yearId in [data.academicYearId, namedYear(data.academicYearId)] && data.semester == semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.sheetIds is list && data.sheetIds.size() > 0 && data.sheetIds.size() <= 1000
+          && data.sheetNames is list && data.sheetNames.size() == data.sheetIds.size()
+          && data.sheetIds.toSet().size() == data.sheetIds.size() && data.sheetNames.toSet().size() == data.sheetNames.size()
+          && data.selectedSheet is string && data.selectedSheet in data.sheetNames
+          && data.selectionJson is string && data.selectionJson.size() <= 2048
+          && data.revision is int && data.revision > 0 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.savedBy == request.auth.uid && data.membershipId is string
+          && data.createdAt is timestamp && data.updatedAt == request.time
+          && grant.savedBy == request.auth.uid && grant.membershipId == data.membershipId
+          && grant.createdAt > request.time - duration.value(10, 'm')
+          && canSaveWorkbook(departmentId, data.academicYearId, semester, data.membershipId);
+      }
+      function validTestWorkbookV2() {
+        let data = request.resource.data;
+        let lease = get(/databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/testSemesters/$(semester)/saveLocks/current).data;
+        return request.auth != null
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'slot', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'slot', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.schemaVersion == 2 && data.workbookId is string && data.workbookId.matches('test_[a-f0-9]{64}') && data.slot in ['a', 'b']
+          && data.departmentId == departmentId && yearId in [data.academicYearId, namedYear(data.academicYearId)] && data.semester == semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.sheetIds is list && data.sheetIds.size() > 0 && data.sheetIds.size() <= 1000
+          && data.sheetNames is list && data.sheetNames.size() == data.sheetIds.size()
+          && data.sheetIds.toSet().size() == data.sheetIds.size() && data.sheetNames.toSet().size() == data.sheetNames.size()
+          && data.selectedSheet is string && data.selectedSheet in data.sheetNames && data.selectionJson is string && data.selectionJson.size() <= 2048
+          && data.revision is int && data.revision > 0 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.savedBy == request.auth.uid && data.membershipId is string && data.createdAt is timestamp && data.updatedAt == request.time
+          && lease.status == 'saving' && lease.saveId == data.revisionId && lease.savedBy == request.auth.uid && lease.membershipId == data.membershipId
+          && lease.createdAt > request.time - duration.value(10, 'm')
+          && canSaveWorkbook(departmentId, data.academicYearId, semester, data.membershipId);
+      }
+      function validTestWorkbookV3() {
+        let data = request.resource.data;
+        let lockPath = /databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/testSemesters/$(semester)/saveLocks/current;
+        return request.auth != null
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'sheetSlots', 'sheetRevisionIds', 'cellCounts', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'sheetSlots', 'sheetRevisionIds', 'cellCounts', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.schemaVersion == 3 && data.workbookId is string && data.workbookId.matches('test_[a-f0-9]{64}')
+          && data.departmentId == departmentId && yearId in [data.academicYearId, namedYear(data.academicYearId)] && data.semester == semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.sheetIds is list && data.sheetIds.size() <= 1000
+          && data.sheetNames is list && data.sheetNames.size() == data.sheetIds.size()
+          && data.sheetIds.toSet().size() == data.sheetIds.size() && data.sheetNames.toSet().size() == data.sheetNames.size()
+          && data.sheetSlots is list && data.sheetSlots.size() == data.sheetIds.size() && data.sheetSlots.toSet().hasOnly(['a', 'b'])
+          && data.sheetRevisionIds is list && data.sheetRevisionIds.size() == data.sheetIds.size()
+          && data.cellCounts is list && data.cellCounts.size() == data.sheetIds.size()
+          && data.selectedSheet is string && (data.sheetIds.size() == 0 ? data.selectedSheet == '' : data.selectedSheet in data.sheetNames) && data.selectionJson is string && data.selectionJson.size() <= 2048
+          && data.revision is int && data.revision > 0 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.savedBy == request.auth.uid && data.membershipId is string && data.createdAt is timestamp && data.updatedAt == request.time
+          && (!exists(lockPath) || get(lockPath).data.status == 'idle' || get(lockPath).data.createdAt <= request.time - duration.value(10, 'm')
+            || (get(lockPath).data.saveId == data.revisionId && get(lockPath).data.savedBy == request.auth.uid))
+          && canSaveWorkbook(departmentId, data.academicYearId, semester, data.membershipId);
+      }
+      allow read: if request.auth != null;
+      function legacyTestWorkbook() {
+        let path = legacyTestPath(request.resource.data);
+        return exists(path) ? get(path).data : {};
+      }
+      allow create: if ((request.resource.data.schemaVersion == 1 && validTestWorkbook())
+          || (request.resource.data.schemaVersion == 2 && request.resource.data.slot == 'a' && validTestWorkbookV2())
+          || (request.resource.data.schemaVersion == 3 && validTestWorkbookV3()))
+        && request.resource.data.revision == legacyTestWorkbook().get('revision', 0) + 1
+        && request.resource.data.createdAt == legacyTestWorkbook().get('createdAt', request.time);
+      allow update: if ((request.resource.data.schemaVersion == 1 && resource.data.schemaVersion == 1 && validTestWorkbook())
+          || (request.resource.data.schemaVersion == 2 && validTestWorkbookV2()
+            && ((resource.data.schemaVersion == 1 && request.resource.data.slot == 'a')
+              || (resource.data.schemaVersion == 2 && request.resource.data.workbookId == resource.data.workbookId && request.resource.data.slot != resource.data.slot)))
+          || (request.resource.data.schemaVersion == 3 && validTestWorkbookV3()
+            && (resource.data.schemaVersion != 3 || request.resource.data.workbookId == resource.data.workbookId)))
+        && request.resource.data.revision == resource.data.revision + 1 && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+
+      match /saveLocks/{lockId} {
+        function validLease() {
+          let data = request.resource.data;
+          return request.auth != null && lockId == 'current'
+            && data.keys().hasAll(['status', 'saveId', 'savedBy', 'membershipId', 'createdAt'])
+            && data.keys().hasOnly(['status', 'saveId', 'savedBy', 'membershipId', 'academicYearId', 'createdAt'])
+            && data.status == 'saving' && data.saveId is string && data.saveId.matches('[a-zA-Z0-9_-]+')
+            && data.savedBy == request.auth.uid && data.membershipId is string && data.createdAt == request.time
+            && yearId in [data.get('academicYearId', yearId), namedYear(data.get('academicYearId', yearId))]
+            && canSaveWorkbook(departmentId, data.get('academicYearId', yearId), semester, data.membershipId);
+        }
+        allow read: if request.auth != null;
+        allow create: if validLease();
+        allow update: if (validLease() && (resource.data.status == 'idle' || resource.data.createdAt <= request.time - duration.value(10, 'm')))
+          || (request.auth != null && resource.data.savedBy == request.auth.uid && resource.data.status == 'saving'
+            && request.resource.data.status == 'idle' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+        allow delete: if false;
+      }
+
+      match /revisions/{revisionId} {
+        allow read: if request.auth != null;
+        allow create: if request.auth != null && revisionId.matches('[a-zA-Z0-9_-]+')
+          && request.resource.data.keys().hasAll(['savedBy', 'membershipId', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['savedBy', 'membershipId', 'createdAt'])
+          && request.resource.data.savedBy == request.auth.uid && request.resource.data.membershipId is string
+          && request.resource.data.createdAt == request.time
+          && canSaveWorkbook(departmentId, yearId, semester, request.resource.data.membershipId);
+        allow update: if false;
+        allow delete: if request.auth != null && resource.data.savedBy == request.auth.uid
+          && (!exists(/databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/testSemesters/$(semester))
+            || get(/databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/testSemesters/$(semester)).data.revisionId != revisionId);
+      }
+    }
+
+    match /departments/{departmentId}/workbooks/{yearId}/{semester}/{workbookDocument} {
+      function validWorkbook() {
+        let data = request.resource.data;
+        let base = 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/workbooks/';
+        let grant = get(/databases/$(database)/documents/departments/$(departmentId)/workbooks/$(yearId)/$(semester)/$(workbookDocument)/uploads/$(data.revisionId)).data;
+        return data.keys().hasAll(['schemaVersion', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'workbookPath', 'editorStatePath', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'workbookPath', 'editorStatePath', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && workbookDocument == semester + 'storage' && data.schemaVersion == 1 && data.departmentId == departmentId && yearId == namedYear(data.academicYearId) && data.semester == semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.revision is int && data.revision > 0 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.workbookPath is string && data.editorStatePath == base + data.revisionId + '/editor.json'
+          && data.savedBy == request.auth.uid && data.membershipId is string
+          && data.createdAt is timestamp && data.updatedAt == request.time
+          && grant.savedBy == request.auth.uid && grant.membershipId == data.membershipId
+          && grant.createdAt > request.time - duration.value(10, 'm')
+          && canSaveWorkbook(departmentId, data.academicYearId, semester, data.membershipId);
+      }
+      allow read: if request.auth != null && semester in ['sem1', 'sem2'] && workbookDocument == semester + 'storage';
+      function legacyWorkbook() {
+        let academicId = request.resource.data.academicYearId;
+        let named = /databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester);
+        let path = /databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(academicId)/semesters/$(semester);
+        return exists(named) ? get(named).data : (exists(path) ? get(path).data : {});
+      }
+      allow create: if validWorkbook()
+        && request.resource.data.revision == legacyWorkbook().get('revision', 0) + 1
+        && request.resource.data.createdAt == legacyWorkbook().get('createdAt', request.time)
+        && (request.resource.data.workbookPath == legacyWorkbook().get('workbookPath', '')
+          || request.resource.data.workbookPath == 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/workbooks/' + request.resource.data.revisionId + '/original.xlsx');
+      allow update: if validWorkbook() && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.createdAt == resource.data.createdAt
+        && ((request.resource.data.workbookPath == resource.data.workbookPath && request.resource.data.fileName == resource.data.fileName)
+          || request.resource.data.workbookPath == 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/workbooks/' + request.resource.data.revisionId + '/original.xlsx');
+      allow delete: if false;
+
+      // Storage rules use this short-lived authorization to stay within their
+      // two-document Firestore lookup limit while checking the current phase.
+      match /uploads/{uploadId} {
+        allow read: if request.auth != null && workbookDocument == semester + 'storage' && resource.data.savedBy == request.auth.uid;
+        allow create: if workbookDocument == semester + 'storage' && uploadId.matches('[a-zA-Z0-9_-]+')
+          && request.resource.data.keys().hasAll(['savedBy', 'membershipId', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['savedBy', 'membershipId', 'academicYearId', 'createdAt'])
+          && request.resource.data.savedBy == request.auth.uid && request.resource.data.membershipId is string
+          && request.resource.data.createdAt == request.time
+          && yearId == namedYear(request.resource.data.academicYearId)
+          && canSaveWorkbook(departmentId, request.resource.data.get('academicYearId', yearId), semester, request.resource.data.membershipId);
+        allow update: if false;
+        allow delete: if request.auth != null && workbookDocument == semester + 'storage' && resource.data.savedBy == request.auth.uid;
+      }
+    }
+    match /departments/{departmentId}/workbooks/{yearId}/semesters/{semester} {
+      function validWorkbook() {
+        let data = request.resource.data;
+        let base = 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/semesters/';
+        let grant = get(/databases/$(database)/documents/departments/$(departmentId)/workbooks/$(yearId)/semesters/$(semester)/uploads/$(data.revisionId)).data;
+        return data.keys().hasAll(['schemaVersion', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'workbookPath', 'editorStatePath', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'workbookPath', 'editorStatePath', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && semester in ['sem1', 'sem2'] && data.schemaVersion == 1 && data.departmentId == departmentId && yearId == namedYear(data.academicYearId) && data.semester == semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.revision is int && data.revision > 0 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.workbookPath is string && data.editorStatePath == base + data.revisionId + '/editor.json'
+          && data.savedBy == request.auth.uid && data.membershipId is string
+          && data.createdAt is timestamp && data.updatedAt == request.time
+          && grant.savedBy == request.auth.uid && grant.membershipId == data.membershipId
+          && grant.createdAt > request.time - duration.value(10, 'm')
+          && canSaveWorkbook(departmentId, data.academicYearId, semester, data.membershipId);
+      }
+      allow read: if request.auth != null && semester in ['sem1', 'sem2'];
+      function legacyWorkbook() {
+        let academicId = request.resource.data.academicYearId;
+        let previousDocument = semester + 'storage';
+        let previous = /databases/$(database)/documents/departments/$(departmentId)/workbooks/$(yearId)/$(semester)/$(previousDocument);
+        let named = /databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester);
+        let path = /databases/$(database)/documents/departments/$(departmentId)/scheduleYears/$(academicId)/semesters/$(semester);
+        return exists(previous) ? get(previous).data : (exists(named) ? get(named).data : (exists(path) ? get(path).data : {}));
+      }
+      allow create: if validWorkbook()
+        && request.resource.data.revision == legacyWorkbook().get('revision', 0) + 1
+        && request.resource.data.createdAt == legacyWorkbook().get('createdAt', request.time)
+        && (request.resource.data.workbookPath == legacyWorkbook().get('workbookPath', '')
+          || request.resource.data.workbookPath == 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/semesters/' + request.resource.data.revisionId + '/original.xlsx');
+      allow update: if validWorkbook() && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.createdAt == resource.data.createdAt
+        && ((request.resource.data.workbookPath == resource.data.workbookPath && request.resource.data.fileName == resource.data.fileName)
+          || request.resource.data.workbookPath == 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/semesters/' + request.resource.data.revisionId + '/original.xlsx');
+      allow delete: if false;
+
+      // Storage rules use this short-lived authorization to stay within their
+      // two-document Firestore lookup limit while checking the current phase.
+      match /uploads/{uploadId} {
+        allow read: if request.auth != null && semester in ['sem1', 'sem2'] && resource.data.savedBy == request.auth.uid;
+        allow create: if semester in ['sem1', 'sem2'] && uploadId.matches('[a-zA-Z0-9_-]+')
+          && request.resource.data.keys().hasAll(['savedBy', 'membershipId', 'createdAt'])
+          && request.resource.data.keys().hasOnly(['savedBy', 'membershipId', 'academicYearId', 'createdAt'])
+          && request.resource.data.savedBy == request.auth.uid && request.resource.data.membershipId is string
+          && request.resource.data.createdAt == request.time
+          && yearId == namedYear(request.resource.data.academicYearId)
+          && canSaveWorkbook(departmentId, request.resource.data.get('academicYearId', yearId), semester, request.resource.data.membershipId);
+        allow update: if false;
+        allow delete: if request.auth != null && semester in ['sem1', 'sem2'] && resource.data.savedBy == request.auth.uid;
+      }
+    }
+    // Retain access to testing data saved before the collections were separated.
+    match /departments/{departmentId}/workbooks/{yearId}/{semester}/{workbookDocument} {
+      allow read: if request.auth != null && semester in ['sem1', 'sem2'] && workbookDocument == semester + 'data';
+      match /saveLocks/{lockId} {
+        allow read: if request.auth != null && semester in ['sem1', 'sem2'] && workbookDocument == semester + 'data' && lockId == 'current';
+      }
+    }
+
+    // Production Firestore workbooks replace Storage manifests in place.
+    match /departments/{departmentId}/workbooks/{yearId}/semesters/{semester} {
+      function validWorkbookAudit(data) {
+        return !('audit' in data) || (data.audit is map
+          && data.audit.keys().hasAll(['version', 'kind', 'counts', 'samples', 'totalChanges', 'omittedSamples', 'baselineAvailable', 'revisionId', 'previousRevision'])
+          && data.audit.keys().hasOnly(['version', 'kind', 'counts', 'samples', 'totalChanges', 'omittedSamples', 'baselineAvailable', 'revisionId', 'previousRevision'])
+          && data.audit.version == 1 && data.audit.kind in ['created', 'imported', 'updated', 'repaired']
+          && data.audit.counts is map && data.audit.samples is list && data.audit.samples.size() <= 80
+          && data.audit.totalChanges is int && data.audit.totalChanges >= 0
+          && data.audit.omittedSamples is int && data.audit.omittedSamples >= 0 && data.audit.baselineAvailable is bool
+          && data.audit.revisionId == data.revisionId && data.audit.previousRevision == data.revision - 1);
+      }
+      function validProductionWorkbookV3() {
+        let data = request.resource.data;
+        let lockPath = /databases/$(database)/documents/departments/$(departmentId)/workbooks/$(yearId)/semesters/$(semester)/saveLocks/current;
+        return request.auth != null && semester in ['sem1', 'sem2']
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'sheetSlots', 'sheetRevisionIds', 'cellCounts', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'sheetSlots', 'sheetRevisionIds', 'cellCounts', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt', 'audit'])
+          && validWorkbookAudit(data)
+          && data.schemaVersion == 3 && data.workbookId is string && data.workbookId.matches('workbook_[a-f0-9]{64}')
+          && data.departmentId == departmentId && yearId == namedYear(data.academicYearId) && data.semester == semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.sheetIds is list && data.sheetIds.size() <= 1000
+          && data.sheetNames is list && data.sheetNames.size() == data.sheetIds.size()
+          && data.sheetIds.toSet().size() == data.sheetIds.size() && data.sheetNames.toSet().size() == data.sheetNames.size()
+          && data.sheetSlots is list && data.sheetSlots.size() == data.sheetIds.size() && data.sheetSlots.toSet().hasOnly(['a', 'b'])
+          && data.sheetRevisionIds is list && data.sheetRevisionIds.size() == data.sheetIds.size()
+          && data.cellCounts is list && data.cellCounts.size() == data.sheetIds.size()
+          && data.selectedSheet is string && (data.sheetIds.size() == 0 ? data.selectedSheet == '' : data.selectedSheet in data.sheetNames) && data.selectionJson is string && data.selectionJson.size() <= 2048
+          && data.revision is int && data.revision > 0 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.savedBy == request.auth.uid && data.membershipId is string && data.createdAt is timestamp && data.updatedAt == request.time
+          && (!exists(lockPath) || get(lockPath).data.status == 'idle' || get(lockPath).data.createdAt <= request.time - duration.value(10, 'm')
+            || (get(lockPath).data.saveId == data.revisionId && get(lockPath).data.savedBy == request.auth.uid))
+          && canSaveWorkbook(departmentId, data.academicYearId, semester, data.membershipId);
+      }
+      allow read: if request.auth != null && semester in ['sem1', 'sem2'];
+      function validProductionCreation() {
+        let previous = previousProductionManifest(request.resource.data);
+        return validProductionWorkbookV3()
+          && request.resource.data.revision == previous.get('revision', 0) + 1
+          && request.resource.data.createdAt == previous.get('createdAt', request.time);
+      }
+      allow create: if validProductionCreation();
+      allow update: if validProductionWorkbookV3() && (resource.data.schemaVersion == 1 || request.resource.data.workbookId == resource.data.workbookId)
+        && request.resource.data.revision == resource.data.revision + 1 && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+
+      match /saveLocks/{lockId} {
+        function validLease() {
+          let data = request.resource.data;
+          return request.auth != null && semester in ['sem1', 'sem2'] && lockId == 'current'
+            && data.keys().hasAll(['status', 'saveId', 'savedBy', 'membershipId', 'createdAt'])
+            && data.keys().hasOnly(['status', 'saveId', 'savedBy', 'membershipId', 'academicYearId', 'createdAt'])
+            && data.status == 'saving' && data.saveId is string && data.saveId.matches('[a-zA-Z0-9_-]+')
+            && data.savedBy == request.auth.uid && data.membershipId is string && data.createdAt == request.time
+            && yearId == namedYear(data.academicYearId)
+            && canSaveWorkbook(departmentId, data.get('academicYearId', yearId), semester, data.membershipId);
+        }
+        allow read: if request.auth != null && semester in ['sem1', 'sem2'];
+        allow create: if validLease();
+        allow update: if (validLease() && (resource.data.status == 'idle' || resource.data.createdAt <= request.time - duration.value(10, 'm')))
+          || (request.auth != null && semester in ['sem1', 'sem2'] && resource.data.savedBy == request.auth.uid && resource.data.status == 'saving'
+            && request.resource.data.status == 'idle' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+        allow delete: if false;
+      }
+
+    }
+
+    match /sheets/{sheetId} {
+      function unusedSheet(data) {
+        let path = productionPath(data);
+        let manifest = get(path).data;
+        let after = getAfter(path).data;
+        let year = namedYear(data.academicYearId);
+        let lockPath = /databases/$(database)/documents/departments/$(data.departmentId)/workbooks/$(year)/semesters/$(data.semester)/saveLocks/current;
+        return request.auth != null && data.schemaVersion == 3
+          && data.sheetIndex is int && data.sheetIndex >= 0 && data.sheetIndex < 1000
+          && data.sheetId == 'sheet_' + string(data.sheetIndex) && sheetId == data.workbookId + '_' + data.sheetId
+          && manifest.schemaVersion == 3 && manifest.workbookId == data.workbookId
+          && manifest.departmentId == data.departmentId && manifest.academicYearId == data.academicYearId && manifest.semester == data.semester
+          && manifest.savedBy == request.auth.uid && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, manifest.membershipId)
+          // Cleanup follows publication; it cannot clear references in the same request.
+          && after.revisionId == manifest.revisionId && after.revision == manifest.revision
+          && !(data.sheetId in manifest.sheetIds) && !(data.sheetId in after.sheetIds)
+          && (!exists(lockPath) || get(lockPath).data.status == 'idle' || get(lockPath).data.createdAt <= request.time - duration.value(10, 'm'))
+          && (!existsAfter(lockPath) || getAfter(lockPath).data.status == 'idle' || getAfter(lockPath).data.createdAt <= request.time - duration.value(10, 'm'));
+      }
+      function inactiveSlot(data) {
+        let manifest = priorProductionManifest(data);
+        let index = data.get('sheetIndex', -1);
+        let active = manifest.get('schemaVersion', 0) == 3
+          ? (index >= 0 && index < manifest.sheetSlots.size() ? manifest.sheetSlots[index] : 'b') : manifest.get('slot', 'b');
+        return active == 'a' ? 'b' : 'a';
+      }
+      function inactiveChunkSlot(data) {
+        let manifest = priorProductionManifest(data);
+        let referenced = manifest.get('schemaVersion', 0) != 3 || data.get('sheetIndex', -1) < manifest.get('sheetIds', []).size();
+        let sheetSlot = inactiveSlot(data) == 'a' ? 'b' : 'a';
+        let parentPath = /databases/$(database)/documents/sheets/$(sheetId);
+        let metadata = exists(parentPath) ? get(parentPath).data.get('slots', {}).get(sheetSlot, {}) : {};
+        let slots = referenced ? metadata.get('partSlots', []) : [];
+        let active = slots is list && slots.size() > data.partIndex ? slots[data.partIndex] : sheetSlot;
+        return active == 'a' ? 'b' : 'a';
+      }
+      function atomicV3(data, payload) {
+        let path = productionPath(data);
+        let before = exists(path) ? get(path).data.get('revision', 0) : -1;
+        let manifest = existsAfter(path) ? getAfter(path).data : {};
+        return manifest.get('schemaVersion', 0) == 3
+          // A newly created manifest separately validates its historical revision.
+          // Existing manifests must advance; every atomic save publishes a fresh timestamp.
+          && (before == -1 || manifest.revision == before + 1) && manifest.revisionId == payload.revisionId
+          && manifest.savedBy == request.auth.uid && manifest.membershipId == payload.membershipId
+          && manifest.updatedAt == request.time;
+      }
+      function stagedV3(data, payload) {
+        let year = namedYear(data.academicYearId);
+        let path = /databases/$(database)/documents/departments/$(data.departmentId)/workbooks/$(year)/semesters/$(data.semester)/saveLocks/current;
+        return exists(path) && get(path).data.status == 'saving' && get(path).data.saveId == payload.revisionId
+          && get(path).data.savedBy == request.auth.uid && get(path).data.membershipId == payload.membershipId
+          && get(path).data.createdAt > request.time - duration.value(10, 'm');
+      }
+      function identityV3(data) {
+        return data.schemaVersion == 3 && data.workbookId is string && data.workbookId.matches('workbook_[a-f0-9]{64}')
+          && data.sheetIndex is int && data.sheetIndex >= 0 && data.sheetIndex < 1000 && data.sheetId == 'sheet_' + string(data.sheetIndex)
+          && sheetId == data.workbookId + '_' + data.sheetId
+          && data.sourceWorkbook == 'departments/' + data.departmentId + '/workbooks/' + namedYear(data.academicYearId) + '/semesters/' + data.semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(data.departmentId)).data.code;
+      }
+      function grantV3(data, payload) {
+        return request.auth != null && payload.savedBy == request.auth.uid && payload.updatedAt == request.time
+          && payload.membershipId is string && payload.revisionId is string && payload.revisionId.matches('[a-zA-Z0-9_-]+')
+          && (atomicV3(data, payload) || stagedV3(data, payload))
+          && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, payload.membershipId);
+      }
+      function validParentV3(slot) {
+        let data = request.resource.data;
+        let metadata = data.slots[slot];
+        return identityV3(data)
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'slots'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'slots'])
+          && data.slots is map && data.slots.keys().hasOnly(['a', 'b'])
+          && metadata.keys().hasAll(['name', 'encoding', 'jsonByteLength', 'encodedLength', 'jsonHash', 'baseHash', 'partCount', 'partSlots', 'partRevisionIds', 'partHashes', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && metadata.keys().hasOnly(['name', 'encoding', 'jsonByteLength', 'encodedLength', 'jsonHash', 'baseHash', 'partCount', 'partSlots', 'partRevisionIds', 'partHashes', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && metadata.name is string && metadata.name.size() > 0 && metadata.name.size() <= 31 && metadata.encoding == 'gzip-base64'
+          && metadata.jsonByteLength is int && metadata.jsonByteLength > 0 && metadata.jsonByteLength <= 52428800
+          && metadata.encodedLength is int && metadata.encodedLength > 0 && metadata.encodedLength <= 73400320
+          && metadata.jsonHash.matches('[a-f0-9]{64}') && metadata.baseHash.matches('[a-f0-9]{64}')
+          && metadata.partCount is int && metadata.partCount > 0 && metadata.partCount <= 180
+          && metadata.partSlots is list && metadata.partSlots.size() == metadata.partCount && metadata.partSlots.toSet().hasOnly(['a', 'b'])
+          && metadata.partRevisionIds is list && metadata.partRevisionIds.size() == metadata.partCount
+          && metadata.partHashes is list && metadata.partHashes.size() == metadata.partCount
+          && grantV3(data, metadata);
+      }
+      function validChunkV3(chunkId, slot) {
+        let data = request.resource.data;
+        let part = data.slots[slot];
+        return identityV3(data)
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'partIndex', 'slots'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'partIndex', 'slots'])
+          && data.partIndex is int && data.partIndex >= 0 && data.partIndex < 180 && chunkId == 'part_' + string(data.partIndex)
+          && data.slots is map && data.slots.keys().hasOnly(['a', 'b'])
+          && part.keys().hasAll(['encoding', 'data', 'byteLength', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && part.keys().hasOnly(['encoding', 'data', 'byteLength', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && part.encoding == 'gzip-base64' && part.data is string && part.data.matches('[A-Za-z0-9+/=]+')
+          && part.byteLength is int && part.byteLength > 0 && part.byteLength <= 409600 && part.data.toUtf8().size() == part.byteLength
+          && grantV3(data, part);
+      }
+      function parentWriteV3(creating) {
+        let data = request.resource.data;
+        let slot = inactiveSlot(data);
+        return validParentV3(slot) && (creating
+          ? data.slots.keys().hasOnly([slot])
+          : (data.diff(resource.data).affectedKeys().hasOnly(['schemaVersion', 'sheetIndex', 'sourceWorkbook', 'slots'])
+            && sameOrMovedSource(resource.data, data) && data.slots.diff(resource.data.slots).affectedKeys().hasOnly([slot])));
+      }
+      function chunkWriteV3(chunkId, creating) {
+        let data = request.resource.data;
+        let slot = inactiveChunkSlot(data);
+        return validChunkV3(chunkId, slot) && (creating
+          ? data.slots.keys().hasOnly([slot])
+          : (data.diff(resource.data).affectedKeys().hasOnly(['schemaVersion', 'sheetIndex', 'sourceWorkbook', 'slots'])
+            && sameOrMovedSource(resource.data, data) && data.slots.diff(resource.data.slots).affectedKeys().hasOnly([slot])));
+      }
+      allow read: if request.auth != null;
+      allow create: if parentWriteV3(true);
+      allow update: if resource.data.schemaVersion == 3 && parentWriteV3(false);
+      allow delete: if unusedSheet(resource.data);
+
+      match /chunks/{chunkId} {
+        allow read: if request.auth != null;
+        allow create: if chunkWriteV3(chunkId, true);
+        allow update: if resource.data.schemaVersion == 3 && chunkWriteV3(chunkId, false);
+        allow delete: if unusedSheet(resource.data);
+      }
+      match /cells/{cellId} {
+        function validCellV3() {
+          let data = request.resource.data;
+          let path = productionPath(data);
+          let manifest = getAfter(path).data;
+          let parent = getAfter(/databases/$(database)/documents/sheets/$(sheetId)).data;
+          return identityV3(data) && cellId.matches('[A-Z]{1,3}[1-9][0-9]{0,6}')
+            && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt'])
+            && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt'])
+            && data.sheetIndex < manifest.sheetIds.size() && manifest.sheetIds[data.sheetIndex] == data.sheetId
+            && data.baseRevisionId == parent.slots[manifest.sheetSlots[data.sheetIndex]].revisionId
+            && data.revision == manifest.revision && data.savedBy == request.auth.uid && data.updatedAt == request.time
+            && (data.text == null || (data.text is string && data.text.toUtf8().size() <= 65536))
+            && (data.styleJson == null || (data.styleJson is string && data.styleJson.toUtf8().size() <= 65536))
+            && atomicV3(data, data) && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, data.membershipId);
+        }
+        allow read: if request.auth != null;
+        allow create: if validCellV3();
+        allow update: if validCellV3() && sameOrMovedSource(resource.data, request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sourceWorkbook', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt']);
+        allow delete: if unusedSheet(resource.data);
+      }
+    }
+
+    // The test manifest and original Storage manifest have separate documents.
+    match /departments/{departmentId}/test_workbooks/{yearId}/semesters/{semester} {
+      function validTestWorkbookV3() {
+        let data = request.resource.data;
+        let lockPath = /databases/$(database)/documents/departments/$(departmentId)/test_workbooks/$(yearId)/semesters/$(semester)/saveLocks/current;
+        return request.auth != null && semester in ['sem1', 'sem2']
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'sheetSlots', 'sheetRevisionIds', 'cellCounts', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'departmentId', 'departmentCode', 'academicYearId', 'academicYear', 'semester', 'fileName', 'sheetIds', 'sheetNames', 'selectedSheet', 'selectionJson', 'sheetSlots', 'sheetRevisionIds', 'cellCounts', 'revision', 'revisionId', 'savedBy', 'membershipId', 'createdAt', 'updatedAt'])
+          && data.schemaVersion == 3 && data.workbookId is string && data.workbookId.matches('test_[a-f0-9]{64}')
+          && data.departmentId == departmentId && yearId == namedYear(data.academicYearId) && data.semester == semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.sheetIds is list && data.sheetIds.size() <= 1000
+          && data.sheetNames is list && data.sheetNames.size() == data.sheetIds.size()
+          && data.sheetIds.toSet().size() == data.sheetIds.size() && data.sheetNames.toSet().size() == data.sheetNames.size()
+          && data.sheetSlots is list && data.sheetSlots.size() == data.sheetIds.size() && data.sheetSlots.toSet().hasOnly(['a', 'b'])
+          && data.sheetRevisionIds is list && data.sheetRevisionIds.size() == data.sheetIds.size()
+          && data.cellCounts is list && data.cellCounts.size() == data.sheetIds.size()
+          && data.selectedSheet is string && (data.sheetIds.size() == 0 ? data.selectedSheet == '' : data.selectedSheet in data.sheetNames) && data.selectionJson is string && data.selectionJson.size() <= 2048
+          && data.revision is int && data.revision > 0 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.savedBy == request.auth.uid && data.membershipId is string && data.createdAt is timestamp && data.updatedAt == request.time
+          && (!exists(lockPath) || get(lockPath).data.status == 'idle' || get(lockPath).data.createdAt <= request.time - duration.value(10, 'm')
+            || (get(lockPath).data.saveId == data.revisionId && get(lockPath).data.savedBy == request.auth.uid))
+          && canSaveWorkbook(departmentId, data.academicYearId, semester, data.membershipId);
+      }
+      allow read: if request.auth != null && semester in ['sem1', 'sem2'];
+      function validTestCreation() {
+        let previous = previousTestManifest(request.resource.data);
+        return validTestWorkbookV3()
+          && request.resource.data.revision == previous.get('revision', 0) + 1
+          && request.resource.data.createdAt == previous.get('createdAt', request.time);
+      }
+      allow create: if validTestCreation();
+      allow update: if validTestWorkbookV3() && request.resource.data.workbookId == resource.data.workbookId
+        && request.resource.data.revision == resource.data.revision + 1 && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+
+      match /saveLocks/{lockId} {
+        function validLease() {
+          let data = request.resource.data;
+          return request.auth != null && semester in ['sem1', 'sem2'] && lockId == 'current'
+            && data.keys().hasAll(['status', 'saveId', 'savedBy', 'membershipId', 'createdAt'])
+            && data.keys().hasOnly(['status', 'saveId', 'savedBy', 'membershipId', 'academicYearId', 'createdAt'])
+            && data.status == 'saving' && data.saveId is string && data.saveId.matches('[a-zA-Z0-9_-]+')
+            && data.savedBy == request.auth.uid && data.membershipId is string && data.createdAt == request.time
+            && yearId == namedYear(data.academicYearId)
+            && canSaveWorkbook(departmentId, data.get('academicYearId', yearId), semester, data.membershipId);
+        }
+        allow read: if request.auth != null && semester in ['sem1', 'sem2'];
+        allow create: if validLease();
+        allow update: if (validLease() && (resource.data.status == 'idle' || resource.data.createdAt <= request.time - duration.value(10, 'm')))
+          || (request.auth != null && semester in ['sem1', 'sem2'] && resource.data.savedBy == request.auth.uid && resource.data.status == 'saving'
+            && request.resource.data.status == 'idle' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']));
+        allow delete: if false;
+      }
+
+    }
+
+    match /test_sheets/{sheetId} {
+      function inactiveSlot(data) {
+        let manifest = priorTestManifest(data);
+        let index = data.get('sheetIndex', -1);
+        let active = manifest.get('schemaVersion', 0) == 3
+          ? (index >= 0 && index < manifest.sheetSlots.size() ? manifest.sheetSlots[index] : 'b') : manifest.get('slot', 'b');
+        return active == 'a' ? 'b' : 'a';
+      }
+      function inactiveChunkSlot(data) {
+        let manifest = priorTestManifest(data);
+        let referenced = manifest.get('schemaVersion', 0) != 3 || data.get('sheetIndex', -1) < manifest.get('sheetIds', []).size();
+        let sheetSlot = inactiveSlot(data) == 'a' ? 'b' : 'a';
+        let parentPath = /databases/$(database)/documents/test_sheets/$(sheetId);
+        let metadata = exists(parentPath) ? get(parentPath).data.get('slots', {}).get(sheetSlot, {}) : {};
+        let slots = referenced ? metadata.get('partSlots', []) : [];
+        let active = slots is list && slots.size() > data.partIndex ? slots[data.partIndex] : sheetSlot;
+        return active == 'a' ? 'b' : 'a';
+      }
+      function validTestSheetMetadata() {
+        let data = request.resource.data;
+        let slot = inactiveSlot(data);
+        let metadata = data.slots[slot];
+        let lease = get(/databases/$(database)/documents/departments/$(data.departmentId)/scheduleYears/$(data.academicYearId)/testSemesters/$(data.semester)/saveLocks/current).data;
+        return request.auth != null
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'slots'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'slots'])
+          && data.schemaVersion == 2 && data.workbookId is string && data.workbookId.matches('test_[a-f0-9]{64}')
+          && data.sheetId is string && data.sheetId.matches('sheet_[0-9]+') && sheetId == data.workbookId + '_' + data.sheetId
+          && data.sourceWorkbook == 'departments/' + data.departmentId + '/scheduleYears/' + data.academicYearId + '/testSemesters/' + data.semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(data.departmentId)).data.code
+          && data.slots is map && data.slots.keys().hasOnly(['a', 'b']) && data.slots.keys().hasAll([slot])
+          && metadata.keys().hasAll(['name', 'partCount', 'sheetByteLength', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && metadata.keys().hasOnly(['name', 'partCount', 'sheetByteLength', 'revisionId', 'savedBy', 'membershipId', 'updatedAt', 'partSlots', 'partRevisionIds', 'partHashes'])
+          && metadata.name is string && metadata.name.size() > 0 && metadata.name.size() <= 31
+          && metadata.partCount is int && metadata.partCount > 0 && metadata.partCount <= 1000
+          && metadata.partSlots is list && metadata.partSlots.size() == metadata.partCount && metadata.partSlots.toSet().hasOnly(['a', 'b'])
+          && metadata.partRevisionIds is list && metadata.partRevisionIds.size() == metadata.partCount
+          && metadata.partHashes is list && metadata.partHashes.size() == metadata.partCount
+          && metadata.sheetByteLength is int && metadata.sheetByteLength > 0 && metadata.sheetByteLength <= 52428800
+          && metadata.savedBy == request.auth.uid && metadata.updatedAt == request.time && metadata.membershipId is string
+          && lease.status == 'saving' && lease.saveId == metadata.revisionId && lease.savedBy == request.auth.uid && lease.membershipId == metadata.membershipId
+          && lease.createdAt > request.time - duration.value(10, 'm')
+          && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, metadata.membershipId);
+      }
+      function validTestSheetPart(chunkId) {
+        let data = request.resource.data;
+        let slot = inactiveChunkSlot(data);
+        let part = data.slots[slot];
+        let lease = get(/databases/$(database)/documents/departments/$(data.departmentId)/scheduleYears/$(data.academicYearId)/testSemesters/$(data.semester)/saveLocks/current).data;
+        return request.auth != null
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'partIndex', 'slots'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'partIndex', 'slots'])
+          && data.schemaVersion == 2 && data.workbookId is string && data.workbookId.matches('test_[a-f0-9]{64}')
+          && data.sheetId is string && data.sheetId.matches('sheet_[0-9]+') && data.partIndex is int && data.partIndex >= 0 && data.partIndex < 1000
+          && sheetId == data.workbookId + '_' + data.sheetId && chunkId == 'part_' + string(data.partIndex)
+          && data.sourceWorkbook == 'departments/' + data.departmentId + '/scheduleYears/' + data.academicYearId + '/testSemesters/' + data.semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(data.departmentId)).data.code
+          && data.slots is map && data.slots.keys().hasOnly(['a', 'b']) && data.slots.keys().hasAll([slot])
+          && part.keys().hasAll(['id', 'sheetId', 'name', 'json', 'byteLength', 'partIndex', 'partCount', 'sheetByteLength', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && part.keys().hasOnly(['id', 'sheetId', 'name', 'json', 'byteLength', 'partIndex', 'partCount', 'sheetByteLength', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && part.id == data.sheetId + '_part_' + string(data.partIndex) && part.sheetId == data.sheetId && part.partIndex == data.partIndex
+          && part.name is string && part.name.size() > 0 && part.name.size() <= 31 && part.json is string
+          && part.json.toUtf8().size() == part.byteLength && part.json.toUtf8().size() <= 409600
+          && part.byteLength is int && part.byteLength > 0 && part.byteLength <= 409600
+          && part.partCount is int && part.partCount > data.partIndex && part.partCount <= 1000
+          && part.sheetByteLength is int && part.sheetByteLength >= part.byteLength && part.sheetByteLength <= 52428800
+          && part.savedBy == request.auth.uid && part.updatedAt == request.time && part.membershipId is string
+          && lease.status == 'saving' && lease.saveId == part.revisionId && lease.savedBy == request.auth.uid && lease.membershipId == part.membershipId
+          && lease.createdAt > request.time - duration.value(10, 'm')
+          && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, part.membershipId);
+      }
+      function validTestSheet() {
+        let data = request.resource.data;
+        let grant = get(/databases/$(database)/documents/departments/$(data.departmentId)/scheduleYears/$(data.academicYearId)/testSemesters/$(data.semester)/revisions/$(data.revisionId)).data;
+        return request.auth != null
+          && data.keys().hasAll(['schemaVersion', 'revisionId', 'name', 'json', 'byteLength', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'membershipId', 'savedBy', 'createdAt'])
+          && data.keys().hasOnly(['schemaVersion', 'revisionId', 'name', 'json', 'byteLength', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'membershipId', 'savedBy', 'createdAt'])
+          && data.schemaVersion == 1 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && sheetId.matches(data.revisionId + '_sheet_[0-9]+')
+          && data.name is string && data.name.size() > 0 && data.name.size() <= 31
+          && data.json is string && data.json.size() <= 921600
+          && data.byteLength is int && data.byteLength > 0 && data.byteLength <= 921600
+          && data.sourceWorkbook == 'departments/' + data.departmentId + '/scheduleYears/' + data.academicYearId + '/testSemesters/' + data.semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(data.departmentId)).data.code
+          && data.savedBy == request.auth.uid && data.createdAt == request.time
+          && grant.savedBy == request.auth.uid && grant.membershipId == data.membershipId
+          && grant.createdAt > request.time - duration.value(10, 'm')
+          && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, data.membershipId);
+      }
+      function atomicV3(data, payload) {
+        let path = testPath(data);
+        let before = exists(path) ? get(path).data.get('revision', 0) : -1;
+        let manifest = existsAfter(path) ? getAfter(path).data : {};
+        return manifest.get('schemaVersion', 0) == 3
+          // A newly created manifest separately validates its historical revision.
+          // Existing manifests must advance; every atomic save publishes a fresh timestamp.
+          && (before == -1 || manifest.revision == before + 1) && manifest.revisionId == payload.revisionId
+          && manifest.savedBy == request.auth.uid && manifest.membershipId == payload.membershipId
+          && manifest.updatedAt == request.time;
+      }
+      function stagedV3(data, payload) {
+        let year = namedYear(data.academicYearId);
+        let path = /databases/$(database)/documents/departments/$(data.departmentId)/test_workbooks/$(year)/semesters/$(data.semester)/saveLocks/current;
+        return exists(path) && get(path).data.status == 'saving' && get(path).data.saveId == payload.revisionId
+          && get(path).data.savedBy == request.auth.uid && get(path).data.membershipId == payload.membershipId
+          && get(path).data.createdAt > request.time - duration.value(10, 'm');
+      }
+      function identityV3(data) {
+        return data.schemaVersion == 3 && data.workbookId is string && data.workbookId.matches('test_[a-f0-9]{64}')
+          && data.sheetIndex is int && data.sheetIndex >= 0 && data.sheetIndex < 1000 && data.sheetId == 'sheet_' + string(data.sheetIndex)
+          && sheetId == data.workbookId + '_' + data.sheetId
+          && data.sourceWorkbook == 'departments/' + data.departmentId + '/test_workbooks/' + namedYear(data.academicYearId) + '/semesters/' + data.semester
+          && data.departmentCode == get(/databases/$(database)/documents/departments/$(data.departmentId)).data.code;
+      }
+      function grantV3(data, payload) {
+        return request.auth != null && payload.savedBy == request.auth.uid && payload.updatedAt == request.time
+          && payload.membershipId is string && payload.revisionId is string && payload.revisionId.matches('[a-zA-Z0-9_-]+')
+          && (atomicV3(data, payload) || stagedV3(data, payload))
+          && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, payload.membershipId);
+      }
+      function validParentV3(slot) {
+        let data = request.resource.data;
+        let metadata = data.slots[slot];
+        return identityV3(data)
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'slots'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'slots'])
+          && data.slots is map && data.slots.keys().hasOnly(['a', 'b'])
+          && metadata.keys().hasAll(['name', 'encoding', 'jsonByteLength', 'encodedLength', 'jsonHash', 'baseHash', 'partCount', 'partSlots', 'partRevisionIds', 'partHashes', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && metadata.keys().hasOnly(['name', 'encoding', 'jsonByteLength', 'encodedLength', 'jsonHash', 'baseHash', 'partCount', 'partSlots', 'partRevisionIds', 'partHashes', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && metadata.name is string && metadata.name.size() > 0 && metadata.name.size() <= 31 && metadata.encoding == 'gzip-base64'
+          && metadata.jsonByteLength is int && metadata.jsonByteLength > 0 && metadata.jsonByteLength <= 52428800
+          && metadata.encodedLength is int && metadata.encodedLength > 0 && metadata.encodedLength <= 73400320
+          && metadata.jsonHash.matches('[a-f0-9]{64}') && metadata.baseHash.matches('[a-f0-9]{64}')
+          && metadata.partCount is int && metadata.partCount > 0 && metadata.partCount <= 180
+          && metadata.partSlots is list && metadata.partSlots.size() == metadata.partCount && metadata.partSlots.toSet().hasOnly(['a', 'b'])
+          && metadata.partRevisionIds is list && metadata.partRevisionIds.size() == metadata.partCount
+          && metadata.partHashes is list && metadata.partHashes.size() == metadata.partCount
+          && grantV3(data, metadata);
+      }
+      function validChunkV3(chunkId, slot) {
+        let data = request.resource.data;
+        let part = data.slots[slot];
+        return identityV3(data)
+          && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'partIndex', 'slots'])
+          && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'partIndex', 'slots'])
+          && data.partIndex is int && data.partIndex >= 0 && data.partIndex < 180 && chunkId == 'part_' + string(data.partIndex)
+          && data.slots is map && data.slots.keys().hasOnly(['a', 'b'])
+          && part.keys().hasAll(['encoding', 'data', 'byteLength', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && part.keys().hasOnly(['encoding', 'data', 'byteLength', 'revisionId', 'savedBy', 'membershipId', 'updatedAt'])
+          && part.encoding == 'gzip-base64' && part.data is string && part.data.matches('[A-Za-z0-9+/=]+')
+          && part.byteLength is int && part.byteLength > 0 && part.byteLength <= 409600 && part.data.toUtf8().size() == part.byteLength
+          && grantV3(data, part);
+      }
+      function parentWriteV3(creating) {
+        let data = request.resource.data;
+        let slot = inactiveSlot(data);
+        return validParentV3(slot) && (creating
+          ? data.slots.keys().hasOnly([slot])
+          : (data.diff(resource.data).affectedKeys().hasOnly(['schemaVersion', 'sheetIndex', 'sourceWorkbook', 'slots'])
+            && sameOrMovedSource(resource.data, data) && data.slots.diff(resource.data.slots).affectedKeys().hasOnly([slot])));
+      }
+      function chunkWriteV3(chunkId, creating) {
+        let data = request.resource.data;
+        let slot = inactiveChunkSlot(data);
+        return validChunkV3(chunkId, slot) && (creating
+          ? data.slots.keys().hasOnly([slot])
+          : (data.diff(resource.data).affectedKeys().hasOnly(['schemaVersion', 'sheetIndex', 'sourceWorkbook', 'slots'])
+            && sameOrMovedSource(resource.data, data) && data.slots.diff(resource.data.slots).affectedKeys().hasOnly([slot])));
+      }
+      allow read: if request.auth != null;
+      allow create: if (request.resource.data.schemaVersion == 1 && validTestSheet())
+        || (request.resource.data.schemaVersion == 2 && validTestSheetMetadata()
+          && request.resource.data.slots.keys().hasOnly([inactiveSlot(request.resource.data)]))
+        || (request.resource.data.schemaVersion == 3 && parentWriteV3(true));
+      allow update: if resource.data.schemaVersion == 2 && request.resource.data.schemaVersion == 2 && validTestSheetMetadata()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['slots'])
+        && request.resource.data.slots.diff(resource.data.slots).affectedKeys().hasOnly([inactiveSlot(request.resource.data)]);
+      allow update: if request.resource.data.schemaVersion == 3 && resource.data.schemaVersion in [2, 3] && parentWriteV3(false);
+      allow delete: if resource.data.schemaVersion == 1 && request.auth != null && resource.data.savedBy == request.auth.uid
+        && (!exists(/databases/$(database)/documents/departments/$(resource.data.departmentId)/scheduleYears/$(resource.data.academicYearId)/testSemesters/$(resource.data.semester))
+          || get(/databases/$(database)/documents/departments/$(resource.data.departmentId)/scheduleYears/$(resource.data.academicYearId)/testSemesters/$(resource.data.semester)).data.revisionId != resource.data.revisionId);
+
+      match /chunks/{chunkId} {
+        allow read: if request.auth != null;
+        allow create: if request.resource.data.schemaVersion == 2 && validTestSheetPart(chunkId)
+          && request.resource.data.slots.keys().hasOnly([inactiveChunkSlot(request.resource.data)]);
+        allow create: if request.resource.data.schemaVersion == 3 && chunkWriteV3(chunkId, true);
+        allow update: if resource.data.schemaVersion == 2 && request.resource.data.schemaVersion == 2 && validTestSheetPart(chunkId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['slots'])
+          && request.resource.data.slots.diff(resource.data.slots).affectedKeys().hasOnly([inactiveChunkSlot(request.resource.data)]);
+        allow delete: if false;
+        allow update: if request.resource.data.schemaVersion == 3 && resource.data.schemaVersion in [2, 3] && chunkWriteV3(chunkId, false);
+      }
+      match /cells/{cellId} {
+        function validCellV3() {
+          let data = request.resource.data;
+          let path = testPath(data);
+          let manifest = getAfter(path).data;
+          let parent = getAfter(/databases/$(database)/documents/test_sheets/$(sheetId)).data;
+          return identityV3(data) && cellId.matches('[A-Z]{1,3}[1-9][0-9]{0,6}')
+            && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt'])
+            && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt'])
+            && data.sheetIndex < manifest.sheetIds.size() && manifest.sheetIds[data.sheetIndex] == data.sheetId
+            && data.baseRevisionId == parent.slots[manifest.sheetSlots[data.sheetIndex]].revisionId
+            && data.revision == manifest.revision && data.savedBy == request.auth.uid && data.updatedAt == request.time
+            && (data.text == null || (data.text is string && data.text.toUtf8().size() <= 65536))
+            && (data.styleJson == null || (data.styleJson is string && data.styleJson.toUtf8().size() <= 65536))
+            && atomicV3(data, data) && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, data.membershipId);
+        }
+        allow read: if request.auth != null;
+        allow create: if validCellV3();
+        allow update: if validCellV3() && sameOrMovedSource(resource.data, request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sourceWorkbook', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt']);
+        allow delete: if false;
+      }
+    }
+
+    match /comments/{commentId} {
+      function roomExists(roomId) {
+        return exists(/databases/$(database)/documents/rooms/$(roomId));
+      }
+      allow read: if request.auth != null && roomExists(resource.data.roomId);
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAll(['roomId', 'authorId', 'authorName', 'text', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['roomId', 'authorId', 'authorName', 'text', 'createdAt'])
+        && request.resource.data.roomId is string && roomExists(request.resource.data.roomId)
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.authorName is string
+        && request.resource.data.authorName.size() > 0 && request.resource.data.authorName.size() <= 200
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 1000
+        && request.resource.data.text.matches('[\\s\\S]*\\S[\\s\\S]*')
+        && request.resource.data.createdAt == request.time;
+      // The UI limits deletion to the author, Admin, or Registrar.
+      allow delete: if request.auth != null;
+      allow update: if false;
+    }
+
+    match /users/{userId}/roomCommentReads/{roomId} {
+      function validReadPosition() {
+        return request.auth != null && request.auth.uid == userId
+          && request.resource.data.keys().hasAll(['lastSeenAt'])
+          && request.resource.data.keys().hasOnly(['lastSeenAt', 'seenComments'])
+          && request.resource.data.get('seenComments', {}) is map
+          && request.resource.data.lastSeenAt is timestamp
+          && request.resource.data.lastSeenAt <= request.time
+          && exists(/databases/$(database)/documents/rooms/$(roomId));
+      }
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow create: if validReadPosition();
+      allow update: if validReadPosition() && request.resource.data.lastSeenAt >= resource.data.lastSeenAt;
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+
     match /users/{userId}/notifications/{notificationId} {
       allow read, update, delete: if request.auth != null && request.auth.uid == userId;
       allow create: if false;
     }
 
-    // Preserve the project's existing access behavior for top-level documents.
-    match /{collection}/{document} {
-      allow read, write: if true;
+    // Audit events are written only by trusted server code, and cannot be edited by clients.
+    match /logs/{logId} {
+      allow read: if request.auth != null;
+      allow write: if false;
     }
 
-    // Preserve existing nested-collection access except for private notifications.
+    // Preserve the project's existing access behavior for top-level documents.
+    match /{collection}/{document} {
+      allow read, write: if !(collection in ['test_sheets', 'sheets', 'comments', 'logs']);
+    }
+
+    // Preserve existing nested-collection access except for private user records.
     match /{collection}/{document}/{subcollection}/{subdocument=**} {
-      allow read, write: if collection != 'users' || subcollection != 'notifications';
+      allow read, write: if !(collection in ['test_sheets', 'sheets', 'comments', 'logs']) && (collection != 'users' || !(subcollection in ['notifications', 'roomCommentReads']))
+        && (collection != 'departments' || !(subcollection in ['scheduleYears', 'workbooks', 'test_workbooks']));
     }
   }
 }

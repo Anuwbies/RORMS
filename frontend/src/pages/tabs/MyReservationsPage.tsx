@@ -8,6 +8,7 @@ import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdow
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
+import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { ScheduleModal } from '../../components/ScheduleModal'
 import { useSnackbar } from '../../components/Snackbar'
@@ -34,6 +35,10 @@ interface Reservation {
   duration: number
   attendees?: number
   purpose: string
+  requestType?: 'Standard' | 'Extended'
+  subjectCode?: string
+  classSection?: string
+  department?: string
   status: ReservationStatus
   createdAt: any
   updatedAt: any
@@ -200,7 +205,7 @@ function MyReservationsPage() {
   }, [])
 
   const buildingOptions = useMemo(() => {
-    return Array.from(new Set(Object.values(buildings).map(b => b.name))).sort()
+    return Array.from(new Set(Object.values(buildings).map(b => b.code).filter(Boolean))).sort()
   }, [buildings])
 
   const visibleReservations = useMemo(() => (
@@ -275,7 +280,7 @@ function MyReservationsPage() {
       }
 
       // 2. Filter by building
-      if (selectedBuildings.length > 0 && building && !selectedBuildings.includes(building.name)) {
+      if (selectedBuildings.length > 0 && !selectedBuildings.includes(building?.code || '')) {
         return false
       }
 
@@ -344,6 +349,7 @@ function MyReservationsPage() {
           <span className="text-xs font-medium text-slate-500">
             {res.startTime} - {res.endTime}
           </span>
+          <ExtendedReservationBadge requestType={res.requestType} />
         </div>
       )
     },
@@ -710,7 +716,7 @@ function MyReservationsPage() {
         isCanceling={isCanceling}
         reservation={selectedReservation as any}
         roomName={selectedReservation && rooms[selectedReservation.roomId] ? rooms[selectedReservation.roomId].name : 'Unknown Room'}
-        buildingName={selectedReservation && buildings[selectedReservation.buildingId] ? buildings[selectedReservation.buildingId].name : 'Unknown Building'}
+        roomType={(selectedReservation && rooms[selectedReservation.roomId]?.type) || 'Unknown Room Type'}
       />
 
       <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">

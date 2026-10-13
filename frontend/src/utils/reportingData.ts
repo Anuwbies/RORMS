@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { db } from '../firebase'
+import { scheduleMeetingRecords } from './scheduleMeetings'
 
 export interface ReservationReportRecord {
   id: string
@@ -12,6 +13,10 @@ export interface ReservationReportRecord {
   endTime?: string
   duration?: number
   purpose?: string
+  subjectCode?: string
+  classSection?: string
+  department?: string
+  attendees?: number
   status?: string
   declinedReason?: string
   createdAt?: unknown
@@ -47,6 +52,8 @@ export interface MembershipReportRecord {
   id: string
   userId?: string
   fullName?: string
+  firstName?: string
+  surname?: string
   email?: string
   department?: string
   role?: string
@@ -68,6 +75,8 @@ export interface UserReportRecord {
   id: string
   email?: string
   fullName?: string
+  firstName?: string
+  surname?: string
   isActive?: boolean
   isVerify?: boolean
   createdAt?: unknown
@@ -84,7 +93,16 @@ export interface DepartmentReportRecord {
 
 export interface ScheduleReportRecord {
   id: string
+  source?: string
+  schemaVersion?: number
+  sourceScheduleId?: string
   parentId?: string
+  course?: string
+  college?: string
+  faculty?: unknown
+  room?: string
+  time?: string
+  day?: string
   department?: string
   type?: string
   subjectCode?: string
@@ -105,7 +123,9 @@ export interface ScheduleReportRecord {
   instructorId2?: string
   status?: string
   academicYear?: string
+  academicYearId?: string
   semester?: string
+  semesterKey?: string
   academicTerm?: string
   orderIndex?: number
   createdAt?: unknown
@@ -119,7 +139,7 @@ function useRealtimeCollection<T extends { id: string }>(collectionName: string)
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, collectionName), snapshot => {
-      setRecords(snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as T))
+      setRecords(collectionName === 'schedule' ? scheduleMeetingRecords(snapshot.docs) as unknown as T[] : snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as T))
       setError(null)
       setIsLoading(false)
     }, snapshotError => {

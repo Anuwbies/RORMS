@@ -6,6 +6,8 @@ import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { type TimeOfDay, type MoonPhaseKey, getAstronomicalMoonPhase } from '../../visualizations/WeatherOverlay'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
 import { RoomInfoModal } from '../../components/RoomInfoModal'
+import { RoomComments } from '../../components/RoomComments'
+import { useRoomCommentNotices } from '../../hooks/useRoomCommentNotices'
 import { ScheduleModal } from '../../components/ScheduleModal'
 import { Button } from '../../components/Button'
 import { IconOnlyButton } from '../../components/IconOnlyButton'
@@ -20,17 +22,12 @@ import { TimePicker } from '../../components/TimePicker'
 import { Snackbar } from '../../components/Snackbar'
 
 import { auth, db, storage } from '../../firebase'
+import { manageFacility, facilityActionError } from '../../services/facilityManagement'
 import { onAuthStateChanged } from 'firebase/auth'
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage'
 import {
   collection,
-  addDoc,
-  updateDoc,
-  deleteDoc,
   doc,
-  setDoc,
-  writeBatch,
-  serverTimestamp,
   onSnapshot,
   query,
   orderBy,
@@ -131,8 +128,7 @@ const ROOM_AMENITIES = [
   'WiFi', 'Computer', 'Television', 'Projector', 'Whiteboard',
   'Air Conditioning', 'Sound System', 'Printer', 'Webcam',
   'Microphone', 'Ethernet', 'Speakers', 'HDMI Cable',
-  'Charging Station', 'Coffee Machine', 'Water Dispenser',
-  'Digital Signage', 'Video Conferencing'
+  'Charging Station', 'Video Conferencing'
 ]
 
 const shortAmenities = ROOM_AMENITIES.filter(a => a.length <= 10)
@@ -162,6 +158,7 @@ function BuildingsRoomsPage() {
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
+  const { unreadRoomIds, markCommentsSeen, markCommentSeen, isCommentUnread } = useRoomCommentNotices(buildings.flatMap(building => building.rooms.map(room => room.id)))
   const [waterKey, setWaterKey] = useState(0)
   const [dismissedJars, setDismissedJars] = useState<Set<number>>(new Set())
   const [jars, setJars] = useState<Array<{ id: number, position: number, fillStatus: 'empty' | 'filling' | 'full' | 'labeled', buildingIndex: number, liquidType?: LiquidType }>>(() => {
@@ -498,6 +495,7 @@ function BuildingsRoomsPage() {
   const [newRoomCode, setNewRoomCode] = useState('')
   const [roomNamePrefix, setRoomNamePrefix] = useState('')
   const [roomCodePrefix, setRoomCodePrefix] = useState('')
+  const formattedRoomNamePrefix = roomNamePrefix.trim() ? `${roomNamePrefix.trim()} ` : ''
   const [roomStartNumber, setRoomStartNumber] = useState('')
   const [roomEndNumber, setRoomEndNumber] = useState('')
   const [newRoomType, setNewRoomType] = useState('Lecture')
@@ -527,6 +525,21 @@ function BuildingsRoomsPage() {
   const [isDeleteRoomModalOpen, setIsDeleteRoomModalOpen] = useState(false)
   const [roomToDelete, setRoomToDelete] = useState<Room | null>(null)
   const [isDeletingRoom, setIsDeletingRoom] = useState(false)
+
+  const [bulkDeleteBuildingId, setBulkDeleteBuildingId] = useState<string | null>(null)
+  const [selectedRoomIdsToDelete, setSelectedRoomIdsToDelete] = useState<Set<string>>(new Set())
+  const [isBulkDeleteConfirmation, setIsBulkDeleteConfirmation] = useState(false)
+  const [isDeletingRooms, setIsDeletingRooms] = useState(false)
+  const bulkDeleteBuilding = buildings.find(building => building.id === bulkDeleteBuildingId)
+  const selectedRoomsToDelete = bulkDeleteBuilding?.rooms.filter(room => selectedRoomIdsToDelete.has(room.id)) ?? []
+  const bulkDeleteRoomsByFloor = (isBulkDeleteConfirmation ? selectedRoomsToDelete : bulkDeleteBuilding?.rooms ?? [])
+    .reduce((groups, room) => {
+      const floorRooms = groups.get(room.floor) ?? []
+      floorRooms.push(room)
+      groups.set(room.floor, floorRooms)
+      return groups
+    }, new Map<number, Room[]>())
+  const bulkDeleteFloorGroups = Array.from(bulkDeleteRoomsByFloor).sort(([a], [b]) => a - b)
 
   const [isDeleteBuildingModalOpen, setIsDeleteBuildingModalOpen] = useState(false)
   const [buildingToDelete, setBuildingToDelete] = useState<Building | null>(null)
@@ -731,15 +744,15 @@ function BuildingsRoomsPage() {
     setIsDeletingRoom(true)
     try {
       const roomName = roomToDelete.name
-      // Delete image from storage first
-      await deleteImageFromStorage(roomToDelete.image)
-
-      await deleteDoc(doc(db, 'rooms', roomToDelete.id))
+      const result = await manageFacility({ action: 'delete_room', targetId: roomToDelete.id })
+      await Promise.all(result.deletedRooms
+        .filter(deleted => !rooms.some(room => room.id !== deleted.id && room.image === deleted.image))
+        .map(deleted => deleteImageFromStorage(deleted.image)))
       handleCloseDeleteRoomModal()
       showNotification(`Room "${roomName}" deleted successfully.`, 'success', 'Room Deleted')
     } catch (error) {
       console.error('Error deleting room:', error)
-      showNotification('Failed to delete room. Please try again.', 'error', 'Error Deleting Room')
+      showNotification(facilityActionError(error, 'Failed to delete room. Please try again.'), 'error', 'Error Deleting Room')
     } finally {
       setIsDeletingRoom(false)
     }
@@ -764,25 +777,16 @@ function BuildingsRoomsPage() {
     setIsDeletingBuilding(true)
     try {
       const buildingName = buildingToDelete.name
-      // Delete all room images from storage
-      await Promise.all(buildingToDelete.rooms.map(room => deleteImageFromStorage(room.image)))
-
-      const batch = writeBatch(db)
-
-      // Delete all rooms associated with the building
-      buildingToDelete.rooms.forEach(room => {
-        batch.delete(doc(db, 'rooms', room.id))
-      })
-
-      // Delete the building itself
-      batch.delete(doc(db, 'buildings', buildingToDelete.id))
-
-      await batch.commit()
+      const result = await manageFacility({ action: 'delete_building', targetId: buildingToDelete.id })
+      const deletedIds = new Set(result.deletedRooms.map(room => room.id))
+      await Promise.all([...new Set(result.deletedRooms.map(room => room.image))]
+        .filter(image => !rooms.some(room => !deletedIds.has(room.id) && room.image === image))
+        .map(deleteImageFromStorage))
       handleCloseDeleteBuildingModal()
       showNotification(`Building "${buildingName}" and its rooms deleted successfully.`, 'success', 'Building Deleted')
     } catch (error) {
       console.error('Error deleting building:', error)
-      showNotification('Failed to delete building. Please try again.', 'error', 'Error Deleting Building')
+      showNotification(facilityActionError(error, 'Failed to delete building. Please try again.'), 'error', 'Error Deleting Building')
     } finally {
       setIsDeletingBuilding(false)
     }
@@ -830,22 +834,20 @@ function BuildingsRoomsPage() {
     setIsSubmitting(true)
     try {
       if (editingBuilding) {
-        const buildingRef = doc(db, 'buildings', editingBuilding.id)
-        await updateDoc(buildingRef, {
-          name: newBuildingName,
-          code: newBuildingCode,
-          updatedAt: serverTimestamp()
+        const result = await manageFacility({
+          action: 'update_building', targetId: editingBuilding.id, data: { name: newBuildingName, code: newBuildingCode },
         })
+        if (!result.changed) {
+          handleCloseModals()
+          showNotification('No building details changed.', 'info', 'No Changes')
+          return
+        }
         handleCloseModals()
         showNotification(`Building "${newBuildingName}" updated successfully.`, 'success', 'Building Updated')
       } else {
         const savedBuildingName = newBuildingName
-        const docRef = await addDoc(collection(db, 'buildings'), {
-          name: newBuildingName,
-          code: newBuildingCode,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        })
+        const docRef = doc(collection(db, 'buildings'))
+        await manageFacility({ action: 'create_building', targetId: docRef.id, data: { name: newBuildingName, code: newBuildingCode } })
 
         // Close building modal first
         setIsBuildingModalOpen(false)
@@ -857,7 +859,7 @@ function BuildingsRoomsPage() {
       }
     } catch (error) {
       console.error("Error saving building: ", error)
-      showNotification('Failed to save building. Please try again.', 'error', 'Error Saving Building')
+      showNotification(facilityActionError(error, 'Failed to save building. Please try again.'), 'error', 'Error Saving Building')
     } finally {
       setIsSubmitting(false)
     }
@@ -887,7 +889,7 @@ function BuildingsRoomsPage() {
 
         for (let i = 0; i < count; i++) {
           const currentNum = startNum + (i * step)
-          const targetName = `${roomNamePrefix}${currentNum}`.trim().toLowerCase()
+          const targetName = `${formattedRoomNamePrefix}${currentNum}`.trim().toLowerCase()
           const targetCode = `${roomCodePrefix}${currentNum}`.trim().toLowerCase()
 
           const isDuplicateName = rooms.some(r =>
@@ -903,7 +905,7 @@ function BuildingsRoomsPage() {
             setErrors({ name: isDuplicateName, code: isDuplicateCode, start: false, end: false })
             showNotification(
               isDuplicateName
-                ? `Room name "${roomNamePrefix}${currentNum}" already exists.`
+                ? `Room name "${formattedRoomNamePrefix}${currentNum}" already exists.`
                 : `Room code "${roomCodePrefix}${currentNum}" already exists.`,
               'warning',
               'Duplicate Room'
@@ -991,106 +993,112 @@ function BuildingsRoomsPage() {
         return await getDownloadURL(storageRef);
       };
 
+      const roomData = {
+        buildingId: activeBuildingId || '', type: newRoomType,
+        floor: parseInt(newRoomFloor) || 0, capacity: parseInt(newRoomCapacity) || 0,
+        status: newRoomStatus, description: newRoomDescription,
+        amenities: newRoomAmenities, availableDays: newRoomAvailableDays,
+        startTime: newRoomStartTime, endTime: newRoomEndTime,
+        minBookingMins: min, maxBookingMins: max,
+      }
+
       if (editingRoom) {
-        const roomRef = doc(db, 'rooms', editingRoom.id)
-        const oldImageUrl = editingRoom.image
         const imageUrl = await uploadImage(editingRoom.id)
-
-        // Delete old image if a new one was uploaded and the old one was in storage
-        if (isNewUpload && oldImageUrl && oldImageUrl.includes('firebasestorage.googleapis.com')) {
-          console.log("Deleting old image from storage:", oldImageUrl)
-          await deleteImageFromStorage(oldImageUrl)
-        }
-
-        await updateDoc(roomRef, {
-          name: newRoomName,
-          code: newRoomCode,
-          type: newRoomType,
-          floor: parseInt(newRoomFloor) || 0,
-          capacity: parseInt(newRoomCapacity) || 0,
-          status: newRoomStatus,
-          image: imageUrl,
-          description: newRoomDescription,
-          amenities: newRoomAmenities,
-          availableDays: newRoomAvailableDays,
-          startTime: newRoomStartTime,
-          endTime: newRoomEndTime,
-          minBookingMins: min,
-          maxBookingMins: max,
-          updatedAt: serverTimestamp()
+        const result = await manageFacility({
+          action: 'update_room', targetId: editingRoom.id,
+          data: { ...roomData, name: newRoomName, code: newRoomCode, image: imageUrl },
         })
-        handleCloseModals()
-        showNotification(`Room "${newRoomName}" updated successfully.`, 'success', 'Room Updated')
-      } else if (isMultipleRooms) {
-        const startNum = parseInt(roomStartNumber) || 0
-        const endNum = parseInt(roomEndNumber) || 0
-
-        const count = Math.abs(endNum - startNum) + 1
-        const step = startNum <= endNum ? 1 : -1
-
-        for (let i = 0; i < count; i++) {
-          const currentNum = startNum + (i * step)
-          const roomRef = await addDoc(collection(db, 'rooms'), {
-            buildingId: activeBuildingId,
-            name: `${roomNamePrefix}${currentNum}`,
-            code: `${roomCodePrefix}${currentNum}`,
-            type: newRoomType,
-            floor: parseInt(newRoomFloor) || 0,
-            capacity: parseInt(newRoomCapacity) || 0,
-            status: newRoomStatus,
-            image: newRoomImage,
-            description: newRoomDescription,
-            amenities: newRoomAmenities,
-            availableDays: newRoomAvailableDays,
-            startTime: newRoomStartTime,
-            endTime: newRoomEndTime,
-            minBookingMins: min,
-            maxBookingMins: max,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          })
-
-          if (isNewUpload) {
-            const imageUrl = await uploadImage(roomRef.id)
-            await updateDoc(roomRef, { image: imageUrl })
-          }
+        // Keep the old image until both the room update and its log have committed.
+        if (isNewUpload && editingRoom.image !== imageUrl && !rooms.some(room => room.id !== editingRoom.id && room.image === editingRoom.image)) {
+          await deleteImageFromStorage(editingRoom.image)
         }
         handleCloseModals()
-        showNotification(`Successfully added ${count} rooms.`, 'success', 'Rooms Added')
+        showNotification(result.changed ? `Room "${newRoomName}" updated successfully.` : 'No room details changed.', result.changed ? 'success' : 'info', result.changed ? 'Room Updated' : 'No Changes')
       } else {
         const savedRoomName = newRoomName
-        const roomRef = await addDoc(collection(db, 'rooms'), {
-          buildingId: activeBuildingId,
-          name: newRoomName,
-          code: newRoomCode,
-          type: newRoomType,
-          floor: parseInt(newRoomFloor) || 0,
-          capacity: parseInt(newRoomCapacity) || 0,
-          status: newRoomStatus,
-          image: newRoomImage,
-          description: newRoomDescription,
-          amenities: newRoomAmenities,
-          availableDays: newRoomAvailableDays,
-          startTime: newRoomStartTime,
-          endTime: newRoomEndTime,
-          minBookingMins: min,
-          maxBookingMins: max,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        })
-
-        if (isNewUpload) {
+        const startNum = parseInt(roomStartNumber) || 0
+        const endNum = parseInt(roomEndNumber) || 0
+        const count = isMultipleRooms ? Math.abs(endNum - startNum) + 1 : 1
+        const step = startNum <= endNum ? 1 : -1
+        for (let i = 0; i < count; i++) {
+          const currentNum = startNum + i * step
+          const roomRef = doc(collection(db, 'rooms'))
+          // Upload first so the creation event captures the final image in one record.
           const imageUrl = await uploadImage(roomRef.id)
-          await updateDoc(roomRef, { image: imageUrl })
+          await manageFacility({
+            action: 'create_room', targetId: roomRef.id,
+            data: { ...roomData, image: imageUrl,
+              name: isMultipleRooms ? `${formattedRoomNamePrefix}${currentNum}` : newRoomName,
+              code: isMultipleRooms ? `${roomCodePrefix}${currentNum}` : newRoomCode,
+            },
+          })
         }
         handleCloseModals()
-        showNotification(`Room "${savedRoomName}" added successfully.`, 'success', 'Room Added')
+        showNotification(isMultipleRooms ? `Successfully added ${count} rooms.` : `Room "${savedRoomName}" added successfully.`, 'success', isMultipleRooms ? 'Rooms Added' : 'Room Added')
       }
     } catch (error) {
       console.error("Error saving room: ", error)
-      showNotification('Failed to save room. Please try again.', 'error', 'Error Saving Room')
+      showNotification(facilityActionError(error, 'Failed to save room. Please try again.'), 'error', 'Error Saving Room')
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const handleOpenBulkDeleteRooms = (building: Building) => {
+    setBulkDeleteBuildingId(building.id)
+    setSelectedRoomIdsToDelete(new Set())
+    setIsBulkDeleteConfirmation(false)
+  }
+
+  const handleCloseBulkDeleteRooms = () => {
+    setBulkDeleteBuildingId(null)
+    setSelectedRoomIdsToDelete(new Set())
+    setIsBulkDeleteConfirmation(false)
+  }
+
+  const handleBulkDeleteRoomsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!canManageBuildings || !bulkDeleteBuilding || selectedRoomsToDelete.length === 0 || isDeletingRooms) return
+
+    if (!isBulkDeleteConfirmation) {
+      setIsBulkDeleteConfirmation(true)
+      return
+    }
+
+    setIsDeletingRooms(true)
+    const deletedRooms: Array<{ id: string; image: string }> = []
+    try {
+      for (let offset = 0; offset < selectedRoomsToDelete.length; offset += 200) {
+        const chunk = selectedRoomsToDelete.slice(offset, offset + 200)
+        const result = await manageFacility({ action: 'delete_rooms', buildingId: bulkDeleteBuilding.id, roomIds: chunk.map(room => room.id) })
+        deletedRooms.push(...result.deletedRooms)
+        setSelectedRoomIdsToDelete(prev => {
+          const remaining = new Set(prev)
+          chunk.forEach(room => remaining.delete(room.id))
+          return remaining
+        })
+      }
+
+      handleCloseBulkDeleteRooms()
+      showNotification(`${deletedRooms.length} rooms deleted from "${bulkDeleteBuilding.name}".`, 'success', 'Rooms Deleted')
+    } catch (error) {
+      console.error('Error deleting rooms:', error)
+      setIsBulkDeleteConfirmation(false)
+      showNotification(
+        deletedRooms.length > 0
+          ? `${deletedRooms.length} rooms deleted. The remaining selected rooms could not be deleted. Please try again.`
+          : 'Failed to delete the selected rooms. Please try again.',
+        'error',
+        'Error Deleting Rooms'
+      )
+    } finally {
+      // Clean up images only after their room records were successfully deleted.
+      const deletedIds = new Set(deletedRooms.map(room => room.id))
+      const imageUrls = new Set(deletedRooms.map(room => room.image))
+      await Promise.all(Array.from(imageUrls)
+        .filter(imageUrl => !rooms.some(room => !deletedIds.has(room.id) && room.image === imageUrl))
+        .map(deleteImageFromStorage))
+      setIsDeletingRooms(false)
     }
   }
 
@@ -1298,10 +1306,10 @@ function BuildingsRoomsPage() {
                             value={roomNamePrefix}
                             maxLength={24}
                             onChange={(val) => {
-                              setRoomNamePrefix(val)
+                              setRoomNamePrefix(val.toUpperCase())
                               if (errors.name) setErrors(prev => ({ ...prev, name: false }))
                             }}
-                            placeholder="e.g. PTC "
+                            placeholder="e.g. PTC"
                             error={errors.name}
                             autoFocus
                           />
@@ -1320,7 +1328,7 @@ function BuildingsRoomsPage() {
                             value={roomCodePrefix}
                             maxLength={8}
                             onChange={(val) => {
-                              setRoomCodePrefix(val)
+                              setRoomCodePrefix(val.toUpperCase())
                               if (errors.code) setErrors(prev => ({ ...prev, code: false }))
                             }}
                             placeholder="e.g. PTC-"
@@ -1378,12 +1386,12 @@ function BuildingsRoomsPage() {
                               const s = parseInt(roomStartNumber)
                               const e = parseInt(roomEndNumber)
                               if (isNaN(s) || isNaN(e)) return "Enter range to see preview"
-                              if (s === e) return `${roomNamePrefix}${s}`
+                              if (s === e) return `${formattedRoomNamePrefix}${s}`
                               const diff = Math.abs(e - s)
                               const step = s < e ? 1 : -1
                               const next = s + step
-                              if (diff === 1) return `${roomNamePrefix}${s}, ${roomNamePrefix}${e}`
-                              return <>{roomNamePrefix}{s}, {roomNamePrefix}{next}, ..., {roomNamePrefix}{e}</>
+                              if (diff === 1) return `${formattedRoomNamePrefix}${s}, ${formattedRoomNamePrefix}${e}`
+                              return <>{formattedRoomNamePrefix}{s}, {formattedRoomNamePrefix}{next}, ..., {formattedRoomNamePrefix}{e}</>
                             })()
                           ) : (
                             "Enter range to see preview"
@@ -1720,6 +1728,8 @@ function BuildingsRoomsPage() {
         isOpen={isRoomInfoModalOpen}
         room={selectedRoomInfo}
         onClose={handleCloseModals}
+        hasUnreadComments={selectedRoomInfo ? unreadRoomIds.has(selectedRoomInfo.id) : false}
+        comments={selectedRoomInfo ? isVisible => <RoomComments key={selectedRoomInfo.id} roomId={selectedRoomInfo.id} isVisible={isVisible} onCommentsSeen={markCommentsSeen} onCommentSeen={markCommentSeen} isCommentUnread={isCommentUnread} canModerateComments={currentUserRole === 'Admin' || currentUserRole === 'Registrar'} /> : undefined}
         actionButton={
           <Button
             variant="brand"
@@ -1739,8 +1749,9 @@ function BuildingsRoomsPage() {
 
       {/* Room Schedule Timetable Modal */}
       <ScheduleModal
+        key={selectedRoomForSchedule?.id ?? 'room-schedule'}
         isOpen={isRoomScheduleModalOpen}
-        room={selectedRoomForSchedule}
+        room={rooms.find(room => room.id === selectedRoomForSchedule?.id) ?? selectedRoomForSchedule}
         buildingName={
           buildings.find(b => b.rooms.some(r => r.id === selectedRoomForSchedule?.id))?.name
         }
@@ -1817,6 +1828,138 @@ function BuildingsRoomsPage() {
               if (!isDeletingRoom) handleCloseDeleteRoomModal()
             }}
           />
+        </div>
+      )}
+
+      {bulkDeleteBuilding && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isDeletingRooms) handleCloseBulkDeleteRooms()
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="bulk-delete-rooms-title"
+            className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200"
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && !isDeletingRooms) handleCloseBulkDeleteRooms()
+            }}
+          >
+            <div className="bg-rose-600 p-6 text-white">
+              <h3 id="bulk-delete-rooms-title" className="text-xl font-bold">Delete Rooms</h3>
+              <p className="mt-1 text-sm text-white/80">
+                {isBulkDeleteConfirmation ? 'Confirm the rooms you want to delete.' : 'Select rooms to delete from this building.'}
+              </p>
+            </div>
+
+            <form onSubmit={handleBulkDeleteRoomsSubmit} className="p-6 space-y-4">
+              <div className="rounded-xl border border-gray-100 bg-gray-50 p-4">
+                <p className="text-sm font-bold text-gray-900 truncate">{bulkDeleteBuilding.name}</p>
+                <p className="mt-1 text-xs font-medium text-gray-500">
+                  {selectedRoomsToDelete.length} of {bulkDeleteBuilding.rooms.length} rooms selected
+                </p>
+              </div>
+
+              <div className="max-h-60 overflow-y-auto rounded-xl border border-gray-200 divide-y divide-gray-100">
+                {bulkDeleteFloorGroups.map(([floor, floorRooms]) => {
+                  const selectedCount = floorRooms.filter(room => selectedRoomIdsToDelete.has(room.id)).length
+                  return (
+                    <div key={floor} className="divide-y divide-gray-100">
+                      <label className="flex items-center gap-3 p-3 text-sm font-semibold text-gray-700 bg-gray-50">
+                        {!isBulkDeleteConfirmation && (
+                          <input
+                            type="checkbox"
+                            aria-label={`Select all rooms on Floor ${floor}`}
+                            checked={selectedCount === floorRooms.length}
+                            ref={(element) => {
+                              if (element) element.indeterminate = selectedCount > 0 && selectedCount < floorRooms.length
+                            }}
+                            disabled={isDeletingRooms}
+                            onChange={(e) => {
+                              const checked = e.target.checked
+                              setSelectedRoomIdsToDelete(prev => {
+                                const next = new Set(prev)
+                                floorRooms.forEach(room => {
+                                  if (checked) next.add(room.id)
+                                  else next.delete(room.id)
+                                })
+                                return next
+                              })
+                            }}
+                            className="h-4 w-4 shrink-0 accent-[var(--brand-color)]"
+                          />
+                        )}
+                        <span className="min-w-0 flex-1">Floor {floor}</span>
+                        <span className="text-xs font-medium text-gray-500">
+                          {selectedCount} / {floorRooms.length}
+                        </span>
+                      </label>
+                      {floorRooms.map(room => (
+                        <label key={room.id} className="flex items-center gap-3 p-3 text-sm text-gray-700">
+                          {!isBulkDeleteConfirmation && (
+                            <input
+                              type="checkbox"
+                              checked={selectedRoomIdsToDelete.has(room.id)}
+                              disabled={isDeletingRooms}
+                              onChange={(e) => {
+                                const checked = e.target.checked
+                                setSelectedRoomIdsToDelete(prev => {
+                                  const next = new Set(prev)
+                                  if (checked) next.add(room.id)
+                                  else next.delete(room.id)
+                                  return next
+                                })
+                              }}
+                              className="h-4 w-4 shrink-0 accent-[var(--brand-color)]"
+                            />
+                          )}
+                          <span className="min-w-0">
+                            <span className="block font-semibold truncate">{room.name}</span>
+                            <span className="block text-xs text-gray-500 truncate">{room.type}</span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )
+                })}
+                {bulkDeleteBuilding.rooms.length === 0 && (
+                  <p className="p-4 text-sm text-gray-500">This building has no rooms to delete.</p>
+                )}
+              </div>
+
+              {isBulkDeleteConfirmation && (
+                <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
+                  <p className="text-xs leading-relaxed text-rose-700">
+                    This will permanently delete the {selectedRoomsToDelete.length} selected rooms. The building will be kept. This action cannot be undone.
+                  </p>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isDeletingRooms}
+                  onClick={() => {
+                    if (isBulkDeleteConfirmation) setIsBulkDeleteConfirmation(false)
+                    else handleCloseBulkDeleteRooms()
+                  }}
+                  className="flex-1"
+                >
+                  {isBulkDeleteConfirmation ? 'Back' : 'Cancel'}
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isDeletingRooms || selectedRoomsToDelete.length === 0}
+                  className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white shadow-md shadow-rose-600/20 hover:shadow-lg"
+                >
+                  {isDeletingRooms ? 'Deleting...' : isBulkDeleteConfirmation ? 'Confirm Delete' : 'Delete Selected'}
+                </Button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -1950,7 +2093,8 @@ function BuildingsRoomsPage() {
 
         <BuildingBrowser
           buildings={buildings}
-          buildingOptions={Array.from(new Set(buildings.map(b => b.name))).sort()}
+          unreadCommentRoomIds={unreadRoomIds}
+          buildingOptions={Array.from(new Set(buildings.map(b => b.code).filter(Boolean))).sort()}
           expandedBuildingIds={expandedBuildingIds}
           onToggleBuilding={toggleBuilding}
           onRoomClick={handleOpenRoomInfoModal}
@@ -2068,6 +2212,18 @@ function BuildingsRoomsPage() {
                   >
                     <EditIcon className="h-4 w-4 text-gray-400" />
                     Edit Building
+                  </button>
+                  <button
+                    type="button"
+                    disabled={building.rooms.length === 0}
+                    className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 disabled:cursor-default"
+                    onClick={() => {
+                      handleOpenBulkDeleteRooms(building)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    <TrashIcon className="h-4 w-4 text-rose-400" />
+                    Delete Rooms
                   </button>
                   <button
                     type="button"

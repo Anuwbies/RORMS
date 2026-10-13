@@ -4,6 +4,7 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { Button } from '../../components/Button'
 import { TextInput } from '../../components/TextInput'
+import { DatePicker } from '../../components/DatePicker'
 import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db } from '../../firebase'
@@ -13,6 +14,8 @@ import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 
 interface SemesterDetails {
+  startDate?: string
+  endDate?: string
   startMonth: string
   startYear: number
   endMonth: string
@@ -33,9 +36,67 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ]
 
-const formatShortMonth = (monthName: string) => {
-  if (!monthName) return ''
-  return monthName.slice(0, 3)
+const defaultSemesterDates = (academicYear = '') => {
+  const startYear = Number.parseInt(academicYear, 10) || new Date().getFullYear()
+  return {
+    sem1Start: `${startYear}-07-06`,
+    sem1End: `${startYear}-10-31`,
+    sem2Start: `${startYear}-11-03`,
+    sem2End: `${startYear + 1}-03-15`,
+  }
+}
+
+const semesterBoundary = (semester: SemesterDetails, boundary: 'start' | 'end') => {
+  const exactDate = semester[`${boundary}Date`]
+  if (exactDate) return exactDate
+  const month = MONTHS.indexOf(semester[`${boundary}Month`])
+  const year = semester[`${boundary}Year`]
+  if (month < 0 || !year) return ''
+  const day = boundary === 'start' ? 1 : new Date(year, month + 1, 0).getDate()
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+}
+
+const formatSemesterBoundary = (semester: SemesterDetails, boundary: 'start' | 'end') => {
+  const exactDate = semester[`${boundary}Date`]
+  if (!exactDate) return `${semester[`${boundary}Month`]?.slice(0, 3) || ''} ${semester[`${boundary}Year`] || ''}`.trim()
+  const [year, month, day] = exactDate.split('-').map(Number)
+  return `${MONTHS[month - 1].slice(0, 3)} ${day}, ${year}`
+}
+
+const semesterDetails = (startDate: string, endDate: string, phase: string): SemesterDetails => ({
+  startDate,
+  endDate,
+  startMonth: MONTHS[Number(startDate.slice(5, 7)) - 1],
+  startYear: Number(startDate.slice(0, 4)),
+  endMonth: MONTHS[Number(endDate.slice(5, 7)) - 1],
+  endYear: Number(endDate.slice(0, 4)),
+  phase,
+})
+
+const validateSemesterDates = (academicYear: string, dates: string[], years: AcademicYear[], excludedId: string | null) => {
+  if (dates.some(date => !date)) {
+    return 'Start and end dates are required for both semesters.'
+  }
+  if (dates.some(date => !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date)) {
+    return 'Please select a valid start and end date for each semester.'
+  }
+  const [firstYear, lastYear] = academicYear.split('-').map(year => Number(year.trim()))
+  if (dates.some(date => Number(date.slice(0, 4)) < firstYear || Number(date.slice(0, 4)) > lastYear)) {
+    return 'Semester dates must fall within the selected academic year.'
+  }
+  const [start1, end1, start2, end2] = dates
+  if (start1 >= end1) return '1st Semester end date must be after its start date.'
+  if (start2 >= end2) return '2nd Semester end date must be after its start date.'
+  if (start2 <= end1) return '2nd Semester must start after 1st Semester ends.'
+  for (const existing of years) {
+    if (existing.id === excludedId) continue
+    const existingStart = semesterBoundary(existing.sem1, 'start')
+    const existingEnd = semesterBoundary(existing.sem2, 'end')
+    if (existingStart && existingEnd && start1 <= existingEnd && end2 >= existingStart) {
+      return `Overlaps with ${existing.academicYear} (${formatSemesterBoundary(existing.sem1, 'start')} - ${formatSemesterBoundary(existing.sem2, 'end')})`
+    }
+  }
+  return ''
 }
 
 const phaseClasses: Record<string, string> = {
@@ -47,7 +108,12 @@ const phaseClasses: Record<string, string> = {
   Ended: 'bg-rose-100 text-rose-700 border-rose-200',
 }
 
-function AcademicCalendarPage() {
+interface AcademicCalendarPageProps {
+  userRole: string
+}
+
+function AcademicCalendarPage({ userRole }: AcademicCalendarPageProps) {
+  const canManageCalendar = userRole === 'Admin' || userRole === 'Registrar'
   const [years, setYears] = useState<AcademicYear[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   
@@ -65,22 +131,22 @@ function AcademicCalendarPage() {
   
   // Manage Phase State
   const [manageYearId, setManageYearId] = useState('')
-  const [manageSem1Start, setManageSem1Start] = useState('July')
-  const [manageSem1End, setManageSem1End] = useState('September')
+  const [manageSem1Start, setManageSem1Start] = useState('')
+  const [manageSem1End, setManageSem1End] = useState('')
   const [manageSem1Phase, setManageSem1Phase] = useState('Closed')
-  const [manageSem2Start, setManageSem2Start] = useState('November')
-  const [manageSem2End, setManageSem2End] = useState('January')
+  const [manageSem2Start, setManageSem2Start] = useState('')
+  const [manageSem2End, setManageSem2End] = useState('')
   const [manageSem2Phase, setManageSem2Phase] = useState('Closed')
   const [manageError, setManageError] = useState('')
   const [isManageSubmitting, setIsManageSubmitting] = useState(false)
   
   // Form State
   const [newYear, setNewYear] = useState('')
-  const [sem1Start, setSem1Start] = useState('July')
-  const [sem1End, setSem1End] = useState('September')
+  const [sem1Start, setSem1Start] = useState(() => defaultSemesterDates().sem1Start)
+  const [sem1End, setSem1End] = useState(() => defaultSemesterDates().sem1End)
   const [sem1Phase, setSem1Phase] = useState('Closed')
-  const [sem2Start, setSem2Start] = useState('November')
-  const [sem2End, setSem2End] = useState('January')
+  const [sem2Start, setSem2Start] = useState(() => defaultSemesterDates().sem2Start)
+  const [sem2End, setSem2End] = useState(() => defaultSemesterDates().sem2End)
   const [sem2Phase, setSem2Phase] = useState('Closed')
   
   const [createError, setCreateError] = useState('')
@@ -132,10 +198,10 @@ function AcademicCalendarPage() {
       )
     },
     {
-      header: '1st Sem Months',
+      header: '1st Sem Dates',
       render: (year) => (
         <span className="text-gray-600 font-medium">
-          {formatShortMonth(year.sem1.startMonth)} - {formatShortMonth(year.sem1.endMonth)}
+          {formatSemesterBoundary(year.sem1, 'start')} - {formatSemesterBoundary(year.sem1, 'end')}
         </span>
       )
     },
@@ -148,15 +214,17 @@ function AcademicCalendarPage() {
       )
     },
     {
-      header: '2nd Sem Months',
+      header: '2nd Sem Dates',
       render: (year) => (
         <span className="text-gray-600 font-medium">
-          {formatShortMonth(year.sem2.startMonth)} - {formatShortMonth(year.sem2.endMonth)}
+          {formatSemesterBoundary(year.sem2, 'start')} - {formatSemesterBoundary(year.sem2, 'end')}
         </span>
       )
     },
     {
       header: '2nd Sem Phase',
+      align: canManageCalendar ? undefined : 'right',
+      width: canManageCalendar ? undefined : '1%',
       render: (year) => (
         <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-xs font-bold border ${phaseClasses[year.sem2.phase] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
           {year.sem2.phase || 'Not Set'}
@@ -203,18 +271,24 @@ function AcademicCalendarPage() {
     } else if (numbersOnly.length === 2) {
       const start = 2000 + parseInt(numbersOnly)
       setNewYear(`${start} - ${start + 1}`)
+      const defaults = defaultSemesterDates(String(start))
+      setSem1Start(defaults.sem1Start)
+      setSem1End(defaults.sem1End)
+      setSem2Start(defaults.sem2Start)
+      setSem2End(defaults.sem2End)
     }
     setCreateError('')
   }
 
   const handleEditClick = (year: AcademicYear) => {
+    if (!canManageCalendar) return
     setEditingYearId(year.id)
     setNewYear(year.academicYear)
-    setSem1Start(year.sem1.startMonth)
-    setSem1End(year.sem1.endMonth)
+    setSem1Start(year.sem1.startDate || defaultSemesterDates(year.academicYear).sem1Start)
+    setSem1End(year.sem1.endDate || defaultSemesterDates(year.academicYear).sem1End)
     setSem1Phase(year.sem1.phase || 'Closed')
-    setSem2Start(year.sem2.startMonth)
-    setSem2End(year.sem2.endMonth)
+    setSem2Start(year.sem2.startDate || defaultSemesterDates(year.academicYear).sem2Start)
+    setSem2End(year.sem2.endDate || defaultSemesterDates(year.academicYear).sem2End)
     setSem2Phase(year.sem2.phase || 'Closed')
     setCreateError('')
     setIsModalOpen(true)
@@ -222,6 +296,7 @@ function AcademicCalendarPage() {
 
   const handleCreateYear = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canManageCalendar) return
     setCreateError('')
     const yearTrimmed = newYear.trim()
     
@@ -234,60 +309,10 @@ function AcademicCalendarPage() {
       }
     }
 
-    const yearMatches = yearTrimmed.match(/(\d{4})\s*-\s*(\d{4})/)
-    let baseYear = new Date().getFullYear()
-    if (yearMatches) {
-      baseYear = parseInt(yearMatches[1], 10)
-    } else {
-      setCreateError('Please format the year properly (type a 2 digit number).')
+    const validationError = validateSemesterDates(yearTrimmed, [sem1Start, sem1End, sem2Start, sem2End], years, editingYearId)
+    if (validationError) {
+      setCreateError(validationError)
       return
-    }
-
-    const getMonthIndex = (monthName: string) => MONTHS.indexOf(monthName)
-    
-    // Sem 1 Inference
-    const sem1StartIdx = getMonthIndex(sem1Start)
-    const sem1EndIdx = getMonthIndex(sem1End)
-    const sem1StartYear = baseYear
-    const sem1EndYear = sem1EndIdx < sem1StartIdx ? baseYear + 1 : baseYear
-
-    // Sem 2 Inference
-    const sem2StartIdx = getMonthIndex(sem2Start)
-    const sem2EndIdx = getMonthIndex(sem2End)
-    // Cap the inferred year to maximum of baseYear + 1
-    const sem2StartYear = Math.min(sem2StartIdx < sem1EndIdx ? sem1EndYear + 1 : sem1EndYear, baseYear + 1)
-    const sem2EndYear = Math.min(sem2EndIdx < sem2StartIdx ? sem2StartYear + 1 : sem2StartYear, baseYear + 1)
-
-    // Validation (Absolute Months: Year * 12 + Month)
-    const date1Start = sem1StartYear * 12 + sem1StartIdx
-    const date1End = sem1EndYear * 12 + sem1EndIdx
-    const date2Start = sem2StartYear * 12 + sem2StartIdx
-    const date2End = sem2EndYear * 12 + sem2EndIdx
-
-    if (date1Start >= date1End) {
-      setCreateError('1st Semester end month must be after its start month.')
-      return
-    }
-    if (date2Start >= date2End) {
-      setCreateError('2nd Semester end month must be after its start month.')
-      return
-    }
-    if (date2Start <= date1End) {
-      setCreateError('2nd Semester must start after 1st Semester ends.')
-      return
-    }
-
-    // Inter-Year Overlap Validation
-    for (const existing of years) {
-      if (editingYearId === existing.id) continue;
-
-      const existingStart = existing.sem1.startYear * 12 + getMonthIndex(existing.sem1.startMonth)
-      const existingEnd = existing.sem2.endYear * 12 + getMonthIndex(existing.sem2.endMonth)
-
-      if (date1Start <= existingEnd && date2End >= existingStart) {
-        setCreateError(`Overlaps with ${existing.academicYear} (${existing.sem1.startMonth} ${existing.sem1.startYear} - ${existing.sem2.endMonth} ${existing.sem2.endYear})`)
-        return
-      }
     }
 
     setIsSubmitting(true)
@@ -295,16 +320,16 @@ function AcademicCalendarPage() {
       if (editingYearId) {
         const docRef = doc(db, 'academicYears', editingYearId)
         await updateDoc(docRef, {
-          sem1: { startMonth: sem1Start, startYear: sem1StartYear, endMonth: sem1End, endYear: sem1EndYear, phase: sem1Phase },
-          sem2: { startMonth: sem2Start, startYear: sem2StartYear, endMonth: sem2End, endYear: sem2EndYear, phase: sem2Phase }
+          sem1: semesterDetails(sem1Start, sem1End, sem1Phase),
+          sem2: semesterDetails(sem2Start, sem2End, sem2Phase)
         })
       } else {
         const newDocRef = doc(collection(db, 'academicYears'))
         await setDoc(newDocRef, {
           academicYear: yearTrimmed,
           isActive: years.length === 0, // Make it active if it's the first one
-          sem1: { startMonth: sem1Start, startYear: sem1StartYear, endMonth: sem1End, endYear: sem1EndYear, phase: sem1Phase },
-          sem2: { startMonth: sem2Start, startYear: sem2StartYear, endMonth: sem2End, endYear: sem2EndYear, phase: sem2Phase },
+          sem1: semesterDetails(sem1Start, sem1End, sem1Phase),
+          sem2: semesterDetails(sem2Start, sem2End, sem2Phase),
           createdAt: serverTimestamp()
         })
       }
@@ -312,11 +337,11 @@ function AcademicCalendarPage() {
       setIsModalOpen(false)
       setEditingYearId(null)
       setNewYear('')
-      setSem1Start('July')
-      setSem1End('September')
+      setSem1Start(defaultSemesterDates().sem1Start)
+      setSem1End(defaultSemesterDates().sem1End)
       setSem1Phase('Closed')
-      setSem2Start('November')
-      setSem2End('January')
+      setSem2Start(defaultSemesterDates().sem2Start)
+      setSem2End(defaultSemesterDates().sem2End)
       setSem2Phase('Closed')
       setCreateError('')
     } catch (error) {
@@ -328,7 +353,7 @@ function AcademicCalendarPage() {
   }
 
   const confirmDeleteYear = async () => {
-    if (!yearToDelete) return
+    if (!canManageCalendar || !yearToDelete) return
     setIsDeletingYear(true)
     try {
       await deleteDoc(doc(db, 'academicYears', yearToDelete.id))
@@ -341,22 +366,23 @@ function AcademicCalendarPage() {
   }
 
   const handleOpenPhaseModal = () => {
+    if (!canManageCalendar) return
     const currentActive = years.find(y => y.isActive)
     if (currentActive) {
       setManageYearId(currentActive.id)
-      setManageSem1Start(currentActive.sem1.startMonth || 'July')
-      setManageSem1End(currentActive.sem1.endMonth || 'September')
+      setManageSem1Start(currentActive.sem1.startDate || defaultSemesterDates(currentActive.academicYear).sem1Start)
+      setManageSem1End(currentActive.sem1.endDate || defaultSemesterDates(currentActive.academicYear).sem1End)
       setManageSem1Phase(currentActive.sem1.phase || 'Closed')
-      setManageSem2Start(currentActive.sem2.startMonth || 'November')
-      setManageSem2End(currentActive.sem2.endMonth || 'January')
+      setManageSem2Start(currentActive.sem2.startDate || defaultSemesterDates(currentActive.academicYear).sem2Start)
+      setManageSem2End(currentActive.sem2.endDate || defaultSemesterDates(currentActive.academicYear).sem2End)
       setManageSem2Phase(currentActive.sem2.phase || 'Closed')
     } else if (years.length > 0) {
       setManageYearId(years[0].id)
-      setManageSem1Start(years[0].sem1.startMonth || 'July')
-      setManageSem1End(years[0].sem1.endMonth || 'September')
+      setManageSem1Start(years[0].sem1.startDate || defaultSemesterDates(years[0].academicYear).sem1Start)
+      setManageSem1End(years[0].sem1.endDate || defaultSemesterDates(years[0].academicYear).sem1End)
       setManageSem1Phase(years[0].sem1.phase || 'Closed')
-      setManageSem2Start(years[0].sem2.startMonth || 'November')
-      setManageSem2End(years[0].sem2.endMonth || 'January')
+      setManageSem2Start(years[0].sem2.startDate || defaultSemesterDates(years[0].academicYear).sem2Start)
+      setManageSem2End(years[0].sem2.endDate || defaultSemesterDates(years[0].academicYear).sem2End)
       setManageSem2Phase(years[0].sem2.phase || 'Closed')
     }
     setManageError('')
@@ -367,17 +393,18 @@ function AcademicCalendarPage() {
     const selectedYear = years.find(y => y.academicYear === academicYearStr)
     if (selectedYear) {
       setManageYearId(selectedYear.id)
-      setManageSem1Start(selectedYear.sem1.startMonth || 'July')
-      setManageSem1End(selectedYear.sem1.endMonth || 'September')
+      setManageSem1Start(selectedYear.sem1.startDate || defaultSemesterDates(selectedYear.academicYear).sem1Start)
+      setManageSem1End(selectedYear.sem1.endDate || defaultSemesterDates(selectedYear.academicYear).sem1End)
       setManageSem1Phase(selectedYear.sem1.phase || 'Closed')
-      setManageSem2Start(selectedYear.sem2.startMonth || 'November')
-      setManageSem2End(selectedYear.sem2.endMonth || 'January')
+      setManageSem2Start(selectedYear.sem2.startDate || defaultSemesterDates(selectedYear.academicYear).sem2Start)
+      setManageSem2End(selectedYear.sem2.endDate || defaultSemesterDates(selectedYear.academicYear).sem2End)
       setManageSem2Phase(selectedYear.sem2.phase || 'Closed')
     }
   }
 
   const handleSavePhases = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (!canManageCalendar) return
     setManageError('')
     if (!manageYearId) {
       setManageError('Please select a school year.')
@@ -390,56 +417,10 @@ function AcademicCalendarPage() {
       return
     }
 
-    const yearMatches = selectedYearDoc.academicYear.match(/(\d{4})\s*-\s*(\d{4})/)
-    let baseYear = new Date().getFullYear()
-    if (yearMatches) {
-      baseYear = parseInt(yearMatches[1], 10)
-    }
-
-    const getMonthIndex = (monthName: string) => MONTHS.indexOf(monthName)
-
-    // Sem 1 Inference
-    const sem1StartIdx = getMonthIndex(manageSem1Start)
-    const sem1EndIdx = getMonthIndex(manageSem1End)
-    const sem1StartYear = baseYear
-    const sem1EndYear = sem1EndIdx < sem1StartIdx ? baseYear + 1 : baseYear
-
-    // Sem 2 Inference
-    const sem2StartIdx = getMonthIndex(manageSem2Start)
-    const sem2EndIdx = getMonthIndex(manageSem2End)
-    const sem2StartYear = Math.min(sem2StartIdx < sem1EndIdx ? sem1EndYear + 1 : sem1EndYear, baseYear + 1)
-    const sem2EndYear = Math.min(sem2EndIdx < sem2StartIdx ? sem2StartYear + 1 : sem2StartYear, baseYear + 1)
-
-    // Validation (Absolute Months: Year * 12 + Month)
-    const date1Start = sem1StartYear * 12 + sem1StartIdx
-    const date1End = sem1EndYear * 12 + sem1EndIdx
-    const date2Start = sem2StartYear * 12 + sem2StartIdx
-    const date2End = sem2EndYear * 12 + sem2EndIdx
-
-    if (date1Start >= date1End) {
-      setManageError('1st Semester end month must be after its start month.')
+    const validationError = validateSemesterDates(selectedYearDoc.academicYear, [manageSem1Start, manageSem1End, manageSem2Start, manageSem2End], years, manageYearId)
+    if (validationError) {
+      setManageError(validationError)
       return
-    }
-    if (date2Start >= date2End) {
-      setManageError('2nd Semester end month must be after its start month.')
-      return
-    }
-    if (date2Start <= date1End) {
-      setManageError('2nd Semester must start after 1st Semester ends.')
-      return
-    }
-
-    // Inter-Year Overlap Validation
-    for (const existing of years) {
-      if (manageYearId === existing.id) continue;
-
-      const existingStart = existing.sem1.startYear * 12 + getMonthIndex(existing.sem1.startMonth)
-      const existingEnd = existing.sem2.endYear * 12 + getMonthIndex(existing.sem2.endMonth)
-
-      if (date1Start <= existingEnd && date2End >= existingStart) {
-        setManageError(`Overlaps with ${existing.academicYear} (${existing.sem1.startMonth} ${existing.sem1.startYear} - ${existing.sem2.endMonth} ${existing.sem2.endYear})`)
-        return
-      }
     }
 
     setIsManageSubmitting(true)
@@ -450,20 +431,8 @@ function AcademicCalendarPage() {
         if (y.id === manageYearId) {
           batch.update(ref, { 
             isActive: true,
-            sem1: {
-              startMonth: manageSem1Start,
-              startYear: sem1StartYear,
-              endMonth: manageSem1End,
-              endYear: sem1EndYear,
-              phase: manageSem1Phase
-            },
-            sem2: {
-              startMonth: manageSem2Start,
-              startYear: sem2StartYear,
-              endMonth: manageSem2End,
-              endYear: sem2EndYear,
-              phase: manageSem2Phase
-            }
+            sem1: semesterDetails(manageSem1Start, manageSem1End, manageSem1Phase),
+            sem2: semesterDetails(manageSem2Start, manageSem2End, manageSem2Phase)
           })
         } else if (y.isActive) {
           batch.update(ref, { isActive: false })
@@ -535,7 +504,7 @@ function AcademicCalendarPage() {
         </div>
         <DataTable
           data={filteredYears}
-          columns={columns}
+          columns={canManageCalendar ? columns : columns.filter(column => column.header !== 'Actions')}
           searchPlaceholder="Search school years..."
           searchValue={searchTerm}
           onSearchChange={setSearchTerm}
@@ -579,7 +548,7 @@ function AcademicCalendarPage() {
               }}
             />
           }
-          primaryAction={
+          primaryAction={canManageCalendar && (
             <div className="flex flex-col sm:flex-row items-center gap-3">
               <Button 
                 variant="outline" 
@@ -593,11 +562,11 @@ function AcademicCalendarPage() {
                 onClick={() => {
                   setEditingYearId(null)
                   setNewYear('')
-                  setSem1Start('July')
-                  setSem1End('September')
+                  setSem1Start(defaultSemesterDates().sem1Start)
+                  setSem1End(defaultSemesterDates().sem1End)
                   setSem1Phase('Closed')
-                  setSem2Start('November')
-                  setSem2End('January')
+                  setSem2Start(defaultSemesterDates().sem2Start)
+                  setSem2End(defaultSemesterDates().sem2End)
                   setSem2Phase('Closed')
                   setCreateError('')
                   setIsModalOpen(true)
@@ -607,10 +576,10 @@ function AcademicCalendarPage() {
                 New School Year
               </Button>
             </div>
-          }
+          )}
         />
       {/* Add / Edit School Year Modal */}
-      {isModalOpen && (
+      {canManageCalendar && isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
             className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible relative"
@@ -618,7 +587,7 @@ function AcademicCalendarPage() {
           >
             <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white rounded-t-2xl">
               <h3 className="text-xl font-bold">{editingYearId ? 'Edit School Year' : 'Create New School Year'}</h3>
-              <p className="mt-1 text-sm text-white/80">{editingYearId ? 'Reconfigure the start and end months for this year.' : 'Add a new academic year and configure its semesters.'}</p>
+              <p className="mt-1 text-sm text-white/80">{editingYearId ? 'Reconfigure the start and end dates for this year.' : 'Add a new academic year and configure its semesters.'}</p>
             </div>
             <form onSubmit={handleCreateYear} className="p-6 space-y-6">
               <div>
@@ -641,12 +610,12 @@ function AcademicCalendarPage() {
                   <h4 className="text-sm font-bold text-gray-800">1st Semester</h4>
                   
                   <div>
-                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Month</label>
-                    <SingleSelectDropdown value={sem1Start} options={MONTHS} onChange={setSem1Start} />
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Date <span className="text-rose-500">*</span></label>
+                    <DatePicker value={sem1Start} onChange={setSem1Start} hideClear />
                   </div>
                   <div>
-                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Month</label>
-                    <SingleSelectDropdown value={sem1End} options={MONTHS} onChange={setSem1End} />
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Date <span className="text-rose-500">*</span></label>
+                    <DatePicker value={sem1End} onChange={setSem1End} hideClear />
                   </div>
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Phase</label>
@@ -659,12 +628,12 @@ function AcademicCalendarPage() {
                   <h4 className="text-sm font-bold text-gray-800">2nd Semester</h4>
                   
                   <div>
-                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Month</label>
-                    <SingleSelectDropdown value={sem2Start} options={MONTHS} onChange={setSem2Start} />
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Date <span className="text-rose-500">*</span></label>
+                    <DatePicker value={sem2Start} onChange={setSem2Start} hideClear align="right" />
                   </div>
                   <div>
-                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Month</label>
-                    <SingleSelectDropdown value={sem2End} options={MONTHS} onChange={setSem2End} />
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Date <span className="text-rose-500">*</span></label>
+                    <DatePicker value={sem2End} onChange={setSem2End} hideClear align="right" />
                   </div>
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Phase</label>
@@ -694,7 +663,7 @@ function AcademicCalendarPage() {
                 <Button
                   type="submit"
                   variant="brand"
-                  disabled={isSubmitting || !/^\d{4}\s*-\s*\d{4}$/.test(newYear.trim())}
+                  disabled={isSubmitting || !/^\d{4}\s*-\s*\d{4}$/.test(newYear.trim()) || !sem1Start || !sem1End || !sem2Start || !sem2End}
                   icon={isSubmitting ? <SpinnerIcon className="h-5 w-5 animate-spin" /> : <CheckCircleIcon className="h-5 w-5" />}
                   className="flex-1"
                 >
@@ -711,7 +680,7 @@ function AcademicCalendarPage() {
       )}
     
       {/* Manage Active Year & Phases Modal */}
-      {isPhaseModalOpen && (
+      {canManageCalendar && isPhaseModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div 
             className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-visible relative"
@@ -738,12 +707,12 @@ function AcademicCalendarPage() {
                 <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-xs">
                   <h4 className="text-sm font-bold text-gray-800">1st Semester</h4>
                   <div>
-                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Month</label>
-                    <SingleSelectDropdown value={manageSem1Start} options={MONTHS} onChange={setManageSem1Start} />
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Date <span className="text-rose-500">*</span></label>
+                    <DatePicker value={manageSem1Start} onChange={setManageSem1Start} hideClear />
                   </div>
                   <div>
-                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Month</label>
-                    <SingleSelectDropdown value={manageSem1End} options={MONTHS} onChange={setManageSem1End} />
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Date <span className="text-rose-500">*</span></label>
+                    <DatePicker value={manageSem1End} onChange={setManageSem1End} hideClear />
                   </div>
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Phase</label>
@@ -755,12 +724,12 @@ function AcademicCalendarPage() {
                 <div className="space-y-4 rounded-xl border border-slate-200/80 bg-slate-50/80 p-4 shadow-xs">
                   <h4 className="text-sm font-bold text-gray-800">2nd Semester</h4>
                   <div>
-                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Month</label>
-                    <SingleSelectDropdown value={manageSem2Start} options={MONTHS} onChange={setManageSem2Start} />
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Start Date <span className="text-rose-500">*</span></label>
+                    <DatePicker value={manageSem2Start} onChange={setManageSem2Start} hideClear align="right" />
                   </div>
                   <div>
-                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Month</label>
-                    <SingleSelectDropdown value={manageSem2End} options={MONTHS} onChange={setManageSem2End} />
+                    <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">End Date <span className="text-rose-500">*</span></label>
+                    <DatePicker value={manageSem2End} onChange={setManageSem2End} hideClear align="right" />
                   </div>
                   <div>
                     <label className="block text-[0.65rem] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Phase</label>
@@ -787,7 +756,7 @@ function AcademicCalendarPage() {
                 <Button
                   type="submit"
                   variant="brand"
-                  disabled={isManageSubmitting || !manageYearId}
+                  disabled={isManageSubmitting || !manageYearId || !manageSem1Start || !manageSem1End || !manageSem2Start || !manageSem2End}
                   icon={isManageSubmitting ? <SpinnerIcon className="h-5 w-5 animate-spin" /> : <CheckCircleIcon className="h-5 w-5" />}
                   className="flex-1"
                 >
@@ -804,7 +773,7 @@ function AcademicCalendarPage() {
       )}
 
       {/* Delete School Year Confirmation Modal */}
-      {yearToDelete && (
+      {canManageCalendar && yearToDelete && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
           <div
             className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in zoom-in-95 duration-200 overflow-hidden"

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { formatUserName } from '../../utils/userName'
 import type { ComponentType, ReactNode } from 'react'
 import {
   Bar,
@@ -34,7 +35,20 @@ import {
   timeToMinutes,
   timestampToDate,
   useReportingData,
+  type ReservationReportRecord,
 } from '../../utils/reportingData'
+import { downloadReportCsv } from '../../utils/reportCsv'
+import { roomScheduleSection } from '../../utils/roomSchedule'
+import {
+  reportingScheduleConflicts,
+  reportingScheduleDays,
+  reportingScheduleDayText,
+  reportingScheduleDuration,
+  reportingScheduleMeetings,
+  reportingScheduleResource,
+  reportingScheduleTimeText,
+  reportingScheduleWeeklyMinutes,
+} from '../../utils/scheduleReporting'
 
 type AnalyticsKind = 'reservations' | 'rooms' | 'schedules' | 'members'
 
@@ -92,7 +106,7 @@ const ANALYTICS_OPTIONS: Array<{
 const ANALYTICS_KIND_STORAGE_KEY = 'rorms-analytics-selected-kind'
 const MEMBER_STATUS_OPTIONS = ['Active', 'Deactivated', 'Pending']
 const MEMBER_DEPARTMENT_PREFIXES = ['Administrative Office', "Registrar's Office", 'Unassigned']
-const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Returned', 'Revised', 'Plotted']
+const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Plot']
 const DATE_RANGE_OPTIONS = [
   { value: '7', label: 'Last 7 days' },
   { value: '30', label: 'Last 30 days' },
@@ -137,22 +151,15 @@ function getStoredAnalyticsKind(): AnalyticsKind {
   }
 }
 
-function formatScheduleStatus(status?: string) {
-  const normalizedStatus = status?.toLowerCase() || 'draft'
-  if (normalizedStatus === 'plot' || normalizedStatus === 'plotted') return 'Plotted'
-  if (['revise', 'revised', 'revising'].includes(normalizedStatus)) return 'Revised'
-  if (['return', 'returned', 'removed'].includes(normalizedStatus)) return 'Returned'
-  return 'Draft'
+function formatScheduleStatus(status?: string): 'Draft' | 'Plot' {
+  const normalizedStatus = status?.trim().toLowerCase()
+  return normalizedStatus === 'plot' || normalizedStatus === 'plotted' ? 'Plot' : 'Draft'
 }
 
 function formatReservationStatus(status?: string) {
   const normalizedStatus = status?.toLowerCase() || 'pending'
   if (normalizedStatus === 'rejected') return 'Declined'
   return `${normalizedStatus.charAt(0).toUpperCase()}${normalizedStatus.slice(1)}`
-}
-
-function csvEscape(value: string) {
-  return `"${value.replaceAll('"', '""')}"`
 }
 
 function shortLabel(value: string, maxLength = 16) {
@@ -254,6 +261,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
   }
 
   const parentSchedules = useMemo(() => schedules.filter(schedule => !schedule.parentId), [schedules])
+  const scheduleMeetings = useMemo(() => reportingScheduleMeetings(schedules), [schedules])
   const roomById = useMemo(() => new Map(rooms.map(room => [room.id, room])), [rooms])
   const buildingById = useMemo(() => new Map(buildings.map(building => [building.id, building])), [buildings])
   const memberById = useMemo(() => new Map(memberships.map(member => [member.id, member])), [memberships])
@@ -291,7 +299,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
 
     return [{
       id: member.id,
-      name: member.fullName || user?.fullName || 'Unnamed member',
+      name: formatUserName(user, member) || 'Unnamed member',
       email: email || 'No email recorded',
       department,
       role: member.role || 'Not assigned',
@@ -320,14 +328,24 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
   }, [dateRangeStart])
   const isInDateRange = (date: Date | null) => dateRangeStart === null || (date !== null && date >= dateRangeStart && date < dateRangeEnd!)
   const matchesDepartment = (department?: string) => departmentFilters.length === 0 || departmentFilters.includes(department?.trim() || 'Unassigned')
-  const reservationDepartment = (userId?: string) => memberByUserId.get(userId || '')?.department?.trim() || 'Unassigned'
+  const reservationDepartment = (reservation: ReservationReportRecord) => reservation.department?.trim() || memberByUserId.get(reservation.userId || '')?.department?.trim() || 'Unassigned'
 
   const matchingReservations = reservations.filter(reservation => (
     isInDateRange(dateStringToDate(reservation.date) || timestampToDate(reservation.createdAt))
-    && matchesDepartment(reservationDepartment(reservation.userId))
+    && matchesDepartment(reservationDepartment(reservation))
   ))
-  const matchingRooms = rooms.filter(room => isInDateRange(timestampToDate(room.createdAt)))
+  const matchingRooms = rooms.filter(room => {
+    if (!isInDateRange(timestampToDate(room.createdAt))) return false
+    const assignedDepartments = scheduleMeetings
+      .filter(schedule => schedule.roomId === room.id)
+      .map(schedule => schedule.department?.trim() || 'Unassigned')
+    return (assignedDepartments.length ? assignedDepartments : ['Unassigned']).some(matchesDepartment)
+  })
   const matchingSchedules = parentSchedules.filter(schedule => (
+    isInDateRange(timestampToDate(schedule.createdAt))
+    && matchesDepartment(schedule.department)
+  ))
+  const matchingScheduleMeetings = scheduleMeetings.filter(schedule => (
     isInDateRange(timestampToDate(schedule.createdAt))
     && matchesDepartment(schedule.department)
   ))
@@ -347,7 +365,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     const previousPeriodStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (selectedDateRangeDays * 2 - 1))
     return reservations.filter(reservation => {
       const date = dateStringToDate(reservation.date) || timestampToDate(reservation.createdAt)
-      return date !== null && date >= previousPeriodStart && date < currentPeriodStart && matchesDepartment(reservationDepartment(reservation.userId))
+      return date !== null && date >= previousPeriodStart && date < currentPeriodStart && matchesDepartment(reservationDepartment(reservation))
     })
   }, [dateRangeStart, reservations, selectedDateRangeDays, departmentFilters, memberByUserId])
   const matchingPreviousReservations = previousReservations
@@ -360,15 +378,15 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
   const maintenanceRooms = matchingRooms.filter(room => room.status?.toLowerCase() === 'maintenance').length
   const totalRoomCapacity = matchingRooms.reduce((total, room) => total + (Number(room.capacity) || 0), 0)
 
-  const plottedSchedules = matchingSchedules.filter(schedule => formatScheduleStatus(schedule.status) === 'Plotted').length
+  const plottedSchedules = matchingSchedules.filter(schedule => formatScheduleStatus(schedule.status) === 'Plot').length
   const draftSchedules = matchingSchedules.filter(schedule => formatScheduleStatus(schedule.status) === 'Draft').length
-  const schedulesNeedingReview = matchingSchedules.filter(schedule => ['Revised', 'Returned'].includes(formatScheduleStatus(schedule.status))).length
+  const scheduledDepartments = new Set(matchingSchedules.map(schedule => schedule.department?.trim()).filter(Boolean)).size
 
   const activeMembers = matchingMembers.filter(member => member.status === 'Active').length
   const pendingMembers = matchingMembers.filter(member => member.status === 'Pending').length
   const deactivatedMembers = matchingMembers.filter(member => member.status === 'Deactivated').length
   const acceptedMemberships = matchingMembers.filter(member => member.membershipStatus === 'Accepted').length
-  const allPlottedSchedules = parentSchedules.filter(schedule => formatScheduleStatus(schedule.status) === 'Plotted').length
+  const allPlottedSchedules = parentSchedules.filter(schedule => formatScheduleStatus(schedule.status) === 'Plot').length
 
   const metrics: AnalyticsMetric[] = analyticsKind === 'rooms' ? [
     { label: 'Rooms recorded', value: matchingRooms.length.toLocaleString(), detail: 'rooms matching this analytics view' },
@@ -379,7 +397,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     { label: 'Schedule records', value: matchingSchedules.length.toLocaleString(), detail: 'matching parent schedule entries' },
     { label: 'Plotted schedules', value: plottedSchedules.toLocaleString(), detail: `${percent(plottedSchedules, matchingSchedules.length)}% assigned` },
     { label: 'Draft schedules', value: draftSchedules.toLocaleString(), detail: `${percent(draftSchedules, matchingSchedules.length)}% still drafting` },
-    { label: 'Needs review', value: schedulesNeedingReview.toLocaleString(), detail: 'revised or returned schedules' },
+    { label: 'Departments represented', value: scheduledDepartments.toLocaleString(), detail: 'across matching schedules' },
   ] : analyticsKind === 'members' ? [
     { label: 'Member records', value: matchingMembers.length.toLocaleString(), detail: `${acceptedMemberships} accepted memberships` },
     { label: 'Active members', value: activeMembers.toLocaleString(), detail: `${percent(activeMembers, matchingMembers.length)}% of matching members` },
@@ -597,54 +615,50 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         const label = schedule.department?.trim() || 'Unassigned'
         const current = departmentStats.get(label) || { schedules: 0, plotted: 0 }
         current.schedules += 1
-        if (formatScheduleStatus(schedule.status) === 'Plotted') current.plotted += 1
+        if (formatScheduleStatus(schedule.status) === 'Plot') current.plotted += 1
         departmentStats.set(label, current)
       })
       primaryData = Array.from(departmentStats, ([label, stats]) => ({ label: shortLabel(label), value: stats.schedules, secondary: stats.plotted }))
         .sort((first, second) => second.value - first.value).slice(0, 10)
 
       const dayCounts = new Map(DAY_ORDER.map(day => [day, 0]))
-      matchingSchedules.forEach(schedule => schedule.days?.forEach(day => {
-        const normalizedDay = normalizeScheduleDay(day)
-        if (normalizedDay) dayCounts.set(normalizedDay, (dayCounts.get(normalizedDay) || 0) + 1)
+      matchingScheduleMeetings.forEach(schedule => reportingScheduleDays(schedule).forEach(day => {
+        dayCounts.set(day, (dayCounts.get(day) || 0) + 1)
       }))
       distributionData = Array.from(dayCounts, ([label, value]) => ({ label, value }))
 
-      const instructorLoads = new Map<string, { classes: number; minutes: number }>()
-      matchingSchedules.forEach(schedule => {
-        const instructorIds = [schedule.instructorId, schedule.instructorId2].filter((id): id is string => Boolean(id))
-        const duration = Math.max(0, timeToMinutes(schedule.endTime) - timeToMinutes(schedule.startTime))
-        instructorIds.forEach(instructorId => {
-          const current = instructorLoads.get(instructorId) || { classes: 0, minutes: 0 }
-          current.classes += 1
-          current.minutes += duration * Math.max(1, schedule.days?.length || 1)
-          instructorLoads.set(instructorId, current)
-        })
+      const instructorLoads = new Map<string, { name: string; classes: number; minutes: number }>()
+      matchingScheduleMeetings.forEach(schedule => {
+        const instructor = memberById.get(schedule.instructorId || '') || memberByUserId.get(schedule.instructorId || '')
+        const name = reportingScheduleResource(formatUserName(userById.get(instructor?.userId || ''), instructor), schedule.faculty)
+        if (name === '----' || name.toUpperCase() === 'TBA') return
+        const key = schedule.instructorId || `saved:${name.toUpperCase()}`
+        const current = instructorLoads.get(key) || { name, classes: 0, minutes: 0 }
+        current.classes += 1
+        current.minutes += reportingScheduleWeeklyMinutes(schedule)
+        instructorLoads.set(key, current)
       })
-      rankedData = Array.from(instructorLoads, ([instructorId, load]) => ({
-        label: memberById.get(instructorId)?.fullName || 'Unknown instructor',
+      rankedData = Array.from(instructorLoads.values(), load => ({
+        label: load.name,
         value: load.classes,
         detail: `${(load.minutes / 60).toFixed(load.minutes % 60 === 0 ? 0 : 1)} scheduled hours`,
       })).sort((first, second) => second.value - first.value).slice(0, 5)
 
-      const assignedRooms = matchingSchedules.filter(schedule => Boolean(schedule.roomId)).length
-      const assignedInstructors = matchingSchedules.filter(schedule => Boolean(schedule.instructorId)).length
-      const usedRooms = new Set(matchingSchedules.map(schedule => schedule.roomId).filter(Boolean)).size
-      const totalWeeklyMinutes = matchingSchedules.reduce((total, schedule) => {
-        const duration = Math.max(0, timeToMinutes(schedule.endTime) - timeToMinutes(schedule.startTime))
-        return total + duration * Math.max(1, schedule.days?.length || 1)
-      }, 0)
+      const assignedRooms = matchingScheduleMeetings.filter(schedule => Boolean(schedule.roomId)).length
+      const assignedInstructors = matchingScheduleMeetings.filter(schedule => Boolean(schedule.instructorId)).length
+      const usedRooms = new Set(matchingScheduleMeetings.map(schedule => schedule.roomId).filter(Boolean)).size
+      const totalWeeklyMinutes = matchingScheduleMeetings.reduce((total, schedule) => total + reportingScheduleWeeklyMinutes(schedule), 0)
       const busiestScheduleDay = [...distributionData].sort((first, second) => second.value - first.value)[0]
       insights = [
-        { label: 'Room assignment', value: `${percent(assignedRooms, matchingSchedules.length)}%`, detail: `${assignedRooms} schedules have rooms`, color: 'bg-emerald-500 text-emerald-700' },
-        { label: 'Instructor assignment', value: `${percent(assignedInstructors, matchingSchedules.length)}%`, detail: `${assignedInstructors} schedules have instructors`, color: 'bg-sky-500 text-sky-700' },
+        { label: 'Room assignment', value: `${percent(assignedRooms, matchingScheduleMeetings.length)}%`, detail: `${assignedRooms} meetings linked to rooms`, color: 'bg-emerald-500 text-emerald-700' },
+        { label: 'Instructor assignment', value: `${percent(assignedInstructors, matchingScheduleMeetings.length)}%`, detail: `${assignedInstructors} meetings linked to instructors`, color: 'bg-sky-500 text-sky-700' },
         { label: 'Busiest teaching day', value: busiestScheduleDay?.value ? busiestScheduleDay.label : '—', detail: busiestScheduleDay?.value ? `${busiestScheduleDay.value} class entries` : 'No day data', color: 'bg-amber-500 text-amber-700' },
         { label: 'Weekly teaching time', value: `${(totalWeeklyMinutes / 60).toFixed(totalWeeklyMinutes % 60 === 0 ? 0 : 1)}h`, detail: `${usedRooms} rooms represented`, color: 'bg-purple-500 text-purple-700' },
       ]
       primaryTitle = 'Department workload'
       primaryDescription = 'Schedule volume and plotting progress across departments'
       primaryValueLabel = 'Schedules'
-      primarySecondaryLabel = 'Plotted'
+      primarySecondaryLabel = 'Plot'
       distributionTitle = 'Weekly class pattern'
       distributionDescription = 'Class entries assigned to each teaching day'
       rankedTitle = 'Highest instructor loads'
@@ -758,7 +772,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       const declinedWithoutReason = matchingReservations.filter(reservation => ['declined', 'rejected'].includes(reservation.status?.toLowerCase() || '') && !reservation.declinedReason?.trim()).length
       const missingRoom = matchingReservations.filter(reservation => !reservation.roomId || !roomById.has(reservation.roomId)).length
       const uniqueRequesters = new Set(matchingReservations.map(reservation => reservation.userId).filter(Boolean)).size
-      const requestingDepartments = new Set(matchingReservations.map(reservation => memberByUserId.get(reservation.userId || '')?.department).filter(Boolean)).size
+      const requestingDepartments = new Set(matchingReservations.map(reservationDepartment).filter(department => department !== 'Unassigned')).size
       actionItems = [
         { label: 'Overdue pending requests', count: pendingPast, detail: 'reservation date has already passed', color: 'border-rose-200 bg-rose-50 text-rose-700' },
         { label: 'Upcoming pending requests', count: pendingUpcoming, detail: 'still awaiting a decision', color: 'border-amber-200 bg-amber-50 text-amber-700' },
@@ -780,8 +794,8 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         const row = matrixRows.find(item => item.label === normalizeScheduleDay(day))
         if (row) row.values[0] += 1
       }))
-      parentSchedules.filter(schedule => matchingRoomIds.has(schedule.roomId || '')).forEach(schedule => schedule.days?.forEach(day => {
-        const row = matrixRows.find(item => item.label === normalizeScheduleDay(day))
+      scheduleMeetings.filter(schedule => matchingRoomIds.has(schedule.roomId || '')).forEach(schedule => reportingScheduleDays(schedule).forEach(day => {
+        const row = matrixRows.find(item => item.label === day)
         if (row) row.values[1] += 1
       }))
       matchingReservations.filter(reservation => matchingRoomIds.has(reservation.roomId || '') && ['approved', 'completed'].includes(reservation.status?.toLowerCase() || '')).forEach(reservation => {
@@ -807,7 +821,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       }))
 
       const usedRoomIds = new Set([
-        ...parentSchedules.map(schedule => schedule.roomId).filter((id): id is string => Boolean(id)),
+        ...scheduleMeetings.map(schedule => schedule.roomId).filter((id): id is string => Boolean(id)),
         ...matchingReservations.map(reservation => reservation.roomId).filter((id): id is string => Boolean(id)),
       ])
       actionItems = [
@@ -826,43 +840,25 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     } else if (analyticsKind === 'schedules') {
       matrixColumns = TIME_BAND_ORDER
       matrixRows = DAY_ORDER.map(label => ({ label, values: TIME_BAND_ORDER.map(() => 0) }))
-      matchingSchedules.forEach(schedule => schedule.days?.forEach(day => {
-        const normalizedDay = normalizeScheduleDay(day)
+      matchingScheduleMeetings.filter(schedule => reportingScheduleDuration(schedule) !== null).forEach(schedule => reportingScheduleDays(schedule).forEach(day => {
         const band = getTimeBand(schedule.startTime)
-        const rowIndex = DAY_ORDER.indexOf(normalizedDay)
+        const rowIndex = DAY_ORDER.indexOf(day)
         const columnIndex = TIME_BAND_ORDER.indexOf(band)
         if (rowIndex >= 0 && columnIndex >= 0) matrixRows[rowIndex].values[columnIndex] += 1
       }))
 
       const formatCounts = new Map<string, number>()
-      matchingSchedules.forEach(schedule => {
-        const formats = [schedule.format, schedule.format2].filter((format): format is string => Boolean(format))
-        if (formats.length === 0) formats.push('Not specified')
-        formats.forEach(format => formatCounts.set(format, (formatCounts.get(format) || 0) + 1))
+      matchingScheduleMeetings.forEach(schedule => {
+        const format = schedule.format || 'Not specified'
+        formatCounts.set(format, (formatCounts.get(format) || 0) + 1)
       })
       secondaryData = Array.from(formatCounts, ([label, value]) => ({ label, value })).sort((first, second) => second.value - first.value)
 
-      let roomConflicts = 0
-      let instructorConflicts = 0
-      for (let firstIndex = 0; firstIndex < matchingSchedules.length; firstIndex += 1) {
-        const first = matchingSchedules[firstIndex]
-        const firstStart = timeToMinutes(first.startTime)
-        const firstEnd = timeToMinutes(first.endTime)
-        if (firstEnd <= firstStart) continue
-        for (let secondIndex = firstIndex + 1; secondIndex < matchingSchedules.length; secondIndex += 1) {
-          const second = matchingSchedules[secondIndex]
-          const secondStart = timeToMinutes(second.startTime)
-          const secondEnd = timeToMinutes(second.endTime)
-          const sharesDay = (first.days || []).some(firstDay => (second.days || []).some(secondDay => normalizeScheduleDay(firstDay) === normalizeScheduleDay(secondDay)))
-          if (!sharesDay || secondEnd <= secondStart || firstStart >= secondEnd || secondStart >= firstEnd) continue
-          if (first.roomId && first.roomId === second.roomId) roomConflicts += 1
-          if (first.instructorId && first.instructorId === second.instructorId) instructorConflicts += 1
-        }
-      }
+      const { rooms: roomConflicts, instructors: instructorConflicts } = reportingScheduleConflicts(matchingScheduleMeetings)
       actionItems = [
-        { label: 'Unassigned rooms', count: matchingSchedules.filter(schedule => !schedule.roomId).length, detail: 'schedule entries still need a room', color: 'border-rose-200 bg-rose-50 text-rose-700' },
-        { label: 'Unassigned instructors', count: matchingSchedules.filter(schedule => !schedule.instructorId).length, detail: 'teaching ownership is missing', color: 'border-amber-200 bg-amber-50 text-amber-700' },
-        { label: 'Invalid or missing times', count: matchingSchedules.filter(schedule => !schedule.startTime || !schedule.endTime || timeToMinutes(schedule.endTime) <= timeToMinutes(schedule.startTime)).length, detail: 'time range cannot be analyzed', color: 'border-purple-200 bg-purple-50 text-purple-700' },
+        { label: 'Unassigned rooms', count: matchingScheduleMeetings.filter(schedule => !schedule.roomId).length, detail: 'meetings still need a linked room', color: 'border-rose-200 bg-rose-50 text-rose-700' },
+        { label: 'Unassigned instructors', count: matchingScheduleMeetings.filter(schedule => !schedule.instructorId).length, detail: 'meetings still need a linked instructor', color: 'border-amber-200 bg-amber-50 text-amber-700' },
+        { label: 'Invalid or missing times', count: matchingScheduleMeetings.filter(schedule => reportingScheduleDuration(schedule) === null).length, detail: 'time range cannot be analyzed', color: 'border-purple-200 bg-purple-50 text-purple-700' },
         { label: 'Potential room conflicts', count: roomConflicts, detail: 'overlapping room and weekday pairs', color: 'border-sky-200 bg-sky-50 text-sky-700' },
         { label: 'Potential instructor conflicts', count: instructorConflicts, detail: 'overlapping instructor and weekday pairs', color: 'border-slate-200 bg-slate-100 text-slate-700' },
       ]
@@ -961,7 +957,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     let rows: string[][] = []
 
     if (analyticsKind === 'rooms') {
-      headers = ['Room', 'Code', 'Type', 'Floor', 'Capacity', 'Status']
+      headers = ['Room', 'Code', 'Type', 'Floor', 'Capacity', 'Status', 'Building', 'Building code', 'Amenities', 'Available days', 'Start time', 'End time']
       rows = matchingRooms.map(room => [
         room.name || 'Unnamed room',
         room.code || '',
@@ -969,43 +965,66 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         String(room.floor ?? ''),
         String(room.capacity ?? ''),
         room.status || 'Available',
+        buildingById.get(room.buildingId || '')?.name || '',
+        buildingById.get(room.buildingId || '')?.code || '',
+        room.amenities?.join(', ') || '',
+        room.availableDays?.join(', ') || '',
+        room.startTime || '',
+        room.endTime || '',
       ])
     } else if (analyticsKind === 'schedules') {
-      headers = ['Department', 'Code', 'Title', 'Section', 'Days', 'Start time', 'End time', 'Status']
-      rows = matchingSchedules.map(schedule => [
-        schedule.department || 'Unassigned',
-        schedule.subjectCode || '',
-        schedule.subjectTitle || '',
-        schedule.classSection || '',
-        schedule.days?.join(', ') || '',
-        schedule.startTime || '',
-        schedule.endTime || '',
-        formatScheduleStatus(schedule.status),
-      ])
+      headers = ['Department', 'Code', 'Title', 'Section', 'Days', 'Start time', 'End time', 'Status', 'Format', 'Instructor', 'Room', 'Time', 'Academic year', 'Semester']
+      rows = matchingScheduleMeetings.map(schedule => {
+        const instructor = memberById.get(schedule.instructorId || '') || memberByUserId.get(schedule.instructorId || '')
+        const room = roomById.get(schedule.roomId || '')
+        return [
+          schedule.department || 'Unassigned',
+          schedule.subjectCode || '',
+          schedule.subjectTitle || '',
+          roomScheduleSection(schedule),
+          reportingScheduleDayText(schedule),
+          schedule.startTime || '',
+          schedule.endTime || '',
+          formatScheduleStatus(schedule.status),
+          schedule.format || '',
+          reportingScheduleResource(formatUserName(userById.get(instructor?.userId || ''), instructor), schedule.faculty),
+          reportingScheduleResource(room?.name || room?.code, schedule.room),
+          reportingScheduleTimeText(schedule),
+          schedule.academicYear || '',
+          schedule.semester || schedule.semesterKey || '',
+        ]
+      })
     } else if (analyticsKind === 'members') {
       headers = ['Member', 'Email', 'Department', 'Role', 'Membership', 'Status']
       rows = matchingMembers.map(member => [member.name, member.email, member.department, member.role, member.membershipStatus, member.status])
     } else {
-      headers = ['Reference', 'Date', 'Start time', 'End time', 'Purpose', 'Status']
-      rows = matchingReservations.map(reservation => [
-        reservation.id,
-        reservation.date || '',
-        reservation.startTime || '',
-        reservation.endTime || '',
-        reservation.purpose || '',
-        formatReservationStatus(reservation.status),
-      ])
+      headers = ['Reference', 'Date', 'Start time', 'End time', 'Purpose', 'Status', 'Room', 'Building', 'Requester', 'Email', 'Department', 'Duration (minutes)', 'Attendees', 'Subject code', 'Section']
+      rows = matchingReservations.map(reservation => {
+        const member = memberByUserId.get(reservation.userId || '')
+        const user = userById.get(reservation.userId || '')
+        const room = roomById.get(reservation.roomId || '')
+        const building = buildingById.get(reservation.buildingId || room?.buildingId || '')
+        return [
+          reservation.id,
+          reservation.date || '',
+          reservation.startTime || '',
+          reservation.endTime || '',
+          reservation.purpose || '',
+          formatReservationStatus(reservation.status),
+          room?.code || room?.name || 'Unassigned',
+          building?.name || building?.code || '',
+          formatUserName(user, member) || 'Unknown requester',
+          user?.email || member?.email || '',
+          reservationDepartment(reservation),
+          String(reservationDurationMinutes(reservation)),
+          String(reservation.attendees ?? ''),
+          reservation.subjectCode?.trim() || 'N/A',
+          reservation.classSection?.trim() || 'N/A',
+        ]
+      })
     }
 
-    const csv = [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\r\n')
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }))
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${analyticsKind}-analytics.csv`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(url)
+    downloadReportCsv(`${analyticsKind}-analytics.csv`, headers, rows)
   }
 
   return (

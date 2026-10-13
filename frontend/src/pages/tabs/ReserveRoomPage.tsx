@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
+import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
+import { maxReservationDuration, reservationTimeMinutes, reservationTimeString, type ReservationRequestType } from '../../utils/reservationDuration'
 import { SectionHeader } from '../../components/SectionHeader'
 import { UserIcon, SearchIcon, CheckIcon, ClipboardIcon, BookIcon, BuildingIcon, DoorIcon, UsersIcon, CalendarIcon, ClockIcon } from '../../components/Icons'
 import { Button } from '../../components/Button'
@@ -10,17 +12,21 @@ import { BuildingBrowser } from '../../components/BuildingBrowser'
 import { TimePicker } from '../../components/TimePicker'
 import { DatePicker } from '../../components/DatePicker'
 import { NumberInput } from '../../components/NumberInput'
+import { TextInput } from '../../components/TextInput'
 import { TextAreaInput } from '../../components/TextAreaInput'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { RoomAmenities } from '../../components/RoomAmenities'
 import { Snackbar } from '../../components/Snackbar'
 import { db, auth } from '../../firebase'
+import { onAuthStateChanged } from 'firebase/auth'
 import { 
   collection, 
   doc,
   onSnapshot, 
   query, 
   orderBy,
+  where,
+  limit,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -90,11 +96,20 @@ interface ReserveRoomPageProps {
   userRole: string
 }
 
+interface ReservationMembership {
+  id: string
+  userId: string
+  department: string
+}
+
 function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [buildings, setBuildings] = useState<Building[]>([])
   const [reservations, setReservations] = useState<any[]>([])
   const [schedules, setSchedules] = useState<any[]>([])
+  const [reservationMembership, setReservationMembership] = useState<ReservationMembership | null>(null)
+  const [isMembershipLoading, setIsMembershipLoading] = useState(true)
+  const [membershipLoadError, setMembershipLoadError] = useState(false)
   const [isReservationEnabled, setIsReservationEnabled] = useState(false)
   const [isReservationAvailabilityLoading, setIsReservationAvailabilityLoading] = useState(true)
   const [isUpdatingReservationAvailability, setIsUpdatingReservationAvailability] = useState(false)
@@ -131,7 +146,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     return unsubscribe
   }, [reservationAvailabilityRef])
 
-  const buildingOptions = useMemo(() => buildings.map(b => b.name).sort(), [buildings])
+  const buildingOptions = useMemo(() => Array.from(new Set(buildings.map(b => b.code).filter(Boolean))).sort(), [buildings])
 
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
@@ -139,11 +154,14 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<Room | null>(null)
 
   const [reservationData, setReservationData] = useState({
+    requestType: 'Standard' as ReservationRequestType,
     date: getLocalIsoDate(),
-    startTime: '07:30',
+    startTime: '',
     duration: 60,
     purpose: '',
-    attendees: ''
+    attendees: '',
+    subjectCode: '',
+    classSection: ''
   })
 
   const busyIntervals = useMemo<{ start: number; end: number }[]>(() => {
@@ -225,7 +243,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     const roomEnd = room.endTime || '18:00'
     const roomStartMins = timeToMins(roomStart)
     const roomEndMins = timeToMins(roomEnd)
-    const maxStartMins = Math.max(roomStartMins, roomEndMins - minBookingMins)
+    const maxStartMins = roomEndMins - minBookingMins
 
     let minStartMins = roomStartMins
     if (dateStr === getLocalIsoDate()) {
@@ -252,53 +270,26 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     if (!selectedRoomInfo) return []
     const options = []
     const min = Math.max(30, selectedRoomInfo.minBookingMins || 30)
-    let max = selectedRoomInfo.maxBookingMins || 180
-
-    // Enforce room end time boundary
-    if (reservationData.startTime && selectedRoomInfo.endTime) {
-      const [sh, sm] = reservationData.startTime.split(':').map(Number)
-      const [eh, em] = selectedRoomInfo.endTime.split(':').map(Number)
-      const startMins = sh * 60 + sm
-      const endMins = eh * 60 + em
-      const maxAllowedByRoom = Math.max(0, endMins - startMins)
-      max = Math.min(max, maxAllowedByRoom)
-    }
-
-    // Enforce 1h 30m slot boundaries based on selected startTime
-    if (reservationData.startTime) {
-      const [h, m] = reservationData.startTime.split(':').map(Number)
-      const startMins = h * 60 + m
-      
-      // Slot boundaries starting from 07:30 (450 mins) up to 18:00 (1080 mins) in 90-minute intervals
-      const slotBoundaries = [450, 540, 630, 720, 810, 900, 990, 1080]
-      
-      for (let i = 0; i < slotBoundaries.length - 1; i++) {
-        const slotStart = slotBoundaries[i]
-        const slotEnd = slotBoundaries[i+1]
-        if (startMins >= slotStart && startMins < slotEnd) {
-          const maxAllowedBySlot = slotEnd - startMins
-          max = Math.min(max, maxAllowedBySlot)
-          break
-        }
-      }
-
-      // Enforce upcoming busy intervals (existing reservation or class schedule)
-      const futureBusy = busyIntervals
-        .filter(b => b.start > startMins)
-        .sort((a, b) => a.start - b.start)
-
-      if (futureBusy.length > 0) {
-        const nextBusyStart = futureBusy[0].start
-        const maxAllowedByBusy = Math.max(0, nextBusyStart - startMins)
-        max = Math.min(max, maxAllowedByBusy)
-      }
-    }
+    const max = maxReservationDuration(selectedRoomInfo, reservationData.startTime, reservationData.requestType, busyIntervals)
 
     for (let i = min; i <= max; i += 30) {
       options.push(i.toString())
     }
     return options
-  }, [selectedRoomInfo, reservationData.startTime, busyIntervals])
+  }, [selectedRoomInfo, reservationData.startTime, reservationData.requestType, busyIntervals])
+
+  const extendedEndTime = reservationData.startTime && reservationData.duration > 0
+    ? reservationTimeString(reservationTimeMinutes(reservationData.startTime) + reservationData.duration)
+    : ''
+  const extendedMinEndTime = selectedRoomInfo && reservationData.startTime
+    ? reservationTimeString(reservationTimeMinutes(reservationData.startTime) + Math.max(30, selectedRoomInfo.minBookingMins || 30))
+    : '07:30'
+  const extendedMaxDuration = selectedRoomInfo
+    ? maxReservationDuration(selectedRoomInfo, reservationData.startTime, 'Extended', busyIntervals)
+    : 0
+  const extendedMaxEndTime = reservationData.startTime
+    ? reservationTimeString(reservationTimeMinutes(reservationData.startTime) + extendedMaxDuration)
+    : selectedRoomInfo?.endTime || '18:00'
 
   const computedMaxStartTime = useMemo(() => {
     if (!selectedRoomInfo) return '17:30'
@@ -358,6 +349,26 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   }, [selectedRoomInfo])
 
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
+  const firstAvailableStartTime = useMemo(() => {
+    if (!selectedRoomInfo || !reservationData.date) return null
+    return getFirstAvailableStartTime(reservationData.date, selectedRoomInfo)
+  }, [selectedRoomInfo, reservationData.date, getFirstAvailableStartTime])
+  const isDateFull = Boolean(selectedRoomInfo && reservationData.date && firstAvailableStartTime === null)
+
+  // Keep the selection valid when live reservations or class schedules change.
+  useEffect(() => {
+    if (!isReservationModalOpen || !selectedRoomInfo) return
+    setReservationData(prev => {
+      const nextStartTime = firstAvailableStartTime === null
+        ? ''
+        : !prev.startTime || prev.startTime < computedMinStartTime || prev.startTime > computedMaxStartTime || isStartTimeDisabled(prev.startTime)
+          ? firstAvailableStartTime
+          : prev.startTime
+      if (nextStartTime === prev.startTime) return prev
+      return { ...prev, startTime: nextStartTime, duration: Math.max(30, selectedRoomInfo.minBookingMins || 30) }
+    })
+  }, [isReservationModalOpen, selectedRoomInfo, firstAvailableStartTime, computedMinStartTime, computedMaxStartTime, isStartTimeDisabled])
+
   const [successDetails, setSuccessDetails] = useState<{
     roomName: string
     roomType: string
@@ -369,6 +380,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     duration: number
     attendees: number
     purpose: string
+    requestType: ReservationRequestType
   } | null>(null)
   const [roomInfoSource, setRoomInfoSource] = useState<'main' | 'searchResults'>('main')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -453,12 +465,12 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   }, [isReservationModalOpen])
 
   useEffect(() => {
-    if (isReservationModalOpen && durationOptions.length > 0) {
+    if (isReservationModalOpen && reservationData.requestType === 'Standard' && durationOptions.length > 0) {
       if (!durationOptions.includes(reservationData.duration.toString())) {
         setReservationData(prev => ({ ...prev, duration: parseInt(durationOptions[0], 10) }))
       }
     }
-  }, [isReservationModalOpen, durationOptions, reservationData.duration])
+  }, [isReservationModalOpen, durationOptions, reservationData.duration, reservationData.requestType])
 
   useEffect(() => {
     const buildingsQuery = query(collection(db, 'buildings'), orderBy('createdAt', 'desc'))
@@ -535,7 +547,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     })
 
     const unsubscribeSchedules = onSnapshot(collection(db, 'schedule'), (snapshot) => {
-      setSchedules(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })))
+      setSchedules(scheduleMeetingRecords(snapshot.docs))
     }, (error) => {
       console.error("Error fetching schedules:", error)
     })
@@ -545,6 +557,41 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       unsubscribeRooms()
       unsubscribeReservations()
       unsubscribeSchedules()
+    }
+  }, [])
+
+  useEffect(() => {
+    let unsubscribeMembership: (() => void) | undefined
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeMembership?.()
+      unsubscribeMembership = undefined
+      setReservationMembership(null)
+      setMembershipLoadError(false)
+      setIsMembershipLoading(Boolean(user))
+      if (!user) return
+
+      const membershipQuery = query(collection(db, 'memberships'), where('userId', '==', user.uid), limit(1))
+      unsubscribeMembership = onSnapshot(membershipQuery, snapshot => {
+        if (auth.currentUser?.uid !== user.uid) return
+        const membershipDoc = snapshot.docs[0]
+        const department = membershipDoc?.data().department
+        setReservationMembership(membershipDoc && typeof department === 'string' && department.trim()
+          ? { id: membershipDoc.id, userId: user.uid, department: department.trim() }
+          : null)
+        setMembershipLoadError(false)
+        setIsMembershipLoading(false)
+      }, error => {
+        if (auth.currentUser?.uid !== user.uid) return
+        console.error('Error fetching reservation membership:', error)
+        setReservationMembership(null)
+        setMembershipLoadError(true)
+        setIsMembershipLoading(false)
+      })
+    })
+
+    return () => {
+      unsubscribeAuth()
+      unsubscribeMembership?.()
     }
   }, [])
 
@@ -621,14 +668,17 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     })
 
     const firstValid = getFirstAvailableStartTime(initialDate, room, initialBusy)
-    const initialStart = firstValid || (initialDate === getLocalIsoDate() ? `${Math.floor(Math.min(todayMinStartMins, maxStartMins) / 60).toString().padStart(2, '0')}:${(Math.min(todayMinStartMins, maxStartMins) % 60).toString().padStart(2, '0')}` : roomStart)
+    const initialStart = firstValid ?? ''
 
     setReservationData({
+      requestType: 'Standard',
       date: initialDate,
       startTime: initialStart,
       duration: minBookingMins,
       purpose: '',
-      attendees: ''
+      attendees: '',
+      subjectCode: '',
+      classSection: ''
     })
   }
 
@@ -646,7 +696,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const roomTypes = useMemo(() => Array.from(new Set(allRooms.map(r => r.type))).sort(), [allRooms])
   const allAmenities = useMemo(() => Array.from(new Set(allRooms.flatMap(r => r.amenities))).sort(), [allRooms])
   
-  const selectedBuildingObj = useMemo(() => buildings.find(b => b.name === findRoomData.building), [buildings, findRoomData.building])
+  const selectedBuildingObj = useMemo(() => buildings.find(b => b.code === findRoomData.building), [buildings, findRoomData.building])
   const floorOptions = useMemo(() => {
     if (!selectedBuildingObj) return []
     const floors = new Set(selectedBuildingObj.rooms.map(r => r.floor))
@@ -837,7 +887,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                   icon={<SearchIcon className="h-4 w-4" />}
                   onClick={() => {
                     const capacityReq = parseInt(findRoomData.capacity) || 0
-                    const buildingReq = findRoomData.building ? buildings.find(b => b.name === findRoomData.building)?.id : null
+                    const buildingReq = findRoomData.building ? buildings.find(b => b.code === findRoomData.building)?.id : null
                     
                     const filtered = allRooms.filter(room => {
                       if (buildingReq && room.buildingId !== buildingReq) return false
@@ -1070,6 +1120,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       {/* Reservation Modal */}
       {isReservationModalOpen && selectedRoomInfo && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar rounded-2xl">
           <div 
             className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
@@ -1081,6 +1132,20 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
             <div className="p-6 space-y-5">
               <div className="space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Reservation type</label>
+                  <SingleSelectDropdown
+                    options={['Standard', 'Extended']}
+                    value={reservationData.requestType}
+                    onChange={(value) => {
+                      setReservationData(prev => ({ ...prev, requestType: value === 'Extended' ? 'Extended' : 'Standard' }))
+                      setFormErrors(prev => ({ ...prev, duration: false }))
+                    }}
+                  />
+                  {reservationData.requestType === 'Extended' && (
+                    <p className="text-xs text-slate-500">Longer bookings require Admin/Registrar approval and must fit within the room's available hours, without conflicts.</p>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   {/* Date Selection */}
                   <div className="space-y-1.5">
@@ -1088,7 +1153,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     <DatePicker
                       value={reservationData.date}
                       onChange={(date) => {
-                        let newStartTime = reservationData.startTime
+                        let newStartTime = ''
                         if (selectedRoomInfo) {
                           const newBusy: { start: number; end: number }[] = []
                           const timeToMins = (t: string) => {
@@ -1124,9 +1189,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           })
 
                           const firstValid = getFirstAvailableStartTime(date, selectedRoomInfo, newBusy)
-                          if (firstValid) {
-                            newStartTime = firstValid
-                          }
+                          newStartTime = firstValid ?? ''
                         }
                         setReservationData({ ...reservationData, date, startTime: newStartTime })
                         if (date) setFormErrors(prev => ({ ...prev, date: false }))
@@ -1171,35 +1234,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     <TimePicker 
                       value={reservationData.startTime}
                       onChange={(time) => {
-                        let newDuration = reservationData.duration
-                        if (time && selectedRoomInfo) {
-                          const [h, m] = time.split(':').map(Number)
-                          const startMins = h * 60 + m
-                          const slotBoundaries = [450, 540, 630, 720, 810, 900, 990, 1080]
-                          for (let i = 0; i < slotBoundaries.length - 1; i++) {
-                            const slotStart = slotBoundaries[i]
-                            const slotEnd = slotBoundaries[i+1]
-                            if (startMins >= slotStart && startMins < slotEnd) {
-                              const maxAllowedBySlot = slotEnd - startMins
-                              if (newDuration > maxAllowedBySlot) {
-                                newDuration = maxAllowedBySlot
-                              }
-                              break
-                            }
-                          }
-
-                          const futureBusy = busyIntervals
-                            .filter(b => b.start > startMins)
-                            .sort((a, b) => a.start - b.start)
-
-                          if (futureBusy.length > 0) {
-                            const nextBusyStart = futureBusy[0].start
-                            const maxAllowedByBusy = Math.max(0, nextBusyStart - startMins)
-                            if (newDuration > maxAllowedByBusy) {
-                              newDuration = maxAllowedByBusy
-                            }
-                          }
-                        }
+                        const maxDuration = maxReservationDuration(selectedRoomInfo, time, reservationData.requestType, busyIntervals)
+                        const newDuration = Math.min(reservationData.duration, maxDuration)
                         setReservationData({ ...reservationData, startTime: time, duration: newDuration })
                         if (time) setFormErrors(prev => ({ ...prev, startTime: false }))
                       }}
@@ -1209,20 +1245,66 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       minTime={computedMinStartTime}
                       maxTime={computedMaxStartTime}
                       disabledTimes={isStartTimeDisabled}
+                      placeholder={isDateFull ? 'Full' : 'Select time'}
+                      disabled={isDateFull}
                     />
                   </div>
 
                   {/* Duration */}
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Duration (minutes) <span className="text-rose-500">*</span></label>
-                    <SingleSelectDropdown
-                      options={durationOptions}
-                      value={reservationData.duration.toString()}
-                      onChange={(val) => {
-                        setReservationData({ ...reservationData, duration: parseInt(val, 10) })
-                        setFormErrors(prev => ({ ...prev, duration: false }))
+                    <label className="text-xs font-bold uppercase tracking-widest text-gray-500">{reservationData.requestType === 'Extended' ? 'End Time' : 'Duration (minutes)'} <span className="text-rose-500">*</span></label>
+                    {reservationData.requestType === 'Extended' ? (
+                      <TimePicker
+                        value={extendedEndTime}
+                        onChange={(time) => {
+                          setReservationData(prev => ({ ...prev, duration: reservationTimeMinutes(time) - reservationTimeMinutes(prev.startTime) }))
+                          setFormErrors(prev => ({ ...prev, duration: false }))
+                        }}
+                        minTime={extendedMinEndTime}
+                        maxTime={extendedMaxEndTime}
+                        minuteStep={30}
+                        hasError={formErrors.duration}
+                        disabled={isDateFull || !reservationData.startTime || extendedMaxDuration < Math.max(30, selectedRoomInfo.minBookingMins || 30)}
+                        hideClear
+                      />
+                    ) : (
+                      <SingleSelectDropdown
+                        options={durationOptions}
+                        isDisabled={isDateFull}
+                        value={reservationData.duration.toString()}
+                        onChange={(val) => {
+                          setReservationData({ ...reservationData, duration: parseInt(val, 10) })
+                          setFormErrors(prev => ({ ...prev, duration: false }))
+                        }}
+                        className={formErrors.duration ? '[&>button]:border-rose-500 [&>button]:ring-4 [&>button]:ring-rose-50' : ''}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label htmlFor="reservation-subject-code" className="text-xs font-bold uppercase tracking-widest text-gray-500">Subject Code (optional)</label>
+                    <TextInput
+                      id="reservation-subject-code"
+                      value={reservationData.subjectCode}
+                      onChange={(subjectCode) => {
+                        setReservationData(prev => ({ ...prev, subjectCode: subjectCode.toUpperCase() }))
                       }}
-                      className={formErrors.duration ? '[&>button]:border-rose-500 [&>button]:ring-4 [&>button]:ring-rose-50' : ''}
+                      placeholder="e.g., ITE 314"
+                      icon={<BookIcon className="h-4 w-4" />}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="reservation-section" className="text-xs font-bold uppercase tracking-widest text-gray-500">Section (optional)</label>
+                    <TextInput
+                      id="reservation-section"
+                      value={reservationData.classSection}
+                      onChange={(classSection) => {
+                        setReservationData(prev => ({ ...prev, classSection: classSection.toUpperCase() }))
+                      }}
+                      placeholder="e.g., 3BSIT - 1"
+                      icon={<UsersIcon className="h-4 w-4" />}
                     />
                   </div>
                 </div>
@@ -1232,13 +1314,13 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Purpose <span className="text-rose-500">*</span></label>
                     <span className={`text-[0.625rem] font-bold tabular-nums ${formErrors.purpose ? 'text-rose-500' : 'text-gray-400'}`}>
-                      {reservationData.purpose.length}/200
+                      {reservationData.purpose.length}/50
                     </span>
                   </div>
                   <TextAreaInput
                     value={reservationData.purpose}
                     onChange={(val) => {
-                      if (val.length <= 200) {
+                      if (val.length <= 50) {
                         setReservationData({ ...reservationData, purpose: val })
                         if (val.trim()) setFormErrors(prev => ({ ...prev, purpose: false }))
                       }
@@ -1246,6 +1328,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     icon={<ClipboardIcon className="h-4 w-4" />}
                     placeholder="e.g., Team Meeting, Study Session..."
                     error={formErrors.purpose}
+                    maxLength={50}
                     rows={3}
                   />
                 </div>
@@ -1265,11 +1348,27 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 </Button>
                 <Button
                   variant="brand"
-                  disabled={isSubmitting || isReservationAvailabilityLoading || !isReservationEnabled}
+                  disabled={isSubmitting || isReservationAvailabilityLoading || !isReservationEnabled || isDateFull || !reservationData.startTime || isMembershipLoading}
                   className="flex-1"
                   onClick={async () => {
                     if (isReservationAvailabilityLoading || !isReservationEnabled) {
                       showNotification('Room reservations are currently unavailable. Please try again later.', 'warning', 'Reservations Unavailable')
+                      return
+                    }
+
+                    if (isDateFull) {
+                      showNotification('No free time on this date. Please choose another date.', 'warning', 'Room Full')
+                      return
+                    }
+
+                    if (!reservationMembership || reservationMembership.userId !== auth.currentUser?.uid) {
+                      showNotification(
+                        membershipLoadError
+                          ? 'Unable to load your department. Please refresh the page and try again.'
+                          : 'Your account has no assigned department. Please contact an administrator.',
+                        'error',
+                        'Department Unavailable'
+                      )
                       return
                     }
 
@@ -1298,6 +1397,12 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       return
                     }
 
+                    if (reservationData.purpose.length > 50) {
+                      setFormErrors(prev => ({ ...prev, purpose: true }))
+                      showNotification('Purpose must be 50 characters or fewer.', 'error', 'Invalid Purpose')
+                      return
+                    }
+
                     // 1. Attendees Capacity Validation
                     const attendeeCount = Number(reservationData.attendees)
                     if (attendeeCount <= 0 || (selectedRoomInfo.capacity && attendeeCount > selectedRoomInfo.capacity)) {
@@ -1307,14 +1412,21 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     }
 
                     // 2. Duration Validation
-                    if (reservationData.duration < selectedRoomInfo.minBookingMins || 
-                        reservationData.duration > selectedRoomInfo.maxBookingMins) {
-                      showNotification(`Duration must be between ${selectedRoomInfo.minBookingMins} and ${selectedRoomInfo.maxBookingMins} minutes.`, 'warning', 'Invalid Duration')
+                    if (!Number.isInteger(reservationData.duration) || reservationData.duration < Math.max(30, selectedRoomInfo.minBookingMins || 30) ||
+                        (reservationData.requestType === 'Standard' && reservationData.duration > (selectedRoomInfo.maxBookingMins || 180))) {
+                      showNotification(reservationData.requestType === 'Extended'
+                        ? `Duration must be at least ${Math.max(30, selectedRoomInfo.minBookingMins || 30)} minutes and end within the room's available hours.`
+                        : `Duration must be between ${Math.max(30, selectedRoomInfo.minBookingMins || 30)} and ${selectedRoomInfo.maxBookingMins || 180} minutes.`, 'warning', 'Invalid Duration')
                       setFormErrors(prev => ({ ...prev, duration: true }))
                       return
                     }
 
                     // 3. Date Validation (Available Days)
+                    if (reservationData.date < minReservationDate || reservationData.date > maxAllowedDate) {
+                      showNotification('Please select a date within the available reservation period.', 'warning', 'Invalid Date')
+                      setFormErrors(prev => ({ ...prev, date: true }))
+                      return
+                    }
                     const [y, m, d] = reservationData.date.split('-').map(Number)
                     const selectedDateObj = new Date(y, m - 1, d)
                     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -1334,8 +1446,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
                     const startMins = timeToMinutes(reservationData.startTime)
                     const endMins = startMins + reservationData.duration
-                    const roomStartMins = timeToMinutes(selectedRoomInfo.startTime)
-                    const roomEndMins = timeToMinutes(selectedRoomInfo.endTime)
+                    const roomStartMins = timeToMinutes(selectedRoomInfo.startTime || '07:30')
+                    const roomEndMins = timeToMinutes(selectedRoomInfo.endTime || '18:00')
                     const minBookingMins = Math.max(30, selectedRoomInfo.minBookingMins || 30)
 
                     if (startMins < roomStartMins || endMins > roomEndMins || startMins > roomEndMins - minBookingMins) {
@@ -1356,7 +1468,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
                     // 4. Slot boundary validation
                     const slotBoundaries = [450, 540, 630, 720, 810, 900, 990, 1080]
-                    for (let i = 0; i < slotBoundaries.length - 1; i++) {
+                    for (let i = 0; reservationData.requestType === 'Standard' && i < slotBoundaries.length - 1; i++) {
                       const slotStart = slotBoundaries[i]
                       const slotEnd = slotBoundaries[i+1]
                       if (startMins >= slotStart && startMins < slotEnd) {
@@ -1402,6 +1514,26 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           throw new Error('RESERVATIONS_DISABLED')
                         }
 
+                        const membershipSnapshot = await transaction.get(doc(db, 'memberships', reservationMembership.id))
+                        const membership = membershipSnapshot.data()
+                        const department = typeof membership?.department === 'string' ? membership.department.trim() : ''
+                        if (!membershipSnapshot.exists() || membership?.userId !== userId || !department) {
+                          throw new Error('MEMBERSHIP_DEPARTMENT_UNAVAILABLE')
+                        }
+
+                        if (reservationData.requestType === 'Extended') {
+                          const currentRoomSnapshot = await transaction.get(doc(db, 'rooms', selectedRoomInfo.id))
+                          const currentRoom = currentRoomSnapshot.data()
+                          if (!currentRoom || currentRoom.status !== 'Available'
+                            || !Array.isArray(currentRoom.availableDays) || !currentRoom.availableDays.includes(selectedDayName)
+                            || startMins < reservationTimeMinutes(currentRoom.startTime || '07:30')
+                            || endMins > reservationTimeMinutes(currentRoom.endTime || '18:00')
+                            || reservationData.duration < Math.max(30, currentRoom.minBookingMins || 30)
+                            || attendeeCount > currentRoom.capacity) {
+                            throw new Error('ROOM_AVAILABILITY_CHANGED')
+                          }
+                        }
+
                         transaction.set(doc(collection(db, 'reservations')), {
                           roomId: selectedRoomInfo.id,
                           buildingId: building?.id || '',
@@ -1410,8 +1542,12 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           startTime: reservationData.startTime,
                           endTime: endTimeStr,
                           duration: reservationData.duration,
+                          requestType: reservationData.requestType,
                           attendees: Number(reservationData.attendees),
                           purpose: reservationData.purpose.trim(),
+                          subjectCode: reservationData.subjectCode.trim().toUpperCase(),
+                          classSection: reservationData.classSection.trim().toUpperCase(),
+                          department,
                           status: 'Pending',
                           createdAt: serverTimestamp(),
                           updatedAt: serverTimestamp()
@@ -1427,6 +1563,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         startTime: reservationData.startTime,
                         endTime: endTimeStr,
                         duration: reservationData.duration,
+                        requestType: reservationData.requestType,
                         attendees: Number(reservationData.attendees),
                         purpose: reservationData.purpose.trim()
                       }
@@ -1437,6 +1574,10 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       if (error instanceof Error && error.message === 'RESERVATIONS_DISABLED') {
                         setIsReservationEnabled(false)
                         showNotification('Room reservations have been disabled. Your reservation was not submitted.', 'warning', 'Reservations Unavailable')
+                      } else if (error instanceof Error && error.message === 'MEMBERSHIP_DEPARTMENT_UNAVAILABLE') {
+                        showNotification('Your department is unavailable. Please refresh the page or contact an administrator.', 'error', 'Department Unavailable')
+                      } else if (error instanceof Error && error.message === 'ROOM_AVAILABILITY_CHANGED') {
+                        showNotification('The room availability or capacity changed. Please review the room and choose a valid time.', 'warning', 'Room Availability Changed')
                       } else {
                         console.error("Error creating reservation:", error)
                         alert("Failed to submit reservation. Please try again.")
@@ -1457,6 +1598,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 </Button>
               </div>
             </div>
+          </div>
           </div>
           <div 
             className="absolute inset-0 -z-10" 
@@ -1483,6 +1625,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 <h3 className="text-xl font-bold text-gray-900 leading-snug">
                   Request Sent Successfully
                 </h3>
+                {successDetails.requestType === 'Extended' && <p className="text-xs font-semibold text-amber-700">Extended reservation · Pending Admin/Registrar approval</p>}
                 <p className="text-sm text-gray-600 font-medium mt-0.5 whitespace-nowrap">
                   Your reservation for <span className="font-bold text-gray-900">{successDetails.roomName}</span> has been submitted.
                 </p>

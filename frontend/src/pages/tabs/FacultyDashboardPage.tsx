@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, type ReactNode } from 'react'
+import { dashboardInstructorMeetings, dashboardScheduleDays, dashboardScheduleMeetings, type DashboardScheduleMeeting } from '../../utils/dashboardSchedules'
+import { roomScheduleRoom, roomScheduleSection, scheduleMatchesTerm } from '../../utils/roomSchedule'
 import { SectionHeader } from '../../components/SectionHeader'
 import {
   UserIcon, CalendarIcon, ClockIcon, DoorIcon, ArrowRightIcon, ChevronRightIcon, BookIcon, BuildingIcon, UsersIcon, DepartmentIcon
@@ -13,21 +15,7 @@ interface FacultyDashboardProps {
   headerAction?: ReactNode
 }
 
-interface ScheduleItem {
-  id: string
-  subjectCode: string
-  subjectTitle: string
-  classSection: string
-  startTime: string
-  endTime: string
-  days: string[]
-  roomId: string
-  buildingId: string
-  roomName?: string
-  academicYear?: string
-  semester?: string
-  status?: string
-}
+type ScheduleItem = DashboardScheduleMeeting
 
 interface ReservationItem {
   id: string
@@ -100,7 +88,6 @@ export function FacultyDashboardPage({ userRole: _userRole, headerAction }: Facu
   const [roomsMap, setRoomsMap] = useState<Map<string, string>>(new Map())
   const [rooms, setRooms] = useState<RoomItem[]>([])
   const [buildingsMap, setBuildingsMap] = useState<Map<string, string>>(new Map())
-  const [rawTodaySchedules, setRawTodaySchedules] = useState<ScheduleItem[]>([])
   const [allSemesterSchedules, setAllSemesterSchedules] = useState<ScheduleItem[]>([])
   const [allReservations, setAllReservations] = useState<ReservationItem[]>([])
   const [upcomingReservations, setUpcomingReservations] = useState<ReservationItem[]>([])
@@ -157,79 +144,15 @@ export function FacultyDashboardPage({ userRole: _userRole, headerAction }: Facu
     }
   }
 
-  // Filter Today's Schedules strictly by resolved Current Semester & Active Academic Year
-  const todaySchedules = useMemo(() => {
-    if (!rawTodaySchedules.length) return []
-    return rawTodaySchedules.filter(item => {
-      // 1. Filter by Current Semester
-      if (item.semester && currentSemester) {
-        const schedSem = item.semester.toLowerCase().trim()
-        const targetSem = currentSemester.toLowerCase().trim()
-        const isMatch = schedSem === targetSem ||
-          (targetSem.includes('1st') && (schedSem.includes('1st') || schedSem.includes('first'))) ||
-          (targetSem.includes('2nd') && (schedSem.includes('2nd') || schedSem.includes('second')))
-        if (!isMatch) return false
-      }
+  const semesterSchedules = useMemo(() => allSemesterSchedules.filter(item =>
+    scheduleMatchesTerm(item, activeAcademicYear, currentSemester)
+  ), [allSemesterSchedules, activeAcademicYear, currentSemester])
 
-      // 2. Filter by Active Academic Year if present
-      if (item.academicYear && activeAcademicYear?.academicYear) {
-        const normA = item.academicYear.replace(/\s+/g, '')
-        const normB = activeAcademicYear.academicYear.replace(/\s+/g, '')
-        if (normA !== normB) return false
-      }
-
-      // 3. Allowed active statuses
-      const status = item.status || 'Draft'
-      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised'].includes(status)) return false
-
-      return true
-    }).sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
-  }, [rawTodaySchedules, currentSemester, activeAcademicYear])
-
-  // Group schedules by day of week for Weekly Schedule At-A-Glance (Sun - Sat)
-  const weeklyDayMap = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-    const map = new Map<string, ScheduleItem[]>()
-    days.forEach(d => map.set(d, []))
-
-    allSemesterSchedules.forEach(item => {
-      if (item.semester && currentSemester) {
-        const schedSem = item.semester.toLowerCase().trim()
-        const targetSem = currentSemester.toLowerCase().trim()
-        const isMatch = schedSem === targetSem ||
-          (targetSem.includes('1st') && (schedSem.includes('1st') || schedSem.includes('first'))) ||
-          (targetSem.includes('2nd') && (schedSem.includes('2nd') || schedSem.includes('second')))
-        if (!isMatch) return
-      }
-
-      if (item.academicYear && activeAcademicYear?.academicYear) {
-        const normA = item.academicYear.replace(/\s+/g, '')
-        const normB = activeAcademicYear.academicYear.replace(/\s+/g, '')
-        if (normA !== normB) return
-      }
-
-      const status = item.status || 'Draft'
-      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised'].includes(status)) return
-
-      if (Array.isArray(item.days)) {
-        item.days.forEach(day => {
-          const norm = day.slice(0, 3)
-          if (map.has(norm)) {
-            map.get(norm)!.push(item)
-          }
-        })
-      }
-    })
-
-    days.forEach(d => {
-      map.get(d)!.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
-    })
-
-    return map
-  }, [allSemesterSchedules, currentSemester, activeAcademicYear])
+  const weeklyDayMap = useMemo(() => dashboardScheduleDays(semesterSchedules), [semesterSchedules])
+  const todaySchedules = weeklyDayMap.get(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][currentTime.getDay()]) || []
 
   // Current Day & Date resolution
-  const now = useMemo(() => new Date(), [])
+  const now = currentTime
   const dayNamesShort = useMemo(() => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], [])
   const dayNamesFull = useMemo(() => ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], [])
   const todayDayShort = dayNamesShort[now.getDay()]
@@ -407,46 +330,7 @@ export function FacultyDashboardPage({ userRole: _userRole, headerAction }: Facu
         // Fetch Schedules strictly for this instructor's personal schedule
         const qSchedule = query(collection(db, 'schedule'))
         unsubSchedule = onSnapshot(qSchedule, (snapshot) => {
-          const todayList: ScheduleItem[] = []
-          const allList: ScheduleItem[] = []
-          snapshot.docs.forEach(doc => {
-            const d = doc.data()
-
-            // Strict personal schedule check:
-            // Match against user.uid, membership IDs, etc.
-            const isPersonal = 
-              validInstructorIds.includes(d.instructorId) ||
-              (d.instructorId2 && validInstructorIds.includes(d.instructorId2)) ||
-              (d.userId && validInstructorIds.includes(d.userId))
-
-            if (!isPersonal) return
-
-            const item: ScheduleItem = {
-              id: doc.id,
-              subjectCode: d.subjectCode || 'CLASS',
-              subjectTitle: d.subjectTitle || '',
-              classSection: d.classSection || '',
-              startTime: d.startTime || '',
-              endTime: d.endTime || '',
-              days: d.days || [],
-              roomId: d.roomId || '',
-              buildingId: d.buildingId || '',
-              academicYear: d.academicYear || '',
-              semester: d.semester || '',
-              status: d.status || 'Draft',
-            }
-            allList.push(item)
-
-            // Check if scheduled on today's day of week
-            const isToday = Array.isArray(d.days) && d.days.some(
-              (day: string) => day === todayDayShort || day === todayDayFull || day.includes(todayDayShort)
-            )
-            if (isToday) {
-              todayList.push(item)
-            }
-          })
-          setRawTodaySchedules(todayList)
-          setAllSemesterSchedules(allList)
+          setAllSemesterSchedules(dashboardInstructorMeetings(dashboardScheduleMeetings(snapshot.docs), validInstructorIds))
           setIsLoading(false)
         })
       })
@@ -826,7 +710,7 @@ export function FacultyDashboardPage({ userRole: _userRole, headerAction }: Facu
             <div className="divide-y divide-gray-100 flex-1 overflow-y-auto custom-scrollbar">
               {todaySchedules.length > 0 ? (
                 todaySchedules.map(item => {
-                  const roomName = roomsMap.get(item.roomId) || 'Room Assigned'
+                  const roomName = roomScheduleRoom(item, roomsMap)
                   const bldgName = buildingsMap.get(item.buildingId) || ''
                   const status = getClassStatus(item.startTime, item.endTime)
 
@@ -872,7 +756,7 @@ export function FacultyDashboardPage({ userRole: _userRole, headerAction }: Facu
                         </div>
                         {item.classSection && (
                           <p className="text-xs text-slate-500 truncate mt-0.5 font-medium">
-                            {item.classSection}
+                            {roomScheduleSection(item)}
                           </p>
                         )}
                       </div>
@@ -898,7 +782,7 @@ export function FacultyDashboardPage({ userRole: _userRole, headerAction }: Facu
                     <CalendarIcon className="h-6 w-6" />
                   </div>
                   <p className="text-sm font-bold text-slate-800">No classes scheduled for today</p>
-                  <p className="text-xs text-slate-400 mt-1">You have no teaching allocations plotted for {todayDayFull} ({currentSemester}).</p>
+                  <p className="text-xs text-slate-400 mt-1">You have no teaching meetings scheduled for {todayDayFull} ({currentSemester}).</p>
                 </div>
               )}
             </div>

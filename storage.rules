@@ -1,0 +1,98 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /department-workbooks/{departmentId}/{yearId}/{semester}/revisions/{revisionId}/{fileName} {
+      function ownUpload() {
+        let grant = firestore.get(/databases/(default)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester)/uploads/$(revisionId)).data;
+        return request.auth != null && grant.savedBy == request.auth.uid;
+      }
+      function activeUpload() {
+        let grant = firestore.get(/databases/(default)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester)/uploads/$(revisionId)).data;
+        let academicId = grant.get('academicYearId', yearId);
+        let year = firestore.get(/databases/(default)/documents/academicYears/$(academicId)).data;
+        return request.auth != null && grant.savedBy == request.auth.uid && semester in ['sem1', 'sem2']
+          && grant.createdAt > request.time - duration.value(10, 'm')
+          && year[semester].phase in ['Drafting', 'Plotting', 'Revision', 'Final'];
+      }
+      function currentFile() {
+        let term = firestore.get(/databases/(default)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester)).data;
+        let path = 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/revisions/' + revisionId + '/' + fileName;
+        return firestore.exists(/databases/(default)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester)) && (term.workbookPath == path || term.editorStatePath == path);
+      }
+      function noCurrentReference() {
+        return !firestore.exists(/databases/(default)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester)) || !currentFile();
+      }
+      allow read: if request.auth != null && (currentFile() || ownUpload());
+      allow create: if request.auth != null && activeUpload() && request.resource.size > 0
+        && ((fileName == 'original.xlsx' && request.resource.size <= 20 * 1024 * 1024 && request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+          || (fileName == 'editor.json' && request.resource.size <= 50 * 1024 * 1024 && request.resource.contentType == 'application/json'));
+      allow update: if false;
+      allow delete: if request.auth != null && ownUpload() && noCurrentReference();
+    }
+
+    match /department-workbooks/{departmentId}/{yearId}/{semester}/workbooks/{revisionId}/{fileName} {
+      function ownUpload() {
+        let grant = firestore.get(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/$(semester)/$(semester + "storage")/uploads/$(revisionId)).data;
+        return request.auth != null && grant.savedBy == request.auth.uid;
+      }
+      function activeUpload() {
+        let grant = firestore.get(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/$(semester)/$(semester + "storage")/uploads/$(revisionId)).data;
+        let academicId = grant.get('academicYearId', yearId);
+        let year = firestore.get(/databases/(default)/documents/academicYears/$(academicId)).data;
+        return request.auth != null && grant.savedBy == request.auth.uid && semester in ['sem1', 'sem2']
+          && grant.createdAt > request.time - duration.value(10, 'm')
+          && year[semester].phase in ['Drafting', 'Plotting', 'Revision', 'Final'];
+      }
+      function currentFile() {
+        let term = firestore.get(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/$(semester)/$(semester + "storage")).data;
+        let path = 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/workbooks/' + revisionId + '/' + fileName;
+        return firestore.exists(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/$(semester)/$(semester + "storage")) && (term.workbookPath == path || term.editorStatePath == path);
+      }
+      function noCurrentReference() {
+        return !firestore.exists(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/$(semester)/$(semester + "storage")) || !currentFile();
+      }
+      allow read: if request.auth != null && (currentFile() || ownUpload());
+      allow create: if request.auth != null && activeUpload() && request.resource.size > 0
+        && ((fileName == 'original.xlsx' && request.resource.size <= 20 * 1024 * 1024 && request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+          || (fileName == 'editor.json' && request.resource.size <= 50 * 1024 * 1024 && request.resource.contentType == 'application/json'));
+      allow update: if false;
+      allow delete: if request.auth != null && ownUpload() && noCurrentReference();
+    }
+
+    match /department-workbooks/{departmentId}/{yearId}/{semester}/semesters/{revisionId}/{fileName} {
+      function ownUpload() {
+        let grant = firestore.get(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/semesters/$(semester)/uploads/$(revisionId)).data;
+        return request.auth != null && grant.savedBy == request.auth.uid;
+      }
+      function activeUpload() {
+        let grant = firestore.get(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/semesters/$(semester)/uploads/$(revisionId)).data;
+        let academicId = grant.get('academicYearId', yearId);
+        let year = firestore.get(/databases/(default)/documents/academicYears/$(academicId)).data;
+        return request.auth != null && grant.savedBy == request.auth.uid && semester in ['sem1', 'sem2']
+          && grant.createdAt > request.time - duration.value(10, 'm')
+          && year[semester].phase in ['Drafting', 'Plotting', 'Revision', 'Final'];
+      }
+      function currentFile() {
+        let term = firestore.get(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/semesters/$(semester)).data;
+        let path = 'department-workbooks/' + departmentId + '/' + yearId + '/' + semester + '/semesters/' + revisionId + '/' + fileName;
+        return firestore.exists(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/semesters/$(semester)) && (term.workbookPath == path || term.editorStatePath == path);
+      }
+      function noCurrentReference() {
+        return !firestore.exists(/databases/(default)/documents/departments/$(departmentId)/workbooks/$(yearId)/semesters/$(semester)) || !currentFile();
+      }
+      allow read: if request.auth != null && (currentFile() || ownUpload());
+      allow create: if request.auth != null && activeUpload() && request.resource.size > 0
+        && ((fileName == 'original.xlsx' && request.resource.size <= 20 * 1024 * 1024 && request.resource.contentType == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+          || (fileName == 'editor.json' && request.resource.size <= 50 * 1024 * 1024 && request.resource.contentType == 'application/json'));
+      allow update: if false;
+      allow delete: if request.auth != null && ownUpload() && noCurrentReference();
+    }
+
+    // Preserve the currently deployed policy for other storage locations.
+    // This exception must not match the private workbook namespace.
+    match /{folder}/{otherPaths=**} {
+      allow read, write: if folder != 'department-workbooks';
+    }
+  }
+}

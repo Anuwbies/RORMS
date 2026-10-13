@@ -1,13 +1,13 @@
 import { useState, useEffect, useMemo } from 'react'
+import { formatUserName } from '../../utils/userName'
 import {
   CalendarIcon,
-  ClockIcon,
-  EditIcon,
   UserIcon,
+  UsersIcon,
+  DoorIcon,
   CheckCircleIcon
 } from '../../components/Icons'
 import { Button } from '../../components/Button'
-import { IconButton } from '../../components/IconButton'
 import { SectionHeader } from '../../components/SectionHeader'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -15,9 +15,12 @@ import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ScheduleModal } from '../../components/ScheduleModal'
-import { DepartmentEditScheduleModal } from '../../components/DepartmentEditScheduleModal'
+import { DepartmentExcelScheduleModal } from '../../components/DepartmentExcelScheduleModal'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
-import { db } from '../../firebase'
+import { auth, db } from '../../firebase'
+import { onAuthStateChanged } from 'firebase/auth'
+import { canEditDepartmentWorkbook, workbookEditablePhases, type WorkbookMembership } from '../../utils/departmentWorkbookPermissions'
+import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
 import {
   collection,
   onSnapshot,
@@ -39,6 +42,10 @@ interface AcademicYearData {
   isActive?: boolean
   sem1?: { name?: string; phase?: string; startMonth?: string; endMonth?: string }
   sem2?: { name?: string; phase?: string; startMonth?: string; endMonth?: string }
+}
+
+interface DepartmentScheduleSummary extends ScheduleMeetingRecord {
+  status: 'Draft' | 'Plot'
 }
 
 interface Member {
@@ -81,6 +88,24 @@ export function DepartmentSchedulesPage() {
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
   const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: string; phase: string } | null>(null)
+  const [workbookMembership, setWorkbookMembership] = useState<(WorkbookMembership & { id: string }) | null>(null)
+
+  useEffect(() => {
+    let unsubscribeMembership: (() => void) | undefined
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeMembership?.()
+      setWorkbookMembership(null)
+      if (!user) return
+      unsubscribeMembership = onSnapshot(query(collection(db, 'memberships'), where('userId', '==', user.uid)), snapshot => {
+        const manager = snapshot.docs.find(document => {
+          const data = document.data()
+          return data.status === 'accepted' && (data.role === 'Admin' || data.role === 'Registrar')
+        })
+        setWorkbookMembership(manager ? { id: manager.id, userId: user.uid, role: manager.data().role, status: 'accepted', department: manager.data().department } : null)
+      }, () => setWorkbookMembership(null))
+    })
+    return () => { unsubscribeAuth(); unsubscribeMembership?.() }
+  }, [])
 
   // Modals & Navigation state
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
@@ -95,7 +120,7 @@ export function DepartmentSchedulesPage() {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
 
   // Department Schedule statistics
-  const [deptSchedules, setDeptSchedules] = useState<any[]>([])
+  const [deptSchedules, setDeptSchedules] = useState<DepartmentScheduleSummary[]>([])
 
   useEffect(() => {
     if (!selectedDepartment?.code) {
@@ -109,7 +134,17 @@ export function DepartmentSchedulesPage() {
     )
 
     const unsub = onSnapshot(q, (snap) => {
-      const allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() })) as any[]
+      const allDocs = snap.docs.map((document): DepartmentScheduleSummary => {
+        const data = document.data()
+        return {
+          ...data,
+          id: document.id,
+          parentId: typeof data.parentId === 'string' ? data.parentId : undefined,
+          academicYear: typeof data.academicYear === 'string' ? data.academicYear : undefined,
+          semester: typeof data.semester === 'string' ? data.semester : undefined,
+          status: data.status === 'Plot' ? 'Plot' : 'Draft',
+        }
+      })
       // Filter by selected academic year and semester if available
       const filtered = allDocs.filter(item => {
         const matchesYear = !selectedAcademicYear?.academicYear || item.academicYear === selectedAcademicYear.academicYear
@@ -124,13 +159,28 @@ export function DepartmentSchedulesPage() {
 
   const scheduleCounts = useMemo(() => {
     const parentOrSingle = deptSchedules.filter(s => !s.parentId)
-    const plotted = parentOrSingle.filter(s => s.status === 'Plot' || s.status === 'Plotted').length
-    const drafted = parentOrSingle.filter(s => !s.status || s.status === 'Draft' || s.status === 'Drafted').length
-    const revised = parentOrSingle.filter(s => s.status === 'Revise' || s.status === 'Revised').length
-    const returned = parentOrSingle.filter(s => s.status === 'Return' || s.status === 'Returned' || s.status === 'Removed').length
+    const plot = parentOrSingle.filter(s => s.status === 'Plot').length
+    const draft = parentOrSingle.filter(s => s.status === 'Draft').length
     const total = parentOrSingle.length
 
-    return { plotted, drafted, revised, returned, total }
+    return { plot, draft, total }
+  }, [deptSchedules])
+
+  const facultyCounts = useMemo(() => {
+    const points = ['Instructor', 'Program Head', 'Dean'].map(role => ({
+      label: role,
+      value: members.filter(member => member.role === role).length,
+    }))
+    return { points, total: points.reduce((sum, point) => sum + point.value, 0) }
+  }, [members])
+
+  const roomAssignments = useMemo(() => {
+    // Workbook rows can contain several independent Lec/Lab room assignments.
+    const sessions = scheduleMeetingRecords(deptSchedules
+      .filter(row => row.source !== 'workbook' || row.schemaVersion !== 2 || (Array.isArray(row.meetings) && row.meetings.length > 0))
+      .map(row => ({ id: row.id, data: () => row })))
+    const assigned = sessions.filter(session => Boolean(session.roomId?.trim())).length
+    return { assigned, unassigned: sessions.length - assigned, total: sessions.length }
   }, [deptSchedules])
 
   // 1. Fetch Academic Years
@@ -209,7 +259,7 @@ export function DepartmentSchedulesPage() {
             return {
               id: data.userId || data.id,
               membershipId: data.id,
-              name: u.fullName || data.fullName || '',
+              name: formatUserName(u, data),
               email: u.email || data.email || '',
               role: data.role || 'Instructor',
               status: computedStatus,
@@ -329,27 +379,12 @@ export function DepartmentSchedulesPage() {
     },
     {
       header: 'Joined Date',
-      width: '23%',
+      width: '1%',
+      align: 'right',
       render: (member) => (
         <span className="text-sm font-semibold text-gray-600">
           {member.joinedDate}
         </span>
-      )
-    },
-    {
-      header: 'Actions',
-      width: '1%',
-      align: 'right',
-      render: (_member) => (
-        <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-          <IconButton
-            label="Edit member"
-            onClick={() => { }}
-            className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
-          >
-            <EditIcon className="h-4 w-4" />
-          </IconButton>
-        </div>
       )
     }
   ], [avatarErrors])
@@ -367,43 +402,37 @@ export function DepartmentSchedulesPage() {
           <SummaryCard
             className="animate-in"
             title="Plot Schedules"
-            subtitle={`${scheduleCounts.plotted} of ${scheduleCounts.total} schedules plotted`}
+            subtitle={`${scheduleCounts.plot} of ${scheduleCounts.total} schedules plotted`}
             icon={<CheckCircleIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
             gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
             blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
           >
-            <SummaryGraph variant="bar" total={scheduleCounts.plotted} points={[
-              { label: 'Plotted', value: scheduleCounts.plotted },
-              { label: 'Drafted', value: scheduleCounts.drafted },
-              { label: 'Needs review', value: scheduleCounts.revised + scheduleCounts.returned },
+            <SummaryGraph variant="bar" total={scheduleCounts.plot} points={[
+              { label: 'Plot', value: scheduleCounts.plot },
+              { label: 'Draft', value: scheduleCounts.draft },
             ]} />
           </SummaryCard>
           <SummaryCard
             className="animate-in"
-            title="Drafted Proposals"
-            subtitle={`${scheduleCounts.drafted} pending Registrar review`}
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-blue-600" />}
+            title="Department Faculty"
+            subtitle={`${facultyCounts.total} faculty members in the department`}
+            icon={<UsersIcon className="w-4.5 h-4.5 text-blue-600" />}
             gradientClasses="from-blue-500 to-indigo-600"
             blobClasses="bg-blue-500/8 group-hover:bg-blue-500/14"
           >
-            <SummaryGraph variant="pie" total={scheduleCounts.drafted} points={[
-              { label: 'Drafted', value: scheduleCounts.drafted },
-              { label: 'Plotted', value: scheduleCounts.plotted },
-              { label: 'Returned', value: scheduleCounts.returned },
-            ]} tone="sky" />
+            <SummaryGraph variant="pie" total={facultyCounts.total} points={facultyCounts.points} tone="sky" />
           </SummaryCard>
           <SummaryCard
             className="animate-in"
-            title="Revised & Returned"
-            subtitle={`${scheduleCounts.revised + scheduleCounts.returned} revised or returned`}
-            icon={<ClockIcon className="w-4.5 h-4.5 text-amber-600" />}
+            title="Room Assignments"
+            subtitle={`${roomAssignments.assigned} of ${roomAssignments.total} sessions assigned a room`}
+            icon={<DoorIcon className="w-4.5 h-4.5 text-amber-600" />}
             gradientClasses="from-amber-400 to-orange-500"
             blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
           >
-            <SummaryGraph variant="bar" total={scheduleCounts.revised + scheduleCounts.returned} points={[
-              { label: 'Revised', value: scheduleCounts.revised },
-              { label: 'Returned', value: scheduleCounts.returned },
-              { label: 'Drafted', value: scheduleCounts.drafted },
+            <SummaryGraph variant="bar" total={roomAssignments.total} points={[
+              { label: 'Assigned', value: roomAssignments.assigned },
+              { label: 'Unassigned', value: roomAssignments.unassigned },
             ]} tone="amber" />
           </SummaryCard>
         </div>
@@ -461,6 +490,7 @@ export function DepartmentSchedulesPage() {
                   type="button"
                   variant="brand"
                   icon={<CalendarIcon className="h-5 w-5" />}
+                  disabled={!selectedDepartment}
                   onClick={() => {
                     const active = academicYears.find((y: any) => y.isActive) || academicYears[0]
                     if (active) setSelectedAcademicYear(active)
@@ -486,33 +516,32 @@ export function DepartmentSchedulesPage() {
             setIsSchoolYearModalOpen(false)
             setIsAddScheduleModalOpen(true)
           }}
-          subtitle={`Choose the academic term to review and plot schedules for ${selectedDepartment?.code}.`}
-          editablePhases={['Drafting', 'Plotting', 'Revision', 'Final']}
+          subtitle={`Choose the academic term to open the saved workbook for ${selectedDepartment?.code}.`}
+          editablePhases={[...workbookEditablePhases(workbookMembership?.role)]}
         />
 
       </div>
 
-      {/* Full Department Edit Schedule Modal Component */}
-      <DepartmentEditScheduleModal
-        isOpen={isAddScheduleModalOpen}
+      {/* Open the same saved department/year/semester workbook as My Department. */}
+      {isAddScheduleModalOpen && selectedDepartment && selectedAcademicYear?.id && selectedAcademicYear.academicYear && selectedSemesterPhase && <DepartmentExcelScheduleModal
+        key={`${selectedDepartment.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
         onClose={() => setIsAddScheduleModalOpen(false)}
-        departmentInfo={useMemo(() => selectedDepartment ? { name: selectedDepartment.name, code: selectedDepartment.code, logo: selectedDepartment.logo || '' } : null, [selectedDepartment?.name, selectedDepartment?.code, selectedDepartment?.logo])}
-        members={members}
-        selectedAcademicYear={selectedAcademicYear}
-        selectedSemesterPhase={selectedSemesterPhase}
-        editablePhases={['Drafting', 'Plotting', 'Revision', 'Final']}
-        hideTitleColumn={true}
-        hideAddRemoveButtons={true}
-        showStatusOnNumberColumn={false}
-        onlyAllowDraftEditing={false}
-        onlyAllowTimeDaysRoomStatusEditing={true}
-        allowMissingFieldsInRevision={true}
-        allowSaveWithScheduleIssues={true}
-      />
+        departmentCode={selectedDepartment.code}
+        departmentId={selectedDepartment.id}
+        academicYear={selectedAcademicYear.academicYear}
+        academicYearId={selectedAcademicYear.id}
+        membershipId={workbookMembership?.id || ''}
+        semester={selectedSemesterPhase}
+        emptyWorkbookBehavior="message"
+        allowSheetCreationAndRemoval={false}
+        allowImportExport={false}
+        readOnly={!canEditDepartmentWorkbook(workbookMembership || undefined, auth.currentUser?.uid || '', selectedDepartment.code, selectedSemesterPhase.phase)}
+      />}
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}
       <ScheduleModal
         isOpen={isScheduleModalOpen}
+        plotting={workbookMembership ? { membershipId: workbookMembership.id, departmentCode: selectedDepartment?.code || '' } : undefined}
         member={selectedMember ? { ...selectedMember, departmentName: selectedDepartment?.name || selectedMember.department } : null}
         initialAcademicYear={selectedAcademicYear?.academicYear}
         initialSemester={selectedSemesterPhase?.name}

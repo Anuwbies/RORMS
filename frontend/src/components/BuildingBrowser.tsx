@@ -25,6 +25,7 @@ interface BuildingBrowserProps {
   renderBuildingActions?: (building: Building) => React.ReactNode;
   renderRoomActions?: (room: Room, buildingId: string) => React.ReactNode;
   isLoading?: boolean;
+  unreadCommentRoomIds?: ReadonlySet<string>;
 }
 
 export function BuildingBrowser({
@@ -36,7 +37,8 @@ export function BuildingBrowser({
   actionButton,
   renderBuildingActions,
   renderRoomActions,
-  isLoading
+  isLoading,
+  unreadCommentRoomIds
 }: BuildingBrowserProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStatuses, setSelectedStatuses] = useState<RoomStatus[]>([])
@@ -48,7 +50,7 @@ export function BuildingBrowser({
     return buildings
       .map((building) => {
         // 1. Filter by building selection
-        if (selectedBuildings.length > 0 && !selectedBuildings.includes(building.name)) {
+        if (selectedBuildings.length > 0 && !selectedBuildings.includes(building.code)) {
           return null
         }
 
@@ -184,8 +186,8 @@ export function BuildingBrowser({
               <article
                 key={building.id}
                 className={`p-6 sm:p-8 transition-colors ${
-                  index !== filteredBuildings.length - 1 ? 'border-b border-gray-200' : ''
-                } hover:bg-gray-50/50`}
+                  index !== filteredBuildings.length - 1 ? 'border-b-4 border-[#c6dbb6]' : ''
+                } bg-white hover:bg-gray-50/50`}
               >
                 <div className="flex flex-col gap-6">
                   <div className="flex items-center justify-between">
@@ -290,12 +292,15 @@ export function BuildingBrowser({
                                   onClick={() => onRoomClick(room)}
                                   className="relative flex rounded-2xl border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] hover:z-50 focus-within:z-50 cursor-pointer"
                                 >
-                                  <img
-                                    src={room.image}
-                                    alt={room.name}
-                                    className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-l-2xl sm:w-32 sm:h-32"
-                                    onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
-                                  />
+                                  <div className="relative shrink-0">
+                                    <img
+                                      src={room.image}
+                                      alt={room.name}
+                                      className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-l-2xl sm:w-32 sm:h-32"
+                                      onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
+                                    />
+                                    {unreadCommentRoomIds?.has(room.id) && <span className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[0.625rem] font-bold text-amber-800 shadow-sm" role="status">New comments</span>}
+                                  </div>
 
                                   <div className="flex flex-1 flex-col justify-between p-3.5 min-w-0">
                                     <div>

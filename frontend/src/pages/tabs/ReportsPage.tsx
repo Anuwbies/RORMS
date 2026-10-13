@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { formatUserName } from '../../utils/userName'
 import type { ComponentType } from 'react'
 import { Button } from '../../components/Button'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
@@ -23,6 +24,17 @@ import {
   useReportingData,
 } from '../../utils/reportingData'
 import { useAcademicSemester } from '../../utils/academicSemester'
+import { downloadReportCsv } from '../../utils/reportCsv'
+import { roomScheduleSection } from '../../utils/roomSchedule'
+import {
+  isWorkbookSchedule,
+  reportingScheduleDays,
+  reportingScheduleDayText,
+  reportingScheduleMeetings,
+  reportingScheduleResource,
+  reportingScheduleTimeText,
+  scheduleReportRowId,
+} from '../../utils/scheduleReporting'
 
 type ReportKind = 'reservations' | 'rooms' | 'schedules' | 'members'
 type DateRange = '7' | '30' | '90' | '365'
@@ -40,6 +52,7 @@ interface ReportRow {
   departments: string[]
   status: string
   isScheduleChild?: boolean
+  sourceScheduleId?: string
   scheduleOrder?: number
   academicYear?: string
   semester?: string
@@ -91,7 +104,7 @@ const DATE_RANGE_OPTIONS: Array<{ value: DateRange; label: string }> = [
 const ROOM_STATUS_OPTIONS = ['Available', 'Unavailable', 'Maintenance']
 const RESERVATION_STATUS_OPTIONS = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
 const MEMBER_STATUS_OPTIONS = ['Active', 'Deactivated', 'Pending']
-const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Returned', 'Revised', 'Plotted']
+const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Plot']
 const MEMBERSHIP_STATUS_OPTIONS = ['Accepted', 'Pending']
 const OFFICE_DEPARTMENTS = ['Administrative Office', "Registrar's Office"]
 const MEMBER_ROLE_ORDER: Record<string, number> = {
@@ -136,8 +149,6 @@ const statusClasses: Record<string, string> = {
   plot: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   plotted: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   draft: 'border-amber-200 bg-amber-50 text-amber-700',
-  revise: 'border-purple-200 bg-purple-50 text-purple-700',
-  return: 'border-rose-200 bg-rose-50 text-rose-700',
   accepted: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   deactivated: 'border-rose-200 bg-rose-50 text-rose-700',
   active: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -175,10 +186,6 @@ function getMemberStatusRank(status: string) {
   return MEMBER_STATUS_ORDER[status.toLowerCase()] ?? Object.keys(MEMBER_STATUS_ORDER).length
 }
 
-function csvEscape(value: string) {
-  return `"${value.replaceAll('"', '""')}"`
-}
-
 function isDateRange(value: string): value is DateRange {
   return DATE_RANGE_OPTIONS.some(option => option.value === value)
 }
@@ -196,19 +203,13 @@ function getStoredReportKind(): ReportKind {
   }
 }
 
-function formatScheduleStatus(status?: string) {
-  if (status === 'Plot' || status === 'Plotted') return 'Plotted'
-  if (status === 'Revising') return 'Revising'
-  if (status === 'Revise' || status === 'Revised') return 'Revised'
-  if (status === 'Return' || status === 'Returned' || status === 'Removed') return 'Returned'
-  return 'Draft'
+function formatScheduleStatus(status?: string): 'Draft' | 'Plot' {
+  const normalizedStatus = status?.trim().toLowerCase()
+  return normalizedStatus === 'plot' || normalizedStatus === 'plotted' ? 'Plot' : 'Draft'
 }
 
 function getScheduleStatusRank(status: string) {
-  if (status === 'Return' || status === 'Returned' || status === 'Removed') return 1
-  if (status === 'Revise' || status === 'Revising' || status === 'Revised') return 2
-  if (status === 'Plot' || status === 'Plotted') return 3
-  return 0
+  return formatScheduleStatus(status) === 'Plot' ? 1 : 0
 }
 
 function getSemesterRank(semester?: string) {
@@ -221,7 +222,9 @@ function getSemesterRank(semester?: string) {
 }
 
 function getSemesterKey(semester?: string) {
-  const normalizedSemester = semester?.toLowerCase() || ''
+  const normalizedSemester = semester?.trim().toLowerCase() || ''
+  if (normalizedSemester === 'sem1') return 'first'
+  if (normalizedSemester === 'sem2') return 'second'
   if (normalizedSemester.startsWith('1') || normalizedSemester.includes('first')) return 'first'
   if (normalizedSemester.startsWith('2') || normalizedSemester.includes('second')) return 'second'
   return ''
@@ -229,6 +232,8 @@ function getSemesterKey(semester?: string) {
 
 function formatSemester(semester?: string) {
   if (!semester) return 'Not recorded'
+  if (semester.trim().toLowerCase() === 'sem1') return '1st Sem'
+  if (semester.trim().toLowerCase() === 'sem2') return '2nd Sem'
   return semester.replace(/semester/i, 'Sem')
 }
 
@@ -244,12 +249,8 @@ function formatScheduleFormat(type?: string, format?: string, format2?: string) 
   return format2 ? `${format} / ${format2}` : format
 }
 
-function formatScheduleDays(days: string[] | undefined, type?: string, format2?: string) {
-  const [firstDay, secondDay] = days || []
-  if (!firstDay) return '----'
-  const hasSecondSession = Boolean(format2) || type === 'open lab'
-  if (!secondDay || (secondDay === firstDay && hasSecondSession)) return firstDay
-  return `${firstDay} / ${secondDay}`
+function formatScheduleDays(days: string[] | undefined) {
+  return reportingScheduleDays({ days }).join(' / ') || '----'
 }
 
 function formatScheduleTime(schedule: { startTime?: string; endTime?: string; startTime2?: string; endTime2?: string; instructorId?: string; instructorId2?: string; days?: string[]; type?: string; format2?: string }) {
@@ -327,6 +328,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
     const dayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
     schedules.forEach(child => {
+      if (isWorkbookSchedule(child)) return
       const parent = child.parentId ? recordsById.get(child.parentId) : undefined
       const displayParent = child.parentId ? displayRecordsById.get(child.parentId) : undefined
       if (!parent || !displayParent || parent.orderIndex !== child.orderIndex) return
@@ -350,7 +352,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
   const departmentsByRoomId = useMemo(() => {
     const roomDepartments = new Map<string, Set<string>>()
 
-    schedules.forEach(schedule => {
+    reportingScheduleMeetings(schedules).forEach(schedule => {
       const roomId = schedule.roomId
       const department = schedule.department?.trim()
       if (!roomId || !department) return
@@ -369,6 +371,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
         const room = roomById.get(reservation.roomId || '')
         const building = buildingById.get(reservation.buildingId || room?.buildingId || '')
         const member = memberByUserId.get(reservation.userId || '')
+        const department = reservation.department?.trim() || member?.department || 'Unassigned'
         const status = reservation.status || 'Pending'
         const duration = reservationDurationMinutes(reservation)
         const recordDate = dateStringToDate(reservation.date) || timestampToDate(reservation.createdAt)
@@ -377,8 +380,8 @@ function ReportsPage({ userRole }: ReportsPageProps) {
           { primary: `#${reference}`, secondary: formatReportDate(reservation.createdAt, 'Created date unavailable') },
           { primary: reservation.date ? formatReportDate(recordDate) : 'Date not set', secondary: `${formatReportTime(reservation.startTime)}–${formatReportTime(reservation.endTime)}` },
           { primary: room?.code || room?.name || 'Unassigned', secondary: building?.name || building?.code || 'Building unavailable' },
-          { primary: member?.fullName || 'Unknown requester', secondary: member?.email || 'No email recorded' },
-          { primary: member?.department || 'Unassigned' },
+          { primary: formatUserName(userById.get(reservation.userId || ''), member) || 'Unknown requester', secondary: member?.email || 'No email recorded' },
+          { primary: department },
           { primary: duration > 0 ? `${(duration / 60).toFixed(duration % 60 === 0 ? 0 : 1)} hours` : 'Not recorded' },
           { primary: status },
         ]
@@ -386,8 +389,8 @@ function ReportsPage({ userRole }: ReportsPageProps) {
           id: reservation.id,
           date: recordDate,
           createdAt: timestampToDate(reservation.createdAt),
-          department: member?.department || 'Unassigned',
-          departments: [member?.department || 'Unassigned'],
+          department,
+          departments: [department],
           status,
           searchText: values.flatMap(value => [value.primary, value.secondary || '']).join(' ').toLowerCase(),
           cells: values,
@@ -435,34 +438,35 @@ function ReportsPage({ userRole }: ReportsPageProps) {
         const secondRoom = roomById.get(schedule.roomId2 || '')
         const secondBuilding = buildingById.get(schedule.buildingId2 || secondRoom?.buildingId || '')
         const isChild = Boolean(schedule.parentId)
-        const hasSecondSession = Boolean(schedule.format2) || schedule.type === 'open lab'
+        const isWorkbook = isWorkbookSchedule(schedule)
+        const hasSecondSession = !isWorkbook && (Boolean(schedule.format2) || schedule.type === 'open lab')
         const status = formatScheduleStatus(schedule.status)
         const academicYear = schedule.academicYear || 'Not recorded'
-        const semester = formatSemester(schedule.semester)
-        const instructorName = instructor?.fullName || '----'
-        const secondInstructorName = secondInstructor?.fullName
+        const semester = formatSemester(schedule.semester || schedule.semesterKey)
+        const instructorName = reportingScheduleResource(formatUserName(userById.get(instructor?.userId || ''), instructor), schedule.faculty)
+        const secondInstructorName = isWorkbook ? '' : formatUserName(userById.get(secondInstructor?.userId || ''), secondInstructor)
         const instructorValue = secondInstructorName && (secondInstructorName !== instructorName || !hasSecondSession)
           ? `${instructorName} / ${secondInstructorName}`
           : instructorName
         const buildingValue = building?.code || building?.name || '----'
-        const secondBuildingValue = secondBuilding?.code || secondBuilding?.name
-        const roomValue = room?.name || room?.code || '----'
-        const secondRoomValue = secondRoom?.name || secondRoom?.code
+        const secondBuildingValue = isWorkbook ? '' : secondBuilding?.code || secondBuilding?.name
+        const roomValue = reportingScheduleResource(room?.name || room?.code, schedule.room)
+        const secondRoomValue = isWorkbook ? '' : secondRoom?.name || secondRoom?.code
         const values: ReportCell[] = [
           { primary: schedule.department || 'Unassigned' },
           { primary: academicYear },
           { primary: semester },
-          { primary: isChild ? '----' : formatScheduleType(schedule.type) },
-          { primary: formatScheduleFormat(schedule.type, schedule.format, schedule.format2) },
+          { primary: isChild && !isWorkbook ? '----' : formatScheduleType(schedule.type) },
+          { primary: isWorkbook ? schedule.format || '----' : formatScheduleFormat(schedule.type, schedule.format, schedule.format2) },
           { primary: schedule.subjectCode || parentSchedule?.subjectCode || '----' },
           { primary: schedule.subjectTitle || parentSchedule?.subjectTitle || '----' },
-          { primary: schedule.classSection || '----' },
+          { primary: isWorkbook ? roomScheduleSection(schedule) : schedule.classSection || '----' },
           { primary: instructorValue },
-          { primary: formatScheduleTime(schedule) },
-          { primary: formatScheduleDays(schedule.days, schedule.type, schedule.format2) },
+          { primary: isWorkbook ? reportingScheduleTimeText(schedule) : formatScheduleTime(schedule) },
+          { primary: isWorkbook ? reportingScheduleDayText(schedule) : formatScheduleDays(schedule.days) },
           { primary: secondBuildingValue && (secondBuildingValue !== buildingValue || !hasSecondSession) ? `${buildingValue} / ${secondBuildingValue}` : buildingValue },
           { primary: secondRoomValue && (secondRoomValue !== roomValue || !hasSecondSession) ? `${roomValue} / ${secondRoomValue}` : roomValue },
-          { primary: isChild ? '----' : formatScheduleStatus(status) },
+          { primary: isChild && !isWorkbook ? '----' : formatScheduleStatus(status) },
         ]
         return {
           id: schedule.id,
@@ -472,6 +476,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
           departments: [schedule.department || 'Unassigned'],
           status,
           isScheduleChild: isChild,
+          sourceScheduleId: isWorkbook ? scheduleReportRowId(schedule) : undefined,
           scheduleOrder: schedule.orderIndex ?? index,
           academicYear,
           semester,
@@ -501,7 +506,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
           ? 'Deactivated'
           : 'Active'
       const values = [
-        { primary: member.fullName || user?.fullName || 'Unnamed member' },
+        { primary: formatUserName(user, member) || 'Unnamed member' },
         { primary: member.email || user?.email || 'No email recorded' },
         { primary: member.department || 'Unassigned' },
         { primary: member.role || 'Not assigned' },
@@ -701,10 +706,16 @@ function ReportsPage({ userRole }: ReportsPageProps) {
       })
   }, [academicYearFilters, dateRanges, departmentFilters, membershipStatusFilters, reportKind, reportRows, searchQuery, semesterFilters, statusFilters])
 
-  const summaryRows = useMemo(
-    () => reportKind === 'schedules' ? filteredRows.filter(row => !row.isScheduleChild) : filteredRows,
-    [filteredRows, reportKind],
-  )
+  const summaryRows = useMemo(() => {
+    if (reportKind !== 'schedules') return filteredRows
+    const seen = new Set<string>()
+    return filteredRows.filter(row => {
+      if (!row.sourceScheduleId) return !row.isScheduleChild
+      if (seen.has(row.sourceScheduleId)) return false
+      seen.add(row.sourceScheduleId)
+      return true
+    })
+  }, [filteredRows, reportKind])
 
   const metrics = useMemo<ReportMetric[]>(() => {
     const statusCount = (statuses: string[]) => summaryRows.filter(row => statuses.includes(row.status.toLowerCase())).length
@@ -738,14 +749,14 @@ function ReportsPage({ userRole }: ReportsPageProps) {
     }
 
     if (reportKind === 'schedules') {
-      const plotted = statusCount(['plot', 'plotted'])
-      const draft = statusCount(['draft', 'drafted'])
-      const needsReview = statusCount(['revise', 'revised', 'return', 'returned'])
+      const plotted = statusCount(['plot'])
+      const draft = statusCount(['draft'])
+      const representedDepartments = new Set(summaryRows.map(row => row.department).filter(value => value && value !== 'Unassigned')).size
       return [
         { label: 'Schedule records', value: summaryRows.length.toLocaleString(), detail: 'parent schedule entries', icon: CalendarIcon, color: 'bg-blue-50 text-blue-700' },
         { label: 'Plotted schedules', value: plotted.toLocaleString(), detail: `${percent(plotted)} assigned`, icon: DoorIcon, color: 'bg-emerald-50 text-emerald-700' },
         { label: 'Draft schedules', value: draft.toLocaleString(), detail: `${percent(draft)} still drafting`, icon: ClipboardIcon, color: 'bg-amber-50 text-amber-700' },
-        { label: 'Needs review', value: needsReview.toLocaleString(), detail: `${percent(needsReview)} returned or revised`, icon: AlertCircleIcon, color: 'bg-rose-50 text-rose-700' },
+        { label: 'Departments represented', value: representedDepartments.toLocaleString(), detail: 'across matching schedules', icon: BuildingIcon, color: 'bg-rose-50 text-rose-700' },
       ]
     }
 
@@ -815,16 +826,31 @@ function ReportsPage({ userRole }: ReportsPageProps) {
   })), [reportKind])
 
   const exportCsv = () => {
-    const headers = REPORT_COLUMNS[reportKind]
-    const rows = filteredRows.map(row => row.cells.map(cell => [cell.primary, cell.secondary].filter(Boolean).join(' — ')))
-    const csv = [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `rorms-${reportKind}-report-${new Date().toISOString().slice(0, 10)}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+    const headers = [...REPORT_COLUMNS[reportKind]]
+    if (reportKind === 'reservations') headers.push('Reference', 'Purpose', 'Subject code', 'Section', 'Attendees', 'Duration (minutes)')
+    if (reportKind === 'rooms') headers.push('Code', 'Building', 'Available days')
+    const reservationById = new Map(reservations.map(reservation => [reservation.id, reservation]))
+    const rows = filteredRows.map(row => {
+      const values = row.cells.map(cell => [cell.primary, cell.secondary].filter(Boolean).join(' — '))
+      if (reportKind === 'reservations') {
+        const reservation = reservationById.get(row.id)
+        values.push(
+          row.id,
+          reservation?.purpose || '',
+          reservation?.subjectCode?.trim() || 'N/A',
+          reservation?.classSection?.trim() || 'N/A',
+          String(reservation?.attendees ?? ''),
+          reservation ? String(reservationDurationMinutes(reservation)) : '',
+        )
+      } else if (reportKind === 'rooms') {
+        const room = roomById.get(row.id)
+        // The table shows a short amenities preview; export the complete list.
+        values[5] = room?.amenities?.join(', ') || 'None recorded'
+        values.push(room?.code || '', row.building || '', room?.availableDays?.join(', ') || '')
+      }
+      return values
+    })
+    downloadReportCsv(`rorms-${reportKind}-report-${new Date().toISOString().slice(0, 10)}.csv`, headers, rows)
   }
 
   return (

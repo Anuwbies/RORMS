@@ -1,9 +1,10 @@
-import React from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { UserIcon, ClockIcon, BookIcon, HourglassIcon } from './Icons'
 import { roomStatusClasses, DAYS_OF_WEEK, DEFAULT_ROOM_IMAGE } from '../types/room'
 import type { Room } from '../types/room'
 import { Button } from './Button'
 import { RoomAmenities } from './RoomAmenities'
+import { RoomCommentsModal } from './RoomCommentsModal'
 
 interface RoomInfoModalProps {
   isOpen: boolean
@@ -11,20 +12,73 @@ interface RoomInfoModalProps {
   onClose: () => void
   onBack?: () => void
   actionButton?: React.ReactNode
+  comments?: React.ReactNode | ((isVisible: boolean) => React.ReactNode)
+  hasUnreadComments?: boolean
 }
 
-export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton }: RoomInfoModalProps) {
+export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton, comments, hasUnreadComments = false }: RoomInfoModalProps) {
+  const [isCommentsVisible, setIsCommentsVisible] = useState(false)
+  const commentsToggleRef = useRef<HTMLButtonElement>(null)
+  const roomModalRef = useRef<HTMLDivElement>(null)
+  const [roomModalSize, setRoomModalSize] = useState<{ width: number; height: number } | null>(null)
+  const hasComments = Boolean(comments)
+
+  useEffect(() => {
+    setIsCommentsVisible(false)
+  }, [isOpen, room?.id])
+
+  useLayoutEffect(() => {
+    const modal = roomModalRef.current
+    if (!isOpen || !hasComments || !modal) return
+
+    const measure = () => {
+      const { width, height } = modal.getBoundingClientRect()
+      setRoomModalSize(previous => previous?.width === width && previous.height === height ? previous : { width, height })
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(modal)
+    return () => observer.disconnect()
+  }, [isOpen, room?.id, hasComments])
+
   if (!isOpen || !room) return null
+
+  const commentsId = `room-comments-${room.id}`
+  const hideComments = () => {
+    setIsCommentsVisible(false)
+    commentsToggleRef.current?.focus()
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+      <div className={`flex w-full items-start justify-center gap-4 ${comments && isCommentsVisible ? 'max-w-lg xl:max-w-[65rem]' : 'max-w-lg'}`}>
       <div 
+        ref={roomModalRef}
         className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
-          <h3 className="text-xl font-bold leading-tight">Room Information</h3>
-          <p className="text-xs text-white/80 font-medium mt-0.5">Comprehensive details and availability schedule</p>
+          <div className="flex items-stretch justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-xl font-bold leading-tight">Room Information</h3>
+              <p className="text-xs text-white/80 font-medium mt-0.5">Comprehensive details and availability schedule</p>
+            </div>
+            {comments && <button
+              ref={commentsToggleRef}
+              type="button"
+              onClick={() => setIsCommentsVisible(visible => !visible)}
+              aria-label={`${isCommentsVisible ? 'Hide comments' : 'Show comments'}${hasUnreadComments ? ' (new comments)' : ''}`}
+              aria-expanded={isCommentsVisible}
+              aria-controls={commentsId}
+              title={hasUnreadComments ? 'New comments' : isCommentsVisible ? 'Hide comments' : 'Show comments'}
+              className="relative flex w-11 shrink-0 cursor-pointer items-center justify-center self-stretch rounded-lg bg-white/15 text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z" />
+              </svg>
+              {hasUnreadComments && <span aria-hidden="true" className="absolute right-1.5 top-1.5 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white" />}
+            </button>}
+          </div>
         </div>
 
         <div className="overflow-y-auto max-h-[85vh] custom-scrollbar">
@@ -138,6 +192,16 @@ export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton }: R
             </div>
           </div>
         </div>
+      </div>
+      {comments && <RoomCommentsModal
+        id={commentsId}
+        isOpen={isCommentsVisible}
+        roomName={room.name}
+        size={roomModalSize}
+        onClose={hideComments}
+      >
+        {typeof comments === 'function' ? comments(isCommentsVisible) : comments}
+      </RoomCommentsModal>}
       </div>
       <div 
         className="absolute inset-0 -z-10" 

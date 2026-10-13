@@ -4,6 +4,9 @@ export type MemberStatus = 'Active' | 'Deactivated' | 'Pending'
 export interface Department {
   id: string
   name: string
+  firstName?: string
+  surname?: string
+  fullName?: string
   code: string
   dean: string
   programHead?: string

@@ -2,6 +2,12 @@
   "name": "functions",
   "scripts": {
     "build": "tsc",
+    "test:reservation-logs": "npm run build && node --test tests/reservationStatusLogs.test.cjs",
+    "test:member-logs": "npm run build && node --test tests/memberAccountLogs.test.cjs",
+    "test:facility-logs": "npm run build && node --test tests/facilityLogs.test.cjs",
+    "test:schedule-logs": "npm run build && node --test tests/workbookScheduleLogs.test.cjs",
+    "test:reservation-conflicts": "npm run build && node --test tests/cancelScheduleReservations.test.cjs",
+    "test:semester-phases": "npm run build && node --test tests/semesterPhaseUpdates.test.cjs",
     "build:watch": "tsc --watch",
     "serve": "npm run build && firebase emulators:start --only functions",
     "shell": "npm run build && firebase functions:shell",

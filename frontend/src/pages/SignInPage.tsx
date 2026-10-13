@@ -1,18 +1,28 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { SyntheticEvent } from 'react'
 import { 
   signInWithEmailAndPassword, 
   setPersistence, 
   browserLocalPersistence, 
-  browserSessionPersistence,
-  signOut
+  browserSessionPersistence
 } from 'firebase/auth'
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { auth } from '../firebase'
 import { Button } from '../components/Button'
 import { TextInput } from '../components/TextInput'
 import { ExclamationIcon } from '../components/Icons'
 import { ArchitecturalBackground } from '../components/ArchitecturalBackground'
+import { failedSignInAttempts, freshSignInAttempts, MAX_SIGN_IN_ATTEMPTS, readSignInAttempts, SIGN_IN_ATTEMPTS_KEY, writeSignInAttempts, type SignInAttempts } from '../utils/signInAttempts'
+
+function loadSignInAttempts(fallback = freshSignInAttempts()): SignInAttempts {
+  try { return readSignInAttempts(window.localStorage, fallback) }
+  catch { return fallback.lockedUntil > 0 && fallback.lockedUntil <= Date.now()
+    ? { failures: 0, lockedUntil: 0, lockouts: fallback.lockouts } : fallback }
+}
+
+function saveSignInAttempts(attempts: SignInAttempts): void {
+  try { writeSignInAttempts(window.localStorage, attempts) }
+  catch { /* Keep enforcing the limit in memory when browser storage is unavailable. */ }
+}
 
 const heroSlides = [
   {
@@ -33,47 +43,67 @@ const heroSlides = [
 ]
 
 interface SignInPageProps {
+  sessionError?: string | null
   onSignIn: () => void
   onForgotPassword: () => void
   currentSlide: number
   onSlideChange: (slide: number) => void
 }
 
-function SignInPage({ onSignIn, onForgotPassword, currentSlide, onSlideChange }: SignInPageProps) {
+function SignInPage({ sessionError, onSignIn, onForgotPassword, currentSlide, onSlideChange }: SignInPageProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const checkAndCreateUserDoc = async (user: any) => {
-    const userDocRef = doc(db, 'users', user.uid)
-    const userDocSnap = await getDoc(userDocRef)
-    const userData = userDocSnap.data() || {}
+  const [attempts, setAttempts] = useState(loadSignInAttempts)
+  const [now, setNow] = useState(Date.now)
+  const submitting = useRef(false)
+  const remainingSeconds = Math.max(0, Math.ceil((attempts.lockedUntil - now) / 1000))
+  const isLocked = remainingSeconds > 0
+  const cooldownMessage = isLocked
+    ? `Too many failed attempts. Try again in ${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, '0')}.`
+    : null
 
-    if (userDocSnap.exists() && userData.isActive === false) {
-      throw new Error('account-inactive')
+  useEffect(() => {
+    const syncAttempts = () => {
+      setNow(Date.now())
+      setAttempts(current => loadSignInAttempts(current))
     }
-
-    const updates: any = {
-      updatedAt: serverTimestamp(),
-      isVerify: user.emailVerified
+    const handleStorage = (event: StorageEvent) => {
+      if ((event.key === SIGN_IN_ATTEMPTS_KEY || event.key === null) && event.newValue === null) {
+        setAttempts(freshSignInAttempts())
+        setNow(Date.now())
+        return
+      }
+      if (event.key === SIGN_IN_ATTEMPTS_KEY || event.key === null) syncAttempts()
     }
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('focus', syncAttempts)
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focus', syncAttempts)
+    }
+  }, [])
 
-    // Ensure these fields exist, defaulting to empty strings if Auth doesn't have them
-    if (userData.fullName === undefined) updates.fullName = user.displayName || ''
-    if (userData.profilePicture === undefined) updates.profilePicture = user.photoURL || ''
-    if (userData.email === undefined) updates.email = user.email || ''
-    
-    // Set initial defaults if document is new
-    if (userData.createdAt === undefined) updates.createdAt = serverTimestamp()
-    if (userData.isActive === undefined) updates.isActive = true
-
-    await setDoc(userDocRef, updates, { merge: true })
-  }
+  useEffect(() => {
+    if (!attempts.lockedUntil) return
+    const timer = window.setInterval(() => {
+      setNow(Date.now())
+      if (Date.now() >= attempts.lockedUntil) setAttempts(current => loadSignInAttempts(current))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [attempts.lockedUntil])
 
   const handleSubmit = async (e: SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault()
+    if (submitting.current) return
+    const currentAttempts = loadSignInAttempts(attempts)
+    setAttempts(currentAttempts)
+    setNow(Date.now())
+    if (currentAttempts.lockedUntil > Date.now()) return
+    submitting.current = true
     setLoading(true)
     setError(null)
     
@@ -82,32 +112,36 @@ function SignInPage({ onSignIn, onForgotPassword, currentSlide, onSlideChange }:
       const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence
       await setPersistence(auth, persistence)
 
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      await checkAndCreateUserDoc(userCredential.user)
+      // App validates the profile before granting access and monitors it for deactivation.
+      await signInWithEmailAndPassword(auth, email, password)
+      saveSignInAttempts(freshSignInAttempts())
+      setAttempts(freshSignInAttempts())
       onSignIn()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Sign in error:', err)
-      if (err.message === 'account-inactive') {
-        await signOut(auth)
-        setError('This account has been deactivated.')
+      const code = err !== null && typeof err === 'object' && 'code' in err ? err.code : null
+      if (['auth/invalid-email', 'auth/user-not-found', 'auth/wrong-password', 'auth/invalid-credential', 'auth/too-many-requests'].includes(String(code))) {
+        const latestAttempts = loadSignInAttempts(currentAttempts)
+        const nextAttempts = failedSignInAttempts(code === 'auth/too-many-requests'
+          ? { ...latestAttempts, failures: MAX_SIGN_IN_ATTEMPTS - 1 } : latestAttempts)
+        saveSignInAttempts(nextAttempts)
+        setAttempts(nextAttempts)
+        setNow(Date.now())
+        const remaining = MAX_SIGN_IN_ATTEMPTS - nextAttempts.failures
+        setError(remaining > 0
+          ? `Incorrect email or password. ${remaining} attempt${remaining === 1 ? '' : 's'} remaining.`
+          : null)
         return
       }
-      switch (err.code) {
-        case 'auth/invalid-email':
-          setError('Invalid email address.')
-          break
-        case 'auth/user-not-found':
-        case 'auth/wrong-password':
-        case 'auth/invalid-credential':
-          setError('Incorrect email or password.')
-          break
-        case 'auth/too-many-requests':
-          setError('Too many failed attempts. Please try again later.')
+      switch (code) {
+        case 'auth/network-request-failed':
+          setError('Unable to connect. Check your internet connection and try again. This does not count as a failed attempt.')
           break
         default:
           setError('Failed to sign in. Please try again.')
       }
     } finally {
+      submitting.current = false
       setLoading(false)
     }
   }
@@ -197,10 +231,10 @@ function SignInPage({ onSignIn, onForgotPassword, currentSlide, onSlideChange }:
           </p>
 
             <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-              {error && (
+              {(cooldownMessage || error || sessionError) && (
                 <div className="flex items-start gap-2.5 animate-in rounded-xl border border-red-100 bg-red-50 p-3 text-xs font-medium leading-relaxed text-red-600">
                   <ExclamationIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>{error}</span>
+                  <span role="status">{cooldownMessage || error || sessionError}</span>
                 </div>
               )}
               <fieldset disabled={loading} className="m-0 min-w-0 space-y-5 border-0 p-0">
@@ -311,10 +345,10 @@ function SignInPage({ onSignIn, onForgotPassword, currentSlide, onSlideChange }:
               <Button
                 type="submit"
                 variant="brand"
-                disabled={loading}
+                disabled={loading || isLocked}
                 className="w-full"
               >
-                {loading ? 'Signing in...' : 'Sign in'}
+                {loading ? 'Signing in...' : isLocked ? 'Try again later' : 'Sign in'}
               </Button>
               </fieldset>
             </form>

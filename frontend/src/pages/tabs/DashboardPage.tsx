@@ -131,7 +131,7 @@ export function DashboardPage({ userRole }: DashboardPageProps = {}) {
     />
   ) : undefined
   const dashboard = role === 'Admin' || role === 'Registrar'
-    ? <AdminDashboardPage headerAction={headerAction} />
+    ? <AdminDashboardPage userRole={role} headerAction={headerAction} />
     : <FacultyDashboardPage userRole={role || 'Instructor'} headerAction={headerAction} />
 
   return dashboard

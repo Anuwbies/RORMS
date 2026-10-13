@@ -7,6 +7,8 @@ import { Button } from '../components/Button'
 import { TextInput } from '../components/TextInput'
 import { ExclamationIcon } from '../components/Icons'
 import { ArchitecturalBackground } from '../components/ArchitecturalBackground'
+import { titleCaseName, userNameFields } from '../utils/userName'
+import { getPasswordError, MIN_PASSWORD_LENGTH, PASSWORD_REQUIREMENTS } from '../utils/passwordPolicy'
 
 const heroSlides = [
   {
@@ -133,6 +135,14 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
       return
     }
 
+    if (!isReactivation) {
+      const passwordError = getPasswordError(password)
+      if (passwordError) {
+        setError(passwordError)
+        return
+      }
+    }
+
     setLoading(true)
     setError(null)
     
@@ -169,11 +179,13 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
 
         let existingStatus: string | undefined = undefined
         let existingJoinedAt: any = undefined
+        let existingMembershipData: Record<string, unknown> | undefined
 
         if (targetMembershipId) {
           const existingMemDoc = await getDoc(doc(db, 'memberships', targetMembershipId))
           if (existingMemDoc.exists()) {
             const data = existingMemDoc.data()
+            existingMembershipData = data
             existingStatus = data.status
             existingJoinedAt = data.joinedAt
           }
@@ -185,7 +197,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
         if (targetMembershipId) {
           batch.set(doc(db, 'memberships', targetMembershipId), { 
             userId, 
-            fullName: userDocData.fullName || '',
+            ...userNameFields(userDocData, existingMembershipData),
             email: userDocData.email || email,
             role, 
             department: assignedDept, 
@@ -196,7 +208,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
           const membershipRef = doc(collection(db, 'memberships'))
           batch.set(membershipRef, { 
             userId, 
-            fullName: userDocData.fullName || '',
+            ...userNameFields(userDocData, existingMembershipData),
             email: userDocData.email || email,
             role, 
             department: assignedDept, 
@@ -229,11 +241,17 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
       return
     }
     
+    const names = userNameFields({ firstName: titleCaseName(firstName), surname: titleCaseName(lastName) })
+    if (!names.firstName || !names.surname) {
+      setError('First name and surname are required.')
+      setLoading(false)
+      return
+    }
+
     try {
       sessionStorage.setItem('rorms_verification_cooldown', Date.now().toString())
       const userCredential = await createUserWithEmailAndPassword(auth, email, password)
       const user = userCredential.user
-      const fullName = `${firstName} ${lastName}`
       
       // Send verification email
       await sendEmailVerification(user)
@@ -241,7 +259,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
 
       // Update profile with names
       await updateProfile(user, {
-        displayName: fullName
+        displayName: names.fullName
       })
 
       // Use a batch to create both documents atomically and update invitation
@@ -256,7 +274,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
 
       batch.set(userRef, {
         email: email,
-        fullName: fullName,
+        ...names,
         isVerify: user.emailVerified,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -274,7 +292,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
       if (targetMembershipId) {
         batch.set(doc(db, 'memberships', targetMembershipId), {
           userId: user.uid,
-          fullName: fullName,
+          ...names,
           email: email,
           department: assignedDept,
           role: role,
@@ -285,7 +303,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
         const membershipRef = doc(collection(db, 'memberships'))
         batch.set(membershipRef, {
           userId: user.uid,
-          fullName: fullName,
+          ...names,
           email: email,
           department: assignedDept,
           role: role,
@@ -320,7 +338,8 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
           setError('Invalid email address.')
           break
         case 'auth/weak-password':
-          setError('Password should be at least 6 characters.')
+        case 'auth/password-does-not-meet-requirements':
+          setError(PASSWORD_REQUIREMENTS)
           break
         default:
           setError('Failed to create account. Please try again.')
@@ -472,7 +491,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
               </div>
             )}
             
-            {!error && !isReactivation && (
+            {!isReactivation && Boolean(inviteId && email && role) && (
               <>
                 <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
                   <label className="block">
@@ -482,7 +501,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
                     <TextInput
                       type="text"
                       value={firstName}
-                      onChange={setFirstName}
+                      onChange={value => setFirstName(titleCaseName(value))}
                       placeholder="John"
                       autoComplete="given-name"
                       required
@@ -490,12 +509,12 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
                   </label>
                   <label className="block">
                     <span className="mb-2 block text-sm font-normal text-black">
-                      Last Name <span className="text-red-500">*</span>
+                      Surname <span className="text-red-500">*</span>
                     </span>
                     <TextInput
                       type="text"
                       value={lastName}
-                      onChange={setLastName}
+                      onChange={value => setLastName(titleCaseName(value))}
                       placeholder="Doe"
                       autoComplete="family-name"
                       required
@@ -544,6 +563,8 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
                     onChange={setPassword}
                     placeholder="Create a password"
                     autoComplete="new-password"
+                    minLength={MIN_PASSWORD_LENGTH}
+                    aria-describedby="signup-password-requirements"
                     required
                     rightElement={
                       <button
@@ -586,8 +607,8 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
                        </button>
                      }
                    />
-                   <p className="mt-2 text-xs text-[var(--hint-color)]">
-                     Must be at least 6 characters.
+                   <p id="signup-password-requirements" className="mt-2 text-xs text-[var(--hint-color)]" aria-live="polite">
+                     {password ? getPasswordError(password) || 'Password meets all requirements.' : PASSWORD_REQUIREMENTS}
                    </p>
                  </label>
 

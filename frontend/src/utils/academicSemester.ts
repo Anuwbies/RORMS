@@ -5,6 +5,8 @@ import { collection, onSnapshot } from 'firebase/firestore'
 export interface SemesterInfo {
   name?: string
   phase?: string
+  startDate?: string
+  endDate?: string
   startMonth?: string
   startYear?: number
   endMonth?: string
@@ -35,7 +37,7 @@ export function getMonthIndexByName(monthName?: string): number {
 
 /**
  * Resolves whether the current date falls into "1st Semester" or "2nd Semester"
- * based on the active academic year's sem1 and sem2 start/end months and years.
+ * based on exact semester dates, with month/year fallback for older records.
  */
 export function resolveCurrentSemester(
   academicYear?: AcademicYearData | null,
@@ -47,6 +49,7 @@ export function resolveCurrentSemester(
 
   const sem1 = academicYear.sem1
   const sem2 = academicYear.sem2
+  const currentDate = `${referenceDate.getFullYear()}-${String(referenceDate.getMonth() + 1).padStart(2, '0')}-${String(referenceDate.getDate()).padStart(2, '0')}`
 
   const curYear = referenceDate.getFullYear()
   const curMonth = referenceDate.getMonth() // 0 - 11
@@ -60,7 +63,9 @@ export function resolveCurrentSemester(
   const ayEnd = parts[1] || ayStart + 1
 
   // 1. If sem2 has startMonth and endMonth, check if currently in 2nd Semester range
-  if (sem2?.startMonth && sem2?.endMonth) {
+  if (sem2?.startDate && sem2?.endDate) {
+    if (currentDate >= sem2.startDate && currentDate <= sem2.endDate) return '2nd Semester'
+  } else if (sem2?.startMonth && sem2?.endMonth) {
     const startM2 = getMonthIndexByName(sem2.startMonth)
     const endM2 = getMonthIndexByName(sem2.endMonth)
     if (startM2 !== -1 && endM2 !== -1) {
@@ -76,6 +81,9 @@ export function resolveCurrentSemester(
   }
 
   // 2. If sem1 has startMonth and endMonth, check if currently in 1st Semester range or after sem1
+  if (sem1?.startDate && sem1?.endDate) {
+    return currentDate > sem1.endDate ? '2nd Semester' : '1st Semester'
+  }
   if (sem1?.startMonth && sem1?.endMonth) {
     const startM = getMonthIndexByName(sem1.startMonth)
     const endM = getMonthIndexByName(sem1.endMonth)

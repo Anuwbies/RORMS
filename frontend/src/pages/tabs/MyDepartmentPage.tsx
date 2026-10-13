@@ -1,12 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
+import { formatUserName } from '../../utils/userName'
 import { SectionHeader } from '../../components/SectionHeader';
 import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, EditIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon, BuildingIcon, DoorIcon, ClockIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { ScheduleModal } from '../../components/ScheduleModal'
-import { DepartmentEditScheduleModal } from '../../components/DepartmentEditScheduleModal'
-import { RevisedSchedulesModal } from '../../components/RevisedSchedulesModal'
+import { DepartmentExcelScheduleModal } from '../../components/DepartmentExcelScheduleModal'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
@@ -14,7 +14,7 @@ import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, query, where, onSnapshot, doc, updateDoc, limit, getDocs, writeBatch, serverTimestamp } from 'firebase/firestore'
+import { collection, query, where, onSnapshot, doc, updateDoc, limit, writeBatch, serverTimestamp } from 'firebase/firestore'
 
 interface Member {
   id: string
@@ -66,7 +66,6 @@ function MyDepartmentPage() {
   const [rooms, setRooms] = useState<{ id: string, code: string, name: string, buildingId: string }[]>([])
   const [buildings, setBuildings] = useState<{ id: string, name: string, code?: string }[]>([])
   const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false)
-  const [isRevisedSchedulesModalOpen, setIsRevisedSchedulesModalOpen] = useState(false)
   // School Year and Semester Selection State
   const [academicYears, setAcademicYears] = useState<any[]>([])
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
@@ -170,7 +169,7 @@ function MyDepartmentPage() {
                       return {
                         id: memData.userId,
                         membershipId: memData.id,
-                        name: userData.fullName || memData.fullName || '',
+                        name: formatUserName(userData, memData),
                         email: userData.email || memData.email || '',
                         role: memData.role || 'Instructor',
                         status: computedStatus,
@@ -243,7 +242,7 @@ function MyDepartmentPage() {
             return {
               id: memData.userId,
               membershipId: memData.id,
-              name: userData.fullName || memData.fullName || '',
+              name: formatUserName(userData, memData),
               email: userData.email || memData.email || '',
               role: memData.role || 'Instructor',
               status: userData.isActive === false ? 'Deactivated' : 'Active',
@@ -360,9 +359,7 @@ function MyDepartmentPage() {
       if (departmentInfo?.id) {
         const deptRef = doc(db, 'departments', departmentInfo.id)
         if (currentUserRole === 'Dean') {
-          batch.update(deptRef, { dean: currentUserData?.fullName || '' })
-        } else if (currentUserRole === 'Program Head') {
-          batch.update(deptRef, { programHead: currentUserData?.fullName || '' })
+          batch.update(deptRef, { dean: formatUserName(currentUserData) })
         }
       }
 
@@ -389,8 +386,6 @@ function MyDepartmentPage() {
         const deptRef = doc(db, 'departments', departmentInfo.id)
         if (currentUserRole === 'Dean') {
           batch.update(deptRef, { dean: '' })
-        } else if (currentUserRole === 'Program Head') {
-          batch.update(deptRef, { programHead: '' })
         }
       }
 
@@ -455,20 +450,13 @@ function MyDepartmentPage() {
     setIsRemoving(true)
     setRemoveError('')
     try {
-      const mId = (memberToRemove as any).membershipId
+      const mId = memberToRemove.membershipId
       if (mId) {
         await updateDoc(doc(db, 'memberships', mId), {
           department: '',
           status: '',
           joinedAt: ''
         })
-
-        if (memberToRemove.role === 'Program Head' && departmentInfo?.id) {
-          await updateDoc(doc(db, 'departments', departmentInfo.id), {
-            programHead: '',
-            updatedAt: serverTimestamp()
-          }).catch(console.error)
-        }
       }
       setIsRemoveModalOpen(false)
       setMemberToRemove(null)
@@ -493,39 +481,15 @@ function MyDepartmentPage() {
     if (areMemberActionsDisabled || !editingMember || !departmentInfo) return
 
     setEditError('')
-    const isNowProgramHead = editRole === 'Program Head'
 
     setIsSavingEdit(true)
     try {
-      const updates = []
-      
-      const wasProgramHead = editingMember.role === 'Program Head'
-
-      const deptUpdates: any = {}
-      if (wasProgramHead && !isNowProgramHead) deptUpdates.programHead = ''
-      if (isNowProgramHead) deptUpdates.programHead = editingMember.id
-
-      if (Object.keys(deptUpdates).length > 0) {
-        updates.push(updateDoc(doc(db, 'departments', departmentInfo.id), deptUpdates))
-      }
-
-      // Demote current Program Head(s) to Instructor if there are any
-      if (isNowProgramHead && !wasProgramHead) {
-        const existingProgramHeads = members.filter(m => m.role === 'Program Head' && m.id !== editingMember.id)
-        existingProgramHeads.forEach(existingProgramHead => {
-          const existingPHId = (existingProgramHead as any).membershipId
-          if (existingPHId) {
-            updates.push(updateDoc(doc(db, 'memberships', existingPHId), { role: 'Instructor' }))
-          }
-        })
-      }
-
-      const mId = (editingMember as any).membershipId
+      const mId = editingMember.membershipId
       if (mId) {
-        updates.push(updateDoc(doc(db, 'memberships', mId), { role: editRole }))
+        // Each Program Head has an independent membership; leave other heads unchanged.
+        await updateDoc(doc(db, 'memberships', mId), { role: editRole })
       }
 
-      await Promise.all(updates)
       setEditingMember(null)
     } catch (error) {
       console.error(error)
@@ -745,69 +709,28 @@ function MyDepartmentPage() {
         academicYears={academicYears}
         selectedAcademicYear={selectedAcademicYear}
         setSelectedAcademicYear={setSelectedAcademicYear}
-        onSelectSemester={async (semesterPhase) => {
+        onSelectSemester={(semesterPhase) => {
           setSelectedSemesterPhase(semesterPhase)
           setIsSchoolYearModalOpen(false)
-
-          if (departmentInfo?.code && selectedAcademicYear?.academicYear && semesterPhase?.name) {
-            try {
-              const qRevise = query(
-                collection(db, 'schedule'),
-                where('department', '==', departmentInfo.code),
-                where('academicYear', '==', selectedAcademicYear.academicYear),
-                where('semester', '==', semesterPhase.name)
-              )
-              const snap = await getDocs(qRevise)
-              const hasReviseSchedules = snap.docs.some(d => {
-                const data = d.data()
-                return data.status === 'Revise' || data.status === 'Revised' || data.status === 'Revising'
-              })
-
-              if (hasReviseSchedules) {
-                setIsRevisedSchedulesModalOpen(true)
-                return
-              }
-            } catch (err) {
-              console.error('Error checking revise schedules:', err)
-            }
-          }
 
           setIsAddScheduleModalOpen(true)
         }}
         editablePhases={currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? ['Drafting', 'Revision'] : []}
       />
 
-      {/* Revised Schedules Review Modal */}
-      <RevisedSchedulesModal
-        isOpen={isRevisedSchedulesModalOpen}
-        onClose={() => {
-          setIsRevisedSchedulesModalOpen(false)
-        }}
-        onProceedToEdit={() => {
-          setIsRevisedSchedulesModalOpen(false)
-          setIsAddScheduleModalOpen(true)
-        }}
-        departmentInfo={departmentInfo}
-        members={members}
-        selectedAcademicYear={selectedAcademicYear}
-        selectedSemesterPhase={selectedSemesterPhase}
-      />
-
-      {/* Department Edit Schedule Modal */}
-      <DepartmentEditScheduleModal
-        isOpen={isAddScheduleModalOpen}
+      {/* Open the term's Firestore workbook, or add/import its first sheets. */}
+      {isAddScheduleModalOpen && departmentInfo && selectedAcademicYear?.id && selectedAcademicYear?.academicYear && selectedSemesterPhase && <DepartmentExcelScheduleModal
+        key={`${departmentInfo.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
         onClose={() => setIsAddScheduleModalOpen(false)}
-        departmentInfo={departmentInfo}
-        members={members}
-        selectedAcademicYear={selectedAcademicYear}
-        selectedSemesterPhase={selectedSemesterPhase}
-        editablePhases={['Drafting', 'Revision']}
-        hideStatusColumn={true}
-        hidePlotAllReadyButton={true}
-        showStatusOnNumberColumn={true}
-        readOnly={currentUserRole !== 'Dean' && currentUserRole !== 'Program Head'}
-        onlyAllowDraftEditing={true}
-      />
+        departmentCode={departmentInfo.code}
+        departmentId={departmentInfo.id}
+        academicYear={selectedAcademicYear.academicYear}
+        academicYearId={selectedAcademicYear.id}
+        membershipId={currentUserMembership?.id || ''}
+        semester={selectedSemesterPhase}
+        showPlotTool={false}
+        readOnly={(currentUserRole !== 'Dean' && currentUserRole !== 'Program Head') || !['Drafting', 'Revision'].includes(selectedSemesterPhase.phase)}
+      />}
 
 
       {/* Add Member Modal */}
@@ -1147,7 +1070,7 @@ function MyDepartmentPage() {
                       setIsSchoolYearModalOpen(true)
                     }}
                   >
-                    Department Schedule
+                    {currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? 'Manage Schedule' : 'Department Schedule'}
                   </Button>
                 )}
               </div>

@@ -2,6 +2,15 @@ import type { SVGProps } from 'react'
 
 export type IconProps = SVGProps<SVGSVGElement>
 
+export function EyeIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </svg>
+  )
+}
+
 export function DashboardIcon(props: IconProps) {
   return (
     <svg

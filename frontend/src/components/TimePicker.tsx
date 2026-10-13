@@ -6,6 +6,7 @@ interface TimePickerProps {
   onChange: (value: string) => void
   onToggle?: (isOpen: boolean) => void
   hasError?: boolean
+  disabled?: boolean
   minuteStep?: number
   minTime?: string // Format: "HH:mm" default: "07:30"
   maxTime?: string // Format: "HH:mm" default: "18:00"
@@ -20,6 +21,7 @@ export function TimePicker({
   onChange,
   onToggle,
   hasError,
+  disabled = false,
   minuteStep = 1,
   minTime = '07:30',
   maxTime = '17:30',
@@ -201,6 +203,7 @@ export function TimePicker({
     <div className="relative" ref={containerRef}>
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
         className={`flex h-12 w-full items-center gap-3 rounded-xl border bg-white px-4 py-2.5 text-sm text-gray-900 outline-none transition-all shadow-sm cursor-pointer hover:bg-gray-50 hover:border-gray-300 active:bg-gray-100 active:scale-95 ${
           hasError 
@@ -212,11 +215,11 @@ export function TimePicker({
       >
         <ClockIcon className="h-4.5 w-4.5 text-gray-400 shrink-0" />
         <span className={`text-sm font-medium flex-1 text-left ${!value && !hideClear ? 'text-gray-400' : 'text-gray-900'}`}>
-          {value ? `${hourStr}:${minuteStr} ${period}` : hideClear ? `${hourStr}:${minuteStr} ${period}` : (placeholder || 'Any Time')}
+          {value ? `${hourStr}:${minuteStr} ${period}` : placeholder || (hideClear ? `${hourStr}:${minuteStr} ${period}` : 'Any Time')}
         </span>
       </button>
 
-      {isOpen && (
+      {isOpen && !disabled && (
         <div className="absolute left-0 z-50 mt-2 w-full overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-100">
           <div className="flex p-1">
             {/* Hours */}

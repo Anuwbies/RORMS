@@ -1,8 +1,15 @@
 import * as admin from "firebase-admin";
-import { onDocumentCreated, onDocumentUpdated } from "firebase-functions/v2/firestore";
+import { onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentWrittenWithAuthContext } from "firebase-functions/v2/firestore";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { onCall, onRequest, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { cancelScheduleReservations } from "./cancelScheduleReservations";
+import { scheduleSignature } from "./reservationScheduleConflicts";
+import { endExpiredSemesters } from "./semesterPhaseUpdates";
+import { changeReservationStatus } from "./reservationStatusLogs";
+import { recordWorkbookScheduleLog } from "./workbookScheduleLogs";
+import { manageMemberAccount } from "./memberAccountLogs";
+import { manageFacilityRecords } from "./facilityLogs";
 
 let _db: admin.firestore.Firestore | null = null;
 
@@ -22,6 +29,29 @@ function getDb(): admin.firestore.Firestore {
   }
   return _db;
 }
+
+export const updateReservationStatus = onCall(async request => {
+  return changeReservationStatus(getDb(), request.auth?.uid, request.data);
+});
+
+export const logDepartmentWorkbookSave = onDocumentWrittenWithAuthContext({
+  document: "departments/{departmentId}/workbooks/{yearId}/semesters/{semester}", retry: true,
+}, async event => {
+  if (!event.data?.after.exists || !event.data.after.updateTime) return;
+  await recordWorkbookScheduleLog(getDb(), {
+    path: event.data.after.ref.path, before: event.data.before.data(), after: event.data.after.data(),
+    authId: event.authId, authType: event.authType,
+    committedAt: event.data.after.updateTime ?? admin.firestore.Timestamp.fromDate(new Date(event.time)),
+  });
+});
+
+export const manageMember = onCall(async request => {
+  return manageMemberAccount(getDb(), request.auth?.uid, request.data);
+});
+
+export const manageFacility = onCall(async request => {
+  return manageFacilityRecords(getDb(), request.auth?.uid, request.data);
+});
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>'\"]/g, (character) => {
@@ -330,6 +360,23 @@ export async function processReservationStatusUpdates(): Promise<{
 }
 
 /**
+ * Ends expired semesters daily after their inclusive end date in Philippine time.
+ */
+export const autoEndSemesterPhases = onSchedule(
+  {
+    schedule: "0 0 * * *",
+    timeZone: "Asia/Manila",
+    retryCount: 3,
+    timeoutSeconds: 540,
+  },
+  async () => {
+    const { currentDateStr } = getManilaDateTime();
+    const result = await endExpiredSemesters(getDb(), currentDateStr);
+    logger.info("Expired semester phases updated.", { currentDate: currentDateStr, ...result });
+  }
+);
+
+/**
  * Scheduled Cloud Function (Runs automatically every 5 minutes in Asia/Manila timezone).
  */
 export const autoUpdateReservationStatus = onSchedule(
@@ -529,8 +576,21 @@ async function processReservationReminders(): Promise<number> {
   return remindersCreated;
 }
 
+export const cancelReservationsForSchedule = onDocumentWritten(
+  { document: "schedule/{scheduleId}", retry: true, timeoutSeconds: 540 },
+  async event => {
+    const before = event.data?.before.data();
+    const after = event.data?.after.data();
+    if (!after || (before && scheduleSignature(before) === scheduleSignature(after))) return;
+    const cancelled = await cancelScheduleReservations(
+      getDb(), event.data!.after.ref, getManilaDateTime()
+    );
+    logger.info("Schedule reservation conflicts processed", { scheduleId: event.params.scheduleId, cancelled });
+  }
+);
+
 export const notifyReservationStatusChanged = onDocumentUpdated(
-  "reservations/{reservationId}",
+  { document: "reservations/{reservationId}", retry: true },
   async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
@@ -559,9 +619,10 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
         type: "booking_rejected",
       };
     } else if (status === "Cancelled") {
+      const reason = stringValue(after.cancellationReason);
       notification = {
         title: "Reservation cancelled",
-        message: `Your reservation for ${roomName} has been cancelled.`,
+        message: `Your reservation for ${roomName} has been cancelled.${reason ? ` ${reason}` : ""}`,
         type: "booking_cancelled",
       };
     } else if (status === "Completed") {
@@ -813,7 +874,10 @@ export const notifyInvitationAccepted = onDocumentUpdated(
     const acceptedUserId = stringValue(membershipData.userId);
     const department = stringValue(membershipData.department);
     const role = stringValue(membershipData.role) || "Member";
-    const memberName = stringValue(membershipData.fullName) || stringValue(membershipData.email) || "A user";
+    const firstName = stringValue(membershipData.firstName).trim();
+    const surname = stringValue(membershipData.surname).trim();
+    const memberName = firstName && surname ? `${surname}, ${firstName}`
+      : stringValue(membershipData.fullName) || stringValue(membershipData.email) || "A user";
     const recipients = await getManagerUserIds(department, acceptedUserId);
     const isReactivation = after.isReactivation === true;
 

@@ -13,6 +13,7 @@ import {
   CalendarIcon,
   BookIcon,
   DoorIcon,
+  ClockIcon,
 } from '../components/Icons'
 import type { NavItem, DashboardSection } from '../components/LeftSidebar'
 import DashboardPage from './tabs/DashboardPage'
@@ -22,6 +23,7 @@ import MyDepartmentPage from './tabs/MyDepartmentPage'
 import DepartmentsPage from './tabs/DepartmentsPage'
 import ReportsPage from './tabs/ReportsPage'
 import AnalyticsPage from './tabs/AnalyticsPage'
+import LogsPage from './tabs/LogsPage'
 import MySchedulePage from './tabs/MySchedulePage'
 import ManageReservationsPage from './tabs/ManageReservationsPage'
 import ReserveRoomPage from './tabs/ReserveRoomPage'
@@ -32,20 +34,20 @@ import DepartmentSchedulesPage from './tabs/DepartmentSchedulesPage'
 export const ROLE_ALLOWED_TABS: Record<string, DashboardSection[]> = {
   'Admin': [
     'dashboard', 'academicCalendar', 'members', 'departments', 'buildingsRooms',
-    'departmentSchedules', 'manageReservations', 'reserveRoom', 'myReservations', 'analytics', 'reports'
+    'departmentSchedules', 'manageReservations', 'reserveRoom', 'myReservations', 'analytics', 'reports', 'logs'
   ],
   'Registrar': [
     'dashboard', 'academicCalendar', 'departmentSchedules', 'buildingsRooms',
     'manageReservations', 'reserveRoom', 'analytics', 'reports'
   ],
   'Dean': [
-    'dashboard', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
+    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
   ],
   'Program Head': [
-    'dashboard', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
+    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
   ],
   'Instructor': [
-    'dashboard', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
+    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
   ],
 }
 
@@ -124,6 +126,13 @@ const navItems: NavItem[] = [
     eyebrow: 'Analytics',
     description: 'View room and scheduling insights.',
     icon: LayersIcon,
+  },
+  {
+    id: 'logs',
+    label: 'Logs',
+    eyebrow: 'Logs',
+    description: 'Review system activity and audit history.',
+    icon: ClockIcon,
   },
   {
     id: 'mySchedule',
@@ -276,7 +285,7 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
       case 'dashboard':
         return <DashboardPage userRole={normRole} />
       case 'academicCalendar':
-        return <AcademicCalendarPage />
+        return <AcademicCalendarPage userRole={normRole} />
       case 'mySchedule':
         return <MySchedulePage />
       case 'reserveRoom':
@@ -295,6 +304,8 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
         return <ReportsPage userRole={normRole} />
       case 'analytics':
         return <AnalyticsPage userRole={normRole} />
+      case 'logs':
+        return <LogsPage />
       case 'myDepartment':
         return <MyDepartmentPage />
       case 'departmentSchedules':

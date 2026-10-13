@@ -1,4 +1,8 @@
 import { useState, useEffect, useMemo, type ReactNode } from 'react'
+import { formatUserName } from '../../utils/userName'
+import { dashboardScheduleDays, dashboardScheduleMeetings, dashboardScheduleRows, dashboardScheduleStats, type DashboardScheduleMeeting } from '../../utils/dashboardSchedules'
+import type { ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
+import { scheduleMatchesTerm } from '../../utils/roomSchedule'
 import { SectionHeader } from '../../components/SectionHeader'
 import {
   BuildingIcon, DoorIcon, CalendarIcon, ChevronRightIcon,
@@ -40,21 +44,7 @@ interface ReservationItem {
   requesterName?: string
 }
 
-interface ScheduleItem {
-  id: string
-  subjectCode: string
-  subjectTitle?: string
-  classSection?: string
-  department?: string
-  startTime: string
-  endTime: string
-  days: string[]
-  roomId?: string
-  buildingId?: string
-  status?: string
-  academicYear?: string
-  semester?: string
-}
+type ScheduleItem = DashboardScheduleMeeting
 
 const statusBadgeClasses: Record<string, string> = {
   Approved: 'bg-emerald-100 text-emerald-700',
@@ -135,6 +125,7 @@ export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageP
   const [rooms, setRooms] = useState<RoomItem[]>([])
   const [buildings, setBuildings] = useState<BuildingItem[]>([])
   const [allSchedules, setAllSchedules] = useState<ScheduleItem[]>([])
+  const [scheduleRows, setScheduleRows] = useState<ScheduleMeetingRecord[]>([])
   const [weeklyReservations, setWeeklyReservations] = useState<ReservationItem[]>([])
   const [userNames, setUserNames] = useState<Map<string, string>>(new Map())
 
@@ -213,17 +204,15 @@ export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageP
       const map = new Map<string, string>()
       snap.docs.forEach(doc => {
         const data = doc.data()
-        map.set(doc.id, data.fullName || data.email || 'Faculty Member')
+        map.set(doc.id, formatUserName(data) || data.email || 'Faculty Member')
       })
       setUserNames(map)
     })
 
     // 4. Fetch Campus-Wide Schedules
     const unsubSchedule = onSnapshot(collection(db, 'schedule'), (snap) => {
-      setAllSchedules(snap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ScheduleItem[])
+      setScheduleRows(snap.docs.map(document => ({ ...document.data(), id: document.id })))
+      setAllSchedules(dashboardScheduleMeetings(snap.docs))
     })
 
     // 5. Fetch Reservations for current week
@@ -270,52 +259,15 @@ export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageP
     desc: 'Current scheduling status for this academic semester.'
   }
 
-  // Filter semester schedules
-  const semesterSchedules = useMemo(() => {
-    return allSchedules.filter(item => {
-      if (item.semester && currentSemester) {
-        const schedSem = item.semester.toLowerCase().trim()
-        const targetSem = currentSemester.toLowerCase().trim()
-        const isMatch = schedSem === targetSem ||
-          (targetSem.includes('1st') && (schedSem.includes('1st') || schedSem.includes('first'))) ||
-          (targetSem.includes('2nd') && (schedSem.includes('2nd') || schedSem.includes('second')))
-        if (!isMatch) return false
-      }
-      if (item.academicYear && activeAcademicYear?.academicYear) {
-        const normA = item.academicYear.replace(/\s+/g, '')
-        const normB = activeAcademicYear.academicYear.replace(/\s+/g, '')
-        if (normA !== normB) return false
-      }
-      return true
-    })
-  }, [allSchedules, currentSemester, activeAcademicYear])
+  const semesterSchedules = useMemo(() => allSchedules.filter(item =>
+    scheduleMatchesTerm(item, activeAcademicYear, currentSemester)
+  ), [allSchedules, currentSemester, activeAcademicYear])
 
-  // Weekly Master Timetable grouped by Day of Week (Sun - Sat)
-  const weeklyDayMap = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-    const map = new Map<string, ScheduleItem[]>()
-    days.forEach(d => map.set(d, []))
+  const scheduleStats = useMemo(() => dashboardScheduleStats(
+    dashboardScheduleRows(scheduleRows, activeAcademicYear, currentSemester)
+  ), [scheduleRows, activeAcademicYear, currentSemester])
 
-    semesterSchedules.forEach(item => {
-      const status = item.status || 'Draft'
-      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised'].includes(status)) return
-
-      if (Array.isArray(item.days)) {
-        item.days.forEach(day => {
-          const norm = day.slice(0, 3)
-          if (map.has(norm)) {
-            map.get(norm)!.push(item)
-          }
-        })
-      }
-    })
-
-    days.forEach(d => {
-      map.get(d)!.sort((a, b) => timeToMinutes(a.startTime) - timeToMinutes(b.startTime))
-    })
-
-    return map
-  }, [semesterSchedules])
+  const weeklyDayMap = useMemo(() => dashboardScheduleDays(semesterSchedules), [semesterSchedules])
 
   // Room Status Stats
   const roomStats = useMemo(() => {
@@ -434,10 +386,10 @@ export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageP
                 </div>
 
                 <div className="rounded-xl border border-slate-100 bg-slate-50/70 p-2.5 sm:p-3 flex flex-col justify-between">
-                  <span className="text-[0.65rem] uppercase tracking-wider font-semibold text-slate-400 truncate">Plotted Classes</span>
+                  <span className="text-[0.65rem] uppercase tracking-wider font-semibold text-slate-400 truncate">Plot Schedules</span>
                   <p className="text-base sm:text-lg font-black text-slate-900 mt-0.5">
-                    {semesterSchedules.length}
-                    <span className="text-[0.7rem] font-medium text-slate-400 ml-1">allocations</span>
+                    {scheduleStats.plotted}
+                    <span className="text-[0.7rem] font-medium text-slate-400 ml-1">rows</span>
                   </p>
                   <span className="text-[0.62rem] text-[var(--brand-color)] font-semibold truncate mt-0.5">
                     Campus-wide

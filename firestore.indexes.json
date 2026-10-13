@@ -1,0 +1,52 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "logs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "action", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "comments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "roomId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "sheets",
+      "fieldPath": "slots",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "test_sheets",
+      "fieldPath": "json",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "test_sheets",
+      "fieldPath": "slots",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "chunks",
+      "fieldPath": "slots",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "cells",
+      "fieldPath": "text",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "cells",
+      "fieldPath": "styleJson",
+      "indexes": []
+    }
+  ]
+}

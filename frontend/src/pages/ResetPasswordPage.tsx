@@ -7,6 +7,7 @@ import { Button } from '../components/Button'
 import { TextInput } from '../components/TextInput'
 import { ExclamationIcon } from '../components/Icons'
 import { ArchitecturalBackground } from '../components/ArchitecturalBackground'
+import { getPasswordError, MIN_PASSWORD_LENGTH, PASSWORD_REQUIREMENTS } from '../utils/passwordPolicy'
 
 const heroSlides = [
   {
@@ -44,7 +45,8 @@ function getCodeError(error: unknown): string {
       case 'auth/network-request-failed':
         return 'Unable to connect. Check your internet connection and try again.'
       case 'auth/weak-password':
-        return 'Choose a stronger password with at least 6 characters.'
+      case 'auth/password-does-not-meet-requirements':
+        return PASSWORD_REQUIREMENTS
       default:
         return 'We could not process this password reset. Please request a new link.'
     }
@@ -99,8 +101,9 @@ function ResetPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: Rese
       return
     }
 
-    if (password.length < 6) {
-      setError('Choose a password with at least 6 characters.')
+    const passwordError = getPasswordError(password)
+    if (passwordError) {
+      setError(passwordError)
       return
     }
 
@@ -258,7 +261,8 @@ function ResetPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: Rese
                       onChange={setPassword}
                       placeholder="Enter your new password"
                       required
-                      minLength={6}
+                      minLength={MIN_PASSWORD_LENGTH}
+                      aria-describedby="reset-password-requirements"
                       autoComplete="new-password"
                       rightElement={
                         <button
@@ -303,6 +307,10 @@ function ResetPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: Rese
                     />
                   </label>
 
+                  <p id="reset-password-requirements" className="mt-2 text-xs text-[var(--hint-color)]" aria-live="polite">
+                    {password ? getPasswordError(password) || 'Password meets all requirements.' : PASSWORD_REQUIREMENTS}
+                  </p>
+
                   <label className="block">
                     <span className="mb-2 block text-sm font-medium text-black">
                       Confirm password <span className="text-red-500">*</span>
@@ -313,7 +321,7 @@ function ResetPasswordPage({ onBackToSignIn, currentSlide, onSlideChange }: Rese
                       onChange={setConfirmPassword}
                       placeholder="Re-enter your new password"
                       required
-                      minLength={6}
+                      minLength={MIN_PASSWORD_LENGTH}
                       autoComplete="new-password"
                       rightElement={
                         <button

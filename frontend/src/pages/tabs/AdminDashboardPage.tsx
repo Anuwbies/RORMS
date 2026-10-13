@@ -14,6 +14,8 @@ import {
 import { db } from '../../firebase'
 import { collection, onSnapshot } from 'firebase/firestore'
 import { useAcademicSemester } from '../../utils/academicSemester'
+import { dashboardScheduleRows, dashboardScheduleStats } from '../../utils/dashboardSchedules'
+import type { ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
 
 interface RoomRecord {
   id: string
@@ -38,14 +40,7 @@ interface UserRecord {
   isActive?: boolean
 }
 
-interface ScheduleRecord {
-  id: string
-  parentId?: string
-  status?: string
-  academicYear?: string
-  academicTerm?: string
-  semester?: string
-}
+type ScheduleRecord = ScheduleMeetingRecord
 
 interface NamedRecord {
   id: string
@@ -118,10 +113,11 @@ const phaseDescriptions: Record<string, string> = {
 }
 
 interface AdminDashboardPageProps {
+  userRole?: 'Admin' | 'Registrar'
   headerAction?: ReactNode
 }
 
-export function AdminDashboardPage({ headerAction }: AdminDashboardPageProps = {}) {
+export function AdminDashboardPage({ userRole = 'Admin', headerAction }: AdminDashboardPageProps = {}) {
   const { activeAcademicYear, currentSemester, isLoading: isAcademicYearLoading } = useAcademicSemester()
   const { records: rooms, isLoading: areRoomsLoading, hasError: roomsError } = useCollectionData<RoomRecord>('rooms')
   const { records: reservations, isLoading: areReservationsLoading, hasError: reservationsError } = useCollectionData<ReservationRecord>('reservations')
@@ -160,35 +156,8 @@ export function AdminDashboardPage({ headerAction }: AdminDashboardPageProps = {
 
   const activeUsers = users.filter(user => user.isActive !== false).length
 
-  const currentSchedules = useMemo(() => {
-    const activeYear = activeAcademicYear?.academicYear?.toLowerCase()
-    const isSecondSemester = currentSemester.toLowerCase().includes('2nd')
-
-    return schedules.filter(schedule => {
-      if (schedule.parentId) return false
-
-      const yearReference = `${schedule.academicYear || ''} ${schedule.academicTerm || ''}`.trim().toLowerCase()
-      if (activeYear && yearReference && !yearReference.includes(activeYear)) return false
-
-      const semesterReference = schedule.semester?.toLowerCase() || ''
-      if (semesterReference) {
-        const scheduleIsSecond = semesterReference.includes('2nd') || semesterReference.includes('second')
-        const scheduleIsFirst = semesterReference.includes('1st') || semesterReference.includes('first')
-        if ((isSecondSemester && scheduleIsFirst) || (!isSecondSemester && scheduleIsSecond)) return false
-      }
-
-      return true
-    })
-  }, [activeAcademicYear?.academicYear, currentSemester, schedules])
-
-  const scheduleStats = useMemo(() => {
-    const normalizedStatus = (schedule: ScheduleRecord) => (schedule.status || 'Draft').toLowerCase()
-    const plotted = currentSchedules.filter(schedule => ['plot', 'plotted'].includes(normalizedStatus(schedule))).length
-    const drafted = currentSchedules.filter(schedule => ['draft', 'drafted'].includes(normalizedStatus(schedule))).length
-    const revised = currentSchedules.filter(schedule => ['revise', 'revised'].includes(normalizedStatus(schedule))).length
-    const returned = currentSchedules.filter(schedule => ['return', 'returned'].includes(normalizedStatus(schedule))).length
-    return { plotted, drafted, revised, returned, total: currentSchedules.length }
-  }, [currentSchedules])
+  const currentSchedules = useMemo(() => dashboardScheduleRows(schedules, activeAcademicYear, currentSemester), [activeAcademicYear, currentSemester, schedules])
+  const scheduleStats = useMemo(() => dashboardScheduleStats(currentSchedules), [currentSchedules])
 
   const upcomingReservationDays = useMemo(() => Array.from({ length: 7 }, (_, offset) => {
     const date = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset)
@@ -251,7 +220,7 @@ export function AdminDashboardPage({ headerAction }: AdminDashboardPageProps = {
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader
-          title="Admin Dashboard"
+          title={`${userRole} Dashboard`}
           description="A live overview of campus operations, requests, people, rooms, and scheduling activity."
           action={headerAction}
         />
@@ -516,10 +485,10 @@ export function AdminDashboardPage({ headerAction }: AdminDashboardPageProps = {
                     <span className="block h-full rounded-full bg-gradient-to-r from-purple-500 to-emerald-500" style={{ width: `${scheduleCompletion}%` }} />
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2 text-center">
-                    <div className="rounded-lg bg-amber-50 py-2"><p className="text-sm font-black text-amber-700">{scheduleStats.drafted}</p><p className="text-[0.6rem] text-amber-600">Drafted</p></div>
-                    <div className="rounded-lg bg-emerald-50 py-2"><p className="text-sm font-black text-emerald-700">{scheduleStats.plotted}</p><p className="text-[0.6rem] text-emerald-600">Plotted</p></div>
-                    <div className="rounded-lg bg-purple-50 py-2"><p className="text-sm font-black text-purple-700">{scheduleStats.revised}</p><p className="text-[0.6rem] text-purple-600">Revised</p></div>
-                    <div className="rounded-lg bg-rose-50 py-2"><p className="text-sm font-black text-rose-700">{scheduleStats.returned}</p><p className="text-[0.6rem] text-rose-600">Returned</p></div>
+                  <div className="rounded-lg bg-amber-50 py-2"><p className="text-sm font-black text-amber-700">{scheduleStats.drafted}</p><p className="text-[0.6rem] text-amber-600">Draft</p></div>
+                  <div className="rounded-lg bg-emerald-50 py-2"><p className="text-sm font-black text-emerald-700">{scheduleStats.plotted}</p><p className="text-[0.6rem] text-emerald-600">Plot</p></div>
+                  <div className="rounded-lg bg-purple-50 py-2"><p className="text-sm font-black text-purple-700">{scheduleStats.total}</p><p className="text-[0.6rem] text-purple-600">Total</p></div>
+                  <div className="rounded-lg bg-rose-50 py-2"><p className="text-sm font-black text-rose-700">{scheduleStats.withIssues}</p><p className="text-[0.6rem] text-rose-600">With Issues</p></div>
                   </div>
                 </>
               )}

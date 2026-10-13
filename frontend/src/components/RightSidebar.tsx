@@ -1,11 +1,13 @@
-import { useRef, useState, useEffect, useCallback, type ChangeEvent, memo } from 'react'
-import { onAuthStateChanged } from 'firebase/auth'
-import { collection, deleteDoc, doc, limit, onSnapshot, orderBy, query, updateDoc, where, writeBatch } from 'firebase/firestore'
+import { useRef, useState, useEffect, useCallback, type ChangeEvent, type FormEvent, memo } from 'react'
+import { formatUserName, titleCaseName, userNameFields } from '../utils/userName'
+import { onAuthStateChanged, updateProfile } from 'firebase/auth'
+import { collection, deleteDoc, doc, getDocs, limit, onSnapshot, orderBy, query, serverTimestamp, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { auth, db, storage } from '../firebase'
-import { BellIcon, CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DepartmentIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
+import { BellIcon, CameraIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon, DepartmentIcon, EditIcon, LogOutIcon, TrashIcon, UserIcon } from './Icons'
 import { IconButton, joinClasses } from './IconButton'
 import { CropModal } from './CropModal'
+import { NotificationDetailsModal } from './NotificationDetailsModal'
 import { type NotificationItem, type NotificationType } from '../types/notifications'
 
 interface RightSidebarProps {
@@ -83,18 +85,26 @@ export const RightSidebar = memo(function RightSidebar({
   onSignOut,
 }: RightSidebarProps) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
+  const [selectedNotification, setSelectedNotification] = useState<NotificationItem | null>(null)
+  const closeNotification = useCallback(() => setSelectedNotification(null), [])
   const [notificationsEnabled, setNotificationsEnabled] = useState(true)
   const [profileImage, setProfileImage] = useState<string | null>(null)
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false)
   const [isClearNotificationsModalOpen, setIsClearNotificationsModalOpen] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [isImageLoading, setIsImageLoading] = useState(false)
+  const [isNameModalOpen, setIsNameModalOpen] = useState(false)
+  const [nameDraft, setNameDraft] = useState({ firstName: '', surname: '' })
+  const [nameError, setNameError] = useState('')
+  const [isSavingName, setIsSavingName] = useState(false)
   const [hasImageError, setHasImageError] = useState(false)
   const [cropModalData, setCropModalData] = useState<{ isOpen: boolean, imageSrc: string }>({
     isOpen: false,
     imageSrc: ''
   })
   const [userData, setUserData] = useState({
+    firstName: '',
+    surname: '',
     fullName: 'No Name',
     email: 'example.up@phinmaed.com',
     profilePicture: '',
@@ -103,6 +113,42 @@ export const RightSidebar = memo(function RightSidebar({
     role: 'member'
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const editNameButtonRef = useRef<HTMLButtonElement>(null)
+  const nameFormRef = useRef<HTMLFormElement>(null)
+
+  useEffect(() => {
+    if (!isNameModalOpen) return
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !isSavingName) {
+        event.preventDefault()
+        setIsNameModalOpen(false)
+      }
+      if (event.key === 'Tab') {
+        const controls = nameFormRef.current?.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input:not(:disabled), button:not(:disabled)')
+        if (!controls?.length) {
+          event.preventDefault()
+          return
+        }
+        const first = controls[0]
+        const last = controls[controls.length - 1]
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault()
+          last.focus()
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault()
+          first.focus()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [isNameModalOpen, isSavingName])
+
+  useEffect(() => {
+    if (isNameModalOpen) return () => editNameButtonRef.current?.focus()
+  }, [isNameModalOpen])
 
   useEffect(() => {
     let unsubscribeUser: (() => void) | null = null
@@ -110,6 +156,9 @@ export const RightSidebar = memo(function RightSidebar({
     let unsubscribeNotifications: (() => void) | null = null
 
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      setSelectedNotification(null)
+      setIsNameModalOpen(false)
+      setNameError('')
       if (unsubscribeUser) unsubscribeUser()
       if (unsubscribeMembership) unsubscribeMembership()
       if (unsubscribeNotifications) unsubscribeNotifications()
@@ -121,7 +170,9 @@ export const RightSidebar = memo(function RightSidebar({
             
             setUserData((prev) => ({
               ...prev,
-              fullName: data.fullName || 'No Name',
+              firstName: userNameFields(data).firstName,
+              surname: userNameFields(data).surname,
+              fullName: formatUserName(data) || 'No Name',
               email: data.email || 'example.up@phinmaed.com',
               profilePicture: data.profilePicture || '',
               isVerify: data.isVerify || false
@@ -186,6 +237,8 @@ export const RightSidebar = memo(function RightSidebar({
         )
       } else {
         setUserData({
+          firstName: '',
+          surname: '',
           fullName: 'No Name',
           email: 'example.up@phinmaed.com',
           profilePicture: '',
@@ -218,6 +271,53 @@ export const RightSidebar = memo(function RightSidebar({
   const triggerFileInput = useCallback(() => {
     fileInputRef.current?.click()
   }, [])
+
+  const openNameEditor = () => {
+    setNameDraft({ firstName: userData.firstName, surname: userData.surname })
+    setNameError('')
+    setIsNameModalOpen(true)
+  }
+
+  const handleSaveName = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (isSavingName) return
+
+    const user = auth.currentUser
+    if (!user) {
+      setNameError('Please sign in again to change your name.')
+      return
+    }
+
+    const names = userNameFields({
+      firstName: titleCaseName(nameDraft.firstName),
+      surname: titleCaseName(nameDraft.surname),
+    })
+    if (!names.firstName || !names.surname) {
+      setNameError('First name and surname are required.')
+      return
+    }
+
+    setIsSavingName(true)
+    setNameError('')
+    let profileSaved = false
+    try {
+      const memberships = await getDocs(query(collection(db, 'memberships'), where('userId', '==', user.uid)))
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'users', user.uid), { ...names, updatedAt: serverTimestamp() })
+      memberships.forEach((membership) => batch.update(membership.ref, { ...names }))
+      await batch.commit()
+      profileSaved = true
+      await updateProfile(user, { displayName: names.fullName })
+      setIsNameModalOpen(false)
+    } catch (error) {
+      console.error('Error updating name:', error)
+      setNameError(profileSaved
+        ? 'Your profile name was saved, but your sign-in name could not be synced. Please try saving again.'
+        : 'Unable to save your name. Please try again.')
+    } finally {
+      setIsSavingName(false)
+    }
+  }
 
   const handleFileChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -354,6 +454,68 @@ export const RightSidebar = memo(function RightSidebar({
 
   return (
     <>
+      {selectedNotification && (
+        <NotificationDetailsModal notification={selectedNotification} onClose={closeNotification} />
+      )}
+      {isNameModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+          <form
+            ref={nameFormRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-profile-name-title"
+            aria-busy={isSavingName}
+            onSubmit={handleSaveName}
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+          >
+            <h3 id="edit-profile-name-title" className="text-xl font-bold text-slate-900">Change name</h3>
+            <p className="mt-1 text-sm text-slate-600">Update your first name and surname.</p>
+            <div className="mt-5 space-y-4">
+              <label className="block text-sm font-semibold text-slate-700">
+                First name
+                <input
+                  autoFocus
+                  autoComplete="given-name"
+                  required
+                  value={nameDraft.firstName}
+                  disabled={isSavingName}
+                  onChange={(event) => setNameDraft((current) => ({ ...current, firstName: titleCaseName(event.target.value) }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[var(--brand-color)] focus:ring-2 focus:ring-[var(--brand-color)]/20 disabled:opacity-50"
+                />
+              </label>
+              <label className="block text-sm font-semibold text-slate-700">
+                Surname
+                <input
+                  autoComplete="family-name"
+                  required
+                  value={nameDraft.surname}
+                  disabled={isSavingName}
+                  onChange={(event) => setNameDraft((current) => ({ ...current, surname: titleCaseName(event.target.value) }))}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none focus:border-[var(--brand-color)] focus:ring-2 focus:ring-[var(--brand-color)]/20 disabled:opacity-50"
+                />
+              </label>
+              {nameError && <p role="alert" className="text-sm text-rose-700">{nameError}</p>}
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                disabled={isSavingName}
+                onClick={() => setIsNameModalOpen(false)}
+                className="flex-1 rounded-xl border border-slate-200 py-3 text-sm font-bold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingName}
+                className="flex-1 rounded-xl bg-[var(--brand-color)] py-3 text-sm font-bold text-white transition hover:bg-[var(--brand-color-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isSavingName ? 'Saving…' : 'Save name'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
       {/* Sign Out Confirmation Modal */}
       {isSignOutModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
@@ -498,7 +660,18 @@ export const RightSidebar = memo(function RightSidebar({
               </div>
 
               <h2 className="mb-0.5 text-lg font-bold tracking-tight text-black">
-                {userData.fullName}
+                <button
+                  ref={editNameButtonRef}
+                  type="button"
+                  aria-label={`Change name for ${userData.fullName}`}
+                  aria-haspopup="dialog"
+                  title="Change name"
+                  onClick={openNameEditor}
+                  className="rounded-lg transition-colors hover:text-[var(--brand-color)] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]"
+                >
+                  {userData.fullName}
+                  <EditIcon className="ml-1.5 inline-block h-4 w-4 align-middle text-[var(--brand-color)]" />
+                </button>
               </h2>
               
               <p className="mb-1.5 text-sm font-medium text-gray-600">
@@ -672,11 +845,17 @@ export const RightSidebar = memo(function RightSidebar({
                         'border-slate-200 dark:border-slate-700',
                         !notification.isRead && 'ring-1 ring-[var(--brand-color)]/20 shadow-sm',
                       )}
-                      onClick={() => markAsRead(notification.id)}
+                      aria-haspopup="dialog"
+                      onClick={() => {
+                        setSelectedNotification(notification)
+                        if (!notification.isRead) void markAsRead(notification.id)
+                      }}
                       onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return
                         if (e.key === 'Enter' || e.key === ' ') {
                           e.preventDefault()
-                          markAsRead(notification.id)
+                          setSelectedNotification(notification)
+                          if (!notification.isRead) void markAsRead(notification.id)
                         }
                       }}
                     >

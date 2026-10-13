@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { formatUserName } from '../../utils/userName'
 import { ClipboardIcon, SearchIcon, EditIcon, TrashIcon, CheckIcon, ChevronDownIcon, ClockIcon, CloseIcon, DoorIcon, CalendarIcon, UserIcon, BookIcon, BuildingIcon, LayersIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { Button } from '../../components/Button'
@@ -8,19 +9,23 @@ import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdow
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
-import { db } from '../../firebase'
+import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
+import { db, functions } from '../../firebase'
+import { httpsCallable } from 'firebase/functions'
 import { 
   collection, 
   onSnapshot, 
   query, 
   orderBy, 
   doc, 
-  updateDoc,
   deleteDoc,
-  serverTimestamp 
 } from 'firebase/firestore'
 
 type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+const updateReservationStatus = httpsCallable<
+  { reservationId: string; status: ReservationStatus; expectedStatus: ReservationStatus },
+  { changed: boolean; logId: string | null }
+>(functions, 'updateReservationStatus')
 type RoomStatus = 'Available' | 'Occupied' | 'Maintenance'
 
 function createRoomImage() {
@@ -53,6 +58,10 @@ interface Reservation {
   attendees?: number
   status: ReservationStatus
   purpose?: string
+  requestType?: 'Standard' | 'Extended'
+  subjectCode?: string
+  classSection?: string
+  department?: string
   createdAt: any
   updatedAt?: any
   // Joined data
@@ -132,15 +141,18 @@ interface StatusUpdateModalProps {
 function StatusUpdateModal({ reservation, onClose, onUpdate }: StatusUpdateModalProps) {
   const [selectedStatus, setSelectedStatus] = useState<ReservationStatus>(reservation.status)
   const [isUpdating, setIsUpdating] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
   const [avatarError, setAvatarError] = useState(false)
 
   const handleUpdate = async () => {
+    setErrorMessage('')
     setIsUpdating(true)
     try {
       await onUpdate(reservation.id, selectedStatus)
       onClose()
     } catch (error) {
       console.error('Error updating status:', error)
+      setErrorMessage(error instanceof Error ? error.message : 'Could not update the reservation. Please try again.')
     } finally {
       setIsUpdating(false)
     }
@@ -203,6 +215,7 @@ function StatusUpdateModal({ reservation, onClose, onUpdate }: StatusUpdateModal
             </div>
           </div>
 
+          {errorMessage && <p role="alert" className="mb-4 text-sm text-rose-700">{errorMessage}</p>}
           <div className="flex gap-3">
             <Button
               variant="outline"
@@ -237,15 +250,18 @@ interface ConfirmationModalProps {
 
 function ConfirmationModal({ reservation, type, onConfirm, onClose }: ConfirmationModalProps) {
   const [isProcessing, setIsProcessing] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
   const [avatarError, setAvatarError] = useState(false)
 
   const handleConfirm = async () => {
+    setErrorMessage('')
     setIsProcessing(true)
     try {
       await onConfirm()
       onClose()
     } catch (error) {
       console.error(`Error during ${type} action:`, error)
+      setErrorMessage(error instanceof Error ? error.message : 'Could not complete this action. Please try again.')
     } finally {
       setIsProcessing(false)
     }
@@ -297,6 +313,7 @@ function ConfirmationModal({ reservation, type, onConfirm, onClose }: Confirmati
             </p>
           </div>
 
+          {errorMessage && <p role="alert" className="text-sm text-rose-700">{errorMessage}</p>}
           <div className="flex items-center gap-3 pt-2">
             <Button
               variant="outline"
@@ -468,6 +485,7 @@ function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
 }
 
 function ManageReservationsPage() {
+  const [statusError, setStatusError] = useState('')
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
@@ -522,12 +540,13 @@ function ManageReservationsPage() {
       return {
         ...res,
         requester: {
-          name: user?.fullName || 'Unknown User',
+          name: formatUserName(user) || 'Unknown User',
           email: user?.email || 'No Email',
           avatar: user?.profilePicture || '',
         },
         roomName: room?.name || 'Unknown Room',
-        buildingName: building?.name || 'Unknown Building'
+        buildingName: building?.name || 'Unknown Building',
+        buildingCode: building?.code || ''
       }
     })
   }, [reservations, users, rooms, buildings])
@@ -595,11 +614,12 @@ function ManageReservationsPage() {
           res.requester?.email,
           res.roomName,
           res.buildingName,
+          res.buildingCode,
           res.status
         ].some((val) => val?.toLowerCase().includes(searchTerm.toLowerCase()))
 
         const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(res.status)
-        const matchesBuilding = selectedBuildings.length === 0 || selectedBuildings.includes(res.buildingName || '')
+        const matchesBuilding = selectedBuildings.length === 0 || selectedBuildings.includes(res.buildingCode)
 
         return matchesSearch && matchesStatus && matchesBuilding
       })
@@ -612,40 +632,25 @@ function ManageReservationsPage() {
       })
   }, [enrichedReservations, searchTerm, selectedStatuses, selectedBuildings])
 
+  const handleStatusUpdate = async (id: string, newStatus: ReservationStatus) => {
+    setStatusError('')
+    const reservation = editingReservation?.id === id ? editingReservation
+      : confirmingAction?.reservation.id === id ? confirmingAction.reservation
+        : reservations.find(record => record.id === id)
+    if (!reservation) throw new Error('This reservation no longer exists. Reload the page and try again.')
+    await updateReservationStatus({ reservationId: id, status: newStatus, expectedStatus: reservation.status })
+  }
+
   const handleApprove = async (id: string) => {
     try {
-      await updateDoc(doc(db, 'reservations', id), {
-        status: 'Approved',
-        updatedAt: serverTimestamp()
-      })
+      await handleStatusUpdate(id, 'Approved')
     } catch (error) {
       console.error('Error approving reservation:', error)
+      setStatusError(error instanceof Error ? error.message : 'Could not approve the reservation. Please try again.')
     }
   }
 
-  const handleStatusUpdate = async (id: string, newStatus: ReservationStatus) => {
-    try {
-      await updateDoc(doc(db, 'reservations', id), {
-        status: newStatus,
-        updatedAt: serverTimestamp()
-      })
-    } catch (error) {
-      console.error('Error updating status:', error)
-      throw error
-    }
-  }
-
-  const handleReject = async (id: string) => {
-    try {
-      await updateDoc(doc(db, 'reservations', id), {
-        status: 'Declined',
-        updatedAt: serverTimestamp()
-      })
-    } catch (error) {
-      console.error('Error declining reservation:', error)
-      throw error
-    }
-  }
+  const handleReject = (id: string) => handleStatusUpdate(id, 'Declined')
 
   const handleDelete = async (id: string) => {
     try {
@@ -714,7 +719,7 @@ function ManageReservationsPage() {
                 {res.roomName}
               </span>
               <span className="text-xs font-medium text-slate-500">
-                {res.buildingName}
+                {room?.type || 'Unknown Room Type'}
               </span>
             </div>
           </div>
@@ -739,9 +744,12 @@ function ManageReservationsPage() {
       header: 'Status',
       width: '15%',
       render: (res) => (
-        <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[res.status] || 'bg-slate-100 text-slate-700'}`}>
-          {res.status}
-        </span>
+        <div className="flex flex-col items-start gap-1">
+          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[res.status] || 'bg-slate-100 text-slate-700'}`}>
+            {res.status}
+          </span>
+          <ExtendedReservationBadge requestType={res.requestType} />
+        </div>
       )
     },
     {
@@ -794,7 +802,7 @@ function ManageReservationsPage() {
   ]
 
   const buildingOptions = useMemo(() => {
-    return Array.from(new Set(buildings.map(b => b.name))).sort()
+    return Array.from(new Set(buildings.map(b => b.code).filter(Boolean))).sort()
   }, [buildings])
 
   const filterGroups: FilterGroup[] = [
@@ -856,6 +864,7 @@ function ManageReservationsPage() {
         </div>
 
         <div className="relative z-10">
+          {statusError && <p role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{statusError}</p>}
           <DataTable
             data={filteredReservations}
             columns={columns}
@@ -876,7 +885,7 @@ function ManageReservationsPage() {
           onClose={() => setViewingReservation(null)}
           reservation={viewingReservation}
           roomName={viewingReservation.roomName || 'Unknown Room'}
-          buildingName={viewingReservation.buildingName || 'Unknown Building'}
+          roomType={rooms.find(room => room.id === viewingReservation.roomId)?.type || 'Unknown Room Type'}
           requester={viewingReservation.requester}
           onViewRoom={() => {
             handleViewRoomInfo(viewingReservation.roomId)

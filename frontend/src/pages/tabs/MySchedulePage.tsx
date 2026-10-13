@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { formatUserName } from '../../utils/userName'
+import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
 import { CalendarIcon, ClockIcon, LayersIcon, SpinnerIcon, DownloadIcon } from '../../components/Icons'
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
@@ -21,6 +23,7 @@ interface AcademicYearData {
 }
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const
+const SCHEDULE_STATUSES = ['Draft', 'Plot'] as const
 
 // Standard 1h 30mins whole day schedule intervals (07:30 to 18:00)
 const STANDARD_TIME_SLOTS = [
@@ -189,13 +192,7 @@ function MySchedulePage() {
             const q = query(collection(db, 'schedule'))
             unsubscribeSchedule = onSnapshot(q, (snapshot) => {
               const validIds = [mId, user.uid]
-              const fetched: any[] = []
-              snapshot.docs.forEach(d => {
-                const data = d.data()
-                if (validIds.includes(data.instructorId)) {
-                  fetched.push({ id: d.id, ...data })
-                }
-              })
+              const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => Boolean(item.instructorId && validIds.includes(item.instructorId)))
               fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
               setSchedules(fetched)
               setIsLoading(false)
@@ -249,7 +246,7 @@ function MySchedulePage() {
         if (s.semester !== selectedSemester) return false
       }
       const status = s.status || 'Draft'
-      if (!['Draft', 'Drafted', 'Plot', 'Plotted', 'Revise', 'Revised', 'Return', 'Returned'].includes(status)) return false
+      if (!SCHEDULE_STATUSES.some(allowed => allowed === status)) return false
       return true
     })
   }, [schedules, selectedAcademicYear?.academicYear, selectedSemester])
@@ -381,7 +378,7 @@ function MySchedulePage() {
 
       pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
 
-      const targetName = currentUserDoc?.fullName || currentUser?.displayName || 'My_Schedule'
+      const targetName = formatUserName(currentUserDoc) || currentUser?.displayName || 'My_Schedule'
       const safeName = targetName.trim().replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '')
 
       let rawYear = (selectedAcademicYear?.academicYear || 'SY').trim()
@@ -415,7 +412,7 @@ function MySchedulePage() {
           <div style={{ background: 'linear-gradient(135deg, #62853e, #7b9d4f)', padding: '20px 32px', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
             <div>
               <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff', margin: 0 }}>
-                {currentUserDoc?.fullName || currentUser?.displayName || 'My Schedule'}
+                {formatUserName(currentUserDoc) || currentUser?.displayName || 'My Schedule'}
               </h2>
               <p style={{ marginTop: '4px', fontSize: '12px', color: 'rgba(255,255,255,0.9)', fontWeight: 500, margin: '4px 0 0 0' }}>
                 {userRole || currentMembership?.role || 'Instructor'} • {currentUser?.email || ''}
@@ -569,10 +566,8 @@ function MySchedulePage() {
             blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
           >
             <SummaryGraph variant="pie" total={totalSessions} points={[
-              { label: 'Drafted', value: filteredSchedules.filter(schedule => ['Draft', 'Drafted'].includes(schedule.status || 'Draft')).length },
-              { label: 'Plotted', value: filteredSchedules.filter(schedule => ['Plot', 'Plotted'].includes(schedule.status)).length },
-              { label: 'Revised', value: filteredSchedules.filter(schedule => ['Revise', 'Revised'].includes(schedule.status)).length },
-              { label: 'Returned', value: filteredSchedules.filter(schedule => ['Return', 'Returned'].includes(schedule.status)).length },
+              { label: 'Draft', value: filteredSchedules.filter(schedule => (schedule.status || 'Draft') === 'Draft').length },
+              { label: 'Plot', value: filteredSchedules.filter(schedule => schedule.status === 'Plot').length },
             ]} />
           </SummaryCard>
           <SummaryCard
@@ -624,7 +619,7 @@ function MySchedulePage() {
               id: currentUser?.uid,
               membershipId: membershipId,
               userId: currentUser?.uid,
-              name: currentUserDoc?.fullName || currentUser?.displayName || 'Instructor',
+              name: formatUserName(currentUserDoc) || currentUser?.displayName || 'Instructor',
               email: currentUser?.email || '',
               role: userRole || currentMembership?.role || 'Instructor',
               department: currentMembership?.department || '',
@@ -633,7 +628,8 @@ function MySchedulePage() {
             showWeekCalendar={true}
             showStatusColors={true}
             isInline={true}
-            hideReturnedSchedules={true}
+            scheduleStatuses={SCHEDULE_STATUSES}
+            hideReservationIdentity={true}
             initialAcademicYear={selectedAcademicYear?.academicYear}
             initialSemester={selectedSemester}
           />

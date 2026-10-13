@@ -17,6 +17,7 @@ export type DashboardSection =
   | 'myDepartment'
   | 'reports'
   | 'analytics'
+  | 'logs'
   | 'mySchedule'
   | 'manageReservations'
   | 'reserveRoom'
