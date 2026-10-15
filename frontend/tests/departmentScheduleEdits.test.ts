@@ -60,6 +60,16 @@ test('typed and pasted code, room and day changes are uppercase while titles and
   assert.deepEqual(columns.map(column => sheet.rows[0].values[column]), ['ITE 398', 'Capstone Project', 'Cruz, Engelbert', 'Cruz, Engelbert', 'MON/WED', 'MON/WED', 'MBA 101', 'MBA 101'])
 })
 
+test('section cells accept only digits for typing and pasted cell updates', () => {
+  for (const character of '0123456789') assert.equal(isScheduleCellCharacterAllowed(12, character), true, character)
+  for (const character of 'Aa /;.-+\n') assert.equal(isScheduleCellCharacterAllowed(12, character), false, character)
+  assert.equal(normalizeScheduleCellText(12, ''), '')
+  const sheets = workbook(2)
+  const changes = ['1A', 'Section 12'].map((value, index) => ({ cell: { sheet: 0, row: sheets[0].rows[index].rowNumber, column: 12 }, value }))
+  const [sheet] = applyScheduleCellValues(sheets, indexScheduleRows(sheets), changes)
+  assert.deepEqual(sheet.rows.map(row => row.values[12]), ['1', '12'])
+})
+
 test('time and day cells reject spaces while retaining meeting separators and spaces in other fields', () => {
   assert.equal(normalizeScheduleCellText(15, '7:30 AM - 9:00 AM / 1:00 PM - 2:00 PM'), '7:30-9:00/1:00-2:00')
   assert.equal(normalizeScheduleCellText(16, ' 7:30 - 9:00\n 13:00 - 14:00 '), '7:30-9:00\n13:00-14:00')

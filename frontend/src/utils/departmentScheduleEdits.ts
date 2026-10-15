@@ -8,6 +8,7 @@ export interface ScheduleCellValueChange {
 }
 
 export function isScheduleCellCharacterAllowed(column: number, character: string): boolean {
+  if (column === 12) return /^[0-9]$/.test(character)
   if (column === 15 || column === 16) return /^[0-9:/;\-–—]$/.test(character)
   if (column === 17 || column === 18) return /^[A-Z/]$/i.test(character)
   return true
@@ -30,6 +31,7 @@ export function hasExtraScheduleValues(column: number, value: string): boolean {
 }
 
 export function normalizeScheduleCellText(column: number, value: string): string {
+  if (column === 12) return value.replace(/[^0-9]/g, '')
   if (column >= 15 && column <= 18) value = [...value].filter(character => character === '\r' || character === '\n' || isScheduleCellCharacterAllowed(column, character)).join('')
   value = value.slice(0, scheduleValueLimit(column, value))
   return column === 2 || column >= 17 && column <= 20 ? value.toUpperCase() : value

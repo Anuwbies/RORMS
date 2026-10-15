@@ -17,7 +17,7 @@ export interface LiveWorkbookUpdate {
 
 interface SavedWorkbook { revision: number; editorState: string; file?: File; workbookPath?: string }
 
-export function useLiveDepartmentWorkbook<T extends SavedWorkbook>(term: DepartmentWorkbookTerm, paused: boolean, load: () => Promise<T | null>, savedRevision: () => number, apply: (saved: T) => void) {
+export function useLiveDepartmentWorkbook<T extends SavedWorkbook>(term: DepartmentWorkbookTerm | undefined, paused: boolean, load: () => Promise<T | null>, savedRevision: () => number, apply: (saved: T) => void) {
   const [update, setUpdate] = useState<LiveWorkbookUpdate & { scope: string }>()
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
@@ -36,9 +36,10 @@ export function useLiveDepartmentWorkbook<T extends SavedWorkbook>(term: Departm
   const currentRevision = useLatestEvent(savedRevision)
   const applyLatest = useLatestEvent(apply)
   const paths = useMemo(() => {
+    if (!term) return []
     const value = workbookTermPaths(term)
     return [...new Set([value.document, value.previousDocument, value.namedLegacyDocument, value.legacyDocument])]
-  }, [term])
+  }, [term?.departmentId, term?.academicYearId, term?.academicYear, term?.semester])
   const scope = JSON.stringify(paths)
   const receiver = useMemo(() => createLiveWorkbookReceiver(loadLatest, currentRevision, loaded => {
     setError('')
@@ -56,6 +57,7 @@ export function useLiveDepartmentWorkbook<T extends SavedWorkbook>(term: Departm
   useEffect(() => {
     setUpdate(undefined)
     setError('')
+    if (!paths.length) return
     let unsubscribeWorkbook: (() => void) | undefined
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribeWorkbook?.()

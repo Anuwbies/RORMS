@@ -17,7 +17,7 @@ import { changeDepartmentScheduleRows, toggleDepartmentScheduleYearVisibility } 
 import { ScheduleRowCountModal } from './ScheduleRowCountModal'
 import { Button } from './Button'
 import type { DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
-import { loadFirestoreDepartmentWorkbook, saveFirestoreDepartmentWorkbook, type SavedFirestoreDepartmentWorkbook } from '../services/firestoreDepartmentWorkbooks'
+import { loadFirestoreDepartmentWorkbook, saveFirestoreDepartmentWorkbook, type LoadedFirestoreDepartmentWorkbook, type SavedFirestoreDepartmentWorkbook } from '../services/firestoreDepartmentWorkbooks'
 import { createDepartmentScheduleWorkbookState, readDepartmentScheduleWorkbookState, type DepartmentScheduleWorkbookState } from '../utils/departmentScheduleWorkbookState'
 import { loadDepartmentScheduleDirectory } from '../services/departmentScheduleRows'
 import type { ScheduleDirectory } from '../utils/excelScheduleRows'
@@ -26,6 +26,8 @@ import { facultyScheduleRowKey } from '../utils/ScheduleValidation'
 import { useExcelValidationTooltip } from './ExcelValidationTooltip'
 import { loadDepartmentCourseSuggestions } from '../services/firestoreDepartmentCourses'
 import type { DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
+import { hasDepartmentScheduleChanges, type DepartmentScheduleSaveBaseline } from '../utils/departmentScheduleSaveStatus'
+import { useLiveDepartmentWorkbook } from '../hooks/useLiveDepartmentWorkbook'
 
 interface DepartmentScheduleImportModalProps {
   onClose: () => void
@@ -75,6 +77,16 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   const [selection, setSelection] = useState<ColumnCellSelection | null>(null)
   const [loading, setLoading] = useState(Boolean(term))
   const [saving, setSaving] = useState(false)
+  const [cellEditing, setCellEditing] = useState(false)
+  const [resizing, setResizing] = useState(false)
+  const [saveDuration, setSaveDuration] = useState<number | null>(null)
+  const [saveBaseline, setSaveBaseline] = useState<DepartmentScheduleSaveBaseline>({
+    sheets: initialWorkbook.sheets, columnWidths: null, file: null, persisted: false,
+  })
+  const hasUnsavedChanges = useMemo(() => hasDepartmentScheduleChanges(saveBaseline, sheets, columnWidths, file),
+    [saveBaseline, sheets, columnWidths, file])
+  const hasLocalEdits = useMemo(() => hasDepartmentScheduleChanges({ ...saveBaseline, persisted: true }, sheets, columnWidths, file),
+    [saveBaseline, sheets, columnWidths, file])
   const savingRef = useRef(false)
   const savedRef = useRef<SavedFirestoreDepartmentWorkbook | null>(null)
   const storedStateRef = useRef<Pick<DepartmentScheduleWorkbookState, 'snapshot' | 'ownedNames'> | undefined>(undefined)
@@ -172,6 +184,8 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     storedStateRef.current = undefined
     setStoredFileName('')
     setFile(null)
+    setSaveDuration(null)
+    setSaveBaseline({ sheets: initialWorkbook.sheets, columnWidths: null, file: null, persisted: false })
     sheetsRef.current = initialWorkbook.sheets
     rowIndexesRef.current = initialWorkbook.indexes
     setSheets(initialWorkbook.sheets)
@@ -179,6 +193,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     setColumnWidths(null)
     historyRef.current.reset()
     editSessionRef.current = null
+    setCellEditing(false)
     selectionRef.current = null
     setSelection(null)
     void loadFirestoreDepartmentWorkbook(term, message => {
@@ -195,6 +210,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
         setSheets(loaded.sheets)
         setSelectedSheet(loaded.selectedSheet)
         setColumnWidths(loaded.columnWidths)
+        setSaveBaseline({ sheets: loaded.sheets, columnWidths: loaded.columnWidths, file: null, persisted: true })
       }
       setStorageReady(true)
       setStorageStatus('')
@@ -226,6 +242,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     if (historyTimerRef.current !== null) window.clearTimeout(historyTimerRef.current)
     historyTimerRef.current = null
     editSessionRef.current = null
+    setCellEditing(false)
     setSelection(null)
     selectionRef.current = null
     selectionDragRef.current = null
@@ -404,6 +421,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
       return { cell: paired, value: readCellValue(paired) }
     }) : []
     editSessionRef.current = { cell, originals, pairedOriginals, checkpoint: historyRef.current.checkpoint(), hasTyped: false }
+    setCellEditing(true)
   }, [flushTypingGroup, selectedCellValues, readCellValue])
 
   const finishCellEditing = useCallback((cell: CellEditLocation, save: boolean) => {
@@ -426,10 +444,62 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
       }
     }
     editSessionRef.current = null
+    setCellEditing(false)
   }, [applyCellValues, flushTypingGroup, readCellValue])
 
+  const applyLiveWorkbook = useCallback((saved: LoadedFirestoreDepartmentWorkbook) => {
+    // Parse first so an invalid remote workbook never removes the local draft.
+    let loaded: DepartmentScheduleWorkbookState
+    try {
+      loaded = readDepartmentScheduleWorkbookState(saved.editorState)
+    } catch (caught) {
+      setStorageError(caught instanceof Error ? caught.message : 'The updated workbook could not be opened. Your edits have been kept.')
+      return
+    }
+    const viewedName = sheetsRef.current[selectedSheet]?.name
+    const viewedIndex = loaded.sheets.findIndex(item => item.name === viewedName)
+    flushTypingGroup()
+    historyRef.current.reset()
+    editSessionRef.current = null
+    setCellEditing(false)
+    selectionRef.current = null
+    selectionDragRef.current = null
+    if (selectionFrameRef.current !== null) cancelAnimationFrame(selectionFrameRef.current)
+    selectionFrameRef.current = null
+    setSelection(null)
+    setContextMenu(null)
+    setYearRenameRequest(undefined)
+    setRowCountModal(null)
+    savedRef.current = saved
+    storedStateRef.current = loaded
+    sheetsRef.current = loaded.sheets
+    rowIndexesRef.current = indexScheduleRows(loaded.sheets)
+    setFile(null)
+    setStoredFileName(saved.fileName)
+    setSheets(loaded.sheets)
+    setSelectedSheet(viewedIndex >= 0 ? viewedIndex : loaded.selectedSheet)
+    setColumnWidths(loaded.columnWidths)
+    setSaveBaseline({ sheets: loaded.sheets, columnWidths: loaded.columnWidths, file: null, persisted: true })
+    setSaveDuration(null)
+    setError('')
+    setStorageError('')
+    setStorageStatus('Updated with the latest saved workbook.')
+  }, [selectedSheet, flushTypingGroup])
+
+  const liveWorkbook = useLiveDepartmentWorkbook(term, loading || saving || !storageReady,
+    () => term ? loadFirestoreDepartmentWorkbook(term) : Promise.resolve(null),
+    () => savedRef.current?.revision ?? 0, applyLiveWorkbook)
+  const pendingLiveUpdate = liveWorkbook.update?.isCurrent?.() ? liveWorkbook.update : undefined
+
+  useEffect(() => {
+    if (!pendingLiveUpdate || loading || saving || !storageReady || hasLocalEdits || cellEditing || resizing || contextMenu || rowCountModal || yearRenameRequest) return
+    // Check synchronous edit/save refs too, in case an input event preceded this effect.
+    if (editSessionRef.current || savingRef.current || resizeRef.current || sheetsRef.current !== sheets) return
+    pendingLiveUpdate.onApplied()
+  }, [pendingLiveUpdate, loading, saving, storageReady, hasLocalEdits, cellEditing, resizing, contextMenu, rowCountModal, yearRenameRequest, sheets])
+
   const saveWorkbook = async () => {
-    if (!term || readOnly || loading || savingRef.current || !storageReady || !sheetsRef.current.length) return
+    if (!term || readOnly || loading || savingRef.current || !storageReady || !sheetsRef.current.length || pendingLiveUpdate) return
     const editing = editSessionRef.current
     if (editing) finishCellEditing(editing.cell, true)
     flushTypingGroup()
@@ -438,12 +508,14 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     setSaving(true)
     setStorageError('')
     setStorageStatus('Preparing workbook…')
+    const startedAt = performance.now()
+    const savingSheets = sheetsRef.current
     try {
-      const state = createDepartmentScheduleWorkbookState(sheetsRef.current, selectedSheet, columnWidths, storedStateRef.current)
+      const state = createDepartmentScheduleWorkbookState(savingSheets, selectedSheet, columnWidths, storedStateRef.current)
       const directory = await loadDepartmentScheduleDirectory(term.departmentCode)
       setValidationDirectory(directory)
       setValidationError('')
-      const scheduleRows = extractDepartmentScheduleImportRows(state.snapshot, state.ownedNames, sheetsRef.current, directory)
+      const scheduleRows = extractDepartmentScheduleImportRows(state.snapshot, state.ownedNames, savingSheets, directory)
       const saved = await saveFirestoreDepartmentWorkbook(term, file?.name ?? (storedFileName || 'Department Schedule.xlsx'),
         state.editorState, savedRef.current, { scheduleRows, scheduleCollection: 'schedules', scheduleStatus: 'Draft', onProgress: progress => {
           setStorageStatus(progress.stage === 'preparing' ? 'Preparing workbook…'
@@ -452,6 +524,8 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
       savedRef.current = saved
       storedStateRef.current = state
       setStoredFileName(saved.fileName)
+      setSaveDuration(performance.now() - startedAt)
+      setSaveBaseline({ sheets: savingSheets, columnWidths, file, persisted: true })
       setStorageStatus(saved.cleanupWarning ? `Workbook saved. ${saved.cleanupWarning}` : 'Workbook saved.')
     } catch (caught) {
       setStorageStatus('')
@@ -770,7 +844,12 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     const widths = measuredWidths()
     if (!columnWidths) {
       const minimum = headerConstraintsRef.current.find(constraint => constraint.start === 0 && constraint.count === 1)?.minimum
-      if (minimum !== undefined) setColumnWidths(defaultRowCounterWidth(widths, minimum))
+      if (minimum !== undefined) {
+        const defaults = defaultRowCounterWidth(widths, minimum)
+        setColumnWidths(defaults)
+        setSaveBaseline(previous => previous.columnWidths === null && previous.sheets === sheetsRef.current
+          ? { ...previous, columnWidths: defaults } : previous)
+      }
       return
     }
     // A different sheet may need more digits without resetting the other column widths.
@@ -800,6 +879,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   }, [loading])
 
   const stopResize = () => {
+    setResizing(false)
     resizeRef.current = null
     if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current)
     resizeFrameRef.current = null
@@ -819,6 +899,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     event.preventDefault()
     stopResize()
     const widths = measuredWidths()
+    setResizing(true)
     resizeRef.current = { x: event.clientX, pointerX: event.clientX, scrollLeft: scrollRef.current?.scrollLeft ?? 0, lastDelta: 0, start, count, widths }
     setColumnWidths(widths)
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -1016,11 +1097,21 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
           <Button type="button" variant="outline" disabled={loading || saving || readOnly || !storageReady} icon={<UploadIcon className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>Import XLSX</Button>
           <div className="min-w-0 flex-1 text-sm">
             {storageError || validationError ? <p role="alert" className="text-rose-700">{storageError || validationError}</p>
-              : <p role="status" aria-live="polite" className="text-slate-500">{storageStatus || (readOnly ? 'This semester is read-only.' : !term ? 'Open a department and semester from My Department to save this workbook.' : '')}</p>}
+              : pendingLiveUpdate ? <p role="status" aria-live="polite" className="text-amber-700">
+                {hasLocalEdits ? 'Another user saved a newer workbook. Your unsaved edits are kept.' : 'A newer saved workbook is ready.'}{' '}
+                <button type="button" disabled={loading || saving} className="font-medium underline" onClick={() => {
+                  if (pendingLiveUpdate.isCurrent?.()) pendingLiveUpdate.onApplied()
+                }}>{hasLocalEdits ? 'Discard edits and load latest' : 'Load latest'}</button>
+              </p>
+                : liveWorkbook.error ? <p role="alert" className="text-rose-700">{liveWorkbook.error}{' '}<button type="button" className="font-medium underline" onClick={liveWorkbook.retry}>Retry live updates</button></p>
+                  : <p role="status" aria-live="polite" className="text-slate-500">{storageStatus || (readOnly ? 'This semester is read-only.' : !term ? 'Open a department and semester from My Department to save this workbook.' : '')}</p>}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-3">
+            {!loading && storageReady && <p role="status" aria-live="polite" className={`text-sm ${hasUnsavedChanges && !saving ? 'text-amber-700' : 'text-slate-500'}`}>
+              {saving ? 'Saving…' : hasUnsavedChanges ? 'Unsaved changes' : saveDuration === null ? 'Saved' : `Saved in ${(saveDuration / 1000).toFixed(1)}s`}
+            </p>}
             <Button type="button" variant="outline" disabled={saving} onClick={onClose}>Close</Button>
-            <Button type="button" variant="brand" disabled={!term || readOnly || loading || saving || !storageReady || !sheets.length} onClick={() => { void saveWorkbook() }}>{saving ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="brand" disabled={!term || readOnly || loading || saving || !storageReady || !sheets.length || Boolean(pendingLiveUpdate)} onClick={() => { void saveWorkbook() }}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         </footer>
       </div>
