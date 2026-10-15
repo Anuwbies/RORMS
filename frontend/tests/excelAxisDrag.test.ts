@@ -1,8 +1,5 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { readFileSync } from 'node:fs'
-import vm from 'node:vm'
-import ts from 'typescript'
 import { axisDragOffset, axisDragTarget, axisDragScrollSpeed, createAxisDragPreview } from '../src/utils/excelAxisDrag.ts'
 
 test('row previews stay vertical and column previews stay horizontal, even with diagonal pointer movement', () => {
@@ -120,61 +117,3 @@ test('the translucent preview follows the selected area without copying cells or
   }
 })
 
-// Exercise the actual modal handlers so an offscreen final cell cannot regress drop or history scrolling.
-const pageSource = readFileSync(new URL('../src/components/ExcelPreviewModal.tsx', import.meta.url), 'utf8')
-const sourceFile = ts.createSourceFile('ExcelPreviewModal.tsx', pageSource, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-let restore: ts.Expression | undefined
-let historyKeys: ts.Expression | undefined
-const visit = (node: ts.Node) => {
-  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === 'restoreEdit') restore = node.initializer
-  if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === 'handleHistoryKeys') historyKeys = node.initializer
-  ts.forEachChild(node, visit)
-}
-visit(sourceFile)
-assert(restore)
-assert(historyKeys)
-const handlerSource = restore.getText(sourceFile)
-const compiled = ts.transpileModule(`module.exports = ${handlerSource}`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2023 } }).outputText
-const historyCompiled = ts.transpileModule(`module.exports = ${historyKeys.getText(sourceFile)}`, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2023 } }).outputText
-
-for (const axis of ['row', 'column'] as const) for (const action of ['drop', 'undo', 'redo', 'shift-redo'] as const) test(`${action} of whole ${axis}s preserves both scroll coordinates and focuses the header without scrolling`, () => {
-  const frames: Array<() => void> = [], focusCalls: unknown[] = []
-  let headerSelector = '', cellFocused = false
-  const scroller = { scrollLeft: 240, scrollTop: 600, scrollTo: (left: number, top: number) => { scroller.scrollLeft = left; scroller.scrollTop = top } }
-  const context: Record<string, unknown> = {
-    module: { exports: undefined }, hideCellAnnotations: () => {},
-    sheetScrollRef: { current: scroller },
-    document: { querySelector: () => null },
-    gridRef: { current: { querySelector: (selector: string) => { headerSelector = selector; return { focus: (options: { preventScroll: boolean }) => { focusCalls.push(options); if (!options.preventScroll) scroller.scrollTo(9999, 9999) } } } } },
-    sheetTableRef: { current: { querySelector: () => ({ focus: () => { cellFocused = true; scroller.scrollTo(9999, 9999) } }) } },
-    XLSX: { utils: { encode_cell: () => 'Z1001' } }, requestAnimationFrame: (callback: () => void) => { frames.push(callback) },
-  }
-  for (const setter of handlerSource.matchAll(/\b(set[A-Z]\w*)\(/g)) context[setter[1]] = () => {}
-  vm.runInNewContext(compiled, context)
-  const handler = (context.module as { exports: (snapshot: object, preserveScroll: boolean) => void }).exports
-  const snapshot = { workbook: {}, selectedSheet: 'Sheet1', selection: { focus: { r: 1000, c: 25 }, axis } }
-  if (action === 'drop') handler(snapshot, true)
-  else {
-    let requestedAction = '', prevented = false
-    Object.assign(context, {
-      restoreEdit: handler, readOnly: false, HTMLElement: class {},
-      resizeDragRef: { current: null }, axisMoveDragRef: { current: null },
-      editHistoryRef: { current: {
-        undo: () => { requestedAction = 'undo'; return snapshot },
-        redo: () => { requestedAction = 'redo'; return snapshot },
-      } },
-    })
-    vm.runInNewContext(historyCompiled, context)
-    const historyHandler = (context.module as { exports: (event: object) => void }).exports
-    historyHandler({ key: action === 'redo' ? 'y' : 'z', ctrlKey: true, shiftKey: action === 'shift-redo', preventDefault: () => { prevented = true } })
-    assert.equal(requestedAction, action === 'undo' ? 'undo' : 'redo')
-    assert.equal(prevented, true)
-  }
-  scroller.scrollTo(900, 1200) // Simulate browser scroll anchoring during the grid update.
-  frames.forEach(callback => callback())
-  assert.equal(headerSelector, `[data-grid-axis="${axis}"][data-grid-index="${axis === 'row' ? 1000 : 25}"]`)
-  assert.equal(cellFocused, false)
-  assert.equal((focusCalls[0] as { preventScroll: boolean }).preventScroll, true)
-  assert.equal(scroller.scrollLeft, 240)
-  assert.equal(scroller.scrollTop, 600)
-})

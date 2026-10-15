@@ -95,6 +95,19 @@ test("invitation queues email and assignment atomically without retaining its be
   assert.deepEqual(log.changes.role, { before: null, after: "Instructor" });
 });
 
+test("University Administrator invitations and edits enforce General Service Department", async () => {
+  const fake = fixture();
+  await manageMemberAccount(fake.db, "admin", { ...invite, role: "University Administrator", department: "CITE" });
+  const invitation = fake.documents.get("invitations/private-token");
+  const membership = fake.documents.get(`memberships/${invitation.membershipId}`);
+  assert.equal(membership.role, "University Administrator");
+  assert.equal(membership.department, "General Service Department");
+  await manageMemberAccount(fake.db, "admin", { ...edit, role: "University Administrator", department: "CAS" });
+  assert.equal(fake.documents.get("memberships/assignment").department, "General Service Department");
+  const restricted = fixture({ role: "University Administrator" });
+  await assert.rejects(manageMemberAccount(restricted.db, "admin", invite), { code: "permission-denied" });
+});
+
 test("existing users and live invitations are skipped without a success log", async () => {
   const existing = fixture();
   assert.equal((await manageMemberAccount(existing.db, "admin", { ...invite, email: "member@example.com" })).outcome, "exists");

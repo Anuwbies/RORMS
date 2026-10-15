@@ -118,6 +118,7 @@ export function roleToAntClass(role: MemberRole): AntClass {
 }
 
 const roleStyles: Record<MemberRole, { color: string; hex: string; accessory: string; label: string; badge: string; textColor: string }> = {
+  'University Administrator': { color: 'bg-sky-600', hex: '#0284c7', accessory: '🔑', label: 'University Administrator', badge: 'bg-sky-100 text-sky-700 border-sky-200', textColor: 'text-sky-400' },
   Admin: {
     color: 'bg-purple-600',
     hex: '#9333ea',

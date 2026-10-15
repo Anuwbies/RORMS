@@ -1,12 +1,14 @@
 import { useState, useEffect, useMemo } from 'react'
 import { formatUserName } from '../../utils/userName'
 import { SectionHeader } from '../../components/SectionHeader';
-import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, EditIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon, BuildingIcon, DoorIcon, ClockIcon } from '../../components/Icons'
+import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, EditIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon, BuildingIcon, DoorIcon, ClockIcon, BookIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { ScheduleModal } from '../../components/ScheduleModal'
-import { DepartmentExcelScheduleModal } from '../../components/DepartmentExcelScheduleModal'
+import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
+import { semesterKey } from '../../utils/departmentWorkbookPaths'
+import { DepartmentCoursesImportModal } from '../../components/DepartmentCoursesImportModal'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
@@ -65,7 +67,8 @@ function MyDepartmentPage() {
 
   const [rooms, setRooms] = useState<{ id: string, code: string, name: string, buildingId: string }[]>([])
   const [buildings, setBuildings] = useState<{ id: string, name: string, code?: string }[]>([])
-  const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false)
+  const [isImportScheduleModalOpen, setIsImportScheduleModalOpen] = useState(false)
+  const [isCoursesModalOpen, setIsCoursesModalOpen] = useState(false)
   // School Year and Semester Selection State
   const [academicYears, setAcademicYears] = useState<any[]>([])
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
@@ -713,23 +716,24 @@ function MyDepartmentPage() {
           setSelectedSemesterPhase(semesterPhase)
           setIsSchoolYearModalOpen(false)
 
-          setIsAddScheduleModalOpen(true)
+          setIsImportScheduleModalOpen(true)
         }}
         editablePhases={currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? ['Drafting', 'Revision'] : []}
       />
 
-      {/* Open the term's Firestore workbook, or add/import its first sheets. */}
-      {isAddScheduleModalOpen && departmentInfo && selectedAcademicYear?.id && selectedAcademicYear?.academicYear && selectedSemesterPhase && <DepartmentExcelScheduleModal
+      {isImportScheduleModalOpen && departmentInfo && selectedAcademicYear?.id && selectedAcademicYear?.academicYear && selectedSemesterPhase && <DepartmentScheduleImportModal
         key={`${departmentInfo.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
-        onClose={() => setIsAddScheduleModalOpen(false)}
-        departmentCode={departmentInfo.code}
-        departmentId={departmentInfo.id}
-        academicYear={selectedAcademicYear.academicYear}
-        academicYearId={selectedAcademicYear.id}
-        membershipId={currentUserMembership?.id || ''}
-        semester={selectedSemesterPhase}
-        showPlotTool={false}
+        term={{ departmentId: departmentInfo.id, departmentCode: departmentInfo.code,
+          academicYearId: selectedAcademicYear.id, academicYear: selectedAcademicYear.academicYear,
+          semester: semesterKey(selectedSemesterPhase.name), membershipId: currentUserMembership?.id || '' }}
         readOnly={(currentUserRole !== 'Dean' && currentUserRole !== 'Program Head') || !['Drafting', 'Revision'].includes(selectedSemesterPhase.phase)}
+        onClose={() => setIsImportScheduleModalOpen(false)}
+      />}
+      {isCoursesModalOpen && departmentInfo && <DepartmentCoursesImportModal
+        key={departmentInfo.id}
+        department={{ departmentId: departmentInfo.id, departmentCode: departmentInfo.code, membershipId: currentUserMembership?.id || '' }}
+        readOnly={currentUserRole !== 'Dean' && currentUserRole !== 'Program Head'}
+        onClose={() => setIsCoursesModalOpen(false)}
       />}
 
 
@@ -1071,6 +1075,16 @@ function MyDepartmentPage() {
                     }}
                   >
                     {currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? 'Manage Schedule' : 'Department Schedule'}
+                  </Button>
+                )}
+                {(currentUserRole === 'Dean' || currentUserRole === 'Program Head') && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    icon={<BookIcon className="h-5 w-5" />}
+                    onClick={() => setIsCoursesModalOpen(true)}
+                  >
+                    Manage Courses
                   </Button>
                 )}
               </div>

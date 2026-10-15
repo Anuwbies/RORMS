@@ -1,4 +1,5 @@
 export type NotificationType =
+  | 'booking_recommended'
   | 'booking_approved'
   | 'booking_rejected'
   | 'booking_cancelled'

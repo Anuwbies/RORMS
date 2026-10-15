@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import ts from 'typescript'
 
 const root = fileURLToPath(new URL('../src/', import.meta.url))
-function harness() {
+function harness(scheduleCollection = 'schedule') {
   const documents = new Map([
     ['users/registrar', { isActive: true }],
     ['memberships/manager', { userId: 'registrar', status: 'accepted', role: 'Registrar' }],
@@ -33,6 +33,9 @@ function harness() {
     const context = { exports: {}, crypto: { randomUUID: () => 'plot-revision' }, require: name => {
       if (name === 'firebase/firestore') return firestore
       if (name === '../firebase') return { db: {}, auth: { currentUser: { uid: 'registrar' } } }
+      if (name === './scheduleRoomWorkbookSync') return { prepareScheduleRoomWorkbookSync: async () => ({ read: async () => ({
+        updateRow: (_id, _meetings) => ({ rawValues: Array(21).fill(''), workbookRow: 3, workbookSheetId: 'sheet_0' }), apply: () => {},
+      }) }) }
       return load(resolve(dirname(file), name.endsWith('.ts') ? name : `${name}.ts`))
     } }
     vm.runInNewContext(ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2023, module: ts.ModuleKind.CommonJS } }).outputText, context)
@@ -43,18 +46,77 @@ function harness() {
   const plotting = load(resolve(root, 'utils/schedulePlotting.ts'))
   const meeting = (changes = {}) => ({ format: 'Flexible', modality: 'F2F', faculty: 'Teacher', time: '07:30-09:00', day: 'Mon',
     startTime: '07:30', endTime: '09:00', days: ['Mon'], instructorId: 'instructor', roomId: '', room: 'TBA', buildingId: '', ...changes })
-  const schedule = (changes = {}) => ({ source: 'workbook', schemaVersion: 2, department: 'CITE', academicYearId: 'year', semesterKey: 'sem1',
+  const schedule = (changes = {}) => ({ source: 'workbook', schemaVersion: 2, department: 'CITE', departmentId: 'dept', sourceWorkbook: 'departments/dept/workbooks/2026-2027/semesters/sem1', sourceSheet: 'Schedule', sourceRow: 3, rawValues: Array(21).fill(''), academicYearId: 'year', semesterKey: 'sem1',
     subjectCode: 'ITE 314', status: 'Draft', workbookRevisionId: 'workbook-1', maxStudents: 30, meetings: [meeting()], ...changes })
   const assignment = (scheduleId = 'class1', index = 0, roomId = 'room1') => {
-    const data = documents.get(`schedule/${scheduleId}`)
+    const data = documents.get(`${scheduleCollection}/${scheduleId}`)
     return { scheduleId, meetingKey: plotting.plotMeetingKey(data.meetings[index]), roomId, expectedRoomId: data.meetings[index].roomId,
       expectedRevision: plotting.plotScheduleRevision(data) }
   }
   const plot = assignments => service.plotScheduleRooms({ membershipId: 'manager', departmentCode: 'CITE', academicYearId: 'year', academicYear: '2026-2027',
-    semester: '1st Semester', instructorIds: ['instructor'], assignments })
-  documents.set('schedule/class1', schedule())
+    semester: '1st Semester', instructorIds: ['instructor'], assignments, scheduleCollection })
+  documents.set(`${scheduleCollection}/class1`, schedule())
   return { documents, meeting, schedule, assignment, plot, plotting }
 }
+
+test('plots the new schedules collection and keeps a same-ID legacy record unchanged', async () => {
+  const h = harness('schedules')
+  const legacy = h.schedule({ subjectCode: 'LEGACY' })
+  h.documents.set('schedule/class1', legacy)
+  await h.plot([h.assignment()])
+  const saved = h.documents.get('schedules/class1')
+  assert.equal(saved.status, 'Plot')
+  assert.equal(saved.meetings[0].roomId, 'room1')
+  assert.equal(saved.meetings[0].room, 'Room 201')
+  assert.equal(saved.registrarPlot.assignments[0].room, 'Room 201')
+  assert.equal(saved.plottedMembershipId, 'manager')
+  assert.equal(h.documents.get('schedule/class1'), legacy)
+  await h.plot([h.assignment('class1', 0, '')])
+  assert.equal(h.documents.get('schedules/class1').status, 'Draft')
+})
+
+test('approving an existing Draft room leaves it unchanged until Plot and then persists Plot status', async () => {
+  const h = harness('schedules')
+  h.documents.set('schedules/class1', h.schedule({ meetings: [h.meeting({ roomId: 'room1', room: 'Room 201', buildingId: 'ptc' })] }))
+  const saved = h.documents.get('schedules/class1')
+  const staged = h.plotting.toggleAssignedSchedulePlot(new Map(), { ...saved, ...saved.meetings[0], id: 'class1', sourceScheduleId: 'class1' })
+  assert.equal(saved.status, 'Draft')
+  assert.equal(staged.size, 1)
+  await h.plot([...staged.values()])
+  const plotted = h.documents.get('schedules/class1')
+  assert.equal(plotted.status, 'Plot')
+  assert.equal(plotted.meetings[0].roomId, 'room1')
+  assert.equal(plotted.meetings[0].room, 'Room 201')
+  assert.equal(plotted.plottedMembershipId, 'manager')
+})
+
+test('assigned Draft rooms cannot be changed or cleared before approval, but Plot rooms remain editable', async () => {
+  const h = harness('schedules')
+  h.documents.set('schedules/class1', h.schedule({ meetings: [h.meeting({ roomId: 'room1', room: 'PTC 201', buildingId: 'ptc' })] }))
+  for (const room of ['room2', '']) {
+    await assert.rejects(h.plot([h.assignment('class1', 0, room)]), /room cannot be changed/)
+    assert.equal(h.documents.get('schedules/class1').status, 'Draft')
+    assert.equal(h.documents.get('schedules/class1').meetings[0].roomId, 'room1')
+  }
+  await h.plot([h.assignment()])
+  assert.equal(h.documents.get('schedules/class1').status, 'Plot')
+  await h.plot([h.assignment('class1', 0, 'room2')])
+  assert.equal(h.documents.get('schedules/class1').meetings[0].roomId, 'room2')
+  assert.equal(h.documents.get('schedules/class1').meetings[0].room, 'Room 202')
+})
+
+test('approving an existing room still rejects conflicts and stale revisions before changing status', async () => {
+  const h = harness('schedules')
+  h.documents.set('schedules/class1', h.schedule({ meetings: [h.meeting({ roomId: 'room1', room: 'PTC 201', buildingId: 'ptc' })] }))
+  h.documents.set('schedules/other', h.schedule({ department: 'CAS', meetings: [h.meeting({ roomId: 'room1', startTime: '08:00' })] }))
+  await assert.rejects(h.plot([h.assignment()]), /overlaps/)
+  assert.equal(h.documents.get('schedules/class1').status, 'Draft')
+  h.documents.delete('schedules/other')
+  const selection = h.assignment()
+  h.documents.get('schedules/class1').workbookRevisionId = 'newer'
+  await assert.rejects(h.plot([selection]), /meeting changed/)
+  assert.equal(h.documents.get('schedules/class1').status, 'Draft')
+})
 
 test('Plot saves meeting rooms, summary fields and status; clearing returns the class to Draft', async () => {
   const h = harness()
@@ -63,8 +125,8 @@ test('Plot saves meeting rooms, summary fields and status; clearing returns the 
   assert.equal(saved.status, 'Plot')
   assert.equal(saved.roomId, 'room1')
   assert.equal(saved.roomIds.join(','), 'room1')
-  assert.equal(saved.meetings[0].room, 'PTC 201')
-  assert.equal(saved.f2fRoom.flexible[0], 'PTC 201')
+  assert.equal(saved.meetings[0].room, 'Room 201')
+  assert.equal(saved.f2fRoom.flexible[0], 'Room 201')
   assert.equal(saved.registrarPlot.assignments[0].key, h.plotting.plotMeetingKey(saved.meetings[0]))
   await h.plot([h.assignment('class1', 0, '')])
   saved = h.documents.get('schedule/class1')
@@ -73,14 +135,20 @@ test('Plot saves meeting rooms, summary fields and status; clearing returns the 
   assert.equal(saved.roomIds.length, 0)
 })
 
-test('partial plotting stays Draft and duplicate cards target the meeting rather than its display slot', async () => {
+test('saving one meeting room changes the schedule to Plot; clearing its last assigned room returns it to Draft', async () => {
   const h = harness()
-  h.documents.set('schedule/class1', h.schedule({ meetings: [h.meeting(), h.meeting({ days: ['Wed'], day: 'Wed' })] }))
+  h.documents.set('schedule/class1', h.schedule({ meetings: [h.meeting(), h.meeting({ days: ['Wed'], day: 'Wed' })], validationIssues: ['Room allocation is pending.'] }))
   await h.plot([h.assignment('class1', 1)])
   const saved = h.documents.get('schedule/class1')
-  assert.equal(saved.status, 'Draft')
+  assert.equal(saved.status, 'Plot')
   assert.equal(saved.meetings[0].roomId, '')
   assert.equal(saved.meetings[1].roomId, 'room1')
+  assert.ok(saved.validationIssues.includes('Room allocation is pending.'))
+  const retained = h.plotting.retainRegistrarRooms(h.schedule({ meetings: [h.meeting(), h.meeting({ days: ['Wed'], day: 'Wed' })], validationIssues: ['Room allocation is pending.'] }), saved)
+  assert.equal(retained.status, 'Plot')
+  assert.equal(retained.meetings[1].roomId, 'room1')
+  await h.plot([h.assignment('class1', 1, '')])
+  assert.equal(h.documents.get('schedule/class1').status, 'Draft')
 })
 
 test('adjacent meetings of one class can be plotted into different rooms', async () => {

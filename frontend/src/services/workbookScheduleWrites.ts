@@ -27,8 +27,8 @@ function classIdentity(row: { subjectCode?: unknown; classSection?: unknown; cou
 }
 
 /** Keep the schedule projection in the same commit as its workbook revision. */
-export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm, rows: readonly WorkbookScheduleRow[], sourceWorkbook: string, sourcePaths: readonly string[]) {
-  const snapshots = await Promise.all([...new Set(sourcePaths)].map(path => getDocs(query(collection(db, 'schedule'), where('sourceWorkbook', '==', path)))))
+export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm, rows: readonly WorkbookScheduleRow[], sourceWorkbook: string, sourcePaths: readonly string[], collectionName: 'schedule' | 'schedules' = 'schedule', statusOverride?: 'Draft') {
+  const snapshots = await Promise.all([...new Set(sourcePaths)].map(path => getDocs(query(collection(db, collectionName), where('sourceWorkbook', '==', path)))))
   const existing = new Map(snapshots.flatMap(snapshot => snapshot.docs).map(row => [row.id, row]))
   const existingClasses = new Map<string, Record<string, unknown>[]>()
   for (const document of existing.values()) {
@@ -38,14 +38,22 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
   const rowId = (sheet: string, row: number, sourceKey?: string) => `workbook_${encodeURIComponent(JSON.stringify([term.departmentId, term.academicYearId, term.semester, sheet, sourceKey ?? row]))}`
   const documents = rows.map((sourceRow, index) => {
     const matches = existingClasses.get(classIdentity(sourceRow))
-    const previous = existing.get(rowId(sourceRow.sourceSheet, sourceRow.sourceRow, sourceRow.sourceKey))?.data()
-      ?? (matches?.length === 1 ? matches[0] : undefined)
-    const row = retainRegistrarRooms(sourceRow, previous)
+    const savedRow = existing.get(rowId(sourceRow.sourceSheet, sourceRow.sourceRow, sourceRow.sourceKey))?.data()
+    const previous = savedRow ?? (matches?.length === 1 ? matches[0] : undefined)
+    // Compact workbook room cells are authoritative, including explicit clears.
+    const row = retainRegistrarRooms(sourceRow, previous, collectionName !== 'schedules')
+    // Approval belongs to this saved row's authored content, not recalculated
+    // directory links, validation warnings, row order or workbook presentation.
+    const keepPlot = collectionName === 'schedules' && statusOverride === 'Draft' && savedRow?.status === 'Plot'
+      && sourceRow.rawValues.length === 21 && Array.isArray(savedRow.rawValues) && savedRow.rawValues.length === 21
+      && sameValue(sourceRow.rawValues, savedRow.rawValues)
+      && sourceRow.yearLevel === savedRow.yearLevel && sourceRow.course === savedRow.course
     const first = row.meetings[0]
     return { ...row, id: rowId(row.sourceSheet, row.sourceRow, row.sourceKey), source: 'workbook', schemaVersion: 2, sourceWorkbook,
+      ...(collectionName === 'schedules' ? { membershipId: term.membershipId } : {}),
       departmentId: term.departmentId, department: term.departmentCode, academicYearId: term.academicYearId,
       academicYear: term.academicYear, semester: term.semester === 'sem1' ? '1st Semester' : '2nd Semester', semesterKey: term.semester,
-      orderIndex: index, status: row.status, type: row.sourceKey ? first?.format === 'Flexible' ? 'open lab' : 'normal' : row.parallelSourceRow !== null ? 'parallel' : row.college.toLowerCase() || 'normal',
+      orderIndex: index, status: keepPlot ? 'Plot' as const : statusOverride ?? row.status, type: row.sourceKey ? first?.format === 'Flexible' ? 'open lab' : 'normal' : row.parallelSourceRow !== null ? 'parallel' : row.college.toLowerCase() || 'normal',
       groupId: row.parallelSourceRow !== null ? rowId(row.sourceSheet, row.parallelSourceRow) : '',
       isSplitSession: row.meetings.length > 1, parentId: '',
       format: first?.format ?? '', startTime: first?.startTime ?? '', endTime: first?.endTime ?? '', days: first?.days ?? [],
@@ -105,7 +113,7 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
       // A room may have been plotted after projection preparation. Retry the Save
       // rather than replacing that concurrent assignment with an older snapshot.
       const ids = [...new Set([...changed.map(row => row.id), ...removed.map(row => row.id)])]
-      const latest = await Promise.all(ids.map(id => transaction.get(doc(db, 'schedule', id))))
+      const latest = await Promise.all(ids.map(id => transaction.get(doc(db, collectionName, id))))
       for (const row of latest) {
         if (readRegistrarPlot(row.data()?.registrarPlot)?.revisionId !== readRegistrarPlot(existing.get(row.id)?.data().registrarPlot)?.revisionId) {
           throw new Error('Room assignments changed while saving. Click Save again to keep the latest plotted rooms.')
@@ -113,7 +121,7 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
       }
     },
     apply(transaction: Transaction, revision: number, revisionId: string, savedBy: string) {
-      for (const row of changed) transaction.set(doc(db, 'schedule', row.id), {
+      for (const row of changed) transaction.set(doc(db, collectionName, row.id), {
         ...row, workbookRevision: revision, workbookRevisionId: revisionId, savedBy,
         createdAt: existing.get(row.id)?.data().createdAt ?? serverTimestamp(), updatedAt: serverTimestamp(),
       })

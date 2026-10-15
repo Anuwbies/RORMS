@@ -10,18 +10,18 @@ import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
-import { db, functions } from '../../firebase'
+import { db, functions, auth } from '../../firebase'
 import { httpsCallable } from 'firebase/functions'
 import { 
   collection, 
   onSnapshot, 
   query, 
-  orderBy, 
+  where,
   doc, 
   deleteDoc,
 } from 'firebase/firestore'
 
-type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+type ReservationStatus = 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
 const updateReservationStatus = httpsCallable<
   { reservationId: string; status: ReservationStatus; expectedStatus: ReservationStatus },
   { changed: boolean; logId: string | null }
@@ -112,6 +112,7 @@ const statusClasses: Record<ReservationStatus, string> = {
   Approved: 'bg-emerald-100 text-emerald-700',
   Declined: 'bg-rose-100 text-rose-700',
   Pending: 'bg-amber-100 text-amber-700',
+  'Recommending Approval': 'bg-sky-100 text-sky-700',
   Cancelled: 'bg-slate-100 text-slate-700',
   Completed: 'bg-blue-100 text-blue-700',
 }
@@ -122,9 +123,10 @@ const roomStatusClasses: Record<RoomStatus, string> = {
   Maintenance: 'bg-rose-100 text-rose-700',
 }
 
-const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
+const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Recommending Approval', 'Approved', 'Declined', 'Cancelled', 'Completed']
 const STATUS_SHORT_LABELS: Record<ReservationStatus, string> = {
   Pending: 'Pend.',
+  'Recommending Approval': 'Rec.',
   Approved: 'Appr.',
   Declined: 'Decl.',
   Cancelled: 'Canc.',
@@ -134,11 +136,12 @@ const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 
 interface StatusUpdateModalProps {
   reservation: Reservation
+  allowedStatuses: ReservationStatus[]
   onClose: () => void
   onUpdate: (id: string, newStatus: ReservationStatus) => Promise<void>
 }
 
-function StatusUpdateModal({ reservation, onClose, onUpdate }: StatusUpdateModalProps) {
+function StatusUpdateModal({ reservation, allowedStatuses, onClose, onUpdate }: StatusUpdateModalProps) {
   const [selectedStatus, setSelectedStatus] = useState<ReservationStatus>(reservation.status)
   const [isUpdating, setIsUpdating] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
@@ -194,7 +197,7 @@ function StatusUpdateModal({ reservation, onClose, onUpdate }: StatusUpdateModal
               Select New Status
             </label>
             <div className="grid grid-cols-1 gap-2">
-              {STATUS_ORDER.map((status) => (
+              {allowedStatuses.map((status) => (
                 <button
                   key={status}
                   type="button"
@@ -484,7 +487,10 @@ function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
   )
 }
 
-function ManageReservationsPage() {
+function ManageReservationsPage({ userRole }: { userRole: string }) {
+  const isDepartmentReviewer = userRole === 'Dean' || userRole === 'Program Head'
+  const isFinalApprover = userRole === 'Registrar' || userRole === 'University Administrator'
+  const [department, setDepartment] = useState<string | null>(null)
   const [statusError, setStatusError] = useState('')
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [buildings, setBuildings] = useState<Building[]>([])
@@ -504,13 +510,28 @@ function ManageReservationsPage() {
   const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
-    const unsubRes = onSnapshot(query(collection(db, 'reservations'), orderBy('createdAt', 'desc')), (snapshot) => {
-      setReservations(snapshot.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data()
-      })) as Reservation[])
-    })
+    setDepartment(null)
+    const uid = auth.currentUser?.uid
+    if (!uid || !isDepartmentReviewer) return
+    return onSnapshot(query(collection(db, 'memberships'), where('userId', '==', uid)), snapshot => {
+      const member = snapshot.docs.map(record => record.data()).find(record => record.status === 'accepted' && record.role === userRole)
+      setDepartment(typeof member?.department === 'string' ? member.department.trim() : null)
+    }, () => { setDepartment(null); setStatusError('Could not load your department. Please reload and try again.') })
+  }, [userRole, isDepartmentReviewer])
 
+  useEffect(() => {
+    setReservations([])
+    if (isDepartmentReviewer && !department) return
+    // Use a department-only query so no new composite index is needed.
+    const reservationQuery = isDepartmentReviewer
+      ? query(collection(db, 'reservations'), where('department', '==', department))
+      : query(collection(db, 'reservations'), where('status', 'in', STATUS_ORDER.filter(status => status !== 'Pending')))
+    return onSnapshot(reservationQuery, snapshot => {
+      setReservations(snapshot.docs.map(record => ({ id: record.id, ...record.data() })) as Reservation[])
+    }, () => { setReservations([]); setStatusError('Could not load reservation requests. Please reload and try again.') })
+  }, [department, isDepartmentReviewer])
+
+  useEffect(() => {
     const unsubBuildings = onSnapshot(collection(db, 'buildings'), (snapshot) => {
       setBuildings(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Building[])
     })
@@ -524,7 +545,6 @@ function ManageReservationsPage() {
     })
 
     return () => {
-      unsubRes()
       unsubBuildings()
       unsubRooms()
       unsubUsers()
@@ -643,7 +663,7 @@ function ManageReservationsPage() {
 
   const handleApprove = async (id: string) => {
     try {
-      await handleStatusUpdate(id, 'Approved')
+      await handleStatusUpdate(id, isDepartmentReviewer ? 'Recommending Approval' : 'Approved')
     } catch (error) {
       console.error('Error approving reservation:', error)
       setStatusError(error instanceof Error ? error.message : 'Could not approve the reservation. Please try again.')
@@ -759,10 +779,10 @@ function ManageReservationsPage() {
       render: (res) => (
         <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
           <IconButton
-            label="Approve reservation"
-            disabled={res.status !== 'Pending'}
+            label={isDepartmentReviewer ? 'Recommending Approval' : 'Approve reservation'}
+            disabled={isDepartmentReviewer ? res.status !== 'Pending' : !isFinalApprover || res.status !== 'Recommending Approval'}
             className={`h-8 w-8 rounded-lg bg-white transition-all border border-slate-200 ${
-              res.status === 'Pending' 
+              (isDepartmentReviewer ? res.status === 'Pending' : isFinalApprover && res.status === 'Recommending Approval')
                 ? 'text-emerald-500 hover:border-emerald-300 hover:text-emerald-600 hover:shadow hover:-translate-y-0.5' 
                 : 'opacity-30 cursor-not-allowed text-slate-400'
             }`}
@@ -770,11 +790,11 @@ function ManageReservationsPage() {
           >
             <CheckIcon className="h-4 w-4" />
           </IconButton>
-          <IconButton
+          {!isDepartmentReviewer && <><IconButton
             label="Decline reservation"
-            disabled={res.status !== 'Pending'}
+            disabled={res.status !== 'Recommending Approval'}
             className={`h-8 w-8 rounded-lg bg-white transition-all border border-slate-200 ${
-              res.status === 'Pending' 
+              res.status === 'Recommending Approval'
                 ? 'text-rose-500 hover:border-rose-300 hover:text-rose-600 hover:shadow hover:-translate-y-0.5' 
                 : 'opacity-30 cursor-not-allowed text-slate-400'
             }`}
@@ -784,6 +804,7 @@ function ManageReservationsPage() {
           </IconButton>
           <IconButton
             label="Edit status"
+            disabled={res.status !== 'Recommending Approval' && res.status !== 'Approved'}
             className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
             onClick={() => setEditingReservation(res)}
           >
@@ -795,7 +816,7 @@ function ManageReservationsPage() {
             onClick={() => setConfirmingAction({ reservation: res, type: 'delete' })}
           >
             <TrashIcon className="h-4 w-4" />
-          </IconButton>
+          </IconButton></>}
         </div>
       )
     }
@@ -816,7 +837,7 @@ function ManageReservationsPage() {
     {
       id: 'status',
       title: 'Status',
-      options: STATUS_ORDER,
+      options: isDepartmentReviewer ? STATUS_ORDER : STATUS_ORDER.filter(status => status !== 'Pending'),
       selectedValues: selectedStatuses,
       onChange: setSelectedStatuses
     }
@@ -827,7 +848,7 @@ function ManageReservationsPage() {
       <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader 
           title="Manage Reservations" 
-          description="Review, approve, or decline room booking requests from faculty and staff." 
+          description={isDepartmentReviewer ? 'Review your department’s requests and mark them Recommending Approval.' : 'Review recommended requests for final approval by the Registrar or University Administrator.'}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
@@ -904,6 +925,9 @@ function ManageReservationsPage() {
       {editingReservation && (
         <StatusUpdateModal
           reservation={editingReservation}
+          allowedStatuses={editingReservation.status === 'Recommending Approval'
+            ? [...(isFinalApprover ? ['Approved' as const] : []), 'Declined', 'Cancelled']
+            : editingReservation.status === 'Approved' ? ['Cancelled', 'Completed'] : []}
           onClose={() => setEditingReservation(null)}
           onUpdate={handleStatusUpdate}
         />

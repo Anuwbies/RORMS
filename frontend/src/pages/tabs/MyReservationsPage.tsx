@@ -22,7 +22,7 @@ import {
   updateDoc
 } from 'firebase/firestore'
 
-type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+type ReservationStatus = 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
 
 interface Reservation {
   id: string
@@ -74,6 +74,7 @@ interface Building {
 
 const statusClasses: Record<ReservationStatus, string> = {
   Pending: 'bg-amber-100 text-amber-700',
+  'Recommending Approval': 'bg-sky-100 text-sky-700',
   Approved: 'bg-emerald-100 text-emerald-700',
   Declined: 'bg-rose-100 text-rose-700',
   Cancelled: 'bg-slate-100 text-slate-700',
@@ -87,9 +88,10 @@ const roomStatusClasses: Record<RoomStatus, string> = {
 }
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
+const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Recommending Approval', 'Approved', 'Declined', 'Cancelled', 'Completed']
 const STATUS_SHORT_LABELS: Record<ReservationStatus, string> = {
   Pending: 'Pend.',
+  'Recommending Approval': 'Rec.',
   Approved: 'Appr.',
   Declined: 'Decl.',
   Cancelled: 'Canc.',
@@ -160,6 +162,7 @@ function MyReservationsPage() {
 
     const statusOrder: Record<ReservationStatus, number> = {
       Pending: 0,
+      'Recommending Approval': 0.5,
       Approved: 1,
       Declined: 2,
       Cancelled: 3,
@@ -419,7 +422,7 @@ function MyReservationsPage() {
     {
       id: 'status',
       title: 'Status',
-      options: ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed'],
+      options: ['Pending', 'Recommending Approval', 'Approved', 'Declined', 'Cancelled', 'Completed'],
       selectedValues: selectedStatuses,
       onChange: setSelectedStatuses
     }

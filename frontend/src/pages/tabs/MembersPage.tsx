@@ -18,9 +18,11 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { Snackbar } from '../../components/Snackbar'
 import { formatUserName, userNameFields } from '../../utils/userName'
 import { manageMember, memberActionError } from '../../services/memberManagement'
+const memberSelectClasses = 'w-full min-w-0! [&_button>span]:min-w-0 [&_button>span]:truncate [&_button>svg]:shrink-0'
 const rolePriority: Record<MemberRole, number> = {
   Admin: 0,
   Registrar: 1,
+  'University Administrator': 1.5,
   Dean: 2,
   'Program Head': 3,
   Instructor: 4,
@@ -35,6 +37,7 @@ const statusPriority: Record<MemberStatus, number> = {
 const roleClasses: Record<MemberRole, string> = {
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
+  'University Administrator': 'bg-sky-100 text-sky-700',
   Dean: 'bg-amber-100 text-amber-700',
   'Program Head': 'bg-rose-100 text-rose-700',
   Instructor: 'bg-emerald-100 text-emerald-700',
@@ -49,6 +52,7 @@ const statusClasses: Record<MemberStatus, string> = {
 const ROLE_HEX: Record<MemberRole, string> = {
   Admin: '#9333ea',
   Registrar: '#2563eb',
+  'University Administrator': '#0284c7',
   Dean: '#d97706',
   'Program Head': '#e11d48',
   Instructor: '#059669',
@@ -144,7 +148,7 @@ function HomeroomRosterVisual({ members }: { members: Member[] }) {
   const admins = activeMembers.filter(m => m.role === 'Admin')
   const students = activeMembers.filter(m => m.role !== 'Admin')
 
-  const roleCounts = (['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor'] as MemberRole[]).map(role => ({
+  const roleCounts = (['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor'] as MemberRole[]).map(role => ({
     role,
     count: activeMembers.filter(m => m.role === role).length,
   }))
@@ -817,7 +821,8 @@ function MembersPage() {
 
           const resolvedDept = mData.department || (
             mData.role === 'Admin' ? 'Administrative Office' :
-            mData.role === 'Registrar' ? "Registrar's Office" : ''
+            mData.role === 'Registrar' ? "Registrar's Office" :
+            mData.role === 'University Administrator' ? 'General Service Department' : ''
           )
 
           membersData.push({
@@ -940,7 +945,8 @@ function MembersPage() {
       const role = (memData?.role || inv.role || 'Instructor') as MemberRole
       const department = memData?.department || inv.department || (
         role === 'Admin' ? 'Administrative Office' :
-        role === 'Registrar' ? "Registrar's Office" : ''
+        role === 'Registrar' ? "Registrar's Office" :
+        role === 'University Administrator' ? 'General Service Department' : ''
       )
       const isReactivation = Boolean(
         inv.isReactivation ||
@@ -999,15 +1005,17 @@ function MembersPage() {
       .replaceAll('’', "'")
     const administrativeOffice = members.filter(member => normalizeDepartment(member.department) === 'administrative office').length
     const registrarsOffice = members.filter(member => normalizeDepartment(member.department) === "registrar's office").length
+    const generalServiceDepartment = members.filter(member => normalizeDepartment(member.department) === 'general service department').length
     const academic = members.filter(member => {
       const department = normalizeDepartment(member.department)
-      return Boolean(department) && department !== 'administrative office' && department !== "registrar's office"
+      return Boolean(department) && department !== 'administrative office' && department !== "registrar's office" && department !== 'general service department'
     }).length
     return {
       administrativeOffice,
       registrarsOffice,
+      generalServiceDepartment,
       academic,
-      total: administrativeOffice + registrarsOffice + academic,
+      total: administrativeOffice + registrarsOffice + generalServiceDepartment + academic,
     }
   }, [members])
 
@@ -1021,7 +1029,7 @@ function MembersPage() {
       const matchesRole = selectedRoles.length === 0 || selectedRoles.includes(member.role)
       const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(member.status)
 
-      const memberDept = member.department || (member.role === 'Admin' ? 'Administrative Office' : member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned')
+      const memberDept = member.department || (member.role === 'Admin' ? 'Administrative Office' : member.role === 'Registrar' ? "Registrar's Office" : member.role === 'University Administrator' ? 'General Service Department' : 'Unassigned')
       const matchesDepartment = selectedDepartments.length === 0 || selectedDepartments.includes(memberDept)
 
       return matchesSearch && matchesRole && matchesStatus && matchesDepartment
@@ -1062,10 +1070,10 @@ function MembersPage() {
       return
     }
 
-    const invalidEmails = emailList.filter(e => !e.includes('@'))
+    const invalidEmails = emailList.filter(e => !/^[a-z]+\.[a-z]+\.up@phinmaed\.com$/.test(e))
     if (invalidEmails.length > 0) {
       setHasEmailError(true)
-      const errMsg = `Invalid format: ${invalidEmails.slice(0, 2).join(', ')}${invalidEmails.length > 2 ? '...' : ''}`
+      const errMsg = 'Required format: letters.letters.up@phinmaed.com.'
       showNotification(errMsg, 'error', 'Invalid Email Format')
       return
     }
@@ -1170,7 +1178,7 @@ function MembersPage() {
   const openEditModal = (member: Member) => {
     setEditingMember(member)
     setEditRole(member.role)
-    const isOfficeDept = member.department === 'Administrative Office' || member.department === "Registrar's Office"
+    const isOfficeDept = member.department === 'Administrative Office' || member.department === "Registrar's Office" || member.department === 'General Service Department'
     setEditDept(isOfficeDept ? '' : (member.department || ''))
   }
 
@@ -1323,26 +1331,26 @@ function MembersPage() {
 
             <form onSubmit={handleEditSubmit} className="p-6 space-y-5">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-4">
-                <div className="sm:w-1/2">
+                <div className="min-w-0 sm:w-1/2">
                   <label htmlFor="edit-role" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                     Role
                   </label>
                   <SingleSelectDropdown
-                    options={['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor']}
+                    options={['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor']}
                     value={editRole}
                     onChange={(val) => {
                       const prevRole = editRole
                       setEditRole(val)
-                      if (val === 'Admin' || val === 'Registrar' || prevRole === 'Admin' || prevRole === 'Registrar') {
+                      if (val === 'Admin' || val === 'Registrar' || val === 'University Administrator' || prevRole === 'Admin' || prevRole === 'Registrar' || prevRole === 'University Administrator') {
                         setEditDept('')
                       }
                     }}
                     onToggle={handleDropdownToggle}
-                    className="w-full"
+                    className={memberSelectClasses}
                   />
                 </div>
 
-                <div className="sm:w-1/2">
+                <div className="min-w-0 sm:w-1/2">
                   <label htmlFor="edit-dept" className={`block text-xs font-bold uppercase tracking-widest mb-2 transition-colors ${(editRole === 'Dean' || editRole === 'Instructor' || editRole === 'Program Head') ? 'text-gray-500' : 'text-gray-300'
                     }`}>
                     Department
@@ -1355,7 +1363,7 @@ function MembersPage() {
                     }}
                     onToggle={handleDropdownToggle}
                     isDisabled={editRole !== 'Dean' && editRole !== 'Instructor' && editRole !== 'Program Head'}
-                    className="w-full"
+                    className={memberSelectClasses}
                   />
                 </div>
               </div>
@@ -1611,42 +1619,42 @@ function MembersPage() {
                       if (hasEmailError) setHasEmailError(false);
                     }}
                     error={hasEmailError}
-                    placeholder="name@example.com, another"
+                    placeholder="llme.rodas.up@phinmaed.com"
                     className="w-full"
                     autoFocus
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="w-full">
+                <div className="grid grid-cols-[3fr_2fr] gap-3">
+                  <div className="w-full min-w-0">
                     <label htmlFor="invite-role" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                       Assign Role
                     </label>
                     <SingleSelectDropdown
-                      options={['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor']}
+                      options={['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor']}
                       value={inviteRole}
                       onChange={(val) => {
                         setInviteRole(val)
-                        if (val === 'Admin' || val === 'Registrar') {
+                        if (val === 'Admin' || val === 'Registrar' || val === 'University Administrator') {
                           setInviteDepartment('None')
                         }
                       }}
                       onToggle={handleDropdownToggle}
-                      className="w-full"
+                      className={memberSelectClasses}
                     />
                   </div>
 
-                  <div className="w-full">
+                  <div className="w-full min-w-0">
                     <label htmlFor="invite-department" className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
                       Department
                     </label>
-                    <div className={(inviteRole === 'Admin' || inviteRole === 'Registrar') ? 'opacity-50 pointer-events-none' : ''}>
+                    <div className={(inviteRole === 'Admin' || inviteRole === 'Registrar' || inviteRole === 'University Administrator') ? 'opacity-50 pointer-events-none' : ''}>
                       <SingleSelectDropdown
                         options={['None', ...departments.map(d => d.code)]}
                         value={inviteDepartment}
                         onChange={setInviteDepartment}
                         onToggle={handleDropdownToggle}
-                        className="w-full"
+                        className={memberSelectClasses}
                       />
                     </div>
                   </div>
@@ -1710,7 +1718,7 @@ function MembersPage() {
             <SummaryCard
               className="animate-in"
               title="Role Distribution"
-              subtitle={`${members.length} members across five roles`}
+              subtitle={`${members.length} members across six roles`}
               icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-4.5 w-4.5 text-[var(--brand-color)]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="m2 20 7-13 4 7 3-5 6 11ZM7 11l2 2 2-2" /></svg>}
               gradientClasses="from-[#e3edda] to-[#f3f7ee]"
               outlineClasses="bg-[var(--brand-color)]"
@@ -1719,6 +1727,7 @@ function MembersPage() {
               <SummaryGraph variant="line" total={members.length} points={[
                 { label: 'Admin', value: members.filter(member => member.role === 'Admin').length },
                 { label: 'Reg.', value: members.filter(member => member.role === 'Registrar').length },
+                { label: 'Univ. Admin', value: members.filter(member => member.role === 'University Administrator').length },
                 { label: 'Dean', value: members.filter(member => member.role === 'Dean').length },
                 { label: 'Prog. Head', value: members.filter(member => member.role === 'Program Head').length },
                 { label: 'Instr.', value: members.filter(member => member.role === 'Instructor').length },
@@ -1727,7 +1736,7 @@ function MembersPage() {
             <SummaryCard
               className="animate-in"
               title="Department Members"
-              subtitle={`${departmentMemberStats.total} members across three groups`}
+              subtitle={`${departmentMemberStats.total} members across four groups`}
               icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-4.5 w-4.5 text-sky-700" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 3h16v18H4ZM8 3v18M16 3v18M4 8h16M4 16h16" /></svg>}
               gradientClasses="from-sky-200 to-sky-100"
               outlineClasses="bg-sky-500"
@@ -1736,6 +1745,7 @@ function MembersPage() {
               <SummaryGraph variant="pie" total={departmentMemberStats.total} points={[
                 { label: 'Administrative Office', value: departmentMemberStats.administrativeOffice },
                 { label: "Registrar's Office", value: departmentMemberStats.registrarsOffice },
+                { label: 'General Service Department', value: departmentMemberStats.generalServiceDepartment },
                 { label: 'Academic', value: departmentMemberStats.academic },
               ]} tone="sky" />
             </SummaryCard>
@@ -1795,7 +1805,7 @@ function MembersPage() {
                   <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
                     {member.department || (
                       member.role === 'Admin' ? 'Administrative Office' :
-                        member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
+                        member.role === 'Registrar' ? "Registrar's Office" : member.role === 'University Administrator' ? 'General Service Department' : 'Unassigned'
                     )}
                   </span>
                 )
@@ -1892,14 +1902,14 @@ function MembersPage() {
                   {
                     id: 'role',
                     title: 'Role',
-                    options: ['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor'],
+                    options: ['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor'],
                     selectedValues: selectedRoles,
                     onChange: (newSelected) => setSelectedRoles(newSelected as MemberRole[])
                   },
                   {
                     id: 'department',
                     title: 'Department',
-                    options: ['Administrative Office', "Registrar's Office", 'Unassigned', ...departments.map(d => d.code)],
+                    options: ['Administrative Office', "Registrar's Office", 'General Service Department', 'Unassigned', ...departments.map(d => d.code)],
                     selectedValues: selectedDepartments,
                     onChange: setSelectedDepartments
                   },

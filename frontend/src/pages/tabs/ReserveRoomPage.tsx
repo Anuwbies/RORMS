@@ -42,6 +42,21 @@ function getLocalIsoDate(date: Date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
+function RoomUsageRules() {
+  return (
+    <section aria-label="General rules for room use" className="rounded-xl border border-[#c6dbb6] bg-[#f3f7ee] p-4 text-sm text-slate-700">
+      <h3 className="font-bold text-[#41572a]">General Rules for Room Use</h3>
+      <ol className="mt-3 list-decimal space-y-2 pl-5">
+        <li>Do NOT use Air Conditioning Unit.</li>
+        <li>CLAY-GO (Clean As You Go).</li>
+        <li>ARRANGE chairs back into classroom-type set-up.</li>
+        <li>Provide cleanliness/orderliness EVIDENCE (picture/video with time-stamp) after room usage.</li>
+        <li>VACATE the room after your allowed time of stay.</li>
+      </ol>
+    </section>
+  )
+}
+
 function formatTime12(timeStr: string) {
   if (!timeStr) return ''
   const [h, m] = timeStr.split(':').map(Number)
@@ -873,6 +888,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 </div>
               </div>
 
+              <RoomUsageRules />
+
               <div className="flex gap-3 pt-2">
                 <Button
                   variant="outline"
@@ -1090,6 +1107,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
         }
         hideFilters={true}
         showWeekCalendar={true}
+        showStatusColors={false}
         onClose={handleCloseModals}
         onBack={() => {
           setIsRoomScheduleModalOpen(false)
@@ -1517,7 +1535,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         const membershipSnapshot = await transaction.get(doc(db, 'memberships', reservationMembership.id))
                         const membership = membershipSnapshot.data()
                         const department = typeof membership?.department === 'string' ? membership.department.trim() : ''
-                        if (!membershipSnapshot.exists() || membership?.userId !== userId || !department) {
+                        if (!membershipSnapshot.exists() || membership?.userId !== userId || membership?.status !== 'accepted' || !department) {
                           throw new Error('MEMBERSHIP_DEPARTMENT_UNAVAILABLE')
                         }
 
@@ -1625,7 +1643,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 <h3 className="text-xl font-bold text-gray-900 leading-snug">
                   Request Sent Successfully
                 </h3>
-                {successDetails.requestType === 'Extended' && <p className="text-xs font-semibold text-amber-700">Extended reservation · Pending Admin/Registrar approval</p>}
+                <p className="text-xs font-semibold text-amber-700">{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}Pending Dean/Program Head recommendation</p>
                 <p className="text-sm text-gray-600 font-medium mt-0.5 whitespace-nowrap">
                   Your reservation for <span className="font-bold text-gray-900">{successDetails.roomName}</span> has been submitted.
                 </p>
@@ -1691,6 +1709,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
           title="Reserve a Room" 
           description="Find and book available rooms for classes, meetings, or special events." 
         />
+
+        <RoomUsageRules />
 
         {!isReservationAvailabilityLoading && !isReservationEnabled && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">

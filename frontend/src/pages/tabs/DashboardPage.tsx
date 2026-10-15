@@ -5,16 +5,18 @@ import { onAuthStateChanged } from 'firebase/auth'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import AdminDashboardPage from './AdminDashboardPage'
 import FacultyDashboardPage from './FacultyDashboardPage'
+import UniversityAdministratorDashboardPage from './UniversityAdministratorDashboardPage'
 
 interface DashboardPageProps {
   userRole?: string | null
 }
 
-const ROLE_SWITCHER_EMAIL = 'llme.rodas.up@phinmaed.com'
-const ROLE_OPTIONS = ['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor'] as const
+const ROLE_SWITCHER_EMAILS = ['llme.rodas.up@phinmaed.com', 'anal.pawig.up@phinmaed.com']
+const ROLE_OPTIONS = ['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor'] as const
 type DashboardRole = typeof ROLE_OPTIONS[number]
 
 const ROLE_DEPARTMENTS: Record<DashboardRole, string> = {
+  'University Administrator': 'General Service Department',
   Admin: 'Administrative Office',
   Registrar: "Registrar's Office",
   Dean: 'BITE',
@@ -75,7 +77,7 @@ export function DashboardPage({ userRole }: DashboardPageProps = {}) {
 
   const handleRoleChange = async (nextRole: DashboardRole) => {
     const user = auth.currentUser
-    if (!user || user.email?.toLowerCase() !== ROLE_SWITCHER_EMAIL) return
+    if (!user || !ROLE_SWITCHER_EMAILS.includes(user.email?.toLowerCase() || '')) return
 
     const previousRole = role
     setRole(nextRole)
@@ -122,17 +124,20 @@ export function DashboardPage({ userRole }: DashboardPageProps = {}) {
   }
 
   const selectedRole = ROLE_OPTIONS.includes(role as DashboardRole) ? role as DashboardRole : 'Instructor'
-  const headerAction = userEmail.toLowerCase() === ROLE_SWITCHER_EMAIL ? (
+  const headerAction = ROLE_SWITCHER_EMAILS.includes(userEmail.toLowerCase()) ? (
     <SingleSelectDropdown
       options={ROLE_OPTIONS}
       value={selectedRole}
       onChange={handleRoleChange}
       isDisabled={isRoleUpdating}
+      className="w-full min-w-0! [&_button>span]:min-w-0 [&_button>span]:truncate [&_button>svg]:shrink-0"
     />
   ) : undefined
-  const dashboard = role === 'Admin' || role === 'Registrar'
-    ? <AdminDashboardPage userRole={role} headerAction={headerAction} />
-    : <FacultyDashboardPage userRole={role || 'Instructor'} headerAction={headerAction} />
+  const dashboard = role === 'University Administrator'
+    ? <UniversityAdministratorDashboardPage headerAction={headerAction} />
+    : role === 'Admin' || role === 'Registrar'
+      ? <AdminDashboardPage userRole={role} headerAction={headerAction} />
+      : <FacultyDashboardPage userRole={role || 'Instructor'} headerAction={headerAction} />
 
   return dashboard
 }

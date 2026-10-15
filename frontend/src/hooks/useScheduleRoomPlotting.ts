@@ -5,13 +5,13 @@ import { schedulePlottingPhases } from '../utils/departmentWorkbookPermissions'
 import { semesterKey } from '../utils/departmentWorkbookPaths'
 import type { AcademicYearData } from '../utils/academicSemester'
 import type { ScheduleMeetingRecord } from '../utils/scheduleMeetings'
-import { plotMeetingKey, plotScheduleRevision, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
+import { plotMeetingKey, plotScheduleRevision, schedulePlotSelectionKey, toggleAssignedSchedulePlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
 import { plotScheduleRooms, readPlotRoom } from '../services/plotScheduleRooms'
 
 export interface SchedulePlottingOptions { membershipId: string; departmentCode: string }
 
 export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undefined, isOpen: boolean, year: AcademicYearData | null,
-  semester: string, instructorIds: string[]) {
+  semester: string, instructorIds: string[], scheduleCollection: 'schedule' | 'schedules' = 'schedule') {
   const [rooms, setRooms] = useState<PlotRoom[]>([])
   const [ready, setReady] = useState(false)
   const [pending, setPending] = useState<Map<string, PlotAssignment>>(new Map())
@@ -19,7 +19,7 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const busy = useRef(false)
-  const context = JSON.stringify([options?.membershipId, options?.departmentCode, isOpen, year?.id, semester, instructorIds])
+  const context = JSON.stringify([options?.membershipId, options?.departmentCode, isOpen, year?.id, semester, instructorIds, scheduleCollection])
   const currentContext = useRef(context)
   currentContext.current = context
 
@@ -37,10 +37,11 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   const permitted = Boolean(options?.membershipId && auth.currentUser && schedulePlottingPhases('Registrar').includes(phase))
   const availableRooms = useMemo(() => rooms.filter(room => room.status === 'Available').sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)), [rooms])
   const labels = new Map(rooms.map(room => [room.id, room.name.trim() || 'Unnamed room']))
-  const key = (meeting: ScheduleMeetingRecord) => JSON.stringify([meeting.sourceScheduleId || meeting.id, plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0])])
+  const key = schedulePlotSelectionKey
   const selected = (meeting: ScheduleMeetingRecord) => pending.get(key(meeting))?.roomId ?? meeting.roomId ?? ''
   const select = (meeting: ScheduleMeetingRecord, roomId: string) => {
     if (!permitted || busy.current) return
+    if (meeting.status === 'Draft' && meeting.roomId) return
     setError(''); setMessage('')
     setPending(previous => {
       const next = new Map(previous)
@@ -53,17 +54,24 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
       return next
     })
   }
+  const marked = (meeting: ScheduleMeetingRecord) => meeting.status === 'Plot' || pending.has(key(meeting))
+  const toggleMarked = (meeting: ScheduleMeetingRecord) => {
+    if (!permitted || busy.current) return
+    setError(''); setMessage('')
+    setPending(previous => toggleAssignedSchedulePlot(previous, meeting))
+  }
   const save = async () => {
     if (!options || !year || !permitted || !pending.size || busy.current) return
     busy.current = true; setSaving(true); setError(''); setMessage('')
     const startedContext = context
     try {
-      await plotScheduleRooms({ ...options, academicYearId: year.id, academicYear: year.academicYear, semester, instructorIds, assignments: [...pending.values()] })
-      if (currentContext.current === startedContext) { setPending(new Map()); setMessage('Room assignments saved.') }
+      await plotScheduleRooms({ ...options, academicYearId: year.id, academicYear: year.academicYear, semester, instructorIds, assignments: [...pending.values()], scheduleCollection })
+      if (currentContext.current === startedContext) { setPending(new Map()); setMessage('Schedules plotted.') }
     } catch (caught) {
       if (currentContext.current === startedContext) setError(caught instanceof Error ? caught.message : 'Rooms could not be plotted. Try again.')
     } finally { busy.current = false; setSaving(false) }
   }
-  return { enabled: Boolean(options), permitted, ready, saving, error, message, pendingCount: pending.size, labels,
-    roomOptions: ['', ...availableRooms.map(room => room.id)], selected, select, save }
+  return { enabled: Boolean(options), permitted, ready, saving, error, message,
+    pendingCount: new Set([...pending.values()].map(assignment => assignment.scheduleId)).size, labels,
+    roomOptions: ['', ...availableRooms.map(room => room.id)], selected, select, marked, toggleMarked, save }
 }

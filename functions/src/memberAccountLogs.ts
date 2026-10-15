@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { FieldValue, Timestamp, type Firestore, type DocumentReference, type DocumentData } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 
-const ROLES = ["Admin", "Registrar", "Dean", "Program Head", "Instructor"] as const;
+const ROLES = ["Admin", "Registrar", "University Administrator", "Dean", "Program Head", "Instructor"] as const;
 type Role = typeof ROLES[number];
 type Action = "invite" | "reinvite" | "edit" | "deactivate" | "cancel_invitation";
 type Changes = Record<string, { before: string | boolean | number | null; after: string | boolean | number | null }>;
@@ -36,9 +36,10 @@ function nameFields(profile: DocumentData, membership: DocumentData = {}) {
   return { firstName: text(profile.firstName) || text(membership.firstName), surname: text(profile.surname) || text(membership.surname), fullName: text(profile.fullName) || text(membership.fullName) };
 }
 function assignedDepartment(role: Role, department: string): string {
+  if (role === "University Administrator") return "General Service Department";
   if (role === "Admin") return "Administrative Office";
   if (role === "Registrar") return "Registrar's Office";
-  return ["None", "Administrative Office", "Registrar's Office"].includes(department) ? "" : department;
+  return ["None", "Administrative Office", "Registrar's Office", "General Service Department"].includes(department) ? "" : department;
 }
 function parse(value: unknown): Request {
   const data = record(value);

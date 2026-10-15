@@ -95,8 +95,8 @@ test('incomplete and invalid rows are retained with errors; empty positional ent
   assert.equal(row.meetings[0].faculty, '')
   assert.equal(row.meetings[1].faculty, 'Unregistered Teacher')
   assert.equal(row.meetings[1].roomId, 'room2')
-  assert.ok(row.validationIssues.some(issue => issue.includes('Missing Code')))
-  assert.ok(row.validationIssues.some(issue => issue.includes('Invalid F2F Time')))
+  assert.ok(!row.validationIssues.some(issue => issue.includes('Missing Code')))
+  assert.ok(row.validationIssues.some(issue => issue.includes('bad is not a valid time')))
   assert.ok(row.validationIssues.some(issue => issue.includes('matched uniquely')))
 })
 
@@ -113,8 +113,8 @@ test('ambiguous names do not silently select an instructor', () => {
 
 test('saved validation issues include unknown Lec/Lab rooms using the same room directory check as the editor', () => {
   const [row] = extractWorkbookScheduleRows(snapshot([values({ 19: 'PTC 201/Unknown', 20: 'Missing Lab' })]), directory)
-  assert.ok(row.validationIssues.includes('Room "Unknown" (Lec) does not exist in the rooms collection.'))
-  assert.ok(row.validationIssues.includes('Room "Missing Lab" (Lab) does not exist in the rooms collection.'))
+  assert.ok(row.validationIssues.includes('Room Unknown does not exist in the rooms collection.'))
+  assert.ok(row.validationIssues.includes('Room Missing Lab does not exist in the rooms collection.'))
   assert.equal(row.meetings[0].roomId, 'room1')
   assert.equal(row.meetings[1].roomId, '')
 })
@@ -126,8 +126,8 @@ test('saved faculty validation rejects names outside the department and does not
   })
   assert.equal(row.meetings[0].instructorId, 'cruz')
   assert.equal(row.meetings[1].instructorId, '')
-  assert.ok(row.validationIssues.includes('Faculty "Other Teacher" (Lec) is not an active Instructor or Program Head in department "CITE".'))
-  assert.ok(row.validationIssues.includes('Faculty "Unknown Lab Teacher" (Lab) is not an active Instructor or Program Head in department "CITE".'))
+  assert.ok(row.validationIssues.includes('Other Teacher is not an active member of CITE.'))
+  assert.ok(row.validationIssues.includes('Unknown Lab Teacher is not an active member of CITE.'))
 })
 
 test('saved TBA faculty and rooms preserve meeting positions without resource IDs or validation errors', () => {

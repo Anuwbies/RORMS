@@ -3,6 +3,9 @@ import { EditHistory } from '../utils/editHistory'
 import { normalizeFontRuns, replaceFontRuns, sliceFontRuns, type ExcelFontRun } from '../utils/excelFontRuns'
 import { facultyFragment, filterFacultyNames, type ExcelFacultyDirectory } from '../utils/excelFacultySuggestions'
 import { ExcelFacultySuggestions } from './ExcelFacultySuggestions'
+import { filterDepartmentCourses, subjectFragment, type DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
+import { ExcelSubjectSuggestions } from './ExcelSubjectSuggestions'
+import { filterRoomNames, type ExcelRoomDirectory } from '../utils/excelRoomSuggestions'
 
 interface TextSelection { start: number; end: number }
 
@@ -24,6 +27,9 @@ interface ExcelCellTextEditorProps extends ExcelCellTextDraft {
   onFontContextChange: (font: string) => void
   onDirtyChange?: (dirty: boolean) => void
   facultySuggestions?: ExcelFacultyDirectory
+  subjectSuggestions?: readonly DepartmentCourseSuggestion[]
+  subjectIncludesSection?: boolean
+  roomSuggestions?: ExcelRoomDirectory
 }
 
 function readSelection(root: HTMLElement): TextSelection | null {
@@ -59,7 +65,7 @@ function restoreSelection(root: HTMLElement, selection: TextSelection) {
 }
 
 export const ExcelCellTextEditor = forwardRef<ExcelCellTextEditorHandle, ExcelCellTextEditorProps>(function ExcelCellTextEditor(
-  { runs, typingFont, onSave, onCancel, onFontContextChange, onDirtyChange, facultySuggestions }, ref,
+  { runs, typingFont, onSave, onCancel, onFontContextChange, onDirtyChange, facultySuggestions, subjectSuggestions, subjectIncludesSection, roomSuggestions }, ref,
 ) {
   const rootRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<EditorSnapshot>({ runs, typingFont, selection: { start: runs.map(run => run.text).join('').length, end: runs.map(run => run.text).join('').length } })
@@ -77,17 +83,33 @@ export const ExcelCellTextEditor = forwardRef<ExcelCellTextEditorHandle, ExcelCe
   const compositionRef = useRef<EditorSnapshot | null>(null)
   const directoryRef = useRef(facultySuggestions)
   directoryRef.current = facultySuggestions
+  const subjectsRef = useRef(subjectSuggestions)
+  subjectsRef.current = subjectSuggestions
+  const roomsRef = useRef(roomSuggestions)
+  roomsRef.current = roomSuggestions
+  const sectionRef = useRef(subjectIncludesSection)
+  sectionRef.current = subjectIncludesSection
+  const subjectPart = (text: string, caret: number) => sectionRef.current
+    ? { start: 0, end: text.length, query: text.slice(0, caret).trim() } : subjectFragment(text, caret)
   const suggestionsId = useId()
-  const [suggestionsOpen, setSuggestionsOpen] = useState(Boolean(facultySuggestions))
-  const [fragment, setFragment] = useState(() => facultyFragment(runs.map(run => run.text).join(''), draftRef.current.selection.start))
-  const [activeIndex, setActiveIndex] = useState(0)
-  const matches = useMemo(() => facultySuggestions ? filterFacultyNames(facultySuggestions.names, fragment.query) : [], [facultySuggestions, fragment.query])
-  const suggestionsVisible = Boolean(facultySuggestions && suggestionsOpen)
-  useEffect(() => setActiveIndex(0), [fragment.query, matches])
+  const [suggestionsOpen, setSuggestionsOpen] = useState(Boolean(facultySuggestions || subjectSuggestions || roomSuggestions))
+  const [fragment, setFragment] = useState(() => roomSuggestions
+    ? { start: 0, end: runs.map(run => run.text).join('').length, query: runs.map(run => run.text).join('').trim() } : subjectSuggestions
+    ? subjectPart(runs.map(run => run.text).join(''), draftRef.current.selection.start)
+    : facultyFragment(runs.map(run => run.text).join(''), draftRef.current.selection.start))
+  const [activeIndex, setActiveIndex] = useState(subjectSuggestions ? -1 : 0)
+  const facultyMatches = useMemo(() => facultySuggestions ? filterFacultyNames(facultySuggestions.names, fragment.query) : [], [facultySuggestions, fragment.query])
+  const subjectMatches = useMemo(() => subjectSuggestions ? filterDepartmentCourses(subjectSuggestions, fragment.query) : [], [subjectSuggestions, fragment.query])
+  const roomMatches = useMemo(() => roomSuggestions ? filterRoomNames(roomSuggestions.rooms, fragment.query) : [], [roomSuggestions, fragment.query])
+  const matchCount = roomSuggestions ? roomMatches.length : subjectSuggestions ? subjectMatches.length : facultyMatches.length
+  const suggestionsVisible = Boolean((facultySuggestions || subjectSuggestions || roomSuggestions) && suggestionsOpen)
+  useEffect(() => setActiveIndex(subjectSuggestions ? -1 : 0), [fragment.query, facultyMatches, subjectMatches, subjectSuggestions, roomMatches])
 
   const syncSuggestions = (draft: EditorSnapshot, open = false) => {
-    if (!directoryRef.current) return
-    const next = facultyFragment(draft.runs.map(run => run.text).join(''), draft.selection.start, draft.selection.end)
+    if (!directoryRef.current && !subjectsRef.current && !roomsRef.current) return
+    const text = draft.runs.map(run => run.text).join('')
+    const next = roomsRef.current ? { start: 0, end: text.length, query: text.trim() }
+      : subjectsRef.current ? subjectPart(text, draft.selection.start) : facultyFragment(text, draft.selection.start, draft.selection.end)
     setFragment(current => current.start === next.start && current.end === next.end && current.query === next.query ? current : next)
     if (open) setSuggestionsOpen(true)
   }
@@ -209,7 +231,7 @@ export const ExcelCellTextEditor = forwardRef<ExcelCellTextEditorHandle, ExcelCe
     const remember = () => rememberSelection()
     const saveOutside = (event: Event) => {
       const target = event.target
-      if (!(target instanceof Element) || rootRef.current?.contains(target) || target.closest('[data-excel-font-control], [data-excel-faculty-suggestions]')) return
+      if (!(target instanceof Element) || rootRef.current?.contains(target) || target.closest('[data-excel-font-control], [data-excel-faculty-suggestions], [data-excel-subject-suggestions]')) return
       save()
     }
     const beforeInput = (input: InputEvent) => {
@@ -267,6 +289,35 @@ export const ExcelCellTextEditor = forwardRef<ExcelCellTextEditorHandle, ExcelCe
     setSuggestionsOpen(false)
   }
 
+  const chooseSubject = (code: string) => {
+    const draft = draftRef.current
+    const part = subjectPart(draft.runs.map(run => run.text).join(''), draft.selection.start)
+    const caret = part.start + code.length
+    updateDraft({ ...draft, runs: replaceFontRuns(draft.runs, part.start, part.end, [{ text: code, fontFamily: draft.typingFont }]), selection: { start: caret, end: caret } })
+    setSuggestionsOpen(false)
+  }
+
+  const chooseRoom = (name: string) => {
+    const draft = draftRef.current
+    const text = draft.runs.map(run => run.text).join('')
+    updateDraft({ ...draft, runs: replaceFontRuns(draft.runs, 0, text.length, [{ text: name, fontFamily: draft.typingFont }]),
+      selection: { start: name.length, end: name.length } })
+    setSuggestionsOpen(false)
+  }
+
+  const chooseActiveSuggestion = () => {
+    if (roomSuggestions) {
+      const name = roomMatches[Math.min(activeIndex, roomMatches.length - 1)]
+      if (name) chooseRoom(name)
+    } else if (subjectSuggestions) {
+      const course = subjectMatches[Math.min(activeIndex, subjectMatches.length - 1)]
+      if (course) chooseSubject(course.code)
+    } else {
+      const name = facultyMatches[Math.min(activeIndex, facultyMatches.length - 1)]
+      if (name) chooseFaculty(name)
+    }
+  }
+
   return <><div
     ref={rootRef}
     contentEditable
@@ -274,10 +325,10 @@ export const ExcelCellTextEditor = forwardRef<ExcelCellTextEditorHandle, ExcelCe
     role="textbox"
     aria-label="Edit cell text"
     aria-multiline="true"
-    aria-autocomplete={facultySuggestions ? 'list' : undefined}
-    aria-expanded={facultySuggestions ? suggestionsVisible : undefined}
+    aria-autocomplete={facultySuggestions || subjectSuggestions || roomSuggestions ? 'list' : undefined}
+    aria-expanded={facultySuggestions || subjectSuggestions || roomSuggestions ? suggestionsVisible : undefined}
     aria-controls={suggestionsVisible ? suggestionsId : undefined}
-    aria-activedescendant={suggestionsVisible && matches.length ? `${suggestionsId}-${Math.min(activeIndex, matches.length - 1)}` : undefined}
+    aria-activedescendant={suggestionsVisible && matchCount && activeIndex >= 0 ? `${suggestionsId}-${Math.min(activeIndex, matchCount - 1)}` : undefined}
     style={{ fontFamily: typingFont, whiteSpace: 'pre-wrap' }}
     onPointerDown={() => { pendingFontSelectionRef.current = null }}
     onPointerUp={rememberSelection}
@@ -308,20 +359,21 @@ export const ExcelCellTextEditor = forwardRef<ExcelCellTextEditorHandle, ExcelCe
       updateDraft({ ...draftRef.current, runs: replaceFontRuns(before.runs, before.selection.start, before.selection.end, [{ text: inserted, fontFamily: before.typingFont }]) })
     }}
     onBlur={event => {
-      if (event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-excel-font-control], [data-excel-faculty-suggestions]')) return
+      if (event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-excel-font-control], [data-excel-faculty-suggestions], [data-excel-subject-suggestions]')) return
       save()
     }}
     onKeyDown={event => {
       event.stopPropagation()
       if (event.nativeEvent.isComposing) return
-      if (suggestionsVisible && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && matches.length) {
+      if (suggestionsVisible && (event.key === 'ArrowDown' || event.key === 'ArrowUp') && matchCount) {
         event.preventDefault()
-        setActiveIndex(current => (current + (event.key === 'ArrowDown' ? 1 : -1) + matches.length) % matches.length)
+        setActiveIndex(current => current < 0 ? event.key === 'ArrowDown' ? 0 : matchCount - 1
+          : (current + (event.key === 'ArrowDown' ? 1 : -1) + matchCount) % matchCount)
         return
       }
-      if (suggestionsVisible && (event.key === 'Enter' && !event.shiftKey || event.key === 'Tab') && matches.length) {
+      if (suggestionsVisible && (event.key === 'Enter' && !event.shiftKey || event.key === 'Tab') && matchCount && activeIndex >= 0) {
         event.preventDefault()
-        chooseFaculty(matches[Math.min(activeIndex, matches.length - 1)])
+        chooseActiveSuggestion()
         if (event.key === 'Tab') save()
         return
       }
@@ -347,5 +399,7 @@ export const ExcelCellTextEditor = forwardRef<ExcelCellTextEditorHandle, ExcelCe
       }
     }}
     className="absolute inset-0 z-10 h-full w-full overflow-auto bg-white p-0.5 text-inherit outline-2 outline-[#62853e] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-  />{suggestionsVisible && facultySuggestions && <ExcelFacultySuggestions id={suggestionsId} anchor={rootRef} names={matches} loading={facultySuggestions.loading} error={facultySuggestions.error} activeIndex={Math.min(activeIndex, Math.max(0, matches.length - 1))} onSelect={chooseFaculty} />}</>
+  />{suggestionsVisible && facultySuggestions && <ExcelFacultySuggestions id={suggestionsId} anchor={rootRef} names={facultyMatches} loading={facultySuggestions.loading} error={facultySuggestions.error} activeIndex={Math.min(activeIndex, Math.max(0, facultyMatches.length - 1))} onSelect={chooseFaculty} />}
+    {suggestionsVisible && subjectSuggestions && <ExcelSubjectSuggestions id={suggestionsId} anchor={rootRef} courses={subjectMatches} activeIndex={Math.min(activeIndex, subjectMatches.length - 1)} onSelect={chooseSubject} label={subjectIncludesSection ? 'Faculty schedules' : undefined} />}
+    {suggestionsVisible && roomSuggestions && <ExcelFacultySuggestions id={suggestionsId} anchor={rootRef} names={roomMatches} loading={roomSuggestions.loading} error={roomSuggestions.error} activeIndex={Math.min(activeIndex, Math.max(0, roomMatches.length - 1))} onSelect={chooseRoom} label="Rooms" noun="rooms" minWidth={140} />}</>
 })

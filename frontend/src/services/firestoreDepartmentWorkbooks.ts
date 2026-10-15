@@ -37,6 +37,8 @@ interface FirestoreWorkbookSaveOptions {
   forceSnapshots?: boolean
   startedAt?: number
   scheduleRows?: readonly WorkbookScheduleRow[]
+  scheduleCollection?: 'schedule' | 'schedules'
+  scheduleStatus?: 'Draft'
   imported?: boolean
 }
 
@@ -452,7 +454,7 @@ export async function saveFirestoreDepartmentWorkbook(term: DepartmentWorkbookTe
     const prepared = await wait(() => prepareSnapshotSheets(editorState))
     const workbookId = await workbookDocumentId(legacyPath)
     const scheduleRows = options.scheduleRows
-    const scheduleWrites = scheduleRows ? await wait(() => prepareWorkbookScheduleWrites(term, scheduleRows, path, [path, ...previousPaths])) : undefined
+    const scheduleWrites = scheduleRows ? await wait(() => prepareWorkbookScheduleWrites(term, scheduleRows, path, [path, ...previousPaths], options.scheduleCollection, options.scheduleStatus)) : undefined
     let cache = snapshotCache?.path === path && snapshotCache.userId === user.uid && snapshotCache.revision === previous?.revision
       && snapshotCache.revisionId === previous?.revisionId && !previous?.needsRepair ? snapshotCache : null
     if (previous && !cache && !previous.needsRepair) {

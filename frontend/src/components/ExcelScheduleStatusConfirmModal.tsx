@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from './Button'
-import type { ExcelScheduleRowIssues } from '../utils/excelScheduleValidation'
+import type { ExcelScheduleRowIssues } from '../utils/ScheduleValidation'
 
 interface ExcelScheduleStatusConfirmModalProps {
   status: 'Plot' | 'Draft'

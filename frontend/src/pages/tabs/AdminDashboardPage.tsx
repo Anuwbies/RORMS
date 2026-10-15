@@ -98,6 +98,7 @@ function formatTime(time?: string) {
 
 const reservationStatusClasses: Record<string, string> = {
   Approved: 'bg-emerald-100 text-emerald-700',
+  'Recommending Approval': 'bg-sky-100 text-sky-700',
   Pending: 'bg-amber-100 text-amber-700',
   Completed: 'bg-blue-100 text-blue-700',
   Declined: 'bg-rose-100 text-rose-700',
@@ -113,7 +114,7 @@ const phaseDescriptions: Record<string, string> = {
 }
 
 interface AdminDashboardPageProps {
-  userRole?: 'Admin' | 'Registrar'
+  userRole?: 'Admin' | 'Registrar' | 'University Administrator'
   headerAction?: ReactNode
 }
 
@@ -152,7 +153,7 @@ export function AdminDashboardPage({ userRole = 'Admin', headerAction }: AdminDa
       return reservation.date === todayKey && status !== 'cancelled' && status !== 'declined'
     })
     .sort((first, second) => timeToMinutes(first.startTime) - timeToMinutes(second.startTime)), [reservations, todayKey])
-  const pendingReservations = reservations.filter(reservation => reservation.status?.toLowerCase() === 'pending').length
+  const pendingReservations = reservations.filter(reservation => ['pending', 'recommending approval'].includes(reservation.status?.toLowerCase() || '')).length
 
   const activeUsers = users.filter(user => user.isActive !== false).length
 
@@ -173,7 +174,7 @@ export function AdminDashboardPage({ userRole = 'Admin', headerAction }: AdminDa
       date: date.getDate(),
       total: dayReservations.length,
       approved: dayReservations.filter(reservation => reservation.status?.toLowerCase() === 'approved').length,
-      pending: dayReservations.filter(reservation => reservation.status?.toLowerCase() === 'pending').length,
+      pending: dayReservations.filter(reservation => ['pending', 'recommending approval'].includes(reservation.status?.toLowerCase() || '')).length,
     }
   }), [now, reservations])
 
@@ -214,7 +215,7 @@ export function AdminDashboardPage({ userRole = 'Admin', headerAction }: AdminDa
       tab: 'departmentSchedules',
       color: 'border-purple-200 bg-purple-50 text-purple-700',
     },
-  ].filter(item => item.count > 0)
+  ].filter(item => item.count > 0 && (userRole !== 'University Administrator' || item.tab !== 'departmentSchedules'))
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">

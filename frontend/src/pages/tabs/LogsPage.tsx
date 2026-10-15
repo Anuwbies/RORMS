@@ -18,7 +18,7 @@ import { formatUserName } from '../../utils/userName'
 
 type LogCategory = 'Reservations' | 'Scheduling' | 'Facilities' | 'Accounts'
 type LogOutcome = 'Success' | 'Warning' | 'Failed'
-type LogRole = 'Admin' | 'Registrar' | 'Dean' | 'Program Head' | 'Instructor' | 'Unknown'
+type LogRole = 'Admin' | 'University Administrator' | 'Registrar' | 'Dean' | 'Program Head' | 'Instructor' | 'Unknown'
 
 interface LogEntry {
   id: string
@@ -77,6 +77,7 @@ const OUTCOME_CLASSES: Record<LogOutcome, string> = {
 }
 
 const ROLE_CLASSES: Record<LogRole, string> = {
+  'University Administrator': 'bg-sky-100 text-sky-700',
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',

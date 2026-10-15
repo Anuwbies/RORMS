@@ -13,6 +13,7 @@ const check = (overrides = {}, row = schedule, academicYear = year, reference = 
 test("same room, weekday, and overlapping times cancel Pending and Approved reservations", () => {
   assert.equal(check(), true);
   assert.equal(check({ status: "Pending" }), true);
+  assert.equal(check({ status: "Recommending Approval" }), true);
   assert.equal(check({ startTime: "08:00", endTime: "11:00" }), true);
   assert.equal(check({ startTime: "09:00", endTime: "10:00" }), true);
 });

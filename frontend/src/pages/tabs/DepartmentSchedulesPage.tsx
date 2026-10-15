@@ -15,12 +15,13 @@ import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ScheduleModal } from '../../components/ScheduleModal'
-import { DepartmentExcelScheduleModal } from '../../components/DepartmentExcelScheduleModal'
+import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { canEditDepartmentWorkbook, workbookEditablePhases, type WorkbookMembership } from '../../utils/departmentWorkbookPermissions'
 import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
+import { semesterKey } from '../../utils/departmentWorkbookPaths'
 import {
   collection,
   onSnapshot,
@@ -129,7 +130,7 @@ export function DepartmentSchedulesPage() {
     }
 
     const q = query(
-      collection(db, 'schedule'),
+      collection(db, 'schedules'),
       where('department', '==', selectedDepartment.code)
     )
 
@@ -523,18 +524,12 @@ export function DepartmentSchedulesPage() {
       </div>
 
       {/* Open the same saved department/year/semester workbook as My Department. */}
-      {isAddScheduleModalOpen && selectedDepartment && selectedAcademicYear?.id && selectedAcademicYear.academicYear && selectedSemesterPhase && <DepartmentExcelScheduleModal
+      {isAddScheduleModalOpen && selectedDepartment && selectedAcademicYear?.id && selectedAcademicYear.academicYear && selectedSemesterPhase && <DepartmentScheduleImportModal
         key={`${selectedDepartment.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
         onClose={() => setIsAddScheduleModalOpen(false)}
-        departmentCode={selectedDepartment.code}
-        departmentId={selectedDepartment.id}
-        academicYear={selectedAcademicYear.academicYear}
-        academicYearId={selectedAcademicYear.id}
-        membershipId={workbookMembership?.id || ''}
-        semester={selectedSemesterPhase}
-        emptyWorkbookBehavior="message"
-        allowSheetCreationAndRemoval={false}
-        allowImportExport={false}
+        term={{ departmentId: selectedDepartment.id, departmentCode: selectedDepartment.code,
+          academicYearId: selectedAcademicYear.id, academicYear: selectedAcademicYear.academicYear,
+          semester: semesterKey(selectedSemesterPhase.name), membershipId: workbookMembership?.id || '' }}
         readOnly={!canEditDepartmentWorkbook(workbookMembership || undefined, auth.currentUser?.uid || '', selectedDepartment.code, selectedSemesterPhase.phase)}
       />}
 

@@ -171,7 +171,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
           ? 'Administrative Office'
           : role === 'Registrar'
             ? "Registrar's Office"
-            : (department || '')
+            : role === 'University Administrator' ? 'General Service Department' : (department || '')
 
         const inviteDocSnap = await getDoc(doc(db, 'invitations', inviteId))
         const inviteData = inviteDocSnap.exists() ? inviteDocSnap.data() : null
@@ -270,7 +270,7 @@ function SignUpPage({ onSignup, onBackToSignIn }: SignUpPageProps) {
         ? 'Administrative Office'
         : role === 'Registrar'
           ? "Registrar's Office"
-          : (department || '')
+          : role === 'University Administrator' ? 'General Service Department' : (department || '')
 
       batch.set(userRef, {
         email: email,

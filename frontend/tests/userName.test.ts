@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { formatUserName, titleCaseName, userNameFields } from '../src/utils/userName.ts'
 import { departmentFacultyNames } from '../src/utils/excelFacultySuggestions.ts'
-import { excelScheduleFacultyKeys } from '../src/utils/excelScheduleValidation.ts'
+import { excelScheduleFacultyKeys } from '../src/utils/ScheduleValidation.ts'
 
 test('title-cases typed and pasted name words while preserving spaces, hyphens, apostrophes and accents', () => {
   for (const input of ['allen francis', 'ALLEN FRANCIS', 'aLlEn fRaNcIs']) assert.equal(titleCaseName(input), 'Allen Francis')

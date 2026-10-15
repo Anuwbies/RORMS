@@ -275,7 +275,7 @@ export async function processReservationStatusUpdates(): Promise<{
   const { currentDateStr, currentTimeStr } = getManilaDateTime();
   logger.info(`Evaluating reservations against Manila time: ${currentDateStr} ${currentTimeStr}`);
 
-  const pendingSnap = await db.collection("reservations").where("status", "==", "Pending").get();
+  const pendingSnap = await db.collection("reservations").where("status", "in", ["Pending", "Recommending Approval"]).get();
   const approvedSnap = await db.collection("reservations").where("status", "==", "Approved").get();
 
   let declinedCount = 0;
@@ -417,6 +417,7 @@ export const checkReservationsNow = onRequest(
 );
 
 type NotificationType =
+  | "booking_recommended"
   | "booking_approved"
   | "booking_rejected"
   | "booking_cancelled"
@@ -603,7 +604,13 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
     const status = stringValue(after.status);
     let notification: Pick<NotificationPayload, "title" | "message" | "type"> | null = null;
 
-    if (status === "Approved") {
+    if (status === "Recommending Approval") {
+      notification = {
+        title: "Reservation recommended for approval",
+        message: `Your request for ${roomName} has been recommended by your department and is awaiting final approval.`,
+        type: "booking_recommended",
+      };
+    } else if (status === "Approved") {
       notification = {
         title: "Reservation approved",
         message: `Your reservation for ${roomName} has been approved.`,

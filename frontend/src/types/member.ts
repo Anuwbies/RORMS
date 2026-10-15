@@ -1,4 +1,4 @@
-export type MemberRole = 'Admin' | 'Registrar' | 'Dean' | 'Program Head' | 'Instructor'
+export type MemberRole = 'Admin' | 'University Administrator' | 'Registrar' | 'Dean' | 'Program Head' | 'Instructor'
 export type MemberStatus = 'Active' | 'Deactivated' | 'Pending'
 
 export interface Department {

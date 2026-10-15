@@ -6,6 +6,8 @@ import { ExcelRotatedCellText } from './ExcelRotatedCellText'
 import type { ExcelFontRun } from '../utils/excelFontRuns'
 import type { ScheduleYear } from '../utils/excelScheduleTemplate'
 import type { ExcelFacultyDirectory } from '../utils/excelFacultySuggestions'
+import type { DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
+import type { ExcelRoomDirectory } from '../utils/excelRoomSuggestions'
 
 export interface ExcelPreviewCellData {
   row: number
@@ -52,6 +54,9 @@ interface ExcelPreviewRowProps {
   highlightedComment: CellAddress | null
   editingAddress: string | null
   facultySuggestions?: ExcelFacultyDirectory
+  subjectSuggestions?: readonly DepartmentCourseSuggestion[]
+  subjectIncludesSection?: boolean
+  roomSuggestions?: ExcelRoomDirectory
   sheetName: string
   editorRef: RefObject<ExcelCellTextEditorHandle | null>
   onFontContextChange: (font: string) => void
@@ -62,7 +67,7 @@ interface ExcelPreviewRowProps {
   missing: boolean
 }
 
-export const ExcelPreviewRow = memo(function ExcelPreviewRow({ row, height, cells, selection, highlightedComment, editingAddress, facultySuggestions, sheetName, editorRef, onFontContextChange, events, year, duplicate, overlap, missing }: ExcelPreviewRowProps) {
+export const ExcelPreviewRow = memo(function ExcelPreviewRow({ row, height, cells, selection, highlightedComment, editingAddress, facultySuggestions, subjectSuggestions, subjectIncludesSection, roomSuggestions, sheetName, editorRef, onFontContextChange, events, year, duplicate, overlap, missing }: ExcelPreviewRowProps) {
   return <tr data-source-row={row + 1} data-schedule-year={year} data-schedule-duplicate={duplicate} data-schedule-overlap={overlap} data-schedule-missing={missing} style={{ height }}>
     {cells.map((cell, index) => {
       const selected = Boolean(selection && cell.range.s.r <= selection.e.r && cell.range.e.r >= selection.s.r && cell.range.s.c <= selection.e.c && cell.range.e.c >= selection.s.c)
@@ -71,7 +76,7 @@ export const ExcelPreviewRow = memo(function ExcelPreviewRow({ row, height, cell
         onContextMenu={event => events.contextMenu(event, cell)} onMouseDown={event => events.mouseDown(event, cell)} onMouseEnter={event => events.mouseEnter(event, cell)} onMouseLeave={events.mouseLeave} onDoubleClick={() => events.doubleClick(cell)} onKeyDown={event => events.keyDown(event, cell)} data-cell={cell.address}
         className="relative overflow-hidden rounded-none px-0.5 py-0 focus:outline-none focus-visible:outline-none">
         {editingAddress === cell.sourceAddress && !cell.mergedContinuation && !cell.textReadOnly
-          ? <ExcelCellTextEditor ref={editorRef} key={`${sheetName}:${cell.sourceAddress}`} runs={cell.runs} typingFont={cell.typingFont} facultySuggestions={facultySuggestions} onFontContextChange={onFontContextChange} onDirtyChange={events.dirtyChange} onSave={draft => events.save(cell.sourceAddress, draft)} onCancel={events.cancel} />
+          ? <ExcelCellTextEditor ref={editorRef} key={`${sheetName}:${cell.sourceAddress}`} runs={cell.runs} typingFont={cell.typingFont} facultySuggestions={facultySuggestions} subjectSuggestions={subjectSuggestions} subjectIncludesSection={subjectIncludesSection} roomSuggestions={roomSuggestions} onFontContextChange={onFontContextChange} onDirtyChange={events.dirtyChange} onSave={draft => events.save(cell.sourceAddress, draft)} onCancel={events.cancel} />
           : cell.transformed
             ? <ExcelRotatedCellText text={cell.text} angle={cell.rotation} cellStyle={cell.rotatedStyle} runs={cell.runs} />
             : cell.link
@@ -94,7 +99,7 @@ export const ExcelPreviewRow = memo(function ExcelPreviewRow({ row, height, cell
   </tr>
 }, (previous, next) => {
   if (previous.row !== next.row || previous.cells !== next.cells || previous.height !== next.height || previous.editingAddress !== next.editingAddress
-    || previous.highlightedComment !== next.highlightedComment || previous.facultySuggestions !== next.facultySuggestions || previous.events !== next.events || previous.sheetName !== next.sheetName
+    || previous.highlightedComment !== next.highlightedComment || previous.facultySuggestions !== next.facultySuggestions || previous.subjectSuggestions !== next.subjectSuggestions || previous.subjectIncludesSection !== next.subjectIncludesSection || previous.roomSuggestions !== next.roomSuggestions || previous.events !== next.events || previous.sheetName !== next.sheetName
     || previous.editorRef !== next.editorRef || previous.onFontContextChange !== next.onFontContextChange || previous.year !== next.year
     || previous.duplicate !== next.duplicate || previous.overlap !== next.overlap || previous.missing !== next.missing) return false
   if (previous.selection === next.selection) return true

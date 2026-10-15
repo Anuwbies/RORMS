@@ -2,7 +2,7 @@ import { FieldValue, type Firestore } from "firebase-admin/firestore";
 import { HttpsError } from "firebase-functions/v2/https";
 import { validateExtendedReservationApproval } from "./extendedReservationApproval";
 
-const STATUSES = ["Pending", "Approved", "Declined", "Cancelled", "Completed"] as const;
+const STATUSES = ["Pending", "Recommending Approval", "Approved", "Declined", "Cancelled", "Completed"] as const;
 type ReservationStatus = typeof STATUSES[number];
 
 interface StatusChangeRequest {
@@ -54,16 +54,21 @@ export async function changeReservationStatus(
     const [reservationSnapshot, memberships, profileSnapshot] = await Promise.all([
       transaction.get(reservationRef), transaction.get(membershipQuery), transaction.get(profileRef),
     ]);
+    const reservation = reservationSnapshot.data();
+    if (!reservation) throw new HttpsError("not-found", "This reservation no longer exists.");
     const membership = memberships.docs.find(snapshot => {
       const member = snapshot.data();
-      return member.status === "accepted" && (member.role === "Admin" || member.role === "Registrar");
+      return member.status === "accepted" && (data.status === "Recommending Approval"
+        ? ["Dean", "Program Head"].includes(member.role) && !!text(reservation.department)
+          && text(member.department) === text(reservation.department)
+        : data.status === "Approved"
+          ? ["Registrar", "University Administrator"].includes(member.role)
+          : ["Admin", "Registrar", "University Administrator"].includes(member.role));
     });
     const profile = profileSnapshot.data() || {};
     if (!membership || profile.isActive === false) {
-      throw new HttpsError("permission-denied", "Only active Admins and Registrars can change reservation statuses.");
+      throw new HttpsError("permission-denied", "Your role or department cannot perform this reservation action.");
     }
-    const reservation = reservationSnapshot.data();
-    if (!reservation) throw new HttpsError("not-found", "This reservation no longer exists.");
     if (!isStatus(reservation.status)) {
       throw new HttpsError("failed-precondition", "This reservation has an invalid status. Reload the page before continuing.");
     }
@@ -73,12 +78,28 @@ export async function changeReservationStatus(
       throw new HttpsError("failed-precondition", "The reservation status changed. Reopen the reservation and try again.");
     }
 
+    if (data.status === "Recommending Approval" && reservation.status !== "Pending") {
+      throw new HttpsError("failed-precondition", "Only pending requests can be recommended for approval.");
+    }
+    if (data.status === "Approved" && reservation.status !== "Recommending Approval") {
+      throw new HttpsError("failed-precondition", "A department Dean or Program Head must recommend approval first.");
+    }
+    if (reservation.status === "Pending" && data.status !== "Recommending Approval") {
+      throw new HttpsError("failed-precondition", "This request is awaiting department review.");
+    }
+
     if (data.status === "Approved" && reservation.requestType === "Extended") {
       await validateExtendedReservationApproval(db, transaction, reservationRef.id, reservation);
     }
 
     const member = membership.data();
-    transaction.update(reservationRef, { status: data.status, updatedAt: FieldValue.serverTimestamp() });
+    transaction.update(reservationRef, {
+      status: data.status, updatedAt: FieldValue.serverTimestamp(),
+      ...(data.status === "Recommending Approval" ? {
+        recommendedBy: uid, recommendedAt: FieldValue.serverTimestamp(),
+        recommendedByRole: member.role,
+      } : {}),
+    });
     transaction.create(logRef, {
       action: "reservation.status_changed",
       targetCollection: "reservations",

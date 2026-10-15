@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { formatUserName } from '../utils/userName'
-import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon } from './Icons'
+import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon, CheckIcon } from './Icons'
 import { db, auth } from '../firebase'
 import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../utils/scheduleMeetings'
 import { useScheduleRoomPlotting, type SchedulePlottingOptions } from '../hooks/useScheduleRoomPlotting'
@@ -224,6 +224,11 @@ const scheduleSectionLabel = (schedule: { classSection?: string; course?: unknow
   return `${year}${suffix} Year - ${section}`
 }
 
+const scheduleCardLabel = (schedule: Parameters<typeof roomScheduleLabel>[0] & { college?: unknown }) => {
+  const college = typeof schedule.college === 'string' ? schedule.college.trim() : ''
+  return college || roomScheduleLabel(schedule)
+}
+
 export function ScheduleModal({
   isOpen,
   onClose,
@@ -236,7 +241,6 @@ export function ScheduleModal({
   actionButton,
   hideFilters,
   showWeekCalendar,
-  showStatusColors = false,
   forceFullDaySchedule = false,
   isInline = false,
   hideReturnedSchedules = false,
@@ -263,7 +267,7 @@ export function ScheduleModal({
   const [userDepartmentMap, setUserDepartmentMap] = useState<Map<string, string>>(new Map())
   const [roomsMap, setRoomsMap] = useState<Map<string, string>>(new Map())
   const roomPlot = useScheduleRoomPlotting(plotting, isOpen && isInstructorMode, selectedAcademicYear, selectedSemester,
-    [memberMembershipId, memberId, memberUserId].filter((id): id is string => Boolean(id)))
+    [memberMembershipId, memberId, memberUserId].filter((id): id is string => Boolean(id)), 'schedules')
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
 
@@ -423,7 +427,7 @@ export function ScheduleModal({
     if (isRoomMode && scheduleRoomId) {
       setIsLoading(true)
       setSchedules([])
-      const qSchedule = query(collection(db, 'schedule'), or(where('roomId', '==', scheduleRoomId), where('roomIds', 'array-contains', scheduleRoomId)))
+      const qSchedule = query(collection(db, 'schedules'), or(where('roomId', '==', scheduleRoomId), where('roomIds', 'array-contains', scheduleRoomId)))
       const qReservations = query(collection(db, 'reservations'), where('roomId', '==', scheduleRoomId))
 
       let schedulesLoaded = false
@@ -448,7 +452,7 @@ export function ScheduleModal({
         unsubscribeReservations = onSnapshot(qReservations, (snapshot) => {
           const fetched = snapshot.docs
             .map(d => ({ id: d.id, ...d.data() }))
-            .filter((r: any) => r.status === 'Approved' || r.status === 'Pending')
+            .filter((r: any) => r.status === 'Approved' || r.status === 'Pending' || r.status === 'Recommending Approval')
           setReservations(fetched)
           reservationsLoaded = true
           if (schedulesLoaded) setIsLoading(false)
@@ -481,7 +485,7 @@ export function ScheduleModal({
       let schedulesLoaded = false
       let reservationsLoaded = !showWeekCalendar
 
-      const q = query(collection(db, 'schedule'))
+      const q = query(collection(db, 'schedules'))
 
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => Boolean(item.instructorId && validInstructorIds.includes(item.instructorId)))
@@ -506,7 +510,7 @@ export function ScheduleModal({
             .map(d => ({ id: d.id, ...d.data() }))
             .filter((r: any) => 
               (validInstructorIds.includes(r.userId) || validInstructorIds.includes(r.instructorId)) &&
-              (r.status === 'Approved' || r.status === 'Pending')
+              (r.status === 'Approved' || r.status === 'Pending' || r.status === 'Recommending Approval')
             )
           setReservations(fetched)
           reservationsLoaded = true
@@ -549,23 +553,19 @@ export function ScheduleModal({
     })
   }, [schedules, selectedAcademicYear?.id, selectedAcademicYear?.academicYear, selectedSemester, hideReturnedSchedules, scheduleStatuses])
 
-  const getScheduleStatusClasses = (status?: string) => {
-    if (showWeekCalendar && !showStatusColors) {
-      return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
-    }
-    const s = status || 'Draft'
-    if (s === 'Plot' || s === 'Plotted') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
+  const getMeetingStatus = (meeting: { status?: string }) => meeting.status || 'Draft'
+
+  const getScheduleStatusClasses = (meeting: Parameters<typeof getMeetingStatus>[0]) => {
+    const s = getMeetingStatus(meeting)
+    if (s === 'Plot') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
     if (s === 'Revise' || s === 'Revised') return 'bg-amber-50 border-amber-300'
     if (s === 'Return' || s === 'Returned') return 'bg-rose-50 border-rose-300'
     return 'bg-slate-100 border-slate-300' // Draft
   }
 
-  const getPdfStatusStyles = (status?: string) => {
-    if (showWeekCalendar && !showStatusColors) {
-      return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
-    }
-    const s = status || 'Draft'
-    if (s === 'Plot' || s === 'Plotted') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
+  const getPdfStatusStyles = (meeting: Parameters<typeof getMeetingStatus>[0]) => {
+    const s = getMeetingStatus(meeting)
+    if (s === 'Plot') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
     if (s === 'Revise' || s === 'Revised') return { backgroundColor: '#fffbeb', borderColor: '#fcd34d' }
     if (s === 'Return' || s === 'Returned') return { backgroundColor: '#fff1f2', borderColor: '#fda4af' }
     return { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' } // Draft
@@ -577,11 +577,25 @@ export function ScheduleModal({
     if (!roomPlot.enabled || meeting.source !== 'workbook' || meeting.schemaVersion !== 2) return (
       <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(meeting)}>{getRoomName(meeting)}</span></span>
     )
+    if (meeting.status === 'Draft' && meeting.roomId) {
+      const marked = roomPlot.marked(meeting)
+      const label = `Mark ${meeting.subjectCode || 'schedule'} for plotting`
+      return <div className="flex min-w-0 items-center gap-1" onClick={event => event.stopPropagation()}>
+        <span className="min-w-0 flex-1 truncate">Room: <span className="text-gray-700 font-medium" title={getRoomName(meeting)}>{getRoomName(meeting)}</span></span>
+        <button type="button" role="checkbox" aria-checked={marked} aria-label={label} title={label}
+          disabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving}
+          onClick={() => roomPlot.toggleMarked(meeting)}
+          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:cursor-default ${marked ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white' : 'border-gray-300 bg-white text-gray-500 enabled:hover:border-[var(--brand-color)]'}`}>
+          {marked && <CheckIcon className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+    }
     const selected = roomPlot.selected(meeting)
     return <div className="flex min-w-0 items-center gap-1" onClick={event => event.stopPropagation()}>
       <span className="shrink-0">Room:</span>
-      <SingleSelectDropdown portal searchable variant="meeting" menuAnchorSelector="[data-schedule-meeting]" ariaLabel={`Room for ${meeting.subjectCode || 'class'}, ${meeting.days?.join(', ')}, ${meeting.startTime}-${meeting.endTime}`}
-        options={roomPlot.roomOptions} value={selected} getOptionLabel={id => id ? roomPlot.labels.get(id) || 'Unnamed room' : 'TBA'}
+      <SingleSelectDropdown portal searchable retainValueOnOpen variant="meeting" menuAnchorSelector="[data-schedule-meeting]" ariaLabel={`Room for ${meeting.subjectCode || 'class'}, ${meeting.days?.join(', ')}, ${meeting.startTime}-${meeting.endTime}`}
+        options={selected && !roomPlot.roomOptions.includes(selected) ? [...roomPlot.roomOptions, selected] : roomPlot.roomOptions}
+        value={selected} getOptionLabel={id => id ? roomPlot.labels.get(id) || (id === meeting.roomId ? getRoomName(meeting) : 'Unnamed room') : 'TBA'}
         onChange={id => roomPlot.select(meeting, id)}
         isDisabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving}
         className="w-0 min-w-0 flex-1 [&>input]:!h-7 [&>input]:!px-2 [&>input]:!text-xs" />
@@ -911,13 +925,13 @@ export function ScheduleModal({
                                     )
                                   }
 
-                                  const pdfStyles = getPdfStatusStyles(item.status)
+                                  const pdfStyles = getPdfStatusStyles(item)
                                   return (
                                     <div key={item.id || idx} style={{ gridRow: gridRowStyle, backgroundColor: pdfStyles.backgroundColor, border: `1px solid ${pdfStyles.borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                         <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.subjectCode || 'TBA'}</span>
                                         <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
-                                          {roomScheduleLabel(item)}
+                                          {scheduleCardLabel(item)}
                                         </span>
                                       </div>
                                       <div style={{ marginTop: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1002,14 +1016,14 @@ export function ScheduleModal({
                                   )
                                 }
 
-                                const pdfStyles = getPdfStatusStyles(group.parent.status)
+                                const pdfStyles = getPdfStatusStyles(group.parent)
 
                                 return group.parent.type === 'parallel' ? (
                                   <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: pdfStyles.backgroundColor, border: `1px solid ${pdfStyles.borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                       <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.parent.subjectCode || 'TBA'}</span>
                                       <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
-                                        {roomScheduleLabel(group.parent)}
+                                        {scheduleCardLabel(group.parent)}
                                       </span>
                                     </div>
                                     <div style={{ marginTop: '4px', display: 'flex', flexDirection: 'column', gap: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px' }}>
@@ -1030,7 +1044,7 @@ export function ScheduleModal({
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
                                       <span style={{ fontWeight: 'bold', color: '#111827', textTransform: 'uppercase', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.parent.subjectCode || 'TBA'}</span>
                                       <span style={{ fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', fontSize: '9px', flexShrink: 0 }}>
-                                        {roomScheduleLabel(group.parent)}
+                                        {scheduleCardLabel(group.parent)}
                                       </span>
                                     </div>
                                     <div style={{ marginTop: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -1329,11 +1343,11 @@ export function ScheduleModal({
                                 }
 
                                 return (
-                                  <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(item.status)}`}>
+                                  <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(item)}`}>
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate" title={item.subjectTitle}>{item.subjectCode || 'TBA'}</span>
                                       <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                        {roomScheduleLabel(item)}
+                                        {scheduleCardLabel(item)}
                                       </span>
                                     </div>
                                     <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
@@ -1450,12 +1464,12 @@ export function ScheduleModal({
                               }
 
                               return group.parent.type === 'parallel' ? (
-                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent.status)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent)}`}>
                                   <div className="flex flex-col focus:outline-none min-w-0">
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                       <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                        {roomScheduleLabel(group.parent)}
+                                        {scheduleCardLabel(group.parent)}
                                       </span>
                                     </div>
                                   </div>
@@ -1475,11 +1489,11 @@ export function ScheduleModal({
                                   </div>
                                 </div>
                               ) : group.children.length > 0 ? (
-                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent.status)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                      {roomScheduleLabel(group.parent)}
+                                      {scheduleCardLabel(group.parent)}
                                     </span>
                                   </div>
                                   <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
@@ -1507,11 +1521,11 @@ export function ScheduleModal({
                                   </div>
                                 </div>
                               ) : (
-                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent.status)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
-                                      {roomScheduleLabel(group.parent)}
+                                      {scheduleCardLabel(group.parent)}
                                     </span>
                                   </div>
                                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
@@ -1545,7 +1559,7 @@ export function ScheduleModal({
               <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
             )}
             {roomPlot.enabled && <p role={roomPlot.error ? 'alert' : 'status'} className={`mt-1 max-w-xl whitespace-normal ${roomPlot.error ? 'text-rose-700' : 'text-gray-600'}`}>
-              {roomPlot.error || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} room changes ready to plot.` : 'Choose rooms for the meetings, then click Plot.')}
+              {roomPlot.error || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} schedules ready to plot.` : 'Check assigned rooms or choose rooms, then click Plot.')}
             </p>}
           </div>
           <div className="flex items-center gap-3">

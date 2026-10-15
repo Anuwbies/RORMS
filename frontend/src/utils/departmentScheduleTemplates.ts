@@ -1,7 +1,10 @@
 import * as XLSX from 'xlsx'
 import type { WorkbookEditSnapshot } from './excelWorkbookState'
 import type { ScheduleDirectory, WorkbookScheduleRow } from './excelScheduleRows'
-import { excelScheduleFacultyKeys, excelScheduleRoomKey, parseExcelScheduleDays, parseExcelScheduleTime } from './excelScheduleValidation.ts'
+import { excelScheduleFacultyKeys, excelScheduleRoomKey, parseExcelScheduleDays, parseExcelScheduleTime, type ExcelScheduleRoom } from './ScheduleValidation.ts'
+import { facultyMembershipIssue, facultyMembershipStatus, validateFacultyScheduleAssignments, formatRoomSubject, validateRoomScheduleEntries, type FacultySubjectAssignment, type RoomScheduleEntry, type RoomScheduleSlot } from './ScheduleValidation'
+import { COURSE_TEMPLATE_HEADERS, validateCourseScheduleRows } from './courseScheduleValidation'
+import { hasPendingRoomAllocation, plottedScheduleFields } from './schedulePlotting'
 
 export const DEPARTMENT_TEMPLATE_KEY = '!rormsDepartmentTemplate'
 export type TemplateRole = 'faculty' | 'courses' | 'rooms'
@@ -15,7 +18,7 @@ export interface DepartmentCourse {
   session: string
   sourceCell: string
 }
-export interface TemplateIssue { severity: 'error' | 'warning'; location: string; message: string }
+export interface TemplateIssue { severity: 'error' | 'warning'; location: string; message: string; tone?: 'warning' }
 export interface TemplateMeeting {
   day: string
   start: number
@@ -32,7 +35,7 @@ export interface TemplateClass {
   sourceKey: string
   meetings: TemplateMeeting[]
 }
-export interface DepartmentTemplatePreview { courses: DepartmentCourse[]; classes: TemplateClass[]; issues: TemplateIssue[]; facultyCount: number }
+export interface DepartmentTemplatePreview { courses: DepartmentCourse[]; classes: TemplateClass[]; issues: TemplateIssue[]; facultyCount: number; facultyAssignments: FacultySubjectAssignment[] }
 
 export const templateCodeKey = (value: string) => value.toUpperCase().replace(/\s+/g, '')
 export const templateClock = (minutes: number) => `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`
@@ -66,9 +69,20 @@ function reader(snapshot: WorkbookEditSnapshot, name: string) {
   const mergeAt = (r: number, c: number) => merges.find(m => r >= m.s.r && r <= m.e.r && c >= m.s.c && c <= m.e.c)
   const value = (r: number, c: number) => { const m = mergeAt(r, c); return raw(m?.s.r ?? r, m?.s.c ?? c) }
   // Inspect actual cells/edits instead of scanning a sheet's potentially enormous formatted range.
-  const positions = [...new Set([...Object.keys(sheet), ...(texts?.keys() ?? [])])].filter(a => /^[A-Z]+[1-9]\d*$/.test(a))
-    .map(a => XLSX.utils.decode_cell(a)).filter(p => raw(p.r, p.c))
-  return { raw, value, mergeAt, positions }
+  const cellPositions = [...new Set([...Object.keys(sheet), ...(texts?.keys() ?? [])])].filter(a => /^[A-Z]+[1-9]\d*$/.test(a))
+    .map(a => XLSX.utils.decode_cell(a))
+  const positions = cellPositions.filter(p => raw(p.r, p.c))
+  const headerCell = (r: number, c: number) => {
+    const address = XLSX.utils.encode_cell({ r, c })
+    const cell = sheet[address]
+    const formatting = snapshot.formattingOverrides.get(name)
+    const index = formatting?.indexes.get(address)
+    const style = { ...(index !== undefined ? snapshot.previewStyles?.cellStyles[index] : undefined), ...snapshot.cellStyleOverrides.get(name)?.get(address) }
+    const bordered = [style.borderTop, style.borderRight, style.borderBottom, style.borderLeft]
+      .some(border => border && !/^(?:none|0(?:px)?(?:\s|$))/i.test(String(border)))
+    return Boolean(raw(r, c) || cell?.v != null && String(cell.v).trim() || cell?.w?.trim() || bordered)
+  }
+  return { raw, value, mergeAt, positions, cellPositions, headerCell }
 }
 
 function fill(snapshot: WorkbookEditSnapshot, name: string, address: string): string | undefined {
@@ -83,7 +97,7 @@ function colorDistance(left: string, right: string): number {
   return Math.max(...[1, 3, 5].map(i => Math.abs(parseInt(left.slice(i, i + 2), 16) - parseInt(right.slice(i, i + 2), 16))))
 }
 
-const COURSE_HEADERS = ['session', 'semester', 'code', 'course', 'type', 'credits']
+const COURSE_HEADERS = COURSE_TEMPLATE_HEADERS.map(value => value.toLowerCase())
 type TemplateReader = ReturnType<typeof reader>
 
 function findCourseHeader(source: TemplateReader) {
@@ -107,6 +121,23 @@ function findFacultyBlocks(source: TemplateReader) {
   return blocks.sort((a, b) => a.row - b.row || a.column - b.column)
 }
 
+/** Find timetable cells, including blank cells where a subject can be entered. */
+export function facultySubjectCellAddresses(snapshot: WorkbookEditSnapshot, sheetName: string): Set<string> {
+  const source = reader(snapshot, sheetName)
+  const blocks = findFacultyBlocks(source)
+  const addresses = new Set<string>()
+  const lastRow = Math.max(...source.positions.map(position => position.r))
+  for (const block of blocks) {
+    const next = blocks.find(candidate => candidate.column === block.column && candidate.row > block.row)
+    const endRow = next ? next.row - 2 : lastRow
+    for (let row = block.row + 1; row <= endRow; row++) {
+      if (!parseExcelScheduleTime(source.raw(row, block.column))) continue
+      for (const day of block.days) addresses.add(XLSX.utils.encode_cell({ r: row, c: day.column }))
+    }
+  }
+  return addresses
+}
+
 function roomSlot(label: string): { day: string; start: number; end: number } | null {
   const match = /^(.*?)\s+(MON(?:DAY)?|TUE(?:SDAY)?|WED(?:NESDAY)?|THU(?:RSDAY)?|FRI(?:DAY)?|SAT(?:URDAY)?|SUN(?:DAY)?)$/i.exec(label)
   if (!match) return null
@@ -116,19 +147,30 @@ function roomSlot(label: string): { day: string; start: number; end: number } | 
 }
 
 function findRoomBlocks(source: TemplateReader) {
-  const byRow = new Map<number, Set<number>>()
-  for (const p of source.positions) if (/^[A-Z][A-Z0-9]*\s+[A-Z0-9]+$/i.test(source.raw(p.r, p.c))) {
-    const columns = byRow.get(p.r) ?? new Set<number>()
-    columns.add(p.c); byRow.set(p.r, columns)
+  const timeCells = source.positions.filter(p => roomSlot(source.raw(p.r, p.c)))
+  const headers = new Map<string, { row: number; timeColumn: number; firstSlotRow: number }>()
+  for (const slot of timeCells) for (const offset of [1, 2, 3]) {
+    const row = slot.r - offset
+    if (row < 0) continue
+    const label = source.raw(row, slot.c)
+    // A header is above the timetable, never a subject row with a time/day label.
+    if (label && !/^(?:time|day|time\s*[/&-]\s*day|day\s*[/&-]\s*time)$/i.test(label)) continue
+    if (!source.cellPositions.some(p => p.r === row && p.c > slot.c)) continue
+    const key = `${row}:${slot.c}`
+    if (!headers.has(key)) headers.set(key, { row, timeColumn: slot.c, firstSlotRow: slot.r })
+    break
   }
   const blocks: { row: number; timeColumn: number; rooms: { column: number; name: string }[] }[] = []
-  for (const [row, columns] of byRow) for (const column of [...columns].sort((a, b) => a - b)) {
-    if (columns.has(column - 1) || column < 1) continue
+  for (const { row, timeColumn, firstSlotRow } of headers.values()) {
+    const nextTimeColumn = Math.min(...timeCells.filter(p => p.r === firstSlotRow && p.c > timeColumn).map(p => p.c), Infinity)
+    const lastColumn = Math.max(timeColumn, ...source.cellPositions.filter(p => p.r === row && p.c > timeColumn && p.c < nextTimeColumn
+      && source.headerCell(p.r, p.c)).map(p => p.c))
     const rooms = []
-    for (let c = column; columns.has(c); c++) rooms.push({ column: c, name: source.raw(row, c) })
-    if (rooms.length >= 2 && [1, 2, 3].some(offset => roomSlot(source.raw(row + offset, column - 1)))) {
-      blocks.push({ row, timeColumn: column - 1, rooms })
+    for (let column = timeColumn + 1; column <= lastColumn; column++) {
+      if (!source.headerCell(row, column) && !timeCells.some(slot => slot.c === timeColumn && slot.r >= firstSlotRow && source.raw(slot.r, column))) break
+      rooms.push({ column, name: source.raw(row, column) })
     }
+    if (rooms.length) blocks.push({ row, timeColumn, rooms })
   }
   return blocks.sort((a, b) => a.row - b.row || a.timeColumn - b.timeColumn)
 }
@@ -145,8 +187,7 @@ export function findDepartmentTemplateSheets(snapshot: WorkbookEditSnapshot): { 
       if (snapshot.scheduleSetups.has(name)) continue
       const source = reader(snapshot, name)
       if (findCourseHeader(source)) courses.push(name)
-      else if (findFacultyBlocks(source).some(block => block.faculty
-        && [1, 2, 3].some(offset => parseExcelScheduleTime(source.raw(block.row + offset, block.column))))) faculty.push(name)
+      else if (findFacultyBlocks(source).some(block => [1, 2, 3].some(offset => parseExcelScheduleTime(source.raw(block.row + offset, block.column))))) faculty.push(name)
     }
   }
   if (!faculty.length && !courses.length) return null
@@ -164,38 +205,67 @@ export function assertDepartmentScheduleRows(snapshot: WorkbookEditSnapshot, row
   }
 }
 
-interface RoomEntry { code: string; section: string; day: string; start: number; end: number; room: string; location: string }
-
-function applyRoomSheet(snapshot: WorkbookEditSnapshot, sheetName: string, classes: TemplateClass[], issue: (severity: TemplateIssue['severity'], location: string, message: string) => void) {
+export function readRoomScheduleTemplate(snapshot: WorkbookEditSnapshot, sheetName: string, rooms?: readonly ExcelScheduleRoom[]) {
   const source = reader(snapshot, sheetName)
   const blocks = findRoomBlocks(source)
   if (!blocks.length) throw new Error('Rooms & Labs must use room-code column headers and time/day rows from the supplied template.')
-  const entries: RoomEntry[] = []
+  const entries: RoomScheduleEntry[] = []
+  const cells = new Set<string>()
+  const slots = new Map<string, RoomScheduleSlot>()
+  const headerCells = new Set<string>()
+  const issues: TemplateIssue[] = []
   const lastRow = Math.max(...source.positions.map(p => p.r))
   for (const block of blocks) {
+    for (const room of block.rooms) {
+      const address = XLSX.utils.encode_cell({ r: block.row, c: room.column })
+      headerCells.add(address)
+      if (!room.name.trim()) {
+        issues.push({ severity: 'warning', location: `${sheetName}!${address}`, message: 'Room is missing; choose an existing room for this column.' })
+        continue
+      }
+      if (!rooms) continue
+      const key = excelScheduleRoomKey(room.name)
+      const matches = rooms.filter(candidate => excelScheduleRoomKey(candidate.code ?? '') === key || excelScheduleRoomKey(candidate.name ?? '') === key)
+      if (matches.length !== 1) issues.push({ severity: 'warning',
+        location: `${sheetName}!${XLSX.utils.encode_cell({ r: block.row, c: room.column })}`,
+        message: matches.length ? `Room "${room.name}" matches multiple rooms in the system; use a unique room code.`
+          : `Room "${room.name}" does not exist in the system.` })
+    }
     const next = blocks.find(other => other.row > block.row && other.timeColumn === block.timeColumn)
     const endRow = next ? next.row - 1 : lastRow
     for (let row = block.row + 1; row <= endRow; row++) {
       const slot = roomSlot(source.raw(row, block.timeColumn))
-      if (!slot) continue
+      if (!slot && !source.raw(row, block.timeColumn)) continue
       for (const room of block.rooms) {
+        const address = XLSX.utils.encode_cell({ r: row, c: room.column })
+        cells.add(address)
+        if (slot) slots.set(address, slot)
         const label = source.raw(row, room.column)
         if (!label || /^X$/i.test(label)) continue
         const location = `${sheetName}!${XLSX.utils.encode_cell({ r: row, c: room.column })}`
-        const subject = /^([A-Z]+\s*\d+)\s*(?:(?:-\s*|\s+G\s*)([A-Z0-9-]+))?$/i.exec(label)
-        if (!subject) { issue('warning', location, `Cannot read room assignment "${label}"; no room was assigned.`); continue }
-        entries.push({ code: templateCodeKey(subject[1]), section: (subject[2] ?? '').toUpperCase(), ...slot, room: room.name, location })
+        const subject = /^([A-Z]+\s*\d+)\s*(?:-\s*([A-Z0-9-]+))?$/i.exec(formatRoomSubject(label))
+        if (!subject) { issues.push({ severity: 'warning', location, message: `Cannot read room assignment "${label}"; use a subject and section such as ITE 314-2.` }); continue }
+        if (!slot) issues.push({ severity: 'warning', location,
+          message: `${formatRoomSubject(label)} has an invalid time/day label "${source.raw(row, block.timeColumn)}"; no room was assigned.` })
+        entries.push({ code: subject[1], section: (subject[2] ?? '').toUpperCase(), ...(slot ?? { day: '', start: -1, end: -1, invalidSlot: true }), room: room.name, location })
       }
     }
   }
-  const matches = new Map<TemplateMeeting, RoomEntry[]>()
+  return { entries, cells, slots, headerCells, issues }
+}
+
+function applyRoomSheet(snapshot: WorkbookEditSnapshot, sheetName: string, classes: TemplateClass[], faculty: readonly FacultySubjectAssignment[], issue: (severity: TemplateIssue['severity'], location: string, message: string) => void) {
+  const { entries, issues } = readRoomScheduleTemplate(snapshot, sheetName)
+  for (const item of [...issues, ...validateRoomScheduleEntries(entries, faculty)]) issue(item.severity, item.location, item.message)
+  const matches = new Map<TemplateMeeting, RoomScheduleEntry[]>()
   for (const entry of entries) {
-    const candidates = classes.flatMap(item => templateCodeKey(item.course.code) === entry.code && item.section.toUpperCase() === entry.section
+    if (entry.invalidSlot) continue
+    const candidates = classes.flatMap(item => templateCodeKey(item.course.code) === templateCodeKey(entry.code) && item.section.toUpperCase() === entry.section
       ? item.meetings.filter(meeting => meeting.day === entry.day &&
         (entry.start >= meeting.start && entry.end <= meeting.end || meeting.start >= entry.start && meeting.end <= entry.end))
         .map(meeting => ({ item, meeting })) : [])
     const owners = new Set(candidates.map(candidate => candidate.item.sourceKey))
-    if (!owners.size) { issue('warning', entry.location, 'No faculty meeting matches this subject, section, day, and time; the room was not assigned.'); continue }
+    if (!owners.size) continue
     if (owners.size > 1) { issue('warning', entry.location, 'Several faculty classes match this room entry; specify a unique section before assigning the room.'); continue }
     for (const { meeting } of candidates) matches.set(meeting, [...(matches.get(meeting) ?? []), entry])
   }
@@ -207,7 +277,7 @@ function applyRoomSheet(snapshot: WorkbookEditSnapshot, sheetName: string, class
     const parts = [...assigned].sort((a, b) => a.start - b.start || a.end - b.end)
     if (covering.length || parts.some(entry => entry.start < meeting.start || entry.end > meeting.end)
       || parts.some((entry, index) => index > 0 && entry.start < parts[index - 1].end)) {
-      issue('warning', assigned[0].location, 'Conflicting room entries cover this faculty meeting; its room remains unassigned.')
+      for (const entry of assigned) issue('warning', entry.location, 'Conflicting room entries cover this faculty meeting; its room remains unassigned.')
       return [meeting]
     }
     const segments: TemplateMeeting[] = []
@@ -222,25 +292,28 @@ function applyRoomSheet(snapshot: WorkbookEditSnapshot, sheetName: string, class
   })
 }
 
-export function readDepartmentTemplatePreview(snapshot: WorkbookEditSnapshot, facultySheet: string, coursesSheet: string, semester: 'sem1' | 'sem2', roomsSheet?: string): DepartmentTemplatePreview {
-  const issues: TemplateIssue[] = []
-  const issue = (severity: TemplateIssue['severity'], location: string, message: string) => issues.push({ severity, location, message })
-  if (!snapshot.workbook.Sheets[facultySheet] || !snapshot.workbook.Sheets[coursesSheet]) throw new Error('Both the Faculty Schedules and Department Courses sheets are required.')
+export function readDepartmentCourseTemplate(snapshot: WorkbookEditSnapshot, coursesSheet: string): { courses: DepartmentCourse[]; issues: TemplateIssue[]; tableColumns: { start: number; end: number } } {
   const courseReader = reader(snapshot, coursesSheet)
   const header = findCourseHeader(courseReader)
   if (!header) throw new Error('Department Courses must use the supplied Session, Semester, Code, Course, Type, Credits headers, in that order.')
   const courses: DepartmentCourse[] = []
   const rows = [...new Set(courseReader.positions.map(p => p.r))].filter(r => r > header.r).sort((a, b) => a - b)
-  for (const row of rows) {
-    const values = COURSE_HEADERS.map((_, offset) => courseReader.raw(row, header.c + offset))
-    if (!values.some(Boolean)) continue
+  const entries = rows.map(row => ({ row, values: COURSE_HEADERS.map((_, offset) => courseReader.raw(row, header.c + offset)) })).filter(entry => entry.values.some(Boolean))
+  const issues = validateCourseScheduleRows(coursesSheet, header.c, entries)
+  for (const { row, values } of entries) {
     const sourceCell = `${coursesSheet}!${XLSX.utils.encode_cell({ r: row, c: header.c + 2 })}`
     const term = /^Y([1-9]\d*)S([12])$/i.exec(values[1].replace(/\s/g, ''))
-    if (!values[2] || !values[3] || !term) { issue('error', sourceCell, 'A course needs a code, title, and year/semester such as Y3S1.'); continue }
+    if (!values[2] || !values[3] || !term) continue
     const credits = values[5] && Number.isFinite(Number(values[5])) && Number(values[5]) >= 0 ? Number(values[5]) : null
-    if (credits === null) issue('warning', sourceCell, 'Credits are missing or invalid; no credits will be inferred.')
     courses.push({ code: values[2].toUpperCase().replace(/\s+/g, ' '), title: values[3], yearLevel: Number(term[1]), semester: Number(term[2]), type: values[4], credits, session: values[0], sourceCell })
   }
+  return { courses, issues, tableColumns: { start: header.c, end: header.c + COURSE_HEADERS.length - 1 } }
+}
+
+export function readDepartmentTemplatePreview(snapshot: WorkbookEditSnapshot, facultySheet: string, coursesSheet: string, semester: 'sem1' | 'sem2', roomsSheet?: string, facultyNames?: readonly string[]): DepartmentTemplatePreview {
+  if (!snapshot.workbook.Sheets[facultySheet] || !snapshot.workbook.Sheets[coursesSheet]) throw new Error('Both the Faculty Schedules and Department Courses sheets are required.')
+  const { courses, issues } = readDepartmentCourseTemplate(snapshot, coursesSheet)
+  const issue = (severity: TemplateIssue['severity'], location: string, message: string) => issues.push({ severity, location, message })
   const facultyReader = reader(snapshot, facultySheet)
   const blocks = findFacultyBlocks(facultyReader)
   if (!blocks.length) throw new Error('Faculty Schedules must use the supplied faculty-name, weekday-column, and time-row blocks.')
@@ -251,12 +324,21 @@ export function readDepartmentTemplatePreview(snapshot: WorkbookEditSnapshot, fa
     return modality && color ? [{ modality: modality as TemplateMeeting['modality'], color }] : []
   })
   const classes = new Map<string, TemplateClass>()
+  const facultyAssignments: FacultySubjectAssignment[] = []
   const visitedAssignments = new Set<string>()
   const usedFaculty = new Set<string>()
   const lastRow = Math.max(...facultyReader.positions.map(p => p.r))
   for (const block of blocks) {
     const next = blocks.find(b => b.column === block.column && b.row > block.row)
     const endRow = next ? next.row - 2 : lastRow
+    const facultyStatus = facultyMembershipStatus(block.faculty, facultyNames)
+    const facultyIssue = facultyMembershipIssue(block.faculty, facultyStatus)
+    const hasAssignments = facultyReader.positions.some(p => p.r > block.row && p.r <= endRow && block.days.some(day => day.column === p.c)
+      && /^([A-Z]+\s*\d+)\s*(?:-\s*([A-Z0-9-]+))?$/i.test(facultyReader.raw(p.r, p.c)))
+    if (facultyIssue && (facultyStatus !== 'missing' || hasAssignments)) {
+      const anchor = facultyReader.mergeAt(block.row - 1, block.column)?.s ?? { r: block.row - 1, c: block.column }
+      issues.push({ severity: 'warning', location: `${facultySheet}!${XLSX.utils.encode_cell(anchor)}`, ...facultyIssue })
+    }
     const timeRows = new Map<number, { start: number; end: number }>()
     let previousEnd = 0
     for (let r = block.row + 1; r <= endRow; r++) {
@@ -281,18 +363,10 @@ export function readDepartmentTemplatePreview(snapshot: WorkbookEditSnapshot, fa
         if (merge && (merge.s.r !== p.r || merge.s.c !== p.c)) continue
         visitedAssignments.add(address)
         const label = facultyReader.raw(p.r, p.c)
-        if (!block.faculty) { issue('error', location, 'This assignment has no faculty name above its timetable.'); continue }
-        const match = /^([A-Z]+\s*\d+)\s*(?:(?:-\s*|\s+G\s*)([A-Z0-9-]+))?$/i.exec(label)
-        if (!match) { issue('error', location, `Cannot read subject/section "${label}". Use entries such as ITE 314-2 or ITE 083 G1.`); continue }
-        let candidates = courses.filter(c => templateCodeKey(c.code) === templateCodeKey(match[1]))
-        if (candidates.length > 1) candidates = candidates.filter(c => c.semester === (semester === 'sem1' ? 1 : 2))
-        if (candidates.length !== 1) {
-          issue(candidates.length ? 'error' : 'warning', location, candidates.length
-            ? `Subject "${match[1]}" has ambiguous curriculum entries.`
-            : `Subject "${match[1]}" has no matching course in Department Courses; its schedule will be removed when saved.`)
-          continue
-        }
-        const course = candidates[0]
+        const match = /^([A-Z]+\s*\d+)\s*(?:-\s*([A-Z0-9-]+))?$/i.exec(label)
+        if (!match) { issue('error', location, `Cannot read subject/section "${label}". Use entries such as ITE 314-2 or ITE 083-1.`); continue }
+        const assignment: FacultySubjectAssignment = { location, code: match[1].toUpperCase().replace(/\s+/g, ' '), section: match[2] ?? '', faculty: block.faculty, facultyStatus }
+        facultyAssignments.push(assignment)
         const first = timeRows.get(p.r)
         const last = timeRows.get(merge?.e.r ?? p.r)
         if (!first || !last || last.end <= first.start || (merge && (merge.e.c !== p.c || merge.e.r > endRow))) {
@@ -306,6 +380,19 @@ export function readDepartmentTemplatePreview(snapshot: WorkbookEditSnapshot, fa
           previous = time.end
         }
         if (!valid) { issue('error', location, 'This merged assignment crosses a break or inconsistent time rows.'); continue }
+        assignment.durationMinutes = last.end - first.start
+        assignment.day = day
+        assignment.start = first.start
+        assignment.end = last.end
+        assignment.faculty = block.faculty
+        if (!block.faculty) { issue('error', location, 'This assignment has no faculty name above its timetable.'); continue }
+        let candidates = courses.filter(c => templateCodeKey(c.code) === templateCodeKey(match[1]))
+        if (candidates.length > 1) candidates = candidates.filter(c => c.semester === (semester === 'sem1' ? 1 : 2))
+        if (candidates.length !== 1) {
+          if (candidates.length) issue('error', location, `Subject "${match[1]}" has ambiguous curriculum entries.`)
+          continue
+        }
+        const course = candidates[0]
         const sourceKey = JSON.stringify([XLSX.utils.encode_cell({ r: block.row, c: block.column }), templateCodeKey(course.code), match[2] ?? ''])
         const item = classes.get(sourceKey) ?? { course, faculty: block.faculty, section: match[2] ?? '', sourceCell: address, sourceKey, meetings: [] }
         const color = fill(snapshot, facultySheet, address)
@@ -316,22 +403,23 @@ export function readDepartmentTemplatePreview(snapshot: WorkbookEditSnapshot, fa
       }
     }
   }
+  issues.push(...validateFacultyScheduleAssignments(facultyAssignments, courses))
   for (const item of classes.values()) {
     item.meetings.sort((a, b) => a.day.localeCompare(b.day) || a.start - b.start)
     const location = `${facultySheet}!${item.sourceCell}`
-    if (!item.section) issue('warning', location, `${item.course.code}: section/group is not specified.`)
     if (templateSubjectFormat(item.course.type) === 'Unspecified') issue('warning', location, `${item.course.code}: subject type is unspecified; review required.`)
-    if (item.course.semester !== (semester === 'sem1' ? 1 : 2)) issue('warning', location, `${item.course.code}: curriculum lists semester ${item.course.semester}; the faculty assignment is retained in the selected term.`)
+    if (item.course.semester !== (semester === 'sem1' ? 1 : 2)) issue('warning', location,
+      `${item.course.code} is for ${item.course.semester === 1 ? '1st' : '2nd'} Semester, but this workbook is for ${semester === 'sem1' ? '1st' : '2nd'} Semester.`)
     if (item.meetings.some(m => m.modality === 'Unspecified')) issue('warning', location, 'Meeting modality is not identified by the template legend.')
   }
   for (const p of facultyReader.positions) {
     const address = XLSX.utils.encode_cell(p)
-    if (!visitedAssignments.has(address) && /^[A-Z]+\s*\d+\s*(?:-\s*[A-Z0-9-]+|\s+G\s*\d+)?$/i.test(facultyReader.raw(p.r, p.c))) {
+    if (!visitedAssignments.has(address) && /^[A-Z]+\s*\d+\s*(?:-\s*[A-Z0-9-]+)?$/i.test(facultyReader.raw(p.r, p.c))) {
       issue('error', `${facultySheet}!${address}`, 'This subject assignment is outside a recognized faculty/day/time block. Check its weekday header and faculty name.')
     }
   }
   const list = [...classes.values()]
-  if (roomsSheet) applyRoomSheet(snapshot, roomsSheet, list, issue)
+  if (roomsSheet) applyRoomSheet(snapshot, roomsSheet, list, facultyAssignments, issue)
   for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
     const left = list[i], right = list[j]
     if (left.faculty !== right.faculty) continue
@@ -341,7 +429,7 @@ export function readDepartmentTemplatePreview(snapshot: WorkbookEditSnapshot, fa
       issue('warning', `${facultySheet}!${right.sourceCell}`, message)
     }
   }
-  return { courses, classes: list, issues, facultyCount: usedFaculty.size }
+  return { courses, classes: list, issues, facultyCount: usedFaculty.size, facultyAssignments }
 }
 
 /** Regenerate from current grid values on every Save, including edited cells and merges. */
@@ -349,7 +437,8 @@ export function extractDepartmentTemplateRows(snapshot: WorkbookEditSnapshot, di
   const sheets = findDepartmentTemplateSheets(snapshot)
   if (!sheets) return []
   const sourceSheet = sheets.facultySheet
-  const preview = readDepartmentTemplatePreview(snapshot, sourceSheet, sheets.coursesSheet, semester, sheets.roomsSheet)
+  const preview = readDepartmentTemplatePreview(snapshot, sourceSheet, sheets.coursesSheet, semester, sheets.roomsSheet,
+    directory.faculty.filter(member => member.department === directory.departmentCode).map(member => member.fullName))
   const errors = preview.issues.filter(i => i.severity === 'error')
   if (errors.length) throw new Error(`${errors[0].location}: ${errors[0].message}${errors.length > 1 ? ` (${errors.length} template errors)` : ''}`)
   return preview.classes.map(item => {
@@ -373,12 +462,13 @@ export function extractDepartmentTemplateRows(snapshot: WorkbookEditSnapshot, di
     for (const meeting of meetings) if (meeting.room !== 'TBA' && !meeting.roomId) {
       validationIssues.push(`Room "${meeting.room}" could not be matched uniquely to an existing room.`)
     }
-    if (meetings.some(m => !m.roomId)) validationIssues.push('Room allocation is pending.')
+    const { status } = plottedScheduleFields(meetings)
+    if (hasPendingRoomAllocation(meetings)) validationIssues.push('Room allocation is pending.')
     const f2f = meetings.filter(m => m.modality === 'F2F')
     const pair = (values: string[]) => ({ lec: format === 'Lec' ? values : [], lab: format === 'Lab' ? values : [],
       ...(format === 'Flexible' ? { flexible: values } : format === 'Unspecified' ? { unspecified: values } : {}) })
     return {
-      status: 'Draft', sourceSheet, sourceRow: position.r + 1, sourceCell: item.sourceCell, sourceKey: item.sourceKey,
+      status, sourceSheet, sourceRow: position.r + 1, sourceCell: item.sourceCell, sourceKey: item.sourceKey,
       ...(sheets.roomsSheet ? { roomSourceSheet: sheets.roomsSheet } : {}),
       yearLevel: item.course.yearLevel, college: directory.departmentCode, subjectArea: '', subjectCode: item.course.code, subjectTitle: item.course.title,
       subjectType: item.course.type, curriculumSemester: item.course.semester, curriculumSession: item.course.session,

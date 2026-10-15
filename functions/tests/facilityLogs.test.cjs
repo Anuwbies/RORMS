@@ -68,6 +68,13 @@ test("building creation records trusted actor, source and initial snapshot witho
   assert.equal(log.createdAt.constructor.name, "ServerTimestampTransform");
 });
 
+test("University Administrator can manage facilities with its own audit role", async () => {
+  const fake = fixture({ role: "University Administrator" });
+  await manageFacilityRecords(fake.db, "actor", request("update_building", { targetId: "building", data: { name: "Renamed", code: "PTC" } }));
+  assert.equal(fake.documents.get("buildings/building").name, "Renamed");
+  assert.equal(fake.logs()[0].actorRole, "University Administrator");
+});
+
 test("building edits record only changed fields and preserve unrelated metadata", async () => {
   const fake = fixture({ role: "Registrar" });
   fake.documents.get("buildings/building").metadata = "preserved";

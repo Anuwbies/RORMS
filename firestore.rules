@@ -12,6 +12,67 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    function canManageCourses(departmentId, membershipId) {
+      let member = get(/databases/$(database)/documents/memberships/$(membershipId)).data;
+      let department = get(/databases/$(database)/documents/departments/$(departmentId)).data;
+      return request.auth != null && member.userId == request.auth.uid && member.status == 'accepted'
+        && (member.role == 'Admin' || (member.role in ['Dean', 'Program Head'] && member.department == department.code));
+    }
+
+    match /departments/{departmentId}/courseWorkbooks/current {
+      function validCoursesWorkbook() {
+        let data = request.resource.data;
+        return request.auth != null
+          && data.keys().hasAll(['schemaVersion', 'encoding', 'data', 'jsonByteLength', 'departmentId', 'departmentCode', 'membershipId', 'savedBy', 'fileName', 'revision', 'generation', 'courseCount', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['schemaVersion', 'encoding', 'data', 'jsonByteLength', 'departmentId', 'departmentCode', 'membershipId', 'savedBy', 'fileName', 'revision', 'generation', 'courseCount', 'createdAt', 'updatedAt'])
+          && data.schemaVersion == 1 && data.encoding == 'gzip-base64'
+          && data.data is string && data.data.size() > 0 && data.data.toUtf8().size() <= 921600
+          && data.jsonByteLength is int && data.jsonByteLength > 0 && data.jsonByteLength <= 52428800
+          && data.departmentId == departmentId && data.departmentCode == get(/databases/$(database)/documents/departments/$(departmentId)).data.code
+          && data.membershipId is string && data.savedBy == request.auth.uid
+          && data.fileName is string && data.fileName.size() > 5 && data.fileName.size() <= 255 && data.fileName.matches('.*[.][xX][lL][sS][xX]')
+          && data.revision is int && data.revision > 0 && data.generation is string && data.generation.matches('[a-zA-Z0-9_-]+')
+          && data.courseCount is int && data.courseCount >= 0 && data.createdAt is timestamp && data.updatedAt == request.time
+          && canManageCourses(departmentId, data.membershipId);
+      }
+      allow read: if request.auth != null;
+      allow create: if validCoursesWorkbook() && request.resource.data.revision == 1 && request.resource.data.createdAt == request.time;
+      allow update: if validCoursesWorkbook() && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.createdAt == resource.data.createdAt && request.resource.data.generation != resource.data.generation;
+      allow delete: if false;
+    }
+
+    match /courses/{courseId} {
+      function validCourseText(value) { return value is string && value.toUtf8().size() <= 65536; }
+      function validCourseRow() {
+        let data = request.resource.data;
+        return request.auth != null
+          && data.keys().hasAll(['sheetName', 'rowNumber', 'session', 'semester', 'code', 'course', 'type', 'credits', 'departmentId', 'departmentCode', 'sourceWorkbook', 'generation', 'revision', 'membershipId', 'savedBy', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['sheetName', 'rowNumber', 'session', 'semester', 'code', 'course', 'type', 'credits', 'departmentId', 'departmentCode', 'sourceWorkbook', 'generation', 'revision', 'membershipId', 'savedBy', 'createdAt', 'updatedAt'])
+          && data.departmentId is string && data.departmentCode == get(/databases/$(database)/documents/departments/$(data.departmentId)).data.code
+          && data.sourceWorkbook == 'departments/' + data.departmentId + '/courseWorkbooks/current'
+          && data.generation is string && data.generation.matches('[a-zA-Z0-9_-]+') && courseId.matches(data.generation + '_[0-9]+')
+          && data.revision is int && data.revision > 0 && data.rowNumber is int && data.rowNumber > 0
+          && data.sheetName is string && data.sheetName.size() > 0 && data.sheetName.size() <= 31
+          && validCourseText(data.session) && validCourseText(data.semester) && validCourseText(data.code)
+          && validCourseText(data.course) && validCourseText(data.type) && validCourseText(data.credits)
+          && data.membershipId is string && data.savedBy == request.auth.uid && data.createdAt == request.time && data.updatedAt == request.time
+          && canManageCourses(data.departmentId, data.membershipId);
+      }
+      function canRemoveOldCourse() {
+        let data = resource.data;
+        let path = /databases/$(database)/documents/departments/$(data.departmentId)/courseWorkbooks/current;
+        let manifest = exists(path) ? get(path).data : {};
+        return request.auth != null && data.generation != manifest.get('generation', '')
+          && ((data.savedBy == request.auth.uid && canManageCourses(data.departmentId, data.membershipId))
+            || (manifest.get('savedBy', '') == request.auth.uid && canManageCourses(data.departmentId, manifest.membershipId)));
+      }
+      allow read: if request.auth != null;
+      allow create: if validCourseRow();
+      allow update: if false;
+      allow delete: if canRemoveOldCourse();
+    }
+
     function canSaveWorkbook(departmentId, yearId, semester, membershipId) {
       let member = get(/databases/$(database)/documents/memberships/$(membershipId)).data;
       let department = get(/databases/$(database)/documents/departments/$(departmentId)).data;
@@ -21,6 +82,69 @@ service cloud.firestore {
         && ((member.role == 'Admin' && year[semester].phase in ['Drafting', 'Plotting', 'Revision', 'Final'])
           || (member.role in ['Dean', 'Program Head'] && member.department == department.code
             && year[semester].phase in ['Drafting', 'Revision']));
+    }
+
+    function canPlotWorkbookRooms(yearId, semester, membershipId) {
+      let member = get(/databases/$(database)/documents/memberships/$(membershipId)).data;
+      let profile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      let year = get(/databases/$(database)/documents/academicYears/$(yearId)).data;
+      return request.auth != null && member.userId == request.auth.uid && member.status == 'accepted'
+        && member.role in ['Registrar', 'Admin'] && profile.get('isActive', true) != false
+        && semester in ['sem1', 'sem2'] && year[semester].phase in ['Drafting', 'Plotting', 'Revision', 'Final'];
+    }
+
+    function sameAuthoredScheduleValues(before, after) {
+      return before.size() == 21 && after.size() == 21
+        && [before[0], before[1], before[2], before[3], before[4], before[5], before[6], before[7], before[8], before[9], before[10], before[11], before[12], before[13], before[14], before[15], before[16], before[17], before[18]]
+          == [after[0], after[1], after[2], after[3], after[4], after[5], after[6], after[7], after[8], after[9], after[10], after[11], after[12], after[13], after[14], after[15], after[16], after[17], after[18]];
+    }
+
+    match /schedules/{scheduleId} {
+      function scheduleWorkbook(data) {
+        let year = namedYear(data.academicYearId);
+        return /databases/$(database)/documents/departments/$(data.departmentId)/workbooks/$(year)/semesters/$(data.semesterKey);
+      }
+      function validImportedSchedule() {
+        let data = request.resource.data;
+        let manifest = getAfter(scheduleWorkbook(data)).data;
+        return request.auth != null && data.source == 'workbook' && data.schemaVersion == 2 && data.id == scheduleId
+          && data.status in ['Draft', 'Plot'] && data.yearLevel in [1, 2, 3, 4]
+          && data.sourceSheet is string && data.sourceRow is int && data.sourceRow > 0
+          && data.department == get(/databases/$(database)/documents/departments/$(data.departmentId)).data.code
+          && data.sourceWorkbook == 'departments/' + data.departmentId + '/workbooks/' + namedYear(data.academicYearId) + '/semesters/' + data.semesterKey
+          && data.academicYear == get(/databases/$(database)/documents/academicYears/$(data.academicYearId)).data.academicYear
+          && data.semester == (data.semesterKey == 'sem1' ? '1st Semester' : '2nd Semester')
+          && data.workbookRevision == manifest.revision && data.workbookRevisionId == manifest.revisionId
+          && manifest.savedBy == request.auth.uid && manifest.membershipId == data.membershipId && manifest.updatedAt == request.time
+          && data.savedBy == request.auth.uid && data.createdAt is timestamp && data.updatedAt == request.time
+          && canSaveWorkbook(data.departmentId, data.academicYearId, data.semesterKey, data.membershipId);
+      }
+      function validScheduleRoomPlot() {
+        let data = request.resource.data;
+        let member = get(/databases/$(database)/documents/memberships/$(data.plottedMembershipId)).data;
+        let profile = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+        let year = get(/databases/$(database)/documents/academicYears/$(resource.data.academicYearId)).data;
+        return request.auth != null && resource.data.source == 'workbook' && resource.data.schemaVersion == 2
+          && data.diff(resource.data).affectedKeys().hasOnly(['meetings', 'status', 'roomId', 'buildingId', 'roomIds', 'f2fRoom', 'registrarPlot', 'validationIssues', 'plottedBy', 'plottedAt', 'updatedAt', 'plottedMembershipId', 'rawValues', 'workbookRow', 'workbookSheetId'])
+          && (!data.diff(resource.data).affectedKeys().hasAny(['rawValues']) || sameAuthoredScheduleValues(resource.data.rawValues, data.rawValues))
+          && member.userId == request.auth.uid && member.status == 'accepted' && member.role in ['Registrar', 'Admin']
+          && profile.get('isActive', true) != false && year[resource.data.semesterKey].phase in ['Drafting', 'Plotting', 'Revision', 'Final']
+          && data.meetings is list && data.meetings.size() == resource.data.meetings.size()
+          && data.roomIds is list && data.status == (data.roomIds.size() > 0 ? 'Plot' : 'Draft')
+          && data.registrarPlot.version == 1 && data.registrarPlot.savedBy == request.auth.uid && data.registrarPlot.assignments is list
+          && data.plottedBy == request.auth.uid && data.plottedAt == request.time && data.updatedAt == request.time;
+      }
+      allow read: if request.auth != null;
+      allow create: if validImportedSchedule() && request.resource.data.createdAt == request.time;
+      allow update: if (request.resource.data.get('plottedAt', null) == request.time && validScheduleRoomPlot())
+        || (validImportedSchedule() && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.workbookRevision > resource.data.workbookRevision);
+      allow delete: if request.auth != null
+        && getAfter(scheduleWorkbook(resource.data)).data.revision > resource.data.workbookRevision
+        && getAfter(scheduleWorkbook(resource.data)).data.updatedAt == request.time
+        && getAfter(scheduleWorkbook(resource.data)).data.savedBy == request.auth.uid
+        && canSaveWorkbook(resource.data.departmentId, resource.data.academicYearId, resource.data.semesterKey,
+          getAfter(scheduleWorkbook(resource.data)).data.membershipId);
     }
 
     function namedYear(yearId) {
@@ -420,9 +544,23 @@ service cloud.firestore {
           && request.resource.data.revision == previous.get('revision', 0) + 1
           && request.resource.data.createdAt == previous.get('createdAt', request.time);
       }
+      function validRoomPlotWorkbookUpdate() {
+        let data = request.resource.data;
+        let lockPath = /databases/$(database)/documents/departments/$(departmentId)/workbooks/$(yearId)/semesters/$(semester)/saveLocks/current;
+        return request.auth != null && resource.data.schemaVersion == 3
+          && data.diff(resource.data).affectedKeys().hasOnly(['revision', 'revisionId', 'cellCounts', 'membershipId', 'savedBy', 'updatedAt', 'roomPlot'])
+          && data.revision == resource.data.revision + 1 && data.revisionId is string && data.revisionId.matches('[a-zA-Z0-9_-]+')
+          && data.cellCounts is list && data.cellCounts.size() == resource.data.sheetIds.size()
+          && data.roomPlot.version == 1 && data.roomPlot.revisionId == data.revisionId
+          && data.roomPlot.scheduleIds is list && data.roomPlot.scheduleIds.size() > 0 && data.roomPlot.scheduleIds.size() < 10
+          && data.savedBy == request.auth.uid && data.updatedAt == request.time
+          && canPlotWorkbookRooms(data.academicYearId, semester, data.membershipId)
+          && (!exists(lockPath) || get(lockPath).data.status == 'idle' || get(lockPath).data.createdAt <= request.time - duration.value(10, 'm'));
+      }
       allow create: if validProductionCreation();
-      allow update: if validProductionWorkbookV3() && (resource.data.schemaVersion == 1 || request.resource.data.workbookId == resource.data.workbookId)
-        && request.resource.data.revision == resource.data.revision + 1 && request.resource.data.createdAt == resource.data.createdAt;
+      allow update: if (request.resource.data.get('roomPlot', {}).get('revisionId', '') == request.resource.data.revisionId && validRoomPlotWorkbookUpdate())
+        || (validProductionWorkbookV3() && (resource.data.schemaVersion == 1 || request.resource.data.workbookId == resource.data.workbookId)
+          && request.resource.data.revision == resource.data.revision + 1 && request.resource.data.createdAt == resource.data.createdAt);
       allow delete: if false;
 
       match /saveLocks/{lockId} {
@@ -574,6 +712,28 @@ service cloud.firestore {
         allow delete: if unusedSheet(resource.data);
       }
       match /cells/{cellId} {
+        function validRoomPlotCell(isNew) {
+          let data = request.resource.data;
+          let manifest = getAfter(productionPath(data)).data;
+          let parent = getAfter(/databases/$(database)/documents/sheets/$(sheetId)).data;
+          let schedule = getAfter(/databases/$(database)/documents/schedules/$(data.plotScheduleId)).data;
+          return request.auth != null && identityV3(data)
+            && data.keys().hasAll(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt', 'plotScheduleId'])
+            && data.keys().hasOnly(['schemaVersion', 'workbookId', 'sourceWorkbook', 'departmentId', 'departmentCode', 'academicYearId', 'semester', 'sheetId', 'sheetIndex', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt', 'plotScheduleId'])
+            && data.sheetIndex < manifest.sheetIds.size() && manifest.sheetIds[data.sheetIndex] == data.sheetId
+            && data.baseRevisionId == parent.slots[manifest.sheetSlots[data.sheetIndex]].revisionId
+            && data.revision == manifest.revision && data.revisionId == manifest.roomPlot.revisionId
+            && data.plotScheduleId in manifest.roomPlot.scheduleIds && schedule.sourceWorkbook == data.sourceWorkbook
+            && schedule.sourceSheet == manifest.sheetNames[data.sheetIndex] && schedule.workbookSheetId == data.sheetId
+            && schedule.workbookRow is int && schedule.workbookRow >= 3
+            && ((cellId == 'T' + string(schedule.workbookRow) && data.text == schedule.rawValues[19])
+              || (cellId == 'U' + string(schedule.workbookRow) && data.text == schedule.rawValues[20]))
+            && data.text is string && data.text.toUtf8().size() <= 65536
+            && (isNew ? data.styleJson == null : data.styleJson == (data.baseRevisionId == resource.data.baseRevisionId ? resource.data.styleJson : null))
+            && schedule.plottedBy == request.auth.uid && schedule.updatedAt == request.time
+            && data.savedBy == request.auth.uid && data.updatedAt == request.time
+            && atomicV3(data, data) && canPlotWorkbookRooms(data.academicYearId, data.semester, data.membershipId);
+        }
         function validCellV3() {
           let data = request.resource.data;
           let path = productionPath(data);
@@ -590,9 +750,9 @@ service cloud.firestore {
             && atomicV3(data, data) && canSaveWorkbook(data.departmentId, data.academicYearId, data.semester, data.membershipId);
         }
         allow read: if request.auth != null;
-        allow create: if validCellV3();
-        allow update: if validCellV3() && sameOrMovedSource(resource.data, request.resource.data)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sourceWorkbook', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt']);
+        allow create: if request.resource.data.get('plotScheduleId', '') != '' ? validRoomPlotCell(true) : validCellV3();
+        allow update: if (request.resource.data.get('plotScheduleId', '') != '' ? validRoomPlotCell(false) : validCellV3()) && sameOrMovedSource(resource.data, request.resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sourceWorkbook', 'baseRevisionId', 'revision', 'revisionId', 'text', 'styleJson', 'savedBy', 'membershipId', 'updatedAt', 'plotScheduleId']);
         allow delete: if unusedSheet(resource.data);
       }
     }
@@ -923,13 +1083,13 @@ service cloud.firestore {
 
     // Preserve the project's existing access behavior for top-level documents.
     match /{collection}/{document} {
-      allow read, write: if !(collection in ['test_sheets', 'sheets', 'comments', 'logs']);
+      allow read, write: if !(collection in ['test_sheets', 'sheets', 'comments', 'logs', 'courses', 'schedules']);
     }
 
     // Preserve existing nested-collection access except for private user records.
     match /{collection}/{document}/{subcollection}/{subdocument=**} {
-      allow read, write: if !(collection in ['test_sheets', 'sheets', 'comments', 'logs']) && (collection != 'users' || !(subcollection in ['notifications', 'roomCommentReads']))
-        && (collection != 'departments' || !(subcollection in ['scheduleYears', 'workbooks', 'test_workbooks']));
+      allow read, write: if !(collection in ['test_sheets', 'sheets', 'comments', 'logs', 'courses', 'schedules']) && (collection != 'users' || !(subcollection in ['notifications', 'roomCommentReads']))
+        && (collection != 'departments' || !(subcollection in ['scheduleYears', 'workbooks', 'test_workbooks', 'courseWorkbooks']));
     }
   }
 }

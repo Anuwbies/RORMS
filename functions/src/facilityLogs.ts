@@ -10,7 +10,7 @@ const ROOM_FIELDS = ["buildingId", "name", "code", "type", "floor", "capacity", 
 const text = (value: unknown): string => typeof value === "string" ? value.trim() : "";
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const validId = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
-const roleNames = ["Admin", "Registrar", "Dean", "Program Head", "Instructor"];
+const roleNames = ["Admin", "Registrar", "University Administrator", "Dean", "Program Head", "Instructor"];
 
 function snapshotFields(data: Record<string, unknown>, fields: string[]): Fields {
   return Object.fromEntries(fields.map(field => {
@@ -81,9 +81,9 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
     ]);
     const profile = profileSnapshot.data() || {};
     const accepted = assignments.docs.filter(document => document.data().status === "accepted");
-    const manager = accepted.find(document => ["Admin", "Registrar"].includes(document.data().role));
+    const manager = accepted.find(document => ["Admin", "Registrar", "University Administrator"].includes(document.data().role));
     const actorMembership = manager || accepted.find(document => roleNames.includes(document.data().role));
-    if (!profileSnapshot.exists || profile.isActive === false || (!manager && action !== "delete_comment")) throw new HttpsError("permission-denied", "Only active Admins and Registrars can manage buildings and rooms.");
+    if (!profileSnapshot.exists || profile.isActive === false || (!manager && action !== "delete_comment")) throw new HttpsError("permission-denied", "Only active Admins, Registrars, and University Administrators can manage buildings and rooms.");
     if (savedLog.exists) {
       const saved = savedLog.data() || {};
       if (saved.actorId !== uid || saved.requestFingerprint !== fingerprint) throw new HttpsError("already-exists", "This operation ID was already used for another action.");

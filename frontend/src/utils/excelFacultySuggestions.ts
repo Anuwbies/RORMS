@@ -1,5 +1,5 @@
 import { formatUserName, titleCaseName } from './userName.ts'
-import { excelScheduleFacultyKeys, isExcelScheduleTba } from './excelScheduleValidation.ts'
+import { excelScheduleFacultyKeys, isExcelScheduleTba } from './ScheduleValidation.ts'
 import { sliceFontRuns, replaceFontRuns, type ExcelFontRun } from './excelFontRuns.ts'
 
 export interface ExcelFacultyDirectory {

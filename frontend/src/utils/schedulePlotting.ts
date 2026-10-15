@@ -1,4 +1,5 @@
 import type { WorkbookScheduleMeeting, WorkbookScheduleRow } from './excelScheduleRows'
+import type { ScheduleMeetingRecord } from './scheduleMeetings'
 
 export interface PlotRoom {
   id: string
@@ -26,6 +27,22 @@ export const plotScheduleRevision = (schedule: Record<string, unknown>) => JSON.
   schedule.workbookRevisionId ?? '', readRegistrarPlot(schedule.registrarPlot)?.revisionId ?? '',
 ])
 
+export const schedulePlotSelectionKey = (meeting: ScheduleMeetingRecord) => JSON.stringify([
+  meeting.sourceScheduleId || meeting.id, plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>),
+])
+
+/** A check queues approval of the current room; it never changes saved data by itself. */
+export function toggleAssignedSchedulePlot(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): Map<string, PlotAssignment> {
+  const next = new Map(pending)
+  if (!meeting.roomId || (meeting.status || 'Draft') !== 'Draft') return next
+  const key = schedulePlotSelectionKey(meeting)
+  if (next.has(key)) next.delete(key)
+  else next.set(key, { scheduleId: String(meeting.sourceScheduleId || meeting.id),
+    meetingKey: plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>), roomId: meeting.roomId,
+    expectedRoomId: meeting.roomId, expectedRevision: plotScheduleRevision(meeting) })
+  return next
+}
+
 /** A room belongs to this instructor/time/day meeting, not its array position. */
 export function plotMeetingKey(meeting: Partial<WorkbookScheduleMeeting>): string {
   return JSON.stringify([meeting.instructorId || meeting.faculty || '', meeting.startTime || '', meeting.endTime || '',
@@ -46,12 +63,17 @@ export function readRegistrarPlot(value: unknown): RegistrarPlot | undefined {
   return { version: 1, revisionId: data.revisionId, assignments, savedBy: data.savedBy }
 }
 
+export function hasPendingRoomAllocation(meetings: readonly WorkbookScheduleMeeting[]): boolean {
+  const physical = meetings.filter(m => !m.modality || m.modality === 'F2F' || m.modality === 'Unspecified')
+  return !meetings.length || (physical.length ? physical : meetings).some(m => !m.roomId)
+}
+
 export function plottedScheduleFields(meetings: WorkbookScheduleMeeting[]) {
   const first = meetings[0]
   const physical = meetings.filter(m => !m.modality || m.modality === 'F2F' || m.modality === 'Unspecified')
   const resources = (format: WorkbookScheduleMeeting['format']) => physical.filter(m => m.format === format).map(m => m.room || 'TBA')
   return {
-    meetings, status: meetings.length && (physical.length ? physical.every(m => m.roomId) : meetings.every(m => m.roomId)) ? 'Plot' as const : 'Draft' as const,
+    meetings, status: meetings.some(m => m.roomId) ? 'Plot' as const : 'Draft' as const,
     roomId: first?.roomId ?? '', buildingId: first?.buildingId ?? '',
     roomIds: [...new Set(meetings.map(m => m.roomId).filter(Boolean))],
     f2fRoom: { lec: resources('Lec'), lab: resources('Lab'),
@@ -60,12 +82,12 @@ export function plottedScheduleFields(meetings: WorkbookScheduleMeeting[]) {
   }
 }
 
-/** Template TBA values must not erase rooms plotted by the Registrar. */
-export function retainRegistrarRooms(row: WorkbookScheduleRow, previous?: Record<string, unknown>): WorkbookScheduleRow & { registrarPlot?: RegistrarPlot; plottedBy?: unknown; plottedAt?: unknown } {
+/** Legacy templates preserve plotted rooms over TBA; authoritative room cells disable that fallback. */
+export function retainRegistrarRooms(row: WorkbookScheduleRow, previous?: Record<string, unknown>, preserveUnassigned = true): WorkbookScheduleRow & { registrarPlot?: RegistrarPlot; plottedBy?: unknown; plottedAt?: unknown } {
   let plot = readRegistrarPlot(previous?.registrarPlot)
   // Preserve rooms assigned before the Registrar metadata was introduced too.
   // An explicit empty registrarPlot means the Registrar cleared the rooms.
-  if (!plot && previous?.registrarPlot === undefined && !previous?.roomSourceSheet && Array.isArray(previous?.meetings)) {
+  if (preserveUnassigned && !plot && previous?.registrarPlot === undefined && !previous?.roomSourceSheet && Array.isArray(previous?.meetings)) {
     const assignments = previous.meetings.flatMap((value: unknown): PlottedRoom[] => {
       if (!value || typeof value !== 'object') return []
       const meeting = value as Partial<WorkbookScheduleMeeting>
@@ -77,7 +99,7 @@ export function retainRegistrarRooms(row: WorkbookScheduleRow, previous?: Record
     if (assignments.length) plot = { version: 1, revisionId: `retained:${String(previous.workbookRevisionId ?? '')}`, savedBy: String(previous.plottedBy ?? previous.savedBy ?? ''), assignments }
   }
   if (!plot) return row
-  const assignments = plot.assignments.filter(assignment => row.meetings.some(m => plotMeetingKey(m) === assignment.key && (!m.roomId || m.roomId === assignment.roomId)))
+  const assignments = plot.assignments.filter(assignment => row.meetings.some(m => plotMeetingKey(m) === assignment.key && ((preserveUnassigned && !m.roomId) || m.roomId === assignment.roomId)))
   const meetings = row.meetings.map(meeting => {
     const assignment = assignments.find(item => item.key === plotMeetingKey(meeting))
     return assignment && !meeting.roomId && ['', 'TBA', 'N/A', '-'].includes(meeting.room.trim().toUpperCase())
@@ -87,7 +109,7 @@ export function retainRegistrarRooms(row: WorkbookScheduleRow, previous?: Record
   return { ...row, ...fields, registrarPlot: { ...plot, assignments },
     ...(previous?.plottedBy !== undefined ? { plottedBy: previous.plottedBy } : {}),
     ...(previous?.plottedAt !== undefined ? { plottedAt: previous.plottedAt } : {}),
-    validationIssues: row.validationIssues.filter(issue => issue !== 'Room allocation is pending.' || fields.status !== 'Plot') }
+    validationIssues: row.validationIssues.filter(issue => issue !== 'Room allocation is pending.' || hasPendingRoomAllocation(meetings)) }
 }
 
 const minutes = (value: string) => {

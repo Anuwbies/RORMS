@@ -10,6 +10,7 @@ interface CampusGateQueueProps {
 }
 
 const roleStyles: Record<MemberRole, { body: string; pants: string; accessory: string; label: string; badge: string }> = {
+  'University Administrator': { body: 'bg-sky-600', pants: 'bg-slate-800', accessory: '🔑', label: 'University Administrator', badge: 'bg-sky-100 text-sky-700 border-sky-200' },
   Admin: {
     body: 'bg-purple-600',
     pants: 'bg-slate-800',

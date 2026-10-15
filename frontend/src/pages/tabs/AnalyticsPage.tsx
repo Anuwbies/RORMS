@@ -105,7 +105,7 @@ const ANALYTICS_OPTIONS: Array<{
 
 const ANALYTICS_KIND_STORAGE_KEY = 'rorms-analytics-selected-kind'
 const MEMBER_STATUS_OPTIONS = ['Active', 'Deactivated', 'Pending']
-const MEMBER_DEPARTMENT_PREFIXES = ['Administrative Office', "Registrar's Office", 'Unassigned']
+const MEMBER_DEPARTMENT_PREFIXES = ['Administrative Office', "Registrar's Office", 'General Service Department', 'Unassigned']
 const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Plot']
 const DATE_RANGE_OPTIONS = [
   { value: '7', label: 'Last 7 days' },
@@ -229,23 +229,28 @@ function EmptyAnalyticsState({ message }: { message: string }) {
 function AnalyticsPage({ userRole }: AnalyticsPageProps) {
   const { reservations, rooms, buildings, memberships, invitations, users, departments, schedules, isLoading } = useReportingData()
   const isRegistrar = userRole.trim().toLowerCase() === 'registrar'
+  const isUniversityAdministrator = userRole.trim().toLowerCase() === 'university administrator'
   const [analyticsKind, setAnalyticsKind] = useState<AnalyticsKind>(() => {
     const storedAnalyticsKind = getStoredAnalyticsKind()
-    return isRegistrar && storedAnalyticsKind === 'members' ? 'reservations' : storedAnalyticsKind
+    return (isUniversityAdministrator && storedAnalyticsKind !== 'reservations' && storedAnalyticsKind !== 'rooms')
+      || (isRegistrar && storedAnalyticsKind === 'members') ? 'reservations' : storedAnalyticsKind
   })
   const [searchQuery, setSearchQuery] = useState('')
   const [dateRangeFilters, setDateRangeFilters] = useState<string[]>([])
   const [departmentFilters, setDepartmentFilters] = useState<string[]>([])
 
-  const availableAnalyticsOptions = isRegistrar
+  const availableAnalyticsOptions = isUniversityAdministrator
+    ? ANALYTICS_OPTIONS.filter(option => option.id === 'reservations' || option.id === 'rooms')
+    : isRegistrar
     ? ANALYTICS_OPTIONS.filter(option => option.id !== 'members')
     : ANALYTICS_OPTIONS
 
   useEffect(() => {
-    if (isRegistrar && analyticsKind === 'members') {
+    if ((isUniversityAdministrator && analyticsKind !== 'reservations' && analyticsKind !== 'rooms')
+      || (isRegistrar && analyticsKind === 'members')) {
       setAnalyticsKind('reservations')
     }
-  }, [analyticsKind, isRegistrar])
+  }, [analyticsKind, isRegistrar, isUniversityAdministrator])
 
   const selectAnalyticsKind = (nextAnalyticsKind: AnalyticsKind) => {
     setAnalyticsKind(nextAnalyticsKind)
@@ -294,7 +299,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       : user?.isActive === false ? 'Deactivated' : 'Active'
     const department = member.department || (
       member.role === 'Admin' ? 'Administrative Office' :
-        member.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
+        member.role === 'Registrar' ? "Registrar's Office" : member.role === 'University Administrator' ? 'General Service Department' : 'Unassigned'
     )
 
     return [{
@@ -429,6 +434,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         ]
         : [
           { status: 'Pending', count: matchingReservations.filter(reservation => (reservation.status || 'Pending').toLowerCase() === 'pending').length },
+          { status: 'Recommending Approval', count: matchingReservations.filter(reservation => reservation.status === 'Recommending Approval').length },
           { status: 'Approved', count: matchingReservations.filter(reservation => reservation.status?.toLowerCase() === 'approved').length },
           { status: 'Declined', count: matchingReservations.filter(reservation => ['declined', 'rejected'].includes(reservation.status?.toLowerCase() || '')).length },
           { status: 'Cancelled', count: matchingReservations.filter(reservation => reservation.status?.toLowerCase() === 'cancelled').length },
@@ -760,7 +766,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
 
       const todayStart = new Date()
       todayStart.setHours(0, 0, 0, 0)
-      const isPending = (status?: string) => (status || 'Pending').toLowerCase() === 'pending'
+      const isPending = (status?: string) => ['pending', 'recommending approval'].includes((status || 'Pending').toLowerCase())
       const pendingPast = matchingReservations.filter(reservation => {
         const date = dateStringToDate(reservation.date)
         return isPending(reservation.status) && date !== null && date < todayStart
@@ -869,7 +875,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       actionTitle = 'Schedule integrity checks'
       actionDescription = 'Assignment gaps and potential overlap risks'
     } else {
-      const roleColumns = ['Admin', 'Registrar', 'Dean', 'Program Head', 'Instructor', 'Other']
+      const roleColumns = ['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor', 'Other']
       const today = new Date()
       matrixColumns = roleColumns
       matrixRows = Array.from({ length: 6 }, (_, reverseIndex) => {
@@ -1035,7 +1041,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
           description="Review operational metrics across reservations, rooms, schedules, and member records."
         />
 
-        <div className={`animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableAnalyticsOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Analytics categories">
+        <div className={`animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableAnalyticsOptions.length === 2 ? 'lg:grid-cols-2' : availableAnalyticsOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Analytics categories">
           {availableAnalyticsOptions.map(option => {
             const AnalyticsIcon = option.icon
             const isActive = analyticsKind === option.id

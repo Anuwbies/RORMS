@@ -51,6 +51,7 @@ interface DepartmentData {
 
 const statusBadgeClasses: Record<string, string> = {
   Approved: 'bg-emerald-100 text-emerald-700',
+  'Recommending Approval': 'bg-sky-100 text-sky-700',
   Pending: 'bg-amber-100 text-amber-700',
   Declined: 'bg-rose-100 text-rose-700',
   Cancelled: 'bg-slate-100 text-slate-700',
@@ -122,7 +123,7 @@ export function FacultyDashboardPage({ userRole: _userRole, headerAction }: Facu
   const reservationStats = useMemo(() => {
     const count = (status: string) => allReservations.filter(reservation => reservation.status.toLowerCase() === status).length
     return {
-      pending: count('pending'),
+      pending: count('pending') + count('recommending approval'),
       approved: count('approved'),
       declined: count('declined'),
       cancelled: count('cancelled'),

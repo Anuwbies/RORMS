@@ -2,6 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { Member, MemberRole } from '../types/member'
 
 const roles: { role: MemberRole; color: string }[] = [
+  { role: 'University Administrator', color: '#0284c7' },
   { role: 'Admin', color: '#9333ea' },
   { role: 'Registrar', color: '#2563eb' },
   { role: 'Dean', color: '#d97706' },

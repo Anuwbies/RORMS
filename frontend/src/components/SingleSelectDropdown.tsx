@@ -19,6 +19,7 @@ export interface SingleSelectDropdownProps<T extends string> {
   getOptionLabel?: (value: T) => string
   variant?: 'default' | 'meeting'
   menuAnchorSelector?: string
+  retainValueOnOpen?: boolean
 }
 
 export function SingleSelectDropdown<T extends string>({ 
@@ -35,10 +36,12 @@ export function SingleSelectDropdown<T extends string>({
   searchable = false,
   getOptionLabel = (option: T) => option,
   variant = 'default',
-  menuAnchorSelector
+  menuAnchorSelector,
+  retainValueOnOpen = false
 }: SingleSelectDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [searchStarted, setSearchStarted] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const listId = useId()
   const dropdownRef = useRef<HTMLDivElement>(null)
@@ -66,7 +69,7 @@ export function SingleSelectDropdown<T extends string>({
   }, [searchable])
 
   useEffect(() => {
-    if (!isOpen) { setSearch(''); setActiveIndex(-1) }
+    if (!isOpen) { setSearch(''); setSearchStarted(false); setActiveIndex(-1) }
   }, [isOpen])
 
   useEffect(() => {
@@ -154,13 +157,13 @@ export function SingleSelectDropdown<T extends string>({
         type="text" role="combobox" autoComplete="off" aria-label={ariaLabel} aria-autocomplete="list" aria-expanded={isOpen}
         size={meetingVariant ? 1 : undefined}
         aria-controls={isOpen ? listId : undefined} aria-activedescendant={isOpen && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
-        disabled={isDisabled} value={isOpen ? search : getOptionLabel(value)} placeholder={isOpen ? 'search...' : placeholder}
-        onFocus={() => { setSearch(''); setActiveIndex(-1); setIsOpen(true) }}
+        disabled={isDisabled} value={isOpen && (!retainValueOnOpen || searchStarted) ? search : getOptionLabel(value)} placeholder={isOpen && (!retainValueOnOpen || searchStarted) ? 'search...' : placeholder}
+        onFocus={event => { setSearch(''); setSearchStarted(false); setActiveIndex(-1); setIsOpen(true); if (retainValueOnOpen) event.currentTarget.select() }}
         onClick={() => setIsOpen(true)}
-        onChange={event => { setSearch(event.target.value); setActiveIndex(-1); setIsOpen(true) }}
+        onChange={event => { setSearch(event.target.value); setSearchStarted(true); setActiveIndex(-1); setIsOpen(true) }}
         onKeyDown={event => {
           if (!isOpen && !event.ctrlKey && !event.metaKey && !event.altKey && (event.key.length === 1 || event.key === 'Backspace' || event.key === 'Delete')) {
-            event.preventDefault(); setSearch(event.key.length === 1 ? event.key : ''); setActiveIndex(-1); setIsOpen(true)
+            event.preventDefault(); setSearch(event.key.length === 1 ? event.key : ''); setSearchStarted(true); setActiveIndex(-1); setIsOpen(true)
           } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault(); setIsOpen(true)
             setActiveIndex(index => filteredOptions.length ? event.key === 'ArrowDown' ? (index + 1) % filteredOptions.length : index <= 0 ? filteredOptions.length - 1 : index - 1 : -1)

@@ -5,7 +5,9 @@ import { semesterKey } from '../utils/departmentWorkbookPaths'
 import type { WorkbookScheduleMeeting } from '../utils/excelScheduleRows'
 import { scheduleMatchesTerm } from '../utils/roomSchedule'
 import { scheduleMeetingRecords } from '../utils/scheduleMeetings'
-import { assertPlotRoom, plotMeetingKey, plotMeetingsOverlap, plottedScheduleFields, plotScheduleRevision, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
+import { assertPlotRoom, hasPendingRoomAllocation, plotMeetingKey, plotMeetingsOverlap, plottedScheduleFields, plotScheduleRevision, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
+import { prepareScheduleRoomWorkbookSync } from './scheduleRoomWorkbookSync'
+import type { ScheduleRoomWorkbookRow } from '../utils/scheduleRoomWorkbookCells'
 
 interface PlotRequest {
   membershipId: string
@@ -15,6 +17,7 @@ interface PlotRequest {
   semester: string
   instructorIds: string[]
   assignments: PlotAssignment[]
+  scheduleCollection?: 'schedule' | 'schedules'
 }
 
 export function readPlotRoom(id: string, data: Record<string, unknown>): PlotRoom {
@@ -42,17 +45,38 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
   if (!user || !request.membershipId) throw new Error('Sign in with an accepted Registrar or Admin membership to plot rooms.')
   if (!request.assignments.length) return
   const semester = semesterKey(request.semester)
+  const scheduleCollection = request.scheduleCollection ?? 'schedule'
   // Include unassigned rows: two registrars assigning existing rows concurrently must read each other's changes.
-  const candidates = await getDocs(collection(db, 'schedule'))
+  const candidates = await getDocs(collection(db, scheduleCollection))
   const ids = [...new Set([...candidates.docs.map(item => item.id), ...request.assignments.map(item => item.scheduleId)])]
   const roomIds = [...new Set(request.assignments.map(item => item.roomId).filter(Boolean))]
   const revisionId = crypto.randomUUID()
+  let workbookSync: Awaited<ReturnType<typeof prepareScheduleRoomWorkbookSync>> | undefined
+  if (scheduleCollection === 'schedules') {
+    const selectedIds = new Set(request.assignments.map(assignment => assignment.scheduleId))
+    const sourceRows = candidates.docs.filter(document => selectedIds.has(document.id)).map(document => {
+      const data = document.data()
+      if (typeof data.sourceWorkbook !== 'string' || typeof data.sourceSheet !== 'string' || !Number.isSafeInteger(data.sourceRow)
+        || !Array.isArray(data.rawValues) || data.rawValues.length !== 21 || data.rawValues.some(value => typeof value !== 'string')
+        || typeof data.departmentId !== 'string') throw new Error('This schedule is missing its workbook source. Open and save the workbook before plotting.')
+      return { id: document.id, sourceWorkbook: data.sourceWorkbook, sourceSheet: data.sourceSheet, sourceRow: data.sourceRow as number,
+        rawValues: data.rawValues as string[], meetings: workbookMeetings(data), departmentId: data.departmentId }
+    })
+    if (sourceRows.length !== selectedIds.size || new Set(sourceRows.map(row => row.departmentId)).size !== 1) {
+      throw new Error('These schedules were removed or moved. Reopen the schedule before plotting.')
+    }
+    workbookSync = await prepareScheduleRoomWorkbookSync({ departmentId: sourceRows[0].departmentId, departmentCode: request.departmentCode,
+      academicYearId: request.academicYearId, academicYear: request.academicYear, semester, membershipId: request.membershipId },
+      sourceRows satisfies ScheduleRoomWorkbookRow[], revisionId)
+  }
   await runTransaction(db, async transaction => {
-    const [membership, profile, year, rows, rooms] = await Promise.all([
+    if (auth.currentUser?.uid !== user.uid) throw new Error('Your account changed. Reopen the schedule before plotting.')
+    const [membership, profile, year, rows, rooms, workbookUpdate] = await Promise.all([
       transaction.get(doc(db, 'memberships', request.membershipId)), transaction.get(doc(db, 'users', user.uid)),
       transaction.get(doc(db, 'academicYears', request.academicYearId)),
-      Promise.all(ids.map(id => transaction.get(doc(db, 'schedule', id)))),
+      Promise.all(ids.map(id => transaction.get(doc(db, scheduleCollection, id)))),
       Promise.all(roomIds.map(id => transaction.get(doc(db, 'rooms', id)))),
+      workbookSync?.read(transaction),
     ])
     const member = membership.data()
     if (!profile.exists() || profile.data()?.isActive === false || !['Registrar', 'Admin'].includes(String(member?.role))
@@ -74,17 +98,21 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
         const meeting = meetings[index]
         if (!meeting || !request.instructorIds.includes(meeting.instructorId) || meeting.roomId !== assignment.expectedRoomId
           || plotScheduleRevision(data) !== assignment.expectedRevision) throw new Error('This meeting changed while you were choosing rooms. Reopen the schedule and try again.')
+        if (scheduleCollection === 'schedules' && data.status === 'Draft' && meeting.roomId && assignment.roomId !== meeting.roomId) {
+          throw new Error('A Draft schedule with an assigned room can only be approved for plotting. Its room cannot be changed here.')
+        }
         if (assignment.roomId) {
           const room = roomMap.get(assignment.roomId)
           if (!room) throw new Error('A selected room was removed. Choose another room.')
           assertPlotRoom(meeting, room, typeof data.maxStudents === 'number' ? data.maxStudents : null)
-          meetings[index] = { ...meeting, roomId: room.id, room: room.code || room.name, buildingId: room.buildingId }
+          if (assignment.roomId !== meeting.roomId) meetings[index] = { ...meeting, roomId: room.id, room: room.name.trim() || room.code, buildingId: room.buildingId }
         } else meetings[index] = { ...meeting, roomId: '', room: 'TBA', buildingId: '' }
       }
       const fields = plottedScheduleFields(meetings)
       changed.set(id, { ...data, ...fields, registrarPlot: { version: 1, revisionId, savedBy: user.uid,
         assignments: meetings.filter(meeting => meeting.roomId).map(meeting => ({ key: plotMeetingKey(meeting), roomId: meeting.roomId, room: meeting.room, buildingId: meeting.buildingId })) },
-        validationIssues: Array.isArray(data.validationIssues) ? data.validationIssues.filter(issue => issue !== 'Room allocation is pending.' || fields.status !== 'Plot') : [],
+        validationIssues: Array.isArray(data.validationIssues) ? data.validationIssues.filter(issue => issue !== 'Room allocation is pending.' || hasPendingRoomAllocation(meetings)) : [],
+        ...(workbookUpdate?.updateRow(id, meetings) ?? {}),
       })
     }
     const proposed = new Map([...current, ...changed])
@@ -99,7 +127,10 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
         if (plotMeetingsOverlap(entry as unknown as WorkbookScheduleMeeting, other as unknown as WorkbookScheduleMeeting)) throw new Error(`${entry.subjectCode || 'Class'} overlaps ${other.subjectCode || 'another class'} in the selected room.`)
       }
     }
-    for (const [id, data] of changed) transaction.update(doc(db, 'schedule', id), {
+    workbookUpdate?.apply(user.uid)
+    for (const [id, data] of changed) transaction.update(doc(db, scheduleCollection, id), {
+      ...(scheduleCollection === 'schedules' ? { plottedMembershipId: request.membershipId } : {}),
+      ...(workbookUpdate ? { rawValues: data.rawValues, workbookRow: data.workbookRow, workbookSheetId: data.workbookSheetId } : {}),
       meetings: data.meetings, status: data.status, roomId: data.roomId, buildingId: data.buildingId, roomIds: data.roomIds,
       f2fRoom: data.f2fRoom, registrarPlot: data.registrarPlot, validationIssues: data.validationIssues,
       plottedBy: user.uid, plottedAt: serverTimestamp(), updatedAt: serverTimestamp(),

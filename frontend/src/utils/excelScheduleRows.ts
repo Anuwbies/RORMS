@@ -1,7 +1,7 @@
 import * as XLSX from 'xlsx'
 import type { WorkbookEditSnapshot } from './excelWorkbookState'
 import { readAssignedScheduleRecords } from './excelScheduleTemplate.ts'
-import { excelScheduleFacultyKeys, excelScheduleRoomKey, isExcelScheduleTba, parseExcelScheduleDays, parseExcelScheduleTime, splitScheduleMeetings, splitScheduleResources, validateExcelSchedule } from './excelScheduleValidation.ts'
+import { excelScheduleFacultyKeys, excelScheduleRoomKey, isExcelScheduleTba, parseExcelScheduleDays, parseExcelScheduleTime, splitScheduleMeetings, splitScheduleResources, scheduleParallelGroups, validateDepartmentFacultyScheduleRows, facultyScheduleRowKey } from './ScheduleValidation.ts'
 
 export interface ScheduleDirectory {
   departmentCode: string
@@ -63,7 +63,7 @@ const entries = (value: string, resource = false) => value.trim() ? (resource ? 
 const at = (values: string[], index: number) => values[values.length === 1 ? 0 : index] ?? ''
 
 // Use saved assignments, edited values, and merges; sheet/row visibility never discards data.
-export function extractWorkbookScheduleRows(snapshot: WorkbookEditSnapshot, directory: ScheduleDirectory): WorkbookScheduleRow[] {
+export function extractWorkbookScheduleRows(snapshot: WorkbookEditSnapshot, directory: ScheduleDirectory, options: { includeCollegeOnlyRows?: boolean } = {}): WorkbookScheduleRow[] {
   const result: WorkbookScheduleRow[] = []
   for (const name of snapshot.workbook.SheetNames) {
     const setup = snapshot.scheduleSetups.get(name)
@@ -83,7 +83,7 @@ export function extractWorkbookScheduleRows(snapshot: WorkbookEditSnapshot, dire
       const merge = merges.find(range => record.row >= range.s.r && record.row <= range.e.r && column >= range.s.c && column <= range.e.c)
       return merge ? read(merge.s.r, merge.s.c) : value
     }) }))
-    const validation = validateExcelSchedule(records, directory.rooms, { departmentCode: directory.departmentCode, names: directory.faculty.filter(member => member.department === directory.departmentCode).map(member => member.fullName) })
+    const parallelGroups = scheduleParallelGroups(records)
     let course = '', previousYear: number | undefined
     for (const record of records) {
       const v = record.values.map(value => value.trim())
@@ -93,9 +93,9 @@ export function extractWorkbookScheduleRows(snapshot: WorkbookEditSnapshot, dire
       const own = setup.columns.map(column => read(record.row, column).trim())
       const curriculum = /^([1-4]\s*[a-z][a-z0-9]*)\s*(?=:|\s|$)/i.exec(own[0])
       if (curriculum && !own.slice(1).some(Boolean)) course = curriculum[1].replace(/\s/g, '').toUpperCase()
-      if (!record.year || !own.slice(1).some(Boolean)) continue
+      if (!record.year || !own.some(Boolean) || !options.includeCollegeOnlyRows && !own.slice(1).some(Boolean)) continue
       if (v[4]) course = v[4]
-      const issues = [...validation.messagesForRow(record.row), ...validation.missingMessagesForRow(record.row)]
+      const issues: string[] = []
       const meetings: WorkbookScheduleMeeting[] = []
       for (const offset of [0, 1]) {
         const faculty = entries(v[13 + offset], true), times = entries(v[15 + offset])
@@ -114,9 +114,7 @@ export function extractWorkbookScheduleRows(snapshot: WorkbookEditSnapshot, dire
           const roomMatches = isExcelScheduleTba(room) ? [] : directory.rooms.filter(item => room && (excelScheduleRoomKey(item.code) === excelScheduleRoomKey(room) || excelScheduleRoomKey(item.name) === excelScheduleRoomKey(room)))
           const resolvedRoom = roomMatches.length === 1 ? roomMatches[0] : undefined
           if (facultyName && !isExcelScheduleTba(facultyName) && !instructorId) issues.push(`Faculty "${facultyName}" could not be matched uniquely to a membership.`)
-          if (room && roomMatches.length > 1) issues.push(`Room "${room}" could not be matched uniquely to a room.`)
-          if (time && !parsedTime) issues.push(`Invalid F2F Time "${time}".`)
-          if (day && !parsedDays.length) issues.push(`Invalid F2F Days "${day}".`)
+          if (room && roomMatches.length > 1) issues.push(`Room ${room} could not be matched uniquely to a room.`)
           meetings.push({ format: offset === 0 ? 'Lec' : 'Lab', faculty: facultyName, time, day, room,
             startTime: parsedTime ? clock(parsedTime.start) : '', endTime: parsedTime ? clock(parsedTime.end) : '', days: parsedDays,
             instructorId, roomId: resolvedRoom?.id ?? '', buildingId: resolvedRoom?.buildingId ?? '' })
@@ -129,9 +127,10 @@ export function extractWorkbookScheduleRows(snapshot: WorkbookEditSnapshot, dire
         faculty: { lec: entries(v[13], true), lab: entries(v[14], true) },
         f2fTime: { lec: entries(v[15]), lab: entries(v[16]) }, f2fDays: { lec: entries(v[17]), lab: entries(v[18]) },
         f2fRoom: { lec: entries(v[19], true), lab: entries(v[20], true) }, rawValues: own, meetings,
-        parallelSourceRow: validation.parallelGroupForRow(record.row) === undefined ? null : validation.parallelGroupForRow(record.row)! + 1,
+        parallelSourceRow: parallelGroups.has(record.row) ? parallelGroups.get(record.row)! + 1 : null,
         validationIssues: [...new Set(issues)] })
     }
   }
-  return result
+  const validation = validateDepartmentFacultyScheduleRows(result, directory)
+  return result.map(row => ({ ...row, validationIssues: [...new Set([...row.validationIssues, ...(validation.get(facultyScheduleRowKey(row.sourceSheet, row.sourceRow)) ?? [])])] }))
 }

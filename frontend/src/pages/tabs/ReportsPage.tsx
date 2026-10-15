@@ -102,11 +102,11 @@ const DATE_RANGE_OPTIONS: Array<{ value: DateRange; label: string }> = [
 ]
 
 const ROOM_STATUS_OPTIONS = ['Available', 'Unavailable', 'Maintenance']
-const RESERVATION_STATUS_OPTIONS = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
+const RESERVATION_STATUS_OPTIONS = ['Pending', 'Recommending Approval', 'Approved', 'Declined', 'Cancelled', 'Completed']
 const MEMBER_STATUS_OPTIONS = ['Active', 'Deactivated', 'Pending']
 const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Plot']
 const MEMBERSHIP_STATUS_OPTIONS = ['Accepted', 'Pending']
-const OFFICE_DEPARTMENTS = ['Administrative Office', "Registrar's Office"]
+const OFFICE_DEPARTMENTS = ['Administrative Office', "Registrar's Office", 'General Service Department']
 const MEMBER_ROLE_ORDER: Record<string, number> = {
   dean: 0,
   'program head': 1,
@@ -271,9 +271,11 @@ function formatScheduleTime(schedule: { startTime?: string; endTime?: string; st
 function ReportsPage({ userRole }: ReportsPageProps) {
   const { reservations, rooms, buildings, memberships, invitations, isInvitationsLoading, invitationsError, users, departments, schedules, errors, isLoading } = useReportingData()
   const isRegistrar = userRole.trim().toLowerCase() === 'registrar'
+  const isUniversityAdministrator = userRole.trim().toLowerCase() === 'university administrator'
   const [reportKind, setReportKind] = useState<ReportKind>(() => {
     const storedReportKind = getStoredReportKind()
-    return isRegistrar && storedReportKind === 'members' ? 'reservations' : storedReportKind
+    return (isUniversityAdministrator && storedReportKind !== 'reservations' && storedReportKind !== 'rooms')
+      || (isRegistrar && storedReportKind === 'members') ? 'reservations' : storedReportKind
   })
   const [dateRanges, setDateRanges] = useState<DateRange[]>([])
   const [statusFilters, setStatusFilters] = useState<string[]>([])
@@ -283,12 +285,15 @@ function ReportsPage({ userRole }: ReportsPageProps) {
   const [semesterFilters, setSemesterFilters] = useState<string[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const { academicYears } = useAcademicSemester()
-  const availableReportOptions = isRegistrar
+  const availableReportOptions = isUniversityAdministrator
+    ? REPORT_OPTIONS.filter(option => option.id === 'reservations' || option.id === 'rooms')
+    : isRegistrar
     ? REPORT_OPTIONS.filter(option => option.id !== 'members')
     : REPORT_OPTIONS
 
   useEffect(() => {
-    if (isRegistrar && reportKind === 'members') {
+    if ((isUniversityAdministrator && reportKind !== 'reservations' && reportKind !== 'rooms')
+      || (isRegistrar && reportKind === 'members')) {
       setReportKind('reservations')
       setStatusFilters([])
       setMembershipStatusFilters([])
@@ -296,7 +301,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
       setAcademicYearFilters([])
       setSemesterFilters([])
     }
-  }, [reportKind, isRegistrar])
+  }, [reportKind, isRegistrar, isUniversityAdministrator])
 
   const roomById = useMemo(() => new Map(rooms.map(room => [room.id, room])), [rooms])
   const buildingById = useMemo(() => new Map(buildings.map(building => [building.id, building])), [buildings])
@@ -871,7 +876,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
           </div>
         )}
 
-        <div className={`animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableReportOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Report categories">
+        <div className={`animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableReportOptions.length === 2 ? 'lg:grid-cols-2' : availableReportOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Report categories">
           {availableReportOptions.map(option => {
             const ReportIcon = option.icon
             const isActive = reportKind === option.id

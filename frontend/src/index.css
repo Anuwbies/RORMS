@@ -121,6 +121,41 @@ a {
   color: var(--brand-color);
 }
 
+@utility schedule-import-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-400) var(--color-slate-100);
+
+  /* Let Chromium/WebKit use the explicit thumb and button styling below. */
+  @supports selector(::-webkit-scrollbar) {
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+
+  &::-webkit-scrollbar {
+    @apply h-2 w-2;
+  }
+
+  &::-webkit-scrollbar-track {
+    @apply border border-slate-300 bg-slate-100;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-slate-400;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    @apply bg-slate-500;
+  }
+
+  &::-webkit-scrollbar-button {
+    @apply hidden h-0 w-0;
+  }
+
+  &::-webkit-scrollbar-corner {
+    @apply bg-transparent;
+  }
+}
+
 .custom-scrollbar::-webkit-scrollbar {
   width: 10px;
   height: 10px;

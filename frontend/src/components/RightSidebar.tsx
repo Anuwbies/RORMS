@@ -34,6 +34,7 @@ function formatRelativeTime(timestamp: string) {
 }
 
 const roleClasses: Record<string, string> = {
+  'University Administrator': 'bg-sky-100 text-sky-700',
   Admin: 'bg-purple-100 text-purple-700',
   Registrar: 'bg-blue-100 text-blue-700',
   Dean: 'bg-amber-100 text-amber-700',
@@ -42,6 +43,7 @@ const roleClasses: Record<string, string> = {
 }
 
 const notificationGroupLabels: Record<NotificationType, string> = {
+  booking_recommended: 'Booking status',
   booking_approved: 'Booking status',
   booking_rejected: 'Booking status',
   booking_cancelled: 'Booking status',
@@ -685,7 +687,7 @@ export const RightSidebar = memo(function RightSidebar({
                     <span className="text-[0.625rem] font-bold uppercase tracking-wider text-gray-600">
                       {userData.department || (
                         userData.role === 'Admin' ? 'Administrative Office' :
-                        userData.role === 'Registrar' ? "Registrar's Office" : 'Unassigned'
+                        userData.role === 'Registrar' ? "Registrar's Office" : userData.role === 'University Administrator' ? 'General Service Department' : 'Unassigned'
                       )}
                     </span>
                   </div>
