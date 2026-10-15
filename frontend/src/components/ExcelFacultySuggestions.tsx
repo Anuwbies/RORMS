@@ -5,6 +5,7 @@ interface ExcelFacultySuggestionsProps {
   id: string
   anchor: RefObject<HTMLElement | null>
   names: readonly string[]
+  recommendedNames?: readonly string[]
   loading: boolean
   error?: string
   activeIndex: number
@@ -24,7 +25,7 @@ interface PopupPosition {
   maxHeight: number
 }
 
-export function ExcelFacultySuggestions({ id, anchor, names, loading, error, activeIndex, onSelect, label = 'Department instructors', noun = 'instructors', minWidth = 260, matchAnchorWidth = false, portalTarget }: ExcelFacultySuggestionsProps) {
+export function ExcelFacultySuggestions({ id, anchor, names, recommendedNames = [], loading, error, activeIndex, onSelect, label = 'Department instructors', noun = 'instructors', minWidth = 260, matchAnchorWidth = false, portalTarget }: ExcelFacultySuggestionsProps) {
   const listRef = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<PopupPosition>({ left: 0, top: 0, width: minWidth, maxHeight: 220 })
   useLayoutEffect(() => {
@@ -68,6 +69,6 @@ export function ExcelFacultySuggestions({ id, anchor, names, loading, error, act
       ? <p role="status" className="px-3 py-2 text-slate-500">{loading ? `Loading ${noun}…` : error || `No matching ${noun}.`}</p>
       : names.map((name, index) => <button key={name} id={`${id}-${index}`} type="button" role="option" aria-selected={index === activeIndex} tabIndex={-1}
         onClick={event => { event.stopPropagation(); onSelect(name) }}
-        className={`block w-full rounded-lg px-3 py-2 text-left ${matchAnchorWidth ? 'break-words' : ''} ${index === activeIndex ? 'bg-[#e3edda] text-[#41572a]' : 'hover:bg-[#f3f7ee]'}`}>{name}</button>)}
+        className={`block w-full rounded-lg px-3 py-2 text-left ${matchAnchorWidth ? 'break-words' : ''} ${index === activeIndex ? 'bg-[#e3edda] text-[#41572a]' : 'hover:bg-[#f3f7ee]'}`}>{name}{recommendedNames.includes(name) && <span className="block text-xs font-medium text-[#41572a]">Recommended</span>}</button>)}
   </div>, portalTarget ?? document.body)
 }

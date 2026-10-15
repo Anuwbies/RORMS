@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { CellEditLocation } from '../utils/cellTextHistory'
 import type { ColumnCellSelection } from '../utils/columnCellSelection'
@@ -11,6 +11,7 @@ import { ExcelFacultySuggestions } from './ExcelFacultySuggestions'
 import { completeScheduleResourceText } from '../utils/scheduleResourceCompletion'
 import { formatScheduleTimeInput, hasExtraScheduleValues, isScheduleCellCharacterAllowed } from '../utils/departmentScheduleEdits'
 import { rankScheduleCourses, resolveScheduleCourse, scheduleCourseYear, type DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
+import { splitScheduleResources } from '../utils/ScheduleValidation'
 
 interface ScheduleSuggestionProps {
   suggestionDirectory?: ScheduleDirectory | null
@@ -29,6 +30,7 @@ export interface WorkbookCellActions {
   updateCell: (cell: CellEditLocation, value: string) => void
   finishEditing: (cell: CellEditLocation, save: boolean) => void
   chooseCourse?: (cell: CellEditLocation, course: Pick<DepartmentCourseSuggestion, 'code' | 'title'>) => void
+  recommendRooms?: (cell: CellEditLocation, entryIndex: number) => readonly string[]
 }
 
 export interface ScheduleCellActions extends WorkbookCellActions {
@@ -64,6 +66,11 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
   const isCourse = column === 2 || column === 3
   const hasSuggestions = isCourse || isRoom || column === 13 || column === 14
   const fragment = isCourse ? { start: 0, end: value.length, query: value.slice(0, caret.start).trim() } : facultyFragment(value, caret.start, caret.end)
+  const roomEntryIndex = isRoom ? splitScheduleResources(value.slice(fragment.start, fragment.end)).length > 1
+    ? -1 : splitScheduleResources(value.slice(0, fragment.start)).length - 1 : 0
+  const recommendedRooms = useMemo(() => editing && isRoom
+    ? actions.recommendRooms?.({ sheet: sheetIndex, row: rowNumber, column }, roomEntryIndex) ?? [] : [],
+  [editing, isRoom, actions, sheetIndex, rowNumber, column, roomEntryIndex, validationMessage])
   const seenCourseValues = new Set<string>()
   const courseMatches = editing && isCourse ? rankScheduleCourses(courseSuggestions ?? [], fragment.query, suggestionYearLevel)
     .filter(course => {
@@ -75,7 +82,7 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
     }) : []
   const matches = !editing || !hasSuggestions ? [] : isCourse
     ? courseMatches.map(course => column === 2 ? course.code : course.title) : isRoom
-    ? filterRoomNames(suggestionDirectory?.rooms ?? [], fragment.query)
+    ? [...new Set([...recommendedRooms, ...filterRoomNames(suggestionDirectory?.rooms ?? [], fragment.query)])]
     : filterFacultyNames(suggestionDirectory?.faculty.map(member => member.fullName) ?? [], fragment.query)
   const suggestionsVisible = editing && hasSuggestions && suggestionsOpen
   const cell = { sheet: sheetIndex, row: rowNumber, column }
@@ -259,6 +266,7 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
         id={suggestionsId}
         anchor={cellRef}
         names={matches}
+        recommendedNames={isRoom ? recommendedRooms : undefined}
         loading={isCourse ? !courseSuggestions && !courseSuggestionError : !suggestionDirectory && !suggestionError}
         error={isCourse ? courseSuggestionError : suggestionError}
         activeIndex={activeIndex}

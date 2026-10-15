@@ -21,13 +21,15 @@ import { loadFirestoreDepartmentWorkbook, saveFirestoreDepartmentWorkbook, type 
 import { createDepartmentScheduleWorkbookState, readDepartmentScheduleWorkbookState, type DepartmentScheduleWorkbookState } from '../utils/departmentScheduleWorkbookState'
 import { loadDepartmentScheduleDirectory } from '../services/departmentScheduleRows'
 import type { ScheduleDirectory } from '../utils/excelScheduleRows'
-import { departmentScheduleImportRowIssues, extractDepartmentScheduleImportRows } from '../utils/departmentScheduleImportRows'
-import { facultyScheduleRowKey } from '../utils/ScheduleValidation'
+import { parseDepartmentScheduleImportRows, extractDepartmentScheduleImportRows } from '../utils/departmentScheduleImportRows'
+import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
 import { useExcelValidationTooltip } from './ExcelValidationTooltip'
 import { loadDepartmentCourseSuggestions } from '../services/firestoreDepartmentCourses'
 import type { DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
 import { hasDepartmentScheduleChanges, type DepartmentScheduleSaveBaseline } from '../utils/departmentScheduleSaveStatus'
 import { useLiveDepartmentWorkbook } from '../hooks/useLiveDepartmentWorkbook'
+import { mergeDepartmentSchedule } from '../utils/mergeDepartmentSchedule'
+import { recommendScheduleRooms } from '../utils/scheduleRoomRecommendations'
 
 interface DepartmentScheduleImportModalProps {
   onClose: () => void
@@ -79,6 +81,8 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   const [saving, setSaving] = useState(false)
   const [cellEditing, setCellEditing] = useState(false)
   const [resizing, setResizing] = useState(false)
+  const [mergeBlocked, setMergeBlocked] = useState(false)
+  const liveResolutionRef = useRef<'remote' | 'merge' | 'local'>('remote')
   const [saveDuration, setSaveDuration] = useState<number | null>(null)
   const [saveBaseline, setSaveBaseline] = useState<DepartmentScheduleSaveBaseline>({
     sheets: initialWorkbook.sheets, columnWidths: null, file: null, persisted: false,
@@ -103,6 +107,8 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   const [validationDirectory, setValidationDirectory] = useState<ScheduleDirectory | null>(null)
   const [validationError, setValidationError] = useState('')
   const [validationMessages, setValidationMessages] = useState<ReadonlyMap<string, readonly string[]>>(new Map())
+  const roomAssignmentsRef = useRef<readonly FacultySubjectAssignment[]>([])
+  const roomAssignmentsSheetsRef = useRef<readonly DepartmentScheduleImportSheet[] | null>(null)
   const [courseSuggestions, setCourseSuggestions] = useState<readonly DepartmentCourseSuggestion[] | null>(null)
   const [courseSuggestionError, setCourseSuggestionError] = useState('')
 
@@ -122,6 +128,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   useEffect(() => {
     let cancelled = false
     setValidationDirectory(null)
+    roomAssignmentsRef.current = []
     setValidationMessages(new Map())
     setValidationError('')
     void loadDepartmentScheduleDirectory(term?.departmentCode ?? '').then(directory => {
@@ -135,7 +142,11 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   useEffect(() => {
     if (!validationDirectory) return
     const timer = window.setTimeout(() => {
-      const next = departmentScheduleImportRowIssues(sheets, validationDirectory)
+      const rows = parseDepartmentScheduleImportRows(sheets, validationDirectory)
+      roomAssignmentsRef.current = departmentFacultyScheduleAssignments(rows, validationDirectory)
+      roomAssignmentsSheetsRef.current = sheets
+      const next = new Map(rows.filter(row => row.validationIssues.length)
+        .map(row => [facultyScheduleRowKey(row.sourceSheet, row.sourceRow), row.validationIssues] as const))
       setValidationMessages(previous => new Map([...next].map(([key, messages]) => {
         const before = previous.get(key)
         return [key, before?.length === messages.length && before.every((message, index) => message === messages[index]) ? before : messages]
@@ -181,10 +192,12 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     setStorageError('')
     setStorageStatus('Opening saved workbook…')
     savedRef.current = null
+    roomAssignmentsRef.current = []
     storedStateRef.current = undefined
     setStoredFileName('')
     setFile(null)
     setSaveDuration(null)
+    setMergeBlocked(false)
     setSaveBaseline({ sheets: initialWorkbook.sheets, columnWidths: null, file: null, persisted: false })
     sheetsRef.current = initialWorkbook.sheets
     rowIndexesRef.current = initialWorkbook.indexes
@@ -227,6 +240,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
 
   useEffect(() => {
     if (!file) return
+    roomAssignmentsRef.current = []
     let cancelled = false
     setLoading(true)
     setError('')
@@ -448,6 +462,8 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   }, [applyCellValues, flushTypingGroup, readCellValue])
 
   const applyLiveWorkbook = useCallback((saved: LoadedFirestoreDepartmentWorkbook) => {
+    const resolution = liveResolutionRef.current
+    liveResolutionRef.current = 'remote'
     // Parse first so an invalid remote workbook never removes the local draft.
     let loaded: DepartmentScheduleWorkbookState
     try {
@@ -456,8 +472,25 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
       setStorageError(caught instanceof Error ? caught.message : 'The updated workbook could not be opened. Your edits have been kept.')
       return
     }
+    if (resolution !== 'remote' && editSessionRef.current) finishCellEditing(editSessionRef.current.cell, true)
+    let nextSheets = loaded.sheets, nextWidths = loaded.columnWidths, conflicts = 0
+    if (resolution === 'merge') {
+      const merged = mergeDepartmentSchedule({ sheets: [...saveBaseline.sheets], columnWidths: saveBaseline.columnWidths ? [...saveBaseline.columnWidths] : null },
+        { sheets: sheetsRef.current, columnWidths }, loaded)
+      if (merged.structuralConflict || file !== saveBaseline.file) {
+        setMergeBlocked(true)
+        setStorageError('The workbook layout or imported file changed. Keep my workbook retains your entire draft; saving it replaces the other version.')
+        return
+      }
+      nextSheets = merged.sheets
+      nextWidths = merged.columnWidths
+      conflicts = merged.conflicts
+    } else if (resolution === 'local') {
+      nextSheets = sheetsRef.current
+      nextWidths = columnWidths
+    }
     const viewedName = sheetsRef.current[selectedSheet]?.name
-    const viewedIndex = loaded.sheets.findIndex(item => item.name === viewedName)
+    const viewedIndex = nextSheets.findIndex(item => item.name === viewedName)
     flushTypingGroup()
     historyRef.current.reset()
     editSessionRef.current = null
@@ -472,24 +505,33 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     setRowCountModal(null)
     savedRef.current = saved
     storedStateRef.current = loaded
-    sheetsRef.current = loaded.sheets
-    rowIndexesRef.current = indexScheduleRows(loaded.sheets)
-    setFile(null)
+    roomAssignmentsRef.current = []
+    sheetsRef.current = nextSheets
+    rowIndexesRef.current = indexScheduleRows(nextSheets)
+    setFile(resolution === 'local' ? file : null)
     setStoredFileName(saved.fileName)
-    setSheets(loaded.sheets)
-    setSelectedSheet(viewedIndex >= 0 ? viewedIndex : loaded.selectedSheet)
-    setColumnWidths(loaded.columnWidths)
+    setSheets(nextSheets)
+    setSelectedSheet(viewedIndex >= 0 ? viewedIndex : Math.min(loaded.selectedSheet, nextSheets.length - 1))
+    setColumnWidths(nextWidths)
     setSaveBaseline({ sheets: loaded.sheets, columnWidths: loaded.columnWidths, file: null, persisted: true })
     setSaveDuration(null)
     setError('')
     setStorageError('')
-    setStorageStatus('Updated with the latest saved workbook.')
-  }, [selectedSheet, flushTypingGroup])
+    setMergeBlocked(false)
+    setStorageStatus(resolution === 'local' ? 'Kept your workbook. Save to replace the latest saved version.'
+      : resolution === 'merge' ? `Merged the latest workbook and kept your edits.${conflicts ? ` Your values were kept for ${conflicts} conflict${conflicts === 1 ? '' : 's'}.` : ''}`
+        : 'Updated with the latest saved workbook.')
+  }, [selectedSheet, flushTypingGroup, finishCellEditing, saveBaseline, columnWidths, file])
 
   const liveWorkbook = useLiveDepartmentWorkbook(term, loading || saving || !storageReady,
     () => term ? loadFirestoreDepartmentWorkbook(term) : Promise.resolve(null),
     () => savedRef.current?.revision ?? 0, applyLiveWorkbook)
   const pendingLiveUpdate = liveWorkbook.update?.isCurrent?.() ? liveWorkbook.update : undefined
+  const resolveLiveUpdate = (resolution: 'remote' | 'merge' | 'local') => {
+    if (!pendingLiveUpdate?.isCurrent?.()) return
+    liveResolutionRef.current = resolution
+    pendingLiveUpdate.onApplied()
+  }
 
   useEffect(() => {
     if (!pendingLiveUpdate || loading || saving || !storageReady || hasLocalEdits || cellEditing || resizing || contextMenu || rowCountModal || yearRenameRequest) return
@@ -565,10 +607,22 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     if (session) session.hasTyped = true
   }, [selectedCellValues, readCellValue, flushTypingGroup, applyCellValues])
 
+  const recommendRooms = useCallback((cell: CellEditLocation, entryIndex: number) => {
+    const name = sheetsRef.current[cell.sheet]?.name
+    if (!name || !validationDirectory) return []
+    if (!roomAssignmentsRef.current.length || roomAssignmentsSheetsRef.current !== sheetsRef.current) {
+      const rows = parseDepartmentScheduleImportRows(sheetsRef.current, validationDirectory)
+      roomAssignmentsRef.current = departmentFacultyScheduleAssignments(rows, validationDirectory)
+      roomAssignmentsSheetsRef.current = sheetsRef.current
+    }
+    return recommendScheduleRooms(roomAssignmentsRef.current, validationDirectory.rooms,
+      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex)
+  }, [validationDirectory])
+
   const cellActions = useMemo<ScheduleCellActions>(() => ({
     startSelection, moveSelection, endSelection, focusCell,
-    beginEditing: beginCellEditing, updateCell, finishEditing: finishCellEditing, renameYear, chooseCourse,
-  }), [startSelection, moveSelection, endSelection, focusCell, beginCellEditing, updateCell, finishCellEditing, renameYear, chooseCourse])
+    beginEditing: beginCellEditing, updateCell, finishEditing: finishCellEditing, renameYear, chooseCourse, recommendRooms,
+  }), [startSelection, moveSelection, endSelection, focusCell, beginCellEditing, updateCell, finishCellEditing, renameYear, chooseCourse, recommendRooms])
 
   const copySelectionToClipboard = useCallback((clipboard: Pick<DataTransfer, 'setData'>) => {
     const selection = selectionRef.current
@@ -1096,15 +1150,15 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
         <footer className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">
           <Button type="button" variant="outline" disabled={loading || saving || readOnly || !storageReady} icon={<UploadIcon className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>Import XLSX</Button>
           <div className="min-w-0 flex-1 text-sm">
-            {storageError || validationError ? <p role="alert" className="text-rose-700">{storageError || validationError}</p>
-              : pendingLiveUpdate ? <p role="status" aria-live="polite" className="text-amber-700">
+            {(storageError || validationError) && <p role="alert" className="text-rose-700">{storageError || validationError}</p>}
+            {pendingLiveUpdate ? <p role="status" aria-live="polite" className="text-amber-700">
                 {hasLocalEdits ? 'Another user saved a newer workbook. Your unsaved edits are kept.' : 'A newer saved workbook is ready.'}{' '}
-                <button type="button" disabled={loading || saving} className="font-medium underline" onClick={() => {
-                  if (pendingLiveUpdate.isCurrent?.()) pendingLiveUpdate.onApplied()
-                }}>{hasLocalEdits ? 'Discard edits and load latest' : 'Load latest'}</button>
+                {hasLocalEdits && <><button type="button" disabled={loading || saving || resizing} className="font-medium underline" onClick={() => resolveLiveUpdate('merge')}>Merge and keep my edits</button>{' · '}</>}
+                {hasLocalEdits && mergeBlocked && <><button type="button" disabled={loading || saving || resizing} className="font-medium underline" onClick={() => resolveLiveUpdate('local')}>Keep my workbook</button>{' · '}</>}
+                <button type="button" disabled={loading || saving || resizing} className="font-medium underline" onClick={() => resolveLiveUpdate('remote')}>{hasLocalEdits ? 'Discard edits and load latest' : 'Load latest'}</button>
               </p>
                 : liveWorkbook.error ? <p role="alert" className="text-rose-700">{liveWorkbook.error}{' '}<button type="button" className="font-medium underline" onClick={liveWorkbook.retry}>Retry live updates</button></p>
-                  : <p role="status" aria-live="polite" className="text-slate-500">{storageStatus || (readOnly ? 'This semester is read-only.' : !term ? 'Open a department and semester from My Department to save this workbook.' : '')}</p>}
+                  : !(storageError || validationError) && <p role="status" aria-live="polite" className="text-slate-500">{storageStatus || (readOnly ? 'This semester is read-only.' : !term ? 'Open a department and semester from My Department to save this workbook.' : '')}</p>}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-3">
             {!loading && storageReady && <p role="status" aria-live="polite" className={`text-sm ${hasUnsavedChanges && !saving ? 'text-amber-700' : 'text-slate-500'}`}>

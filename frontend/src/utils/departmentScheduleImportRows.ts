@@ -7,11 +7,15 @@ import { createDepartmentScheduleWorkbookSnapshot } from './departmentScheduleWo
 
 /** The editor uses the same validation as Save without serializing a workbook. */
 export function departmentScheduleImportRowIssues(sheets: readonly DepartmentScheduleImportSheet[], directory: ScheduleDirectory): ReadonlyMap<string, readonly string[]> {
-  if (!sheets.length) return new Map()
-  const state = createDepartmentScheduleWorkbookSnapshot(sheets, 0, null)
-  return new Map(extractDepartmentScheduleImportRows(state.snapshot, state.ownedNames, sheets, directory)
+  return new Map(parseDepartmentScheduleImportRows(sheets, directory)
     .filter(row => row.validationIssues.length)
     .map(row => [facultyScheduleRowKey(row.sourceSheet, row.sourceRow), row.validationIssues]))
+}
+
+export function parseDepartmentScheduleImportRows(sheets: readonly DepartmentScheduleImportSheet[], directory: ScheduleDirectory) {
+  if (!sheets.length) return []
+  const state = createDepartmentScheduleWorkbookSnapshot(sheets, 0, null)
+  return extractDepartmentScheduleImportRows(state.snapshot, state.ownedNames, sheets, directory)
 }
 
 /** Project the compact workbook's editable year sections into saved schedule records. */

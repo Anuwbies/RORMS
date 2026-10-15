@@ -98,3 +98,15 @@ test('existing tooltip callers still use the document body by default', () => {
   }))
   assert.equal(portalTargets.at(-1), tooltipBody)
 })
+
+test('room dropdown recommendations are labeled without changing room names or option selection', () => {
+  const { ExcelFacultySuggestions } = load(resolve(root, 'components/ExcelFacultySuggestions.tsx'))
+  const html = renderToStaticMarkup(createElement(ExcelFacultySuggestions, {
+    id: 'rooms', anchor: { current: null }, names: ['BE 201', 'BE 202'], recommendedNames: ['BE 201'],
+    loading: false, activeIndex: 0, onSelect: () => {}, label: 'System rooms', matchAnchorWidth: true,
+  }))
+  assert.match(html, /role="listbox" aria-label="System rooms"/)
+  assert.equal((html.match(/>Recommended<\/span>/g) ?? []).length, 1)
+  assert.match(html, /aria-selected="true"[^>]*>BE 201<span/)
+  assert.match(html, />BE 202<\/button>/)
+})
