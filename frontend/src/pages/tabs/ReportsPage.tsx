@@ -102,7 +102,7 @@ const DATE_RANGE_OPTIONS: Array<{ value: DateRange; label: string }> = [
 ]
 
 const ROOM_STATUS_OPTIONS = ['Available', 'Unavailable', 'Maintenance']
-const RESERVATION_STATUS_OPTIONS = ['Pending', 'Recommending Approval', 'Approved', 'Declined', 'Cancelled', 'Completed']
+const RESERVATION_STATUS_OPTIONS = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
 const MEMBER_STATUS_OPTIONS = ['Active', 'Deactivated', 'Pending']
 const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Plot']
 const MEMBERSHIP_STATUS_OPTIONS = ['Accepted', 'Pending']

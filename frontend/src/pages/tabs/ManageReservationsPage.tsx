@@ -10,11 +10,12 @@ import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
-import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
+import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/reservationReviewStep'
 import { db, functions, auth } from '../../firebase'
 import { httpsCallable } from 'firebase/functions'
 import { 
   collection, 
+  deleteField,
   getDocs,
   onSnapshot, 
   query, 
@@ -25,9 +26,32 @@ import {
   deleteDoc,
 } from 'firebase/firestore'
 
-type ReservationStatus = 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+type AdminReviewState = 'registrarPending' | 'registrarApproved' | 'registrarDeclined' | 'deanApproved' | 'deanDeclined' | 'administratorApproved' | 'administratorDeclined'
+type ReviewRole = 'Registrar' | 'Dean' | 'University Administrator'
+type ReviewDecision = 'pending' | 'approve' | 'decline'
+const ADMIN_REVIEW_OPTIONS: { value: AdminReviewState; label: string; status: ReservationStatus }[] = [
+  { value: 'registrarPending', label: 'Awaiting Registrar', status: 'Pending' },
+  { value: 'registrarApproved', label: 'Registrar approved', status: 'Pending' },
+  { value: 'registrarDeclined', label: 'Registrar declined', status: 'Declined' },
+  { value: 'deanApproved', label: 'Dean approved', status: 'Pending' },
+  { value: 'deanDeclined', label: 'Dean declined', status: 'Declined' },
+  { value: 'administratorApproved', label: 'University Administrator approved', status: 'Approved' },
+  { value: 'administratorDeclined', label: 'University Administrator declined', status: 'Declined' },
+]
+const adminReviewStateFor = (role: ReviewRole, decision: ReviewDecision): AdminReviewState => {
+  if (role === 'Registrar') return decision === 'pending' ? 'registrarPending' : decision === 'approve' ? 'registrarApproved' : 'registrarDeclined'
+  if (role === 'Dean') return decision === 'pending' ? 'registrarApproved' : decision === 'approve' ? 'deanApproved' : 'deanDeclined'
+  return decision === 'pending' ? 'deanApproved' : decision === 'approve' ? 'administratorApproved' : 'administratorDeclined'
+}
+const adminDecisionFor = (reservation: Reservation, role: ReviewRole): ReviewDecision => {
+  if (reservation.status === 'Declined' && reservation.declinedByRole === role) return 'decline'
+  const recommended = role === 'Registrar' ? reservation.registrarRecommend
+    : role === 'Dean' ? reservation.deanRecommend : reservation.universityAdministratorRecommend
+  return recommended === true ? 'approve' : 'pending'
+}
 const updateReservationStatus = httpsCallable<
-  { reservationId: string; status: ReservationStatus; expectedStatus: ReservationStatus; recommendation?: 'Registrar' | 'Dean'; declinedReason?: string },
+  { reservationId: string; status: ReservationStatus; expectedStatus: ReservationStatus; recommendation?: 'Registrar' | 'Dean'; declinedReason?: string; manualOverride?: boolean; adminReviewState?: AdminReviewState; expectedReview?: { registrar: boolean; dean: boolean; universityAdministrator: boolean; declinedByRole: string | null } },
   { changed: boolean; logId: string | null }
 >(functions, 'updateReservationStatus')
 type RoomStatus = 'Available' | 'Occupied' | 'Maintenance'
@@ -65,6 +89,8 @@ interface Reservation {
   registrarRecommend?: boolean
   universityAdministratorRecommend?: boolean
   declinedReason?: string
+  declinedByRole?: string
+  autoProcessed?: boolean
   purpose?: string
   requestType?: 'Standard' | 'Extended'
   subjectCode?: string
@@ -81,6 +107,18 @@ interface Reservation {
   roomName?: string
   buildingName?: string
 }
+
+type ReviewProgress = Pick<Reservation, 'status' | 'registrarRecommend' | 'deanRecommend' | 'universityAdministratorRecommend' | 'declinedByRole' | 'autoProcessed'>
+
+const deanHasDecided = (reservation: ReviewProgress) => reservation.deanRecommend === true
+  || (reservation.status === 'Declined' && (reservation.declinedByRole === 'Dean'
+    || (!reservation.declinedByRole && reservation.autoProcessed !== true
+      && reservation.registrarRecommend === true)))
+
+const administratorHasDecided = (reservation: ReviewProgress) => reservation.universityAdministratorRecommend === true
+  || (reservation.status === 'Declined' && (reservation.declinedByRole === 'University Administrator'
+    || (!reservation.declinedByRole && reservation.autoProcessed !== true
+      && reservation.registrarRecommend === true && reservation.deanRecommend === true)))
 
 interface Building {
   id: string
@@ -120,7 +158,6 @@ const statusClasses: Record<ReservationStatus, string> = {
   Approved: 'bg-emerald-100 text-emerald-700',
   Declined: 'bg-rose-100 text-rose-700',
   Pending: 'bg-amber-100 text-amber-700',
-  'Recommending Approval': 'bg-sky-100 text-sky-700',
   Cancelled: 'bg-slate-100 text-slate-700',
   Completed: 'bg-blue-100 text-blue-700',
 }
@@ -131,10 +168,9 @@ const roomStatusClasses: Record<RoomStatus, string> = {
   Maintenance: 'bg-rose-100 text-rose-700',
 }
 
-const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Recommending Approval', 'Approved', 'Declined', 'Cancelled', 'Completed']
+const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
 const STATUS_SHORT_LABELS: Record<ReservationStatus, string> = {
   Pending: 'Pend.',
-  'Recommending Approval': 'Rec.',
   Approved: 'Appr.',
   Declined: 'Decl.',
   Cancelled: 'Canc.',
@@ -145,20 +181,35 @@ const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 interface StatusUpdateModalProps {
   reservation: Reservation
   allowedStatuses: ReservationStatus[]
-  registrarReview?: boolean
+  reviewRole?: 'Registrar' | 'Dean' | 'University Administrator'
+  adminReview?: boolean
   onClose: () => void
   onUpdate: (id: string, newStatus: ReservationStatus, declinedReason?: string) => Promise<void>
-  onReview?: (id: string, decision: 'approve' | 'decline', declinedReason?: string) => Promise<void>
+  onReview?: (id: string, decision: 'pending' | 'approve' | 'decline', declinedReason?: string) => Promise<void>
+  onAdminReview?: (reservation: Reservation, role: ReviewRole, decision: ReviewDecision, declinedReason?: string) => Promise<void>
 }
 
-function StatusUpdateModal({ reservation, allowedStatuses, registrarReview, onClose, onUpdate, onReview }: StatusUpdateModalProps) {
+function StatusUpdateModal({ reservation, allowedStatuses, reviewRole, adminReview, onClose, onUpdate, onReview, onAdminReview }: StatusUpdateModalProps) {
+  const currentRecommendation = reviewRole === 'University Administrator'
+    ? reservation.universityAdministratorRecommend
+    : reviewRole === 'Dean' ? reservation.deanRecommend : reservation.registrarRecommend
+  const laterRecommendation = reviewRole === 'Registrar'
+    ? reservation.deanRecommend === true || reservation.universityAdministratorRecommend === true
+    : reviewRole === 'Dean' && reservation.universityAdministratorRecommend === true
   const [selectedStatus, setSelectedStatus] = useState<ReservationStatus>(reservation.status)
-  const [selectedReviewAction, setSelectedReviewAction] = useState<'approve' | 'decline' | null>(null)
-  const [declinedReason, setDeclinedReason] = useState('')
+  const [selectedReviewAction, setSelectedReviewAction] = useState<'pending' | 'approve' | 'decline' | null>(reviewRole && reservation.status === 'Declined' ? 'decline' : reviewRole && currentRecommendation === true ? 'approve' : reviewRole ? 'pending' : null)
+  const adminReviewRole: ReviewRole = reservation.registrarRecommend !== true ? 'Registrar' : reservation.deanRecommend !== true ? 'Dean' : 'University Administrator'
+  const [selectedAdminDecision, setSelectedAdminDecision] = useState<ReviewDecision>(adminDecisionFor(reservation, adminReviewRole))
+  const [declinedReason, setDeclinedReason] = useState(reservation.status === 'Declined' ? reservation.declinedReason || '' : '')
   const [isUpdating, setIsUpdating] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [avatarError, setAvatarError] = useState(false)
-  const isDeclining = registrarReview ? selectedReviewAction === 'decline' : selectedStatus === 'Declined'
+  const isDeclining = adminReview ? selectedAdminDecision === 'decline' : reviewRole ? selectedReviewAction === 'decline' : selectedStatus === 'Declined'
+  const reviewUnchanged = reviewRole && (
+    (selectedReviewAction === 'pending' && reservation.status === 'Pending' && currentRecommendation !== true && !laterRecommendation)
+    || (selectedReviewAction === 'approve' && reservation.status !== 'Declined' && currentRecommendation === true)
+    || (selectedReviewAction === 'decline' && reservation.status === 'Declined' && declinedReason.trim() === (reservation.declinedReason || '').trim())
+  )
 
   const handleUpdate = async () => {
     if (isDeclining && !declinedReason.trim()) {
@@ -168,8 +219,11 @@ function StatusUpdateModal({ reservation, allowedStatuses, registrarReview, onCl
     setErrorMessage('')
     setIsUpdating(true)
     try {
-      if (registrarReview) {
-        if (!selectedReviewAction || !onReview) throw new Error('Select Approve or Decline.')
+      if (adminReview) {
+        if (!onAdminReview) throw new Error('Select a review decision.')
+        await onAdminReview(reservation, adminReviewRole, selectedAdminDecision, isDeclining ? declinedReason.trim() : undefined)
+      } else if (reviewRole) {
+        if (!selectedReviewAction || !onReview) throw new Error('Select Pending, Approve, or Decline.')
         await onReview(reservation.id, selectedReviewAction, isDeclining ? declinedReason.trim() : undefined)
       } else {
         await onUpdate(reservation.id, selectedStatus, isDeclining ? declinedReason.trim() : undefined)
@@ -219,22 +273,22 @@ function StatusUpdateModal({ reservation, allowedStatuses, registrarReview, onCl
               Select New Status
             </label>
             <div className="grid grid-cols-1 gap-2">
-              {registrarReview ? (['approve', 'decline'] as const).map((decision) => (
+              {adminReview || reviewRole ? (['pending', 'approve', 'decline'] as const).map((decision) => (
                 <button
                   key={decision}
                   type="button"
-                  onClick={() => setSelectedReviewAction(decision)}
+                  onClick={() => adminReview ? setSelectedAdminDecision(decision) : setSelectedReviewAction(decision)}
                   className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm font-bold transition-all ${
-                    selectedReviewAction === decision
+                    (adminReview ? selectedAdminDecision : selectedReviewAction) === decision
                       ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/5 text-[var(--brand-color)]'
                       : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                   }`}
                 >
                   <span className="flex items-center gap-3">
-                    <span className={`h-2.5 w-2.5 rounded-full ${decision === 'approve' ? 'bg-emerald-100' : 'bg-rose-100'}`} />
-                    {decision === 'approve' ? 'Approve' : 'Decline'}
+                    <span className={`h-2.5 w-2.5 rounded-full ${decision === 'pending' ? 'bg-amber-100' : decision === 'approve' ? 'bg-emerald-100' : 'bg-rose-100'}`} />
+                    {decision === 'pending' ? 'Pending' : decision === 'approve' ? 'Approve' : 'Decline'}
                   </span>
-                  {selectedReviewAction === decision && <CheckIcon className="h-4 w-4" strokeWidth={3} />}
+                  {(adminReview ? selectedAdminDecision : selectedReviewAction) === decision && <CheckIcon className="h-4 w-4" strokeWidth={3} />}
                 </button>
               )) : allowedStatuses.map((status) => (
                 <button
@@ -284,7 +338,7 @@ function StatusUpdateModal({ reservation, allowedStatuses, registrarReview, onCl
             <Button
               variant="brand"
               onClick={handleUpdate}
-              disabled={isUpdating || (registrarReview ? !selectedReviewAction : selectedStatus === reservation.status) || (isDeclining && !declinedReason.trim())}
+              disabled={isUpdating || (!adminReview && (reviewRole ? !selectedReviewAction || reviewUnchanged : selectedStatus === reservation.status)) || (isDeclining && !declinedReason.trim())}
               className="flex-1 h-12 text-base"
             >
               {isUpdating ? 'Updating...' : 'Update Status'}
@@ -573,6 +627,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
   const [users, setUsers] = useState<User[]>([])
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
+  const [selectedReviewSteps, setSelectedReviewSteps] = useState<string[]>([])
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([])
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [viewingReservation, setViewingReservation] = useState<Reservation | null>(null)
@@ -600,15 +655,10 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     // Use a department-only query so no new composite index is needed.
     const reservationQuery = isDepartmentReviewer
       ? query(collection(db, 'reservations'), where('department', '==', department))
-      : isRegistrar || isUniversityAdministrator
-        ? query(collection(db, 'reservations'))
-        : query(collection(db, 'reservations'), where('status', 'in', STATUS_ORDER.filter(status => status !== 'Pending')))
+      : query(collection(db, 'reservations'))
     return onSnapshot(reservationQuery, snapshot => {
       const records = snapshot.docs.map(record => ({ id: record.id, ...record.data() })) as Reservation[]
-      setReservations(records.filter(record => {
-        const terminal = ['Approved', 'Declined', 'Cancelled', 'Completed'].includes(record.status)
-        return isUniversityAdministrator ? record.deanRecommend === true || terminal : true
-      }))
+      setReservations(records)
     }, () => { setReservations([]); setStatusError('Could not load reservation requests. Please reload and try again.') })
   }, [department, isDepartmentReviewer, isRegistrar, isUniversityAdministrator])
 
@@ -720,18 +770,87 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         ].some((val) => val?.toLowerCase().includes(searchTerm.toLowerCase()))
 
         const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(res.status)
+        const matchesReviewStep = selectedReviewSteps.length === 0 || selectedReviewSteps.includes(reservationReviewStep(res))
         const matchesBuilding = selectedBuildings.length === 0 || selectedBuildings.includes(res.buildingCode)
 
-        return matchesSearch && matchesStatus && matchesBuilding
+        return matchesSearch && matchesStatus && matchesReviewStep && matchesBuilding
       })
       .sort((a, b) => {
+        if (isRegistrar) {
+          const registrarOrder = (reservation: Reservation) => {
+            if (reservation.registrarRecommend === true) {
+              if (reservation.status === 'Declined' && (reservation.declinedByRole === 'Dean'
+                || (!reservation.declinedByRole && reservation.autoProcessed !== true
+                  && reservation.deanRecommend !== true))) return 4
+              if (reservation.deanRecommend === true) return 3
+              if (reservation.status === 'Pending') return 1
+            }
+            if (reservation.status === 'Pending'
+              && reservation.registrarRecommend !== true) return 0
+            if (reservation.status === 'Declined' && (reservation.declinedByRole === 'Registrar'
+              || (!reservation.declinedByRole && reservation.autoProcessed !== true
+                && reservation.registrarRecommend !== true))) return 2
+            return 5
+          }
+          const reviewOrder = registrarOrder(a) - registrarOrder(b)
+          if (reviewOrder !== 0) return reviewOrder
+          return new Date(b.date).getTime() - new Date(a.date).getTime()
+        }
+        if (isDepartmentReviewer) {
+          const deanOrder = (reservation: Reservation) => {
+            if (reservation.registrarRecommend === true) {
+              if (reservation.deanRecommend === true) {
+                if (reservation.universityAdministratorRecommend === true) return 5
+                if (reservation.status === 'Declined' && (reservation.declinedByRole === 'University Administrator'
+                  || (!reservation.declinedByRole && reservation.autoProcessed !== true))) return 6
+                if (reservation.status === 'Pending') return 1
+              }
+              if (reservation.status === 'Declined' && reservation.declinedByRole === 'Dean') return 2
+              if (reservation.status === 'Declined' && !reservation.declinedByRole
+                && reservation.autoProcessed !== true && reservation.deanRecommend !== true) return 2
+              if (reservation.status === 'Pending') return 0
+            }
+            if (reservation.status === 'Pending'
+              && reservation.registrarRecommend !== true) return 3
+            if (reservation.status === 'Declined' && (reservation.declinedByRole === 'Registrar'
+              || (!reservation.declinedByRole && reservation.autoProcessed !== true
+                && reservation.registrarRecommend !== true))) return 4
+            return 7
+          }
+          const reviewOrder = deanOrder(a) - deanOrder(b)
+          if (reviewOrder !== 0) return reviewOrder
+          return new Date(b.date).getTime() - new Date(a.date).getTime()
+        }
+        if (isUniversityAdministrator || userRole === 'Admin') {
+          const administratorOrder = (reservation: Reservation) => {
+            if (reservation.registrarRecommend === true && reservation.deanRecommend === true) {
+              if (reservation.status === 'Pending'
+                && reservation.universityAdministratorRecommend !== true) return 0
+              if (reservation.universityAdministratorRecommend === true) return 1
+              if (reservation.status === 'Declined' && (reservation.declinedByRole === 'University Administrator'
+                || (!reservation.declinedByRole && reservation.autoProcessed !== true))) return 2
+            }
+            if (reservation.registrarRecommend === true) {
+              if (reservation.status === 'Pending') return 3
+              if (reservation.status === 'Declined' && (reservation.declinedByRole === 'Dean'
+                || (!reservation.declinedByRole && reservation.autoProcessed !== true))) return 4
+            }
+            if (reservation.status === 'Pending') return 5
+            if (reservation.status === 'Declined' && (reservation.declinedByRole === 'Registrar'
+              || (!reservation.declinedByRole && reservation.autoProcessed !== true))) return 6
+            return 7
+          }
+          const reviewOrder = administratorOrder(a) - administratorOrder(b)
+          if (reviewOrder !== 0) return reviewOrder
+          return new Date(b.date).getTime() - new Date(a.date).getTime()
+        }
         const orderA = STATUS_ORDER.indexOf(a.status)
         const orderB = STATUS_ORDER.indexOf(b.status)
         if (orderA !== orderB) return orderA - orderB
         // Secondary sort by date (descending)
         return new Date(b.date).getTime() - new Date(a.date).getTime()
       })
-  }, [enrichedReservations, searchTerm, selectedStatuses, selectedBuildings])
+  }, [enrichedReservations, searchTerm, selectedStatuses, selectedReviewSteps, selectedBuildings, isRegistrar, isDepartmentReviewer, isUniversityAdministrator, userRole])
 
   const handleStatusUpdate = async (id: string, newStatus: ReservationStatus, recommendation?: 'Registrar' | 'Dean', declinedReason?: string) => {
     setStatusError('')
@@ -742,7 +861,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     await updateReservationStatus({ reservationId: id, status: newStatus, expectedStatus: reservation.status, ...(recommendation ? { recommendation } : {}), ...(declinedReason ? { declinedReason } : {}) })
   }
 
-  const saveRegistrarDecisionInFirestore = async (reservation: Reservation, decision: 'recommend' | 'decline', reason?: string) => {
+  const saveRegistrarDecisionInFirestore = async (reservation: Reservation, decision: 'pending' | 'recommend' | 'decline', reason?: string, manualOverride = false) => {
     const uid = auth.currentUser?.uid
     if (!uid) throw new Error('Sign in before reviewing a reservation.')
     const declinedReason = reason?.trim() || ''
@@ -772,24 +891,79 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         throw new Error('An active Registrar membership is required to recommend reservations.')
       }
       if (current.status !== reservation.status) throw new Error('The reservation status changed. Reload the page and try again.')
-      if (current.status !== 'Pending' && current.status !== 'Recommending Approval') {
-        throw new Error('Only open requests can receive a Registrar recommendation.')
+      if (deanHasDecided(current as ReviewProgress)) {
+        throw new Error('The Dean has already decided this request. The Registrar decision can no longer be edited.')
       }
-      if (current.registrarRecommend === true) {
-        if (decision === 'recommend') return
+      const wasDeclined = current.status === 'Declined'
+      const registrarDeclined = current.declinedByRole === 'Registrar'
+        || (!current.declinedByRole && current.autoProcessed !== true
+          && current.registrarRecommend !== true && current.deanRecommend !== true)
+      if (current.status !== 'Pending'
+        && !(manualOverride && wasDeclined && registrarDeclined)) {
+        throw new Error('Only open or Registrar-declined requests can be edited here.')
+      }
+      if (current.registrarRecommend === true && decision === 'recommend') return
+      if (decision === 'pending' && current.status === 'Pending' && current.registrarRecommend !== true
+        && current.deanRecommend !== true && current.universityAdministratorRecommend !== true) return
+      if (current.registrarRecommend === true && decision === 'decline' && !manualOverride) {
         throw new Error('The Registrar can decline only before recommending an open request.')
       }
+      const previousDeclinedReason = typeof current.declinedReason === 'string' ? current.declinedReason.trim() : ''
+      if (wasDeclined && decision === 'decline' && declinedReason === previousDeclinedReason) return
 
       const wasDeanRecommended = current.deanRecommend === true
+      const wasAdministratorRecommended = current.universityAdministratorRecommend === true
       transaction.update(reservationRef, {
         ...(decision === 'recommend' ? {
+          status: 'Pending',
+          ...(wasDeclined ? {
+            declinedReason: deleteField(),
+            declinedByRole: deleteField(),
+            declinedBy: deleteField(),
+            declinedAt: deleteField(),
+          } : {}),
           registrarRecommend: true,
           registrarRecommendedBy: uid,
           registrarRecommendedAt: serverTimestamp(),
-          ...(wasDeanRecommended ? { deanRecommend: false } : {}),
+          ...(wasDeanRecommended ? {
+            deanRecommend: false,
+            recommendedBy: deleteField(),
+            recommendedByRole: deleteField(),
+            recommendedAt: deleteField(),
+          } : {}),
+          ...(wasAdministratorRecommended ? { universityAdministratorRecommend: false } : {}),
+        } : decision === 'pending' ? {
+          status: 'Pending',
+          registrarRecommend: false,
+          registrarRecommendedBy: deleteField(),
+          registrarRecommendedAt: deleteField(),
+          ...(wasDeanRecommended ? {
+            deanRecommend: false,
+            recommendedBy: deleteField(),
+            recommendedByRole: deleteField(),
+            recommendedAt: deleteField(),
+          } : {}),
+          ...(wasAdministratorRecommended ? { universityAdministratorRecommend: false } : {}),
+          ...(wasDeclined ? {
+            declinedReason: deleteField(), declinedByRole: deleteField(),
+            declinedBy: deleteField(), declinedAt: deleteField(),
+          } : {}),
         } : {
           status: 'Declined',
           declinedReason,
+          declinedByRole: 'Registrar',
+          declinedBy: uid,
+          declinedAt: serverTimestamp(),
+          registrarRecommend: false,
+          registrarRecommendedBy: deleteField(),
+          registrarRecommendedAt: deleteField(),
+          ...(wasDeanRecommended ? {
+            deanRecommend: false,
+            recommendedBy: deleteField(),
+            recommendedByRole: deleteField(),
+            recommendedAt: deleteField(),
+          } : {}),
+          ...(wasAdministratorRecommended ? { universityAdministratorRecommend: false } : {}),
         }),
         updatedAt: serverTimestamp(),
       })
@@ -802,12 +976,22 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         actorRole: 'Registrar',
         membershipId: acceptedMembership.id,
         changes: {
-          status: { before: current.status, after: decision === 'recommend' ? current.status : 'Declined' },
+          status: { before: current.status, after: decision === 'decline' ? 'Declined' : 'Pending' },
           ...(decision === 'recommend' ? {
-            registrarRecommend: { before: false, after: true },
+            registrarRecommend: { before: current.registrarRecommend === true, after: true },
             ...(wasDeanRecommended ? { deanRecommend: { before: true, after: false } } : {}),
+            ...(wasAdministratorRecommended ? { universityAdministratorRecommend: { before: true, after: false } } : {}),
+            ...(wasDeclined ? { declinedReason: { before: previousDeclinedReason, after: '' } } : {}),
+          } : decision === 'pending' ? {
+            registrarRecommend: { before: current.registrarRecommend === true, after: false },
+            ...(wasDeanRecommended ? { deanRecommend: { before: true, after: false } } : {}),
+            ...(wasAdministratorRecommended ? { universityAdministratorRecommend: { before: true, after: false } } : {}),
+            ...(wasDeclined ? { declinedReason: { before: previousDeclinedReason, after: '' } } : {}),
           } : {
-            declinedReason: { before: typeof current.declinedReason === 'string' ? current.declinedReason.trim() : '', after: declinedReason },
+            registrarRecommend: { before: current.registrarRecommend === true, after: false },
+            ...(wasDeanRecommended ? { deanRecommend: { before: true, after: false } } : {}),
+            ...(wasAdministratorRecommended ? { universityAdministratorRecommend: { before: true, after: false } } : {}),
+            declinedReason: { before: previousDeclinedReason, after: declinedReason },
           }),
         },
         ...(decision === 'recommend' ? { reviewStage: 'Registrar' } : {}),
@@ -822,24 +1006,284 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     })
   }
 
+  const saveDeanDecisionInFirestore = async (reservation: Reservation, decision: 'pending' | 'recommend' | 'decline', reason?: string, manualOverride = false) => {
+    const uid = auth.currentUser?.uid
+    if (!uid) throw new Error('Sign in before reviewing a reservation.')
+    const declinedReason = reason?.trim() || ''
+    if (decision === 'decline' && (!declinedReason || declinedReason.length > 500)) {
+      throw new Error('Enter a reason for declining this reservation (up to 500 characters).')
+    }
+    const memberships = await getDocs(query(collection(db, 'memberships'), where('userId', '==', uid)))
+    const acceptedMembership = memberships.docs.find(record => {
+      const member = record.data()
+      return member.status === 'accepted' && member.role === 'Dean'
+        && typeof reservation.department === 'string' && reservation.department.trim()
+        && member.department === reservation.department.trim()
+    })
+    if (!acceptedMembership) throw new Error('An accepted Dean membership for this department is required.')
+
+    const reservationRef = doc(db, 'reservations', reservation.id)
+    const logRef = doc(collection(db, 'logs'))
+    await runTransaction(db, async transaction => {
+      const [reservationSnapshot, memberSnapshot, profileSnapshot] = await Promise.all([
+        transaction.get(reservationRef), transaction.get(acceptedMembership.ref), transaction.get(doc(db, 'users', uid)),
+      ])
+      if (!reservationSnapshot.exists()) throw new Error('This reservation no longer exists. Reload the page and try again.')
+      const current = reservationSnapshot.data()
+      const member = memberSnapshot.data()
+      const profile = profileSnapshot.data()
+      if (member?.status !== 'accepted' || member.role !== 'Dean' || profile?.isActive === false
+        || typeof current.department !== 'string' || !current.department.trim()
+        || member.department !== current.department.trim()) {
+        throw new Error('An active Dean membership for this department is required.')
+      }
+      if (current.status !== reservation.status) throw new Error('The reservation status changed. Reload the page and try again.')
+      if (administratorHasDecided(current as ReviewProgress)) {
+        throw new Error('The University Administrator has already decided this request. The Dean decision can no longer be edited.')
+      }
+      const wasDeclined = current.status === 'Declined'
+      const deanDeclined = current.declinedByRole === 'Dean'
+        || (!current.declinedByRole && current.autoProcessed !== true
+          && current.registrarRecommend === true && current.deanRecommend !== true)
+      if (current.status !== 'Pending'
+        && !(manualOverride && wasDeclined && deanDeclined)) {
+        throw new Error('Only open or Dean-declined requests can be edited here.')
+      }
+      if (current.registrarRecommend !== true) throw new Error('The Registrar must recommend this request before Dean review.')
+      if (current.deanRecommend === true && decision === 'recommend') return
+      if (decision === 'pending' && current.status === 'Pending' && current.deanRecommend !== true
+        && current.universityAdministratorRecommend !== true) return
+      if (current.deanRecommend === true && decision === 'decline' && !manualOverride) {
+        throw new Error('The Dean can decline only before recommending an open request.')
+      }
+      const previousDeclinedReason = typeof current.declinedReason === 'string' ? current.declinedReason.trim() : ''
+      if (wasDeclined && decision === 'decline' && declinedReason === previousDeclinedReason) return
+
+      const wasAdministratorRecommended = current.universityAdministratorRecommend === true
+      transaction.update(reservationRef, {
+        ...(decision === 'recommend' ? {
+          status: 'Pending',
+          ...(wasDeclined ? {
+            declinedReason: deleteField(), declinedByRole: deleteField(),
+            declinedBy: deleteField(), declinedAt: deleteField(),
+          } : {}),
+          deanRecommend: true,
+          recommendedBy: uid,
+          recommendedByRole: 'Dean',
+          recommendedAt: serverTimestamp(),
+          ...(wasAdministratorRecommended ? { universityAdministratorRecommend: false } : {}),
+        } : decision === 'pending' ? {
+          status: 'Pending',
+          deanRecommend: false,
+          recommendedBy: deleteField(),
+          recommendedByRole: deleteField(),
+          recommendedAt: deleteField(),
+          ...(wasAdministratorRecommended ? { universityAdministratorRecommend: false } : {}),
+          ...(wasDeclined ? {
+            declinedReason: deleteField(), declinedByRole: deleteField(),
+            declinedBy: deleteField(), declinedAt: deleteField(),
+          } : {}),
+        } : {
+          status: 'Declined',
+          declinedReason,
+          declinedByRole: 'Dean',
+          declinedBy: uid,
+          declinedAt: serverTimestamp(),
+          deanRecommend: false,
+          recommendedBy: deleteField(),
+          recommendedByRole: deleteField(),
+          recommendedAt: deleteField(),
+          ...(wasAdministratorRecommended ? { universityAdministratorRecommend: false } : {}),
+        }),
+        updatedAt: serverTimestamp(),
+      })
+      transaction.set(logRef, {
+        action: 'reservation.status_changed',
+        targetCollection: 'reservations',
+        targetId: reservation.id,
+        actorId: uid,
+        actorName: formatUserName(profile, member) || uid,
+        actorRole: 'Dean',
+        membershipId: acceptedMembership.id,
+        changes: {
+          status: { before: current.status, after: decision === 'decline' ? 'Declined' : 'Pending' },
+          deanRecommend: { before: current.deanRecommend === true, after: decision === 'recommend' },
+          ...(wasAdministratorRecommended ? { universityAdministratorRecommend: { before: true, after: false } } : {}),
+          ...(decision === 'decline' ? { declinedReason: { before: previousDeclinedReason, after: declinedReason } }
+            : wasDeclined ? { declinedReason: { before: previousDeclinedReason, after: '' } } : {}),
+        },
+        ...(decision === 'recommend' ? { reviewStage: 'Dean' } : {}),
+        createdAt: serverTimestamp(),
+        source: 'user',
+        roomId: current.roomId || '',
+        buildingId: current.buildingId || '',
+        requesterId: current.userId || '',
+        department: current.department || '',
+        reservationDate: current.date || '',
+      })
+    })
+  }
+
+  const saveAdministratorDecisionInFirestore = async (reservation: Reservation, decision: 'pending' | 'approve' | 'decline', reason?: string, manualOverride = false) => {
+    const uid = auth.currentUser?.uid
+    if (!uid) throw new Error('Sign in before reviewing a reservation.')
+    const declinedReason = reason?.trim() || ''
+    if (decision === 'decline' && (!declinedReason || declinedReason.length > 500)) {
+      throw new Error('Enter a reason for declining this reservation (up to 500 characters).')
+    }
+    // Extended approvals need the server's atomic room and schedule conflict checks.
+    if (decision === 'approve' && reservation.requestType === 'Extended') {
+      await updateReservationStatus({
+        reservationId: reservation.id,
+        status: 'Approved',
+        expectedStatus: reservation.status,
+        ...(manualOverride && reservation.status === 'Declined' ? { manualOverride: true } : {}),
+      })
+      return
+    }
+
+    const memberships = await getDocs(query(collection(db, 'memberships'), where('userId', '==', uid)))
+    const acceptedMembership = memberships.docs.find(record => {
+      const member = record.data()
+      return member.status === 'accepted' && member.role === 'University Administrator'
+    })
+    if (!acceptedMembership) throw new Error('An accepted University Administrator membership is required.')
+
+    const reservationRef = doc(db, 'reservations', reservation.id)
+    const logRef = doc(collection(db, 'logs'))
+    await runTransaction(db, async transaction => {
+      const [reservationSnapshot, memberSnapshot, profileSnapshot] = await Promise.all([
+        transaction.get(reservationRef), transaction.get(acceptedMembership.ref), transaction.get(doc(db, 'users', uid)),
+      ])
+      if (!reservationSnapshot.exists()) throw new Error('This reservation no longer exists. Reload the page and try again.')
+      const current = reservationSnapshot.data()
+      const member = memberSnapshot.data()
+      const profile = profileSnapshot.data()
+      if (member?.status !== 'accepted' || member.role !== 'University Administrator' || profile?.isActive === false) {
+        throw new Error('An active University Administrator membership is required.')
+      }
+      if (current.status !== reservation.status) throw new Error('The reservation status changed. Reload the page and try again.')
+      if (current.registrarRecommend !== true || current.deanRecommend !== true) {
+        throw new Error('Registrar and Dean recommendations are required before final review.')
+      }
+      if (decision === 'approve' && current.requestType === 'Extended') {
+        throw new Error('This extended reservation requires server validation. Reload the page and try again.')
+      }
+      const wasDeclined = current.status === 'Declined'
+      const administratorDeclined = current.declinedByRole === 'University Administrator'
+        || (!current.declinedByRole && current.autoProcessed !== true
+          && current.universityAdministratorRecommend !== true)
+      if (current.status !== 'Pending'
+        && !(manualOverride && current.status === 'Approved' && (decision === 'decline' || decision === 'pending'))
+        && !(manualOverride && wasDeclined && administratorDeclined)) {
+        throw new Error('Only recommended or University Administrator-decided requests can be edited here.')
+      }
+      if (current.universityAdministratorRecommend === true && decision === 'approve') return
+      if (decision === 'pending' && current.status === 'Pending' && current.universityAdministratorRecommend !== true) return
+      if (wasDeclined && decision === 'decline' && declinedReason === (current.declinedReason || '').trim()) return
+
+      const previousDeclinedReason = typeof current.declinedReason === 'string' ? current.declinedReason.trim() : ''
+      transaction.update(reservationRef, {
+        status: decision === 'approve' ? 'Approved' : decision === 'pending' ? 'Pending' : 'Declined',
+        universityAdministratorRecommend: decision === 'approve',
+        ...(decision === 'approve' || decision === 'pending' ? {
+          ...(wasDeclined ? {
+            declinedReason: deleteField(), declinedByRole: deleteField(),
+            declinedBy: deleteField(), declinedAt: deleteField(),
+          } : {}),
+        } : {
+          declinedReason,
+          declinedByRole: 'University Administrator',
+          declinedBy: uid,
+          declinedAt: serverTimestamp(),
+        }),
+        updatedAt: serverTimestamp(),
+      })
+      transaction.set(logRef, {
+        action: 'reservation.status_changed',
+        targetCollection: 'reservations',
+        targetId: reservation.id,
+        actorId: uid,
+        actorName: formatUserName(profile, member) || uid,
+        actorRole: 'University Administrator',
+        membershipId: acceptedMembership.id,
+        changes: {
+          status: { before: current.status, after: decision === 'approve' ? 'Approved' : decision === 'pending' ? 'Pending' : 'Declined' },
+          universityAdministratorRecommend: { before: current.universityAdministratorRecommend === true, after: decision === 'approve' },
+          ...(decision === 'decline' ? { declinedReason: { before: previousDeclinedReason, after: declinedReason } }
+            : wasDeclined ? { declinedReason: { before: previousDeclinedReason, after: '' } } : {}),
+        },
+        createdAt: serverTimestamp(),
+        source: 'user',
+        roomId: current.roomId || '',
+        buildingId: current.buildingId || '',
+        requesterId: current.userId || '',
+        department: current.department || '',
+        reservationDate: current.date || '',
+      })
+    })
+  }
+
   const canAdvanceReservation = (reservation: Reservation) => {
-    const open = reservation.status === 'Pending' || reservation.status === 'Recommending Approval'
-    if (isRegistrar) return open && reservation.registrarRecommend !== true
-    if (isDepartmentReviewer) return open && reservation.registrarRecommend === true && reservation.deanRecommend !== true
-    if (isUniversityAdministrator) return reservation.status === 'Recommending Approval' && reservation.registrarRecommend === true && reservation.deanRecommend === true && reservation.universityAdministratorRecommend !== true
+    const open = reservation.status === 'Pending'
+    if (isRegistrar) return open && reservation.registrarRecommend !== true && !deanHasDecided(reservation)
+    if (isDepartmentReviewer) return open && reservation.registrarRecommend === true && reservation.deanRecommend !== true && !administratorHasDecided(reservation)
+    if (isUniversityAdministrator) return open && reservation.registrarRecommend === true && reservation.deanRecommend === true && reservation.universityAdministratorRecommend !== true
     return false
   }
 
+  const canManuallyReviewAsRegistrar = (reservation: Reservation) => isRegistrar && !deanHasDecided(reservation) && (
+    reservation.status === 'Pending'
+    || (reservation.status === 'Declined' && (reservation.declinedByRole === 'Registrar'
+      || (!reservation.declinedByRole && reservation.autoProcessed !== true
+        && reservation.registrarRecommend !== true && reservation.deanRecommend !== true)))
+  )
+
+  const canManuallyReviewAsDean = (reservation: Reservation) => isDepartmentReviewer && reservation.registrarRecommend === true
+    && !administratorHasDecided(reservation) && (
+    reservation.status === 'Pending'
+    || (reservation.status === 'Declined' && (reservation.declinedByRole === 'Dean'
+      || (!reservation.declinedByRole && reservation.autoProcessed !== true
+        && reservation.deanRecommend !== true)))
+  )
+
+  const canManuallyReviewAsAdministrator = (reservation: Reservation) => isUniversityAdministrator
+    && reservation.registrarRecommend === true && reservation.deanRecommend === true && (
+      reservation.status === 'Pending' || reservation.status === 'Approved'
+      || (reservation.status === 'Declined' && (reservation.declinedByRole === 'University Administrator'
+        || (!reservation.declinedByRole && reservation.autoProcessed !== true
+          && reservation.universityAdministratorRecommend !== true)))
+    )
+
   const allowedStatusesFor = (reservation: Reservation): ReservationStatus[] => {
     if (!canManageRecords) return []
-    if (isRegistrar && reservation.status === 'Pending') return ['Cancelled']
-    if (reservation.status === 'Recommending Approval') {
-      return [
-        ...(isUniversityAdministrator && reservation.registrarRecommend === true && reservation.deanRecommend === true ? ['Approved' as const, 'Declined' as const] : []),
-        'Cancelled',
-      ]
-    }
+    if (isUniversityAdministrator) return []
+    if (isRegistrar) return []
+    if (reservation.status === 'Pending' && reservation.registrarRecommend === true && reservation.deanRecommend === true) return ['Cancelled']
     return reservation.status === 'Approved' ? ['Cancelled', 'Completed'] : []
+  }
+
+  const canEditReservation = (reservation: Reservation) => canManuallyReviewAsRegistrar(reservation)
+    || canManuallyReviewAsDean(reservation) || canManuallyReviewAsAdministrator(reservation)
+    || userRole === 'Admin' || allowedStatusesFor(reservation).length > 0
+
+  const saveAdminReviewInFirestore = async (reservation: Reservation, role: ReviewRole, decision: ReviewDecision, declinedReason?: string) => {
+    const state = adminReviewStateFor(role, decision)
+    const option = ADMIN_REVIEW_OPTIONS.find(entry => entry.value === state)
+    if (!option) throw new Error('Select a review state.')
+    await updateReservationStatus({
+      reservationId: reservation.id,
+      status: option.status,
+      expectedStatus: reservation.status,
+      adminReviewState: state,
+      expectedReview: {
+        registrar: reservation.registrarRecommend === true,
+        dean: reservation.deanRecommend === true,
+        universityAdministrator: reservation.universityAdministratorRecommend === true,
+        declinedByRole: reservation.declinedByRole || null,
+      },
+      ...(declinedReason ? { declinedReason } : {}),
+    })
   }
 
   const handleApprove = async (id: string) => {
@@ -848,8 +1292,8 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       const reservation = reservations.find(record => record.id === id)
       if (!reservation) throw new Error('This reservation no longer exists. Reload the page and try again.')
       if (isRegistrar) await saveRegistrarDecisionInFirestore(reservation, 'recommend')
-      else if (isDepartmentReviewer) await handleStatusUpdate(id, 'Recommending Approval', 'Dean')
-      else if (isUniversityAdministrator) await handleStatusUpdate(id, 'Approved')
+      else if (isDepartmentReviewer) await saveDeanDecisionInFirestore(reservation, 'recommend')
+      else if (isUniversityAdministrator) await saveAdministratorDecisionInFirestore(reservation, 'approve')
     } catch (error) {
       console.error('Error approving reservation:', error)
       setStatusError(error instanceof Error ? error.message : 'Could not approve the reservation. Please try again.')
@@ -861,7 +1305,11 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     if (!reservation) throw new Error('This reservation no longer exists. Reload the page and try again.')
     return isRegistrar
       ? saveRegistrarDecisionInFirestore(reservation, 'decline', reason)
-      : handleStatusUpdate(id, 'Declined', undefined, reason)
+      : isDepartmentReviewer
+        ? saveDeanDecisionInFirestore(reservation, 'decline', reason)
+      : isUniversityAdministrator
+        ? saveAdministratorDecisionInFirestore(reservation, 'decline', reason)
+        : handleStatusUpdate(id, 'Declined', undefined, reason)
   }
 
   const handleDelete = async (id: string) => {
@@ -948,6 +1396,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           </span>
           <span className="text-xs font-medium text-slate-500">
             {res.startTime} - {res.endTime}
+            {res.requestType === 'Extended' && <span className="ml-2 whitespace-nowrap text-[0.625rem] font-bold text-sky-700" title="Extended reservation">EXTD</span>}
           </span>
         </div>
       )
@@ -956,9 +1405,11 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       header: 'Status',
       width: '15%',
       render: (res) => (
-        <div className="flex flex-col items-start gap-1">
-          <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={res.status} />
-          <ExtendedReservationBadge requestType={res.requestType} />
+        <div className="relative flex w-40 max-w-full flex-col items-start gap-1">
+          <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={res.status} declinedByRole={res.declinedByRole} autoProcessed={res.autoProcessed} />
+          {!((isRegistrar || isDepartmentReviewer || isUniversityAdministrator) && canEditReservation(res)) && (res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
+            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? 'border-blue-600 text-blue-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{res.status}</span>
+          </span>}
         </div>
       )
     },
@@ -980,7 +1431,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           >
             <CheckIcon className="h-4 w-4" />
           </IconButton>
-          {(isRegistrar || isUniversityAdministrator) && <IconButton
+          {(isRegistrar || isDepartmentReviewer || isUniversityAdministrator) && <IconButton
             label="Decline reservation"
             disabled={!canAdvanceReservation(res)}
             className={`h-8 w-8 rounded-lg bg-white transition-all border border-slate-200 ${
@@ -992,15 +1443,17 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           >
             <CloseIcon className="h-4 w-4" />
           </IconButton>}
-          {canManageRecords && <><IconButton
-            label={isRegistrar ? 'Manual edit status' : 'Edit status'}
-            disabled={allowedStatusesFor(res).length === 0}
-            className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
+          {(canManageRecords || isDepartmentReviewer) && <><IconButton
+            label={isRegistrar || isDepartmentReviewer || isUniversityAdministrator ? 'Manual edit status' : 'Edit status'}
+            disabled={!canEditReservation(res)}
+            className={`h-8 w-8 rounded-lg bg-white border border-slate-200 transition-all ${canEditReservation(res)
+              ? 'text-slate-500 shadow-sm hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5'
+              : 'opacity-30 cursor-not-allowed text-slate-400'}`}
             onClick={() => setEditingReservation(res)}
           >
             <EditIcon className="h-4 w-4" />
           </IconButton>
-          {!isRegistrar && <IconButton
+          {userRole === 'Admin' && <IconButton
             label="Delete reservation"
             className="h-8 w-8 rounded-lg bg-white text-rose-500 shadow-sm border border-slate-200 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5 transition-all"
             onClick={() => setConfirmingAction({ reservation: res, type: 'delete' })}
@@ -1027,9 +1480,16 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     {
       id: 'status',
       title: 'Status',
-      options: isRegistrar || isDepartmentReviewer ? STATUS_ORDER : STATUS_ORDER.filter(status => status !== 'Pending'),
+      options: STATUS_ORDER,
       selectedValues: selectedStatuses,
       onChange: setSelectedStatuses
+    },
+    {
+      id: 'reviewStep',
+      title: 'Review Step',
+      options: [...RESERVATION_REVIEW_STEPS],
+      selectedValues: selectedReviewSteps,
+      onChange: setSelectedReviewSteps
     }
   ]
 
@@ -1117,13 +1577,21 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         <StatusUpdateModal
           reservation={editingReservation}
           allowedStatuses={allowedStatusesFor(editingReservation)}
-          registrarReview={isRegistrar && canAdvanceReservation(editingReservation)}
+          adminReview={userRole === 'Admin'}
+          reviewRole={canManuallyReviewAsRegistrar(editingReservation) ? 'Registrar'
+            : canManuallyReviewAsDean(editingReservation) ? 'Dean'
+              : canManuallyReviewAsAdministrator(editingReservation) ? 'University Administrator' : undefined}
           onClose={() => setEditingReservation(null)}
           onUpdate={(id, status, reason) => handleStatusUpdate(id, status, undefined, reason)}
+          onAdminReview={saveAdminReviewInFirestore}
           onReview={(id, decision, reason) => {
             const reservation = editingReservation.id === id ? editingReservation : reservations.find(record => record.id === id)
             if (!reservation) throw new Error('This reservation no longer exists. Reload the page and try again.')
-            return saveRegistrarDecisionInFirestore(reservation, decision === 'approve' ? 'recommend' : 'decline', reason)
+            return isDepartmentReviewer
+              ? saveDeanDecisionInFirestore(reservation, decision === 'approve' ? 'recommend' : decision, reason, true)
+              : isUniversityAdministrator
+                ? saveAdministratorDecisionInFirestore(reservation, decision, reason, true)
+                : saveRegistrarDecisionInFirestore(reservation, decision === 'approve' ? 'recommend' : decision, reason, true)
           }}
         />
       )}

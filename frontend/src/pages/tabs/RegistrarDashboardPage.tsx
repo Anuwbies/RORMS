@@ -38,7 +38,7 @@ interface ReservationItem {
   startTime: string
   endTime: string
   purpose: string
-  status: 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+  status: 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
   registrarRecommend?: boolean
   roomName?: string
   buildingName?: string
@@ -50,7 +50,6 @@ type ScheduleItem = DashboardScheduleMeeting
 const statusBadgeClasses: Record<string, string> = {
   Approved: 'bg-emerald-100 text-emerald-700',
   Pending: 'bg-amber-100 text-amber-700',
-  'Recommending Approval': 'bg-sky-100 text-sky-700',
   Declined: 'bg-rose-100 text-rose-700',
   Cancelled: 'bg-slate-100 text-slate-700',
   Completed: 'bg-blue-100 text-blue-700',
@@ -300,7 +299,7 @@ export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageP
 
   // Requests awaiting the Registrar's recommendation
   const pendingReservationsCount = useMemo(() => {
-    return weeklyReservations.filter(r => (r.status === 'Pending' || r.status === 'Recommending Approval') && r.registrarRecommend !== true).length
+    return weeklyReservations.filter(r => r.status === 'Pending' && r.registrarRecommend !== true).length
   }, [weeklyReservations])
 
   const formatReservationDate = (dateStr: string) => {

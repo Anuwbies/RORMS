@@ -434,7 +434,6 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         ]
         : [
           { status: 'Pending', count: matchingReservations.filter(reservation => (reservation.status || 'Pending').toLowerCase() === 'pending').length },
-          { status: 'Recommending Approval', count: matchingReservations.filter(reservation => reservation.status === 'Recommending Approval').length },
           { status: 'Approved', count: matchingReservations.filter(reservation => reservation.status?.toLowerCase() === 'approved').length },
           { status: 'Declined', count: matchingReservations.filter(reservation => ['declined', 'rejected'].includes(reservation.status?.toLowerCase() || '')).length },
           { status: 'Cancelled', count: matchingReservations.filter(reservation => reservation.status?.toLowerCase() === 'cancelled').length },
@@ -766,7 +765,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
 
       const todayStart = new Date()
       todayStart.setHours(0, 0, 0, 0)
-      const isPending = (status?: string) => ['pending', 'recommending approval'].includes((status || 'Pending').toLowerCase())
+      const isPending = (status?: string) => (status || 'Pending').toLowerCase() === 'pending'
       const pendingPast = matchingReservations.filter(reservation => {
         const date = dateStringToDate(reservation.date)
         return isPending(reservation.status) && date !== null && date < todayStart

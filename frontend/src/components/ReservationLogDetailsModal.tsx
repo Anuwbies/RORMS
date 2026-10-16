@@ -38,7 +38,6 @@ interface ReservationLogDetails {
 const label = 'text-[0.65rem] font-bold uppercase tracking-widest text-slate-500'
 const panel = 'rounded-xl border border-slate-200/80 bg-slate-50/80 p-3'
 const statusClasses: Record<string, string> = {
-  'Recommending Approval': 'bg-sky-100 text-sky-700',
   Pending: 'bg-amber-100 text-amber-700', Approved: 'bg-emerald-100 text-emerald-700',
   Declined: 'bg-rose-100 text-rose-700', Cancelled: 'bg-slate-100 text-slate-700', Completed: 'bg-blue-100 text-blue-700',
 }

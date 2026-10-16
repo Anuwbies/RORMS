@@ -195,6 +195,7 @@ export function PersonalScheduleModal({
   const memberDepartment = member?.department
   const [displayOption, setDisplayOption] = useState<DisplayOption>('Schedule and Reservation')
   const effectiveDisplayOption = schedulesOnly ? 'Schedule' : displayOption
+  const isDeanScheduleOnly = isInstructorMode && memberRole === 'Dean' && effectiveDisplayOption === 'Schedule'
 
   const [schedules, setSchedules] = useState<any[]>([])
   const [reservations, setReservations] = useState<any[]>([])
@@ -324,7 +325,7 @@ export function PersonalScheduleModal({
     
 
     if (isInstructorMode) {
-      if (memberRole === 'Dean') {
+      if (memberRole === 'Dean' && !showWeekCalendar) {
         setSchedules([])
         setIsLoading(false)
         return
@@ -335,24 +336,29 @@ export function PersonalScheduleModal({
 
       let schedulesLoaded = false
       let reservationsLoaded = !showWeekCalendar
+      let unsubscribeSchedule: (() => void) | null = null
 
-      const q = query(collection(db, 'schedules'))
-
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => Boolean(item.instructorId && validInstructorIds.includes(item.instructorId))
-          && scheduleMatchesDepartment(item, memberDepartment))
-        fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
-        setSchedules(fetched)
-        setScheduleLoadError('')
-        schedulesLoaded = true
-        if (reservationsLoaded) setIsLoading(false)
-      }, (err) => {
-        console.error('Error loading instructor schedules:', err)
+      if (memberRole === 'Dean') {
         setSchedules([])
-        setScheduleLoadError('The instructor schedule could not be loaded. Close and reopen the schedule to retry.')
         schedulesLoaded = true
-        if (reservationsLoaded) setIsLoading(false)
-      })
+      } else {
+        const q = query(collection(db, 'schedules'))
+        unsubscribeSchedule = onSnapshot(q, (snapshot) => {
+          const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => Boolean(item.instructorId && validInstructorIds.includes(item.instructorId))
+            && scheduleMatchesDepartment(item, memberDepartment))
+          fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
+          setSchedules(fetched)
+          setScheduleLoadError('')
+          schedulesLoaded = true
+          if (reservationsLoaded) setIsLoading(false)
+        }, (err) => {
+          console.error('Error loading instructor schedules:', err)
+          setSchedules([])
+          setScheduleLoadError('The instructor schedule could not be loaded. Close and reopen the schedule to retry.')
+          schedulesLoaded = true
+          if (reservationsLoaded) setIsLoading(false)
+        })
+      }
 
       let unsubscribeReservations: (() => void) | null = null
       if (showWeekCalendar) {
@@ -362,7 +368,7 @@ export function PersonalScheduleModal({
             .map(d => ({ id: d.id, ...d.data() }))
             .filter((r: any) => 
               (validInstructorIds.includes(r.userId) || validInstructorIds.includes(r.instructorId)) &&
-              (r.status === 'Approved' || r.status === 'Pending' || r.status === 'Recommending Approval')
+              (r.status === 'Approved' || r.status === 'Pending')
             )
           setReservations(fetched)
           reservationsLoaded = true
@@ -380,7 +386,7 @@ export function PersonalScheduleModal({
       }
 
       return () => {
-        unsubscribe()
+        unsubscribeSchedule?.()
         if (unsubscribeReservations) unsubscribeReservations()
       }
     }
@@ -921,17 +927,17 @@ export function PersonalScheduleModal({
 
         {/* Modal Body */}
         <div className={`flex-1 overflow-y-auto overflow-x-auto bg-gray-50/50 ${isInline ? '' : 'overscroll-none'} flex flex-col relative z-10 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-button]:hidden`}>
-          {isLoading ? (
+          {isLoading && !isDeanScheduleOnly ? (
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
               <SpinnerIcon className="h-9 w-9 text-[var(--brand-color)] animate-spin" />
               <p className="text-sm font-bold text-slate-700">Loading schedule...</p>
               <p className="text-xs text-slate-400">Retrieving timetable assignments.</p>
             </div>
-          ) : scheduleLoadError ? (
+          ) : scheduleLoadError && !isDeanScheduleOnly ? (
             <div role="alert" className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-3">
               <p className="text-sm font-bold text-rose-700">{scheduleLoadError}</p>
             </div>
-          ) : isInstructorMode && member?.role === 'Dean' ? (
+          ) : isDeanScheduleOnly ? (
             <div className="flex-1 min-h-[22rem] flex flex-col items-center justify-center p-8 text-center">
               <div className="flex flex-col items-center justify-center max-w-md mx-auto">
                 <div className="h-14 w-14 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-600 mb-3.5 border border-amber-200 shadow-sm">
@@ -1222,7 +1228,7 @@ export function PersonalScheduleModal({
                 type="button"
                 variant="primary"
                 onClick={handleDownloadPdf}
-                disabled={isLoading || Boolean(scheduleLoadError) || isGeneratingPdf || (isInstructorMode && member?.role === 'Dean')}
+                disabled={isLoading || Boolean(scheduleLoadError) || isGeneratingPdf || isDeanScheduleOnly}
                 className="w-45 px-4 text-sm flex items-center justify-center gap-2 !bg-[var(--brand-color)] hover:!bg-[var(--brand-color-hover)] text-white shadow-sm disabled:opacity-50 cursor-pointer"
                 icon={isGeneratingPdf ? undefined : <DownloadIcon className="h-4 w-4" />}
               >

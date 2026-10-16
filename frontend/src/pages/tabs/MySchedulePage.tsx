@@ -557,9 +557,12 @@ function MySchedulePage() {
       <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader 
           title="My Schedule" 
-          description={`View and manage your assigned classes, weekly timetable, and room schedule for ${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}.`}
+          description={userRole === 'Dean'
+            ? 'View your weekly room reservations.'
+            : `View and manage your assigned classes, weekly timetable, and room schedule for ${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}.`}
         />
 
+        {userRole !== 'Dean' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
           <SummaryCard
             className="animate-in"
@@ -600,22 +603,9 @@ function MySchedulePage() {
             <SummaryGraph variant="line" total={Number(totalWeeklyHours)} points={teachingHoursByDay} unit="hours/week" tone="sky" />
           </SummaryCard>
         </div>
+        )}
 
         {/* Main Weekly Schedule Timetable Card */}
-        {userRole === 'Dean' ? (
-            <div className="animate-in rounded-2xl border border-gray-200 bg-white p-12 text-center shadow-sm flex flex-col items-center justify-center">
-            <div className="h-16 w-16 rounded-2xl bg-amber-50 flex items-center justify-center border border-amber-200 shadow-sm mb-4">
-              <CalendarIcon className="h-8 w-8 text-amber-600" />
-            </div>
-            <h4 className="text-lg font-bold text-gray-900">Dean Scheduling Not Handled</h4>
-            <p className="text-sm text-gray-500 max-w-sm mx-auto mt-1.5 leading-relaxed">
-              The system does not handle Dean scheduling at this time. This feature is coming soon.
-            </p>
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 mt-4 rounded-full bg-amber-100 text-amber-800 text-xs font-bold border border-amber-200">
-              Coming Soon
-            </span>
-          </div>
-        ) : (
           <PersonalScheduleModal
             isOpen={true}
             onClose={() => {}}
@@ -637,7 +627,6 @@ function MySchedulePage() {
             initialAcademicYear={selectedAcademicYear?.academicYear}
             initialSemester={selectedSemester}
           />
-        )}
       </div>
     </section>
   )

@@ -42,16 +42,23 @@ function getLocalIsoDate(date: Date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
-function RoomUsageRules() {
+interface RoomUsageRulesProps {
+  panel?: boolean
+}
+
+function RoomUsageRules({ panel = false }: RoomUsageRulesProps) {
   return (
-    <section aria-label="General rules for room use" className="rounded-xl border border-[#c6dbb6] bg-[#f3f7ee] p-4 text-sm text-slate-700">
-      <h3 className="font-bold text-[#41572a]">General Rules for Room Use</h3>
-      <ol className="mt-3 list-decimal space-y-2 pl-5">
-        <li>Do NOT use Air Conditioning Unit.</li>
-        <li>CLAY-GO (Clean As You Go).</li>
-        <li>ARRANGE chairs back into classroom-type set-up.</li>
-        <li>Provide cleanliness/orderliness EVIDENCE (picture/video with time-stamp) after room usage.</li>
-        <li>VACATE the room after your allowed time of stay.</li>
+    <section aria-labelledby={panel ? 'room-usage-rules-panel-title' : 'room-usage-rules-title'} className={`${panel ? 'w-full max-w-md rounded-2xl bg-white shadow-2xl' : 'rounded-xl bg-[#f3f7ee]'} border border-[#c6dbb6] p-4 text-sm text-slate-700`}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 id={panel ? 'room-usage-rules-panel-title' : 'room-usage-rules-title'} className="font-bold text-[#41572a]">General Rules for Room Use</h3>
+        <span className="rounded-full border border-[#c6dbb6] bg-white px-2.5 py-1 text-xs font-semibold text-[#526f34]">Please read before booking</span>
+      </div>
+      <ol className="mt-3 list-none space-y-2 pl-0" role="list">
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">1.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2"><strong className="font-semibold text-slate-900">Do NOT use</strong> Air Conditioning Unit.</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">2.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2"><strong className="font-semibold text-slate-900">CLAY-GO</strong> (Clean As You Go).</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">3.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2"><strong className="font-semibold text-slate-900">ARRANGE chairs</strong> back into classroom-type set-up.</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">4.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2">Provide cleanliness/orderliness <strong className="font-semibold text-slate-900">EVIDENCE</strong> (picture/video with time-stamp) after room usage.</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">5.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2"><strong className="font-semibold text-slate-900">VACATE the room</strong> after your allowed time of stay.</span></li>
       </ol>
     </section>
   )
@@ -725,7 +732,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
       {/* Find Room Modal */}
       {isFindRoomModalOpen && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4">
+          <div className="my-auto flex w-full max-w-5xl flex-col items-center gap-4 lg:flex-row lg:items-center lg:justify-center">
           <div 
             className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
@@ -888,8 +896,6 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 </div>
               </div>
 
-              <RoomUsageRules />
-
               <div className="flex gap-3 pt-2">
                 <Button
                   variant="outline"
@@ -934,6 +940,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 </Button>
               </div>
             </div>
+          </div>
+          <RoomUsageRules panel />
           </div>
           <div 
             className="absolute inset-0 -z-10" 

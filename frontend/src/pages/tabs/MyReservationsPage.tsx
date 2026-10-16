@@ -10,6 +10,7 @@ import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
+import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/reservationReviewStep'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { useSnackbar } from '../../components/Snackbar'
@@ -23,7 +24,7 @@ import {
   updateDoc
 } from 'firebase/firestore'
 
-type ReservationStatus = 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
 
 interface Reservation {
   id: string
@@ -44,6 +45,8 @@ interface Reservation {
   deanRecommend?: boolean
   registrarRecommend?: boolean
   universityAdministratorRecommend?: boolean
+  declinedByRole?: string
+  autoProcessed?: boolean
   createdAt: any
   updatedAt: any
   isHidden?: boolean
@@ -83,10 +86,9 @@ const roomStatusClasses: Record<RoomStatus, string> = {
 }
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Recommending Approval', 'Approved', 'Declined', 'Cancelled', 'Completed']
+const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
 const STATUS_SHORT_LABELS: Record<ReservationStatus, string> = {
   Pending: 'Pend.',
-  'Recommending Approval': 'Rec.',
   Approved: 'Appr.',
   Declined: 'Decl.',
   Cancelled: 'Canc.',
@@ -117,6 +119,7 @@ function MyReservationsPage() {
   const [rooms, setRooms] = useState<Record<string, Room>>({})
   const [buildings, setBuildings] = useState<Record<string, Building>>({})
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
+  const [selectedReviewSteps, setSelectedReviewSteps] = useState<string[]>([])
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([])
 
   const { showSnackbar } = useSnackbar()
@@ -157,7 +160,6 @@ function MyReservationsPage() {
 
     const statusOrder: Record<ReservationStatus, number> = {
       Pending: 0,
-      'Recommending Approval': 0.5,
       Approved: 1,
       Declined: 2,
       Cancelled: 3,
@@ -277,6 +279,10 @@ function MyReservationsPage() {
         return false
       }
 
+      if (selectedReviewSteps.length > 0 && !selectedReviewSteps.includes(reservationReviewStep(res))) {
+        return false
+      }
+
       // 2. Filter by building
       if (selectedBuildings.length > 0 && !selectedBuildings.includes(building?.code || '')) {
         return false
@@ -295,7 +301,7 @@ function MyReservationsPage() {
         res.date
       ].some(val => val.toLowerCase().includes(normalizedSearch))
     })
-  }, [visibleReservations, rooms, buildings, searchTerm, selectedStatuses, selectedBuildings])
+  }, [visibleReservations, rooms, buildings, searchTerm, selectedStatuses, selectedReviewSteps, selectedBuildings])
 
   const columns: ColumnDef<Reservation>[] = [
     {
@@ -303,7 +309,6 @@ function MyReservationsPage() {
       width: '20%',
       render: (res) => {
         const room = rooms[res.roomId]
-        const building = buildings[res.buildingId]
         return (
           <div className="flex items-center gap-4">
             <img
@@ -317,7 +322,7 @@ function MyReservationsPage() {
                 {room?.name || 'Unknown Room'}
               </span>
               <span className="text-xs font-medium text-slate-500">
-                {building?.name || 'Unknown Building'}
+                {room?.type || 'Unknown Room Type'}
               </span>
             </div>
           </div>
@@ -366,12 +371,19 @@ function MyReservationsPage() {
       header: 'Status',
       width: '20%',
       render: (res) => (
-        <ReservationReviewIndicators
-          registrarRecommend={res.registrarRecommend}
-          deanRecommend={res.deanRecommend}
-          universityAdministratorRecommend={res.universityAdministratorRecommend}
-          status={res.status}
-        />
+        <div className="relative w-40 max-w-full">
+          <ReservationReviewIndicators
+            registrarRecommend={res.registrarRecommend}
+            deanRecommend={res.deanRecommend}
+            universityAdministratorRecommend={res.universityAdministratorRecommend}
+            status={res.status}
+            declinedByRole={res.declinedByRole}
+            autoProcessed={res.autoProcessed}
+          />
+          {(res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
+            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? 'border-blue-600 text-blue-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{res.status}</span>
+          </span>}
+        </div>
       )
     },
     {
@@ -420,9 +432,16 @@ function MyReservationsPage() {
     {
       id: 'status',
       title: 'Status',
-      options: ['Pending', 'Recommending Approval', 'Approved', 'Declined', 'Cancelled', 'Completed'],
+      options: ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed'],
       selectedValues: selectedStatuses,
       onChange: setSelectedStatuses
+    },
+    {
+      id: 'reviewStep',
+      title: 'Review Step',
+      options: [...RESERVATION_REVIEW_STEPS],
+      selectedValues: selectedReviewSteps,
+      onChange: setSelectedReviewSteps
     }
   ]
 

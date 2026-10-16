@@ -41,7 +41,7 @@ export async function validateExtendedReservationApproval(
   }
   for (const other of reservations.docs) {
     const data = other.data();
-    if (other.id === reservationId || data.date !== date || !["Pending", "Recommending Approval", "Approved"].includes(data.status)) continue;
+    if (other.id === reservationId || data.date !== date || !["Pending", "Approved"].includes(data.status)) continue;
     const otherStart = timeMinutes(data.startTime), otherEnd = timeMinutes(data.endTime);
     if (otherStart !== null && otherEnd !== null && otherStart < end && otherEnd > start) {
       fail("This extended reservation conflicts with another pending or approved reservation.");

@@ -39,7 +39,7 @@ export function subscribeRoomTimetable(roomId: string, includeReservations: bool
       receive({
         schedules: roomScheduleMeetings([...documents.values()], roomId),
         reservations: (snapshots.get(2) ?? []).map((document): Record<string, unknown> => ({ ...document.data(), id: document.id }))
-          .filter(reservation => ['Approved', 'Pending', 'Recommending Approval'].includes(String(reservation.status))),
+          .filter(reservation => ['Approved', 'Pending'].includes(String(reservation.status))),
       })
     } catch (error) {
       fail(error)

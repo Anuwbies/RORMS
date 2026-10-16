@@ -371,7 +371,7 @@ export function PlotScheduleModal({
             .map(d => ({ id: d.id, ...d.data() }))
             .filter((r: any) => 
               (validInstructorIds.includes(r.userId) || validInstructorIds.includes(r.instructorId)) &&
-              (r.status === 'Approved' || r.status === 'Pending' || r.status === 'Recommending Approval')
+              (r.status === 'Approved' || r.status === 'Pending')
             )
           setReservations(fetched)
           reservationsLoaded = true

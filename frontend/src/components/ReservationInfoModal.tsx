@@ -5,7 +5,7 @@ import { ExtendedReservationBadge } from './ExtendedReservationBadge'
 import { ReservationReviewIndicators } from './ReservationReviewIndicators'
 import { roomScheduleSection } from '../utils/roomSchedule'
 
-type ReservationStatus = 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
 
 export interface RequesterInfo {
   name: string
@@ -33,6 +33,8 @@ interface ReservationInfoModalProps {
     registrarRecommend?: boolean
     universityAdministratorRecommend?: boolean
     declinedReason?: string
+    declinedByRole?: string
+    autoProcessed?: boolean
     createdAt?: any
     updatedAt?: any
   }
@@ -48,7 +50,6 @@ interface ReservationInfoModalProps {
 
 const statusClasses: Record<ReservationStatus, string> = {
   Pending: 'bg-amber-100 text-amber-700',
-  'Recommending Approval': 'bg-sky-100 text-sky-700',
   Approved: 'bg-emerald-100 text-emerald-700',
   Declined: 'bg-rose-100 text-rose-700',
   Cancelled: 'bg-slate-100 text-slate-700',
@@ -76,7 +77,7 @@ export function ReservationInfoModal({
 
   if (!isOpen || !reservation) return null
 
-  const canCancel = !!onCancel && (reservation.status === 'Pending' || reservation.status === 'Recommending Approval' || reservation.status === 'Approved')
+  const canCancel = !!onCancel && (reservation.status === 'Pending' || reservation.status === 'Approved')
   const canDelete = !!onDelete && (reservation.status === 'Cancelled' || reservation.status === 'Completed' || reservation.status === 'Declined')
 
   const calculateDuration = () => {
@@ -136,6 +137,8 @@ export function ReservationInfoModal({
                     deanRecommend={reservation.deanRecommend}
                     universityAdministratorRecommend={reservation.universityAdministratorRecommend}
                     status={reservation.status}
+                    declinedByRole={reservation.declinedByRole}
+                    autoProcessed={reservation.autoProcessed}
                   />
                 </div>
               )}

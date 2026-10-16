@@ -8,6 +8,7 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { PersonalScheduleModal } from '../../components/PersonalScheduleModal'
 import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
+import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
 import { DepartmentCoursesImportModal } from '../../components/DepartmentCoursesImportModal'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -75,7 +76,7 @@ function MyDepartmentPage() {
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<any>(null)
   const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: string, phase: string } | null>(null)
 
-  const [deptSchedules, setDeptSchedules] = useState<any[]>([])
+  const [deptSchedules, setDeptSchedules] = useState<ScheduleMeetingRecord[]>([])
 
   const [currentUserData, setCurrentUserData] = useState<any>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
@@ -313,11 +314,11 @@ function MyDepartmentPage() {
       return
     }
     const q = query(
-      collection(db, 'schedule'),
+      collection(db, 'schedules'),
       where('department', '==', departmentInfo.code)
     )
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched = snapshot.docs.map(doc => doc.data())
+      const fetched = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }) as ScheduleMeetingRecord)
       setDeptSchedules(fetched)
     })
     return () => unsubscribe()
@@ -844,18 +845,23 @@ function MyDepartmentPage() {
             const activeCount = members.filter(m => m.status === 'Active').length;
             const pendingCount = members.filter(m => m.status === 'Pending').length;
             const memberStatusTotal = activeCount + pendingCount;
-            const activeAcademicYear = academicYears.find((year: any) => year.isActive)?.academicYear || '';
+            const activeAcademicYear = academicYears.find((year: any) => year.isActive);
             const normalizeAcademicYear = (value: unknown) => String(value || '')
               .replace(/[–—]/g, '-')
               .replace(/\s+/g, '')
               .toLowerCase();
-            const normalizedActiveYear = normalizeAcademicYear(activeAcademicYear);
-            const activeYearSchedules = normalizedActiveYear
+            const normalizedActiveYear = normalizeAcademicYear(activeAcademicYear?.academicYear);
+            const activeYearSchedules = activeAcademicYear
               ? deptSchedules.filter(schedule => {
                 const scheduleYear = normalizeAcademicYear(schedule.academicYear || schedule.academicTerm);
-                return scheduleYear.includes(normalizedActiveYear);
+                return schedule.academicYearId === activeAcademicYear.id
+                  || Boolean(normalizedActiveYear && scheduleYear.includes(normalizedActiveYear));
               })
               : [];
+            const activeYearMeetings = scheduleMeetingRecords(activeYearSchedules.map(schedule => ({
+              id: schedule.id,
+              data: () => schedule
+            })));
 
             const DAY_FULL_NAMES: Record<string, string> = {
               Mon: 'Monday',
@@ -872,11 +878,12 @@ function MyDepartmentPage() {
             };
 
             const dayCounts: Record<string, number> = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
-            activeYearSchedules.forEach(s => {
-              if (Array.isArray(s.days)) {
-                s.days.forEach((day: string) => {
-                  if (dayCounts[day] !== undefined) {
-                    dayCounts[day] += 1;
+            activeYearMeetings.forEach(meeting => {
+              if (Array.isArray(meeting.days)) {
+                meeting.days.forEach(day => {
+                  const shortDay = Object.keys(dayCounts).find(key => key.toLowerCase() === day.trim().slice(0, 3).toLowerCase());
+                  if (shortDay) {
+                    dayCounts[shortDay] += 1;
                   }
                 });
               }
@@ -898,28 +905,25 @@ function MyDepartmentPage() {
                 { day: 'Fri', count: 0, label: 'Friday' }
               ];
 
-            const deptBuildingIds = Array.from(new Set(
-              activeYearSchedules.flatMap(s => {
-                const bIds: string[] = []
-                if (s.buildingId) bIds.push(s.buildingId)
-                if (s.buildingId2) bIds.push(s.buildingId2)
-                if (s.roomId) {
-                  const r = rooms.find(room => room.id === s.roomId)
-                  if (r?.buildingId) bIds.push(r.buildingId)
-                }
-                if (s.roomId2) {
-                  const r = rooms.find(room => room.id === s.roomId2)
-                  if (r?.buildingId) bIds.push(r.buildingId)
-                }
-                return bIds
-              }).filter(Boolean)
-            ))
+            const roomBuildings = new Map(rooms.map(room => [room.id, room.buildingId]));
+            const buildingUsage = new Map<string, number>();
+            activeYearSchedules.forEach(schedule => {
+              const meetings = scheduleMeetingRecords([{ id: schedule.id, data: () => schedule }]);
+              const buildingIds = new Set<string>();
+              meetings.forEach(meeting => {
+                const buildingId = roomBuildings.get(meeting.roomId || '') || meeting.buildingId;
+                if (buildingId) buildingIds.add(buildingId);
+              });
+              const secondaryRoomId = typeof schedule.roomId2 === 'string' ? schedule.roomId2 : '';
+              const secondaryBuildingId = roomBuildings.get(secondaryRoomId)
+                || (typeof schedule.buildingId2 === 'string' ? schedule.buildingId2 : '');
+              if (secondaryBuildingId) buildingIds.add(secondaryBuildingId);
+              buildingIds.forEach(buildingId => buildingUsage.set(buildingId, (buildingUsage.get(buildingId) || 0) + 1));
+            });
 
-            const deptBuildings = deptBuildingIds
+            const deptBuildings = Array.from(buildingUsage.keys())
               .map(bId => buildings.find(b => b.id === bId))
               .filter(Boolean) as { id: string; name: string; code?: string }[]
-
-            const displayBuildings = deptBuildings.length > 0 ? deptBuildings : buildings.slice(0, 2)
 
             return (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
@@ -954,16 +958,9 @@ function MyDepartmentPage() {
                   gradientClasses="from-blue-400 to-indigo-500"
                   blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
                 >
-                  <SummaryGraph variant="bar" total={deptBuildings.length} points={displayBuildings.slice(0, 3).map(building => ({
+                  <SummaryGraph variant="bar" total={deptBuildings.length} points={deptBuildings.slice(0, 3).map(building => ({
                     label: building.code || building.name,
-                    value: activeYearSchedules.filter(schedule => {
-                      const primaryRoomBuilding = rooms.find(room => room.id === schedule.roomId)?.buildingId
-                      const secondaryRoomBuilding = rooms.find(room => room.id === schedule.roomId2)?.buildingId
-                      return schedule.buildingId === building.id
-                        || schedule.buildingId2 === building.id
-                        || primaryRoomBuilding === building.id
-                        || secondaryRoomBuilding === building.id
-                    }).length,
+                    value: buildingUsage.get(building.id) || 0,
                   }))} tone="sky" />
                 </SummaryCard>
               </div>

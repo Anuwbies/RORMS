@@ -275,7 +275,7 @@ export async function processReservationStatusUpdates(): Promise<{
   const { currentDateStr, currentTimeStr } = getManilaDateTime();
   logger.info(`Evaluating reservations against Manila time: ${currentDateStr} ${currentTimeStr}`);
 
-  const pendingSnap = await db.collection("reservations").where("status", "in", ["Pending", "Recommending Approval"]).get();
+  const pendingSnap = await db.collection("reservations").where("status", "==", "Pending").get();
   const approvedSnap = await db.collection("reservations").where("status", "==", "Approved").get();
 
   let declinedCount = 0;
@@ -608,22 +608,16 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
     const status = stringValue(after.status);
     let notification: Pick<NotificationPayload, "title" | "message" | "type"> | null = null;
 
-    if (deanRecommended && status === "Recommending Approval") {
+    if (deanRecommended && status === "Pending") {
       notification = {
         title: "Dean recommended your reservation",
         message: `Your request for ${roomName} has been recommended by the Dean and is awaiting University Administrator approval.`,
         type: "booking_recommended",
       };
-    } else if (registrarRecommended && !statusChanged) {
+    } else if (registrarRecommended && status === "Pending") {
       notification = {
         title: "Registrar recommended your reservation",
         message: `Your request for ${roomName} has been recommended by the Registrar and is awaiting Dean review.`,
-        type: "booking_recommended",
-      };
-    } else if (statusChanged && status === "Recommending Approval") {
-      notification = {
-        title: "Reservation recommended for approval",
-        message: `Your request for ${roomName} has been recommended and is awaiting University Administrator review.`,
         type: "booking_recommended",
       };
     } else if (statusChanged && status === "Approved") {

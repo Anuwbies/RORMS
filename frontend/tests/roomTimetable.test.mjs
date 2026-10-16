@@ -72,10 +72,10 @@ test('empty room schedules finish loading; week view waits for and filters reser
   h.emit(0); h.emit(1)
   assert.equal(h.updates.length, 0)
   h.emit(2, [document('approved', { status: 'Approved' }), document('pending', { status: 'Pending' }),
-    document('review', { status: 'Recommending Approval' }), document('declined', { status: 'Declined' })])
+    document('declined', { status: 'Declined' })])
   assert.equal(h.updates.length, 1)
   assert.equal(h.updates[0].schedules.length, 0)
-  assert.deepEqual(Array.from(h.updates[0].reservations, reservation => reservation.id), ['approved', 'pending', 'review'])
+  assert.deepEqual(Array.from(h.updates[0].reservations, reservation => reservation.id), ['approved', 'pending'])
   h.unsubscribe()
 })
 

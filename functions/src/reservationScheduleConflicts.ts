@@ -99,7 +99,7 @@ export function reservationConflicts(
   reservation: DocumentData, meetings: readonly RoomMeeting[], range: SemesterRange,
   now: { currentDateStr: string; currentTimeStr: string }
 ): boolean {
-  if (reservation.status !== "Pending" && reservation.status !== "Recommending Approval" && reservation.status !== "Approved") return false;
+  if (reservation.status !== "Pending" && reservation.status !== "Approved") return false;
   const date = validDate(reservation.date);
   const start = timeMinutes(reservation.startTime), end = timeMinutes(reservation.endTime);
   if (!date || start === null || end === null || start >= end || date < range.start || date > range.end) return false;

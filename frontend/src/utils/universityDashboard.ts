@@ -32,10 +32,10 @@ export function universityDateKey(date: Date): string {
 export function universityDashboardData(rooms: UniversityDashboardRoom[], reservations: UniversityDashboardReservation[], now: Date) {
   const today = universityDateKey(now)
   const status = (value?: string) => (value || '').trim().toLowerCase()
-  const pending = reservations.filter(item => status(item.status) === 'recommending approval'
+  const pending = reservations.filter(item => status(item.status) === 'pending'
     && item.registrarRecommend === true && item.deanRecommend === true
     && item.universityAdministratorRecommend !== true)
-  const todayReservations = reservations.filter(item => item.date === today && ['pending', 'recommending approval', 'approved', 'completed'].includes(status(item.status)))
+  const todayReservations = reservations.filter(item => item.date === today && ['pending', 'approved', 'completed'].includes(status(item.status)))
     .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''))
   const available = rooms.filter(item => status(item.status) === 'available').length
   const unavailable = rooms.filter(item => status(item.status) === 'unavailable').length
@@ -46,7 +46,7 @@ export function universityDashboardData(rooms: UniversityDashboardRoom[], reserv
     const key = universityDateKey(date)
     const bookings = reservations.filter(item => item.date === key)
     const approved = bookings.filter(item => status(item.status) === 'approved').length
-    const pending = bookings.filter(item => ['pending', 'recommending approval'].includes(status(item.status))).length
+    const pending = bookings.filter(item => status(item.status) === 'pending').length
     return { key, label: date.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', weekday: 'short', day: 'numeric' }), approved, pending, total: approved + pending }
   })
   return { todayReservations, pending, available, unavailable, maintenance, capacity, week }
