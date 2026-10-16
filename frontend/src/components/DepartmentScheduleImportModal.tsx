@@ -30,7 +30,7 @@ import type { DepartmentCourseSuggestion } from '../utils/departmentCourseSugges
 import { hasDepartmentScheduleChanges, type DepartmentScheduleSaveBaseline } from '../utils/departmentScheduleSaveStatus'
 import { useLiveDepartmentWorkbook } from '../hooks/useLiveDepartmentWorkbook'
 import { mergeDepartmentSchedule } from '../utils/mergeDepartmentSchedule'
-import { recommendScheduleRooms } from '../utils/scheduleRoomRecommendations'
+import { recommendParallelRoomGroups, recommendScheduleRooms } from '../utils/scheduleRoomRecommendations'
 import { recommendInstructorScheduleOptions } from '../utils/instructorScheduleRecommendations'
 
 interface DepartmentScheduleImportModalProps {
@@ -693,6 +693,32 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
       facultyScheduleRowKey(name, cell.row), cell.column, entryIndex) : []
   }, [currentScheduleAssignments, validationDirectory])
 
+  const recommendParallelGroups = useCallback((cell: CellEditLocation, entryIndex: number) => {
+    const name = sheetsRef.current[cell.sheet]?.name
+    return name && validationDirectory ? recommendParallelRoomGroups(currentScheduleAssignments(), validationDirectory.rooms,
+      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex, validationDirectory.externalRoomAssignments ?? []) : []
+  }, [currentScheduleAssignments, validationDirectory])
+
+  const chooseParallelRoomGroup = useCallback((cell: CellEditLocation, entryIndex: number, label: string) => {
+    const choice = recommendParallelGroups(cell, entryIndex).find(group => group.label === label)
+    const sheet = sheetsRef.current[cell.sheet]
+    if (!choice || !sheet) return
+    const rowNumbers = new Map(sheet.rows.map(row => [facultyScheduleRowKey(sheet.name, row.rowNumber), row.rowNumber]))
+    const planned = choice.rooms.flatMap(({ rowKey, room }) => {
+      const row = rowNumbers.get(rowKey)
+      return row === undefined ? [] : [{ cell: { sheet: cell.sheet, row, column: cell.column }, value: normalizeScheduleCellText(cell.column, room) }]
+    })
+    if (planned.length !== choice.rooms.length || new Set(planned.map(change => change.cell.row)).size !== planned.length) return
+    const allowed = filterScheduleEditableChanges(sheetsRef.current, rowIndexesRef.current, planned)
+    if (allowed.length !== planned.length) return
+    const changes = allowed.map(change => ({ cell: change.cell, before: readCellValue(change.cell), after: change.value }))
+      .filter(change => change.before !== change.after)
+    if (!changes.length) return
+    flushTypingGroup()
+    historyRef.current.recordChanges(changes)
+    applyCellValues(changes.map(change => ({ cell: change.cell, value: change.after })))
+  }, [recommendParallelGroups, readCellValue, flushTypingGroup, applyCellValues])
+
   const recommendMeetingSlots = useCallback((cell: CellEditLocation) => {
     const name = sheetsRef.current[cell.sheet]?.name, value = readCellValue(cell)
     if (!name) return null
@@ -701,8 +727,9 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
 
   const cellActions = useMemo<ScheduleCellActions>(() => ({
     startSelection, moveSelection, endSelection, focusCell,
-    beginEditing: beginCellEditing, updateCell, finishEditing: finishCellEditing, renameYear, chooseCourse, recommendRooms, recommendMeetingSlots,
-  }), [startSelection, moveSelection, endSelection, focusCell, beginCellEditing, updateCell, finishCellEditing, renameYear, chooseCourse, recommendRooms, recommendMeetingSlots])
+    beginEditing: beginCellEditing, updateCell, finishEditing: finishCellEditing, renameYear, chooseCourse, recommendRooms,
+    recommendParallelRoomGroups: recommendParallelGroups, chooseParallelRoomGroup, recommendMeetingSlots,
+  }), [startSelection, moveSelection, endSelection, focusCell, beginCellEditing, updateCell, finishCellEditing, renameYear, chooseCourse, recommendRooms, recommendParallelGroups, chooseParallelRoomGroup, recommendMeetingSlots])
 
   const copySelectionToClipboard = useCallback((clipboard: Pick<DataTransfer, 'setData'>) => {
     const selection = selectionRef.current

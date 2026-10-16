@@ -8,6 +8,7 @@ import { scheduleMeetingRecords } from '../utils/scheduleMeetings'
 import { assertPlotRoom, hasPendingRoomAllocation, plotMeetingKey, plotMeetingsOverlap, plottedScheduleFields, plotScheduleRevision, readProvidedRoomKeys, readRegistrarPlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
 import { prepareScheduleRoomWorkbookSync } from './scheduleRoomWorkbookSync'
 import type { ScheduleRoomWorkbookRow } from '../utils/scheduleRoomWorkbookCells'
+import { plotParallelRoomMessages } from '../utils/plotParallelRooms'
 
 interface PlotRequest {
   membershipId: string
@@ -84,6 +85,14 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
       || !canPlotDepartmentSchedules(member, user.uid, year.data()?.[semester]?.phase ?? 'Closed')) throw new Error('This semester is read only for your membership or role.')
     const current = new Map(rows.filter(row => row.exists()).map(row => [row.id, row.data()!]))
     const roomMap = new Map(rooms.filter(room => room.exists()).map(room => [room.id, readPlotRoom(room.id, room.data()!)]))
+    // Read peer rooms from the fresh schedule snapshots so concurrent changes are checked too.
+    const parallelRoomIds = [...new Set(scheduleMeetingRecords([...current].filter(([id, data]) =>
+      !['Return', 'Returned'].includes(String(data.status))
+      && scheduleMatchesTerm({ ...data, id }, { id: request.academicYearId, academicYear: request.academicYear }, request.semester))
+      .map(([id, data]) => ({ id, data: () => data })))
+      .filter(meeting => meeting.groupId && meeting.roomId && !roomMap.has(meeting.roomId)).map(meeting => meeting.roomId!))]
+    const parallelRooms = await Promise.all(parallelRoomIds.map(id => transaction.get(doc(db, 'rooms', id))))
+    for (const room of parallelRooms) if (room.exists()) roomMap.set(room.id, readPlotRoom(room.id, room.data()!))
     const changed = new Map<string, Record<string, unknown>>()
     const statusOnlyDraftIds = new Set<string>()
     for (const id of new Set(request.assignments.map(item => item.scheduleId))) {
@@ -135,10 +144,13 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
     const entries = scheduleMeetingRecords([...proposed].filter(([id, data]) => !['Return', 'Returned'].includes(String(data.status))
       && scheduleMatchesTerm({ ...data, id }, { id: request.academicYearId, academicYear: request.academicYear }, request.semester))
       .map(([id, data]) => ({ id, data: () => data })))
+    const parallelMessages = plotParallelRoomMessages(entries, [...roomMap.values()])
     for (const entry of entries) {
       const sourceId = String(entry.sourceScheduleId ?? entry.id)
       if (!changed.has(sourceId)) continue
       if (statusOnlyDraftIds.has(sourceId)) continue
+      const parallelIssue = parallelMessages.get(entry.id)?.[0]
+      if (parallelIssue) throw new Error(parallelIssue)
       for (const other of entries) {
         if (entry.id === other.id) continue
         if (plotMeetingsOverlap(entry as unknown as WorkbookScheduleMeeting, other as unknown as WorkbookScheduleMeeting)) throw new Error(`${entry.subjectCode || 'Class'} overlaps ${other.subjectCode || 'another class'} in the selected room.`)

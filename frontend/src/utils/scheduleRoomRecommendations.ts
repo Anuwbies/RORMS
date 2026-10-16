@@ -1,6 +1,53 @@
 import type { ScheduleDirectory } from './excelScheduleRows'
 import { areParallelFacultyMeetings, excelScheduleRoomKey, facultyScheduleRoomConflict, isExcelScheduleTba, parallelRoomConnectionIssue, parallelRoomPosition, type FacultySubjectAssignment } from './ScheduleValidation.ts'
 
+export interface ParallelRoomGroupRecommendation {
+  label: string
+  rooms: readonly { rowKey: string; room: string }[]
+}
+
+/** Find complete four-room chains that can be assigned to a parallel class in row order. */
+export function recommendParallelRoomGroups(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
+  rowKey: string, column: number, entryIndex: number, externalAssignments: readonly FacultySubjectAssignment[] = []): ParallelRoomGroupRecommendation[] {
+  const target = assignments.find(assignment => assignment.rowKey === rowKey && assignment.roomColumn === column
+    && assignment.roomEntryIndex === entryIndex)
+  if (!target?.parallelGroup || target.start === undefined || target.end === undefined || !target.days?.length) return []
+  const group = assignments.filter(assignment => assignment === target || areParallelFacultyMeetings(target, assignment))
+  if (group.length !== 4 || group.some(assignment => !assignment.rowKey || assignment.roomColumn !== column
+    || assignment.roomEntryIndex !== entryIndex || assignment.start === undefined || assignment.end === undefined || !assignment.days?.length)
+    || new Set(group.map(assignment => assignment.rowKey)).size !== 4) return []
+  const groupSet = new Set(group)
+  const occupied = [...assignments.filter(assignment => !groupSet.has(assignment)), ...externalAssignments]
+  const locations = new Map<string, Map<number, ScheduleDirectory['rooms'][number]>>()
+  for (const room of rooms) {
+    const position = parallelRoomPosition(room)
+    if (!position?.building) continue
+    const key = JSON.stringify([position.building, position.floor, position.prefix, position.suffix])
+    const numbered = locations.get(key) ?? new Map<number, ScheduleDirectory['rooms'][number]>()
+    if (!numbered.has(position.number)) numbered.set(position.number, room)
+    locations.set(key, numbered)
+  }
+  const recommendations: { option: ParallelRoomGroupRecommendation; retained: number }[] = []
+  for (const numbered of locations.values()) for (const start of numbered.keys()) {
+    const chain = Array.from({ length: 4 }, (_, index) => numbered.get(start + index))
+    if (!chain.every((room): room is ScheduleDirectory['rooms'][number] => Boolean(room))) continue
+    for (const ordered of [chain, [...chain].reverse()]) {
+      const available = ordered.every((room, index) => {
+        const candidate = { ...group[index], roomId: room.id, room: room.code || room.name }
+        return !occupied.some(other => facultyScheduleRoomConflict(candidate, other))
+      })
+      if (!available) continue
+      const entries = ordered.map((room, index) => ({ rowKey: group[index].rowKey!, room: room.code.trim() || room.name.trim() }))
+      const retained = ordered.filter((room, index) => group[index].roomId === room.id
+        || [room.code, room.name].some(value => excelScheduleRoomKey(group[index].room ?? '') === excelScheduleRoomKey(value))).length
+      if (retained === 4) continue
+      recommendations.push({ option: { label: `${entries.map(entry => entry.room).join(' / ')} · Fill 4 rooms`, rooms: entries }, retained })
+    }
+  }
+  return recommendations.sort((a, b) => b.retained - a.retained || a.option.label.localeCompare(b.option.label))
+    .slice(0, 5).map(({ option }) => option)
+}
+
 /** A disconnected group may need several edits before its validation can clear. */
 function parallelRoomRecommendationCosts(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
   target: FacultySubjectAssignment): ReadonlyMap<string, number> | undefined {

@@ -30,6 +30,7 @@ const { DepartmentScheduleImportTableBody } = load(resolve(root, 'components/Dep
 const { createEmptyDepartmentScheduleSheet } = load(resolve(root, 'utils/departmentScheduleImport.ts'))
 const { filterScheduleEditableChanges, indexScheduleRows } = load(resolve(root, 'utils/departmentScheduleEdits.ts'))
 const { facultyScheduleRowKey, validateFacultyScheduleAssignments } = load(resolve(root, 'utils/ScheduleValidation.ts'))
+const { recommendParallelRoomGroups } = load(resolve(root, 'utils/scheduleRoomRecommendations.ts'))
 const actions = Object.fromEntries(['startSelection', 'moveSelection', 'endSelection', 'focusCell', 'beginEditing', 'updateCell', 'finishEditing', 'renameYear'].map(name => [name, () => {}]))
 function table(rowIssues, selection = null) {
   const sheet = createEmptyDepartmentScheduleSheet()
@@ -110,6 +111,25 @@ test('Status renders as a selectable read-only grid cell and rejects workbook ed
   assert.ok(tag.includes('border-slate-300') && html.includes('>Plot</span></td>'))
   const changes = [{ cell: { sheet: 0, row: sheet.rows[0].rowNumber, column: 21 }, value: 'Edited' }]
   assert.deepEqual(filterScheduleEditableChanges([sheet], indexScheduleRows([sheet]), changes), [])
+})
+
+test('four-room parallel recommendations fill distinct connected rooms and avoid other schedules', () => {
+  const assignments = Array.from({ length: 4 }, (_, index) => ({
+    location: `row-${index}`, rowKey: `row-${index}`, parallelGroup: 'row-0', code: 'ITE 083', section: String(index + 1),
+    faculty: 'Narvasa, Jan Julienne', instructorId: 'instructor', room: '', roomColumn: 19, roomEntryIndex: 0,
+    meetingKind: 'Lec', start: 450, end: 540, days: ['Wed'],
+  }))
+  const rooms = Array.from({ length: 8 }, (_, index) => ({
+    id: `room-${index}`, code: `PTC ${401 + index}`, name: `PTC ${401 + index}`, buildingId: 'PTC', floor: 4,
+  }))
+  const available = recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0)
+  assert.ok(available.length > 0)
+  assert.deepEqual(Array.from(available[0].rooms, entry => entry.room), ['PTC 401', 'PTC 402', 'PTC 403', 'PTC 404'])
+  assert.deepEqual(Array.from(available[0].rooms, entry => entry.rowKey), assignments.map(assignment => assignment.rowKey))
+  const occupied = [{ ...assignments[0], rowKey: 'outside', parallelGroup: undefined, room: 'PTC 402', roomId: 'room-1' }]
+  assert.ok(recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0, occupied)
+    .every(option => option.rooms.every(entry => entry.room !== 'PTC 402')))
+  assert.equal(recommendParallelRoomGroups(assignments.slice(0, 3), rooms, 'row-2', 19, 0).length, 0)
 })
 
 test('duplicate-only rows and their tooltip use purple', () => {

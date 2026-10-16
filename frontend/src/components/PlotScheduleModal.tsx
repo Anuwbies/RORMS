@@ -13,6 +13,7 @@ import { ExcelValidationTooltip } from './ExcelValidationTooltip'
 import { scheduleRoomOverlapMessages } from '../utils/scheduleRoomOverlaps'
 import { isProvidedScheduleRoom, schedulePlotSelectionKey } from '../utils/schedulePlotting'
 import { plotRoomRecommendations } from '../utils/plotRoomRecommendations'
+import { plotParallelRoomMessages } from '../utils/plotParallelRooms'
 import { toPng } from 'html-to-image'
 import jsPDF from 'jspdf'
 
@@ -414,15 +415,23 @@ export function PlotScheduleModal({
 
   const getMeetingStatus = (meeting: { status?: string }) => meeting.status || 'Draft'
 
-  const proposedMeetings = useMemo(() => allSchedules.filter(meeting => scheduleMatchesTerm(meeting, selectedAcademicYear, selectedSemester))
+  const proposedMeetings = useMemo<ScheduleMeetingRecord[]>(() => allSchedules.filter(meeting => scheduleMatchesTerm(meeting, selectedAcademicYear, selectedSemester))
     .map(meeting => ({ ...meeting, roomId: roomPlot.pending.get(schedulePlotSelectionKey(meeting))?.roomId ?? meeting.roomId })),
   [allSchedules, selectedAcademicYear, selectedSemester, roomPlot.pending])
   const roomRecommendations = useMemo(() => roomPlot.enabled
     ? plotRoomRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules) : new Map<string, readonly string[]>(),
   [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled])
-  const overlapMessages = useMemo(() => scheduleRoomOverlapMessages(proposedMeetings,
-    meeting => roomPlot.labels.get(meeting.roomId ?? '') || roomScheduleRoom(meeting, roomsMap)),
-  [proposedMeetings, roomPlot.labels, roomsMap])
+  const parallelMessages = useMemo(() => plotParallelRoomMessages(proposedMeetings, roomPlot.rooms), [proposedMeetings, roomPlot.rooms])
+  const overlapMessages = useMemo(() => {
+    const messages = scheduleRoomOverlapMessages(proposedMeetings,
+      meeting => roomPlot.labels.get(meeting.roomId ?? '') || roomScheduleRoom(meeting, roomsMap))
+    for (const [id, issues] of parallelMessages) messages.set(id, [...(messages.get(id) ?? []), ...issues])
+    return messages
+  }, [proposedMeetings, roomPlot.labels, roomsMap, parallelMessages])
+  const parallelPlotError = proposedMeetings.find(meeting => parallelMessages.has(meeting.id)
+    && [...roomPlot.pending.values()].some(assignment => assignment.scheduleId === String(meeting.sourceScheduleId || meeting.id)
+      && assignment.targetStatus !== 'Draft'))
+  const liveParallelError = parallelPlotError ? parallelMessages.get(parallelPlotError.id)?.[0] : undefined
 
   useEffect(() => {
     const dismiss = () => setOverlapHover(null)
@@ -435,14 +444,7 @@ export function PlotScheduleModal({
   }, [])
   useEffect(() => { setOverlapHover(null) }, [isOpen, selectedAcademicYear, selectedSemester, roomPlot.pending, allSchedules])
 
-  const meetingOverlapMessages = (meeting: ScheduleMeetingRecord) => {
-    const conflicts = overlapMessages.get(meeting.id) ?? []
-    if (!conflicts.length) return conflicts
-    const recommendations = roomRecommendations.get(schedulePlotSelectionKey(meeting)) ?? []
-    return recommendations.length ? [...conflicts,
-      `Recommended rooms for ${meeting.subjectCode || 'class'}${meeting.classSection ? ` (${meeting.classSection})` : ''}: ${recommendations.map(id => roomPlot.labels.get(id) || id).join(', ')}.`] : conflicts
-  }
-  const groupOverlapMessages = (meetings: ScheduleMeetingRecord[]) => [...new Set(meetings.flatMap(meetingOverlapMessages))]
+  const groupOverlapMessages = (meetings: ScheduleMeetingRecord[]) => [...new Set(meetings.flatMap(meeting => overlapMessages.get(meeting.id) ?? []))]
   const overlapProps = (meetings: ScheduleMeetingRecord[]) => {
     const messages = groupOverlapMessages(meetings)
     const show = (element: HTMLElement) => {
@@ -1301,8 +1303,8 @@ export function PlotScheduleModal({
             ) : (
               <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
             )}
-            {roomPlot.enabled && <p role={roomPlot.error ? 'alert' : 'status'} className={`mt-1 max-w-xl whitespace-normal ${roomPlot.error ? 'text-rose-700' : 'text-gray-600'}`}>
-              {roomPlot.error || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} schedules ready to ${roomPlot.hasDraftChanges ? 'update' : 'plot'}.` : 'Check or uncheck assigned rooms, or choose rooms, then save your changes.')}
+            {roomPlot.enabled && <p role={roomPlot.error || liveParallelError ? 'alert' : 'status'} className={`mt-1 max-w-xl whitespace-normal ${roomPlot.error || liveParallelError ? 'text-rose-700' : 'text-gray-600'}`}>
+              {roomPlot.error || liveParallelError || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} schedules ready to ${roomPlot.hasDraftChanges ? 'update' : 'plot'}.` : 'Check or uncheck assigned rooms, or choose rooms, then save your changes.')}
             </p>}
           </div>
           <div className="flex items-center gap-3">

@@ -7,6 +7,7 @@ import { insertScheduleCellText } from '../utils/scheduleCellClipboard'
 import type { ScheduleDirectory } from '../utils/excelScheduleRows'
 import { facultyFragment, filterFacultyNames } from '../utils/excelFacultySuggestions'
 import { filterRoomNames } from '../utils/excelRoomSuggestions'
+import type { ParallelRoomGroupRecommendation } from '../utils/scheduleRoomRecommendations'
 import { ExcelFacultySuggestions } from './ExcelFacultySuggestions'
 import { completeScheduleResourceText, insertScheduleChoice, SCHEDULE_TIME_CHOICES, SCHEDULE_DAY_CHOICES } from '../utils/scheduleResourceCompletion'
 import { formatScheduleTimeInput, hasExtraScheduleValues, isScheduleCellCharacterAllowed } from '../utils/departmentScheduleEdits'
@@ -31,6 +32,8 @@ export interface WorkbookCellActions {
   finishEditing: (cell: CellEditLocation, save: boolean) => void
   chooseCourse?: (cell: CellEditLocation, course: Pick<DepartmentCourseSuggestion, 'code' | 'title'>) => void
   recommendRooms?: (cell: CellEditLocation, entryIndex: number) => readonly string[]
+  recommendParallelRoomGroups?: (cell: CellEditLocation, entryIndex: number) => readonly ParallelRoomGroupRecommendation[]
+  chooseParallelRoomGroup?: (cell: CellEditLocation, entryIndex: number, label: string) => void
   recommendMeetingSlots?: (cell: CellEditLocation) => readonly string[] | null
 }
 
@@ -76,6 +79,10 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
   const recommendedRooms = useMemo(() => editing && isRoom
     ? actions.recommendRooms?.({ sheet: sheetIndex, row: rowNumber, column }, roomEntryIndex) ?? [] : [],
   [editing, isRoom, actions, sheetIndex, rowNumber, column, roomEntryIndex, value, validationMessage])
+  const parallelRoomGroups = useMemo(() => editing && isRoom
+    ? actions.recommendParallelRoomGroups?.({ sheet: sheetIndex, row: rowNumber, column }, roomEntryIndex) ?? [] : [],
+  [editing, isRoom, actions, sheetIndex, rowNumber, column, roomEntryIndex, value, validationMessage])
+  const recommendedGroupNames = parallelRoomGroups.map(group => group.label)
   const recommendedSlots = useMemo(() => editing && isMeetingSlot
     ? actions.recommendMeetingSlots?.({ sheet: sheetIndex, row: rowNumber, column }) ?? null : null,
   [editing, isMeetingSlot, actions, sheetIndex, rowNumber, column, value, validationMessage])
@@ -90,7 +97,7 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
     }) : []
   const matches = !editing || !hasSuggestions ? [] : isCollege ? [...SCHEDULE_COLLEGE_CHOICES] : isCourse
     ? courseMatches.map(course => column === 2 ? course.code : course.title) : isRoom
-    ? [...new Set([...recommendedRooms, ...filterRoomNames(suggestionDirectory?.rooms ?? [], fragment.query), 'TBA'])]
+    ? [...new Set([...recommendedGroupNames, ...recommendedRooms, ...filterRoomNames(suggestionDirectory?.rooms ?? [], fragment.query), 'TBA'])]
     : isMeetingSlot ? [...new Set([...(recommendedSlots ?? []), ...(isTime ? SCHEDULE_TIME_CHOICES : SCHEDULE_DAY_CHOICES), 'TBA'])]
     : [...new Set([...filterFacultyNames(suggestionDirectory?.faculty.map(member => member.fullName) ?? [], fragment.query), 'TBA'])]
   const suggestionsVisible = editing && hasSuggestions && suggestionsOpen
@@ -126,6 +133,11 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
   }
 
   const chooseSuggestion = (name: string) => {
+    if (isRoom && parallelRoomGroups.some(group => group.label === name)) {
+      finishEditing(false, true)
+      actions.chooseParallelRoomGroup?.(cell, roomEntryIndex, name)
+      return
+    }
     if (isCollege) {
       finishEditing(true, true, name)
       return
@@ -288,7 +300,7 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
         id={suggestionsId}
         anchor={cellRef}
         names={matches}
-        recommendedNames={isRoom ? recommendedRooms : isMeetingSlot ? recommendedSlots ?? undefined : undefined}
+        recommendedNames={isRoom ? [...recommendedGroupNames, ...recommendedRooms] : isMeetingSlot ? recommendedSlots ?? undefined : undefined}
         loading={isCollege || isMeetingSlot ? false : isCourse ? !courseSuggestions && !courseSuggestionError : !suggestionDirectory && !suggestionError}
         error={isCollege || isMeetingSlot ? undefined : isCourse ? courseSuggestionError : suggestionError}
         activeIndex={activeIndex}

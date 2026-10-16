@@ -63,6 +63,56 @@ function harness(scheduleCollection = 'schedule') {
   return { documents, meeting, schedule, assignment, plot, plotting }
 }
 
+function parallelHarness(numbers = [203, 204, 403, 404]) {
+  const h = harness('schedules')
+  h.documents.delete('schedules/class1')
+  for (const number of [203, 204, 205, 206, 403, 404]) h.documents.set(`rooms/be${number}`, {
+    code: `BE ${number}`, name: `BE ${number}`, status: 'Available', buildingId: 'be',
+    availableDays: ['Monday'], startTime: '07:30', endTime: '18:00', capacity: 40,
+  })
+  numbers.forEach((number, index) => h.documents.set(`schedules/parallel${index}`, h.schedule({
+    groupId: 'parallel1', subjectCode: 'ITE 083', classSection: String(index + 5), status: 'Plot', providedRoomKeys: [],
+    meetings: [h.meeting({ roomId: `be${number}`, room: `BE ${number}`, buildingId: 'be' })],
+  })))
+  // These rooms originated from blank source cells and stay editable after Plot.
+  numbers.forEach((_, index) => { h.documents.get(`schedules/parallel${index}`).providedRoomKeys = [] })
+  return h
+}
+
+test('Plot rejects disconnected parallel rooms atomically using all saved peer rooms', async () => {
+  const h = parallelHarness()
+  const before = h.documents.get('schedules/parallel0')
+  await assert.rejects(h.plot([h.assignment('parallel0', 0, 'be203')]), /Parallel classes must use separate, consecutive rooms/)
+  assert.equal(h.documents.get('schedules/parallel0'), before)
+  assert.equal(h.documents.get('schedules/parallel0').registrarPlot, undefined)
+})
+
+test('Plot accepts fixing the complete parallel chain together and reads peer floor metadata', async () => {
+  const h = parallelHarness()
+  await h.plot([h.assignment('parallel2', 0, 'be205'), h.assignment('parallel3', 0, 'be206')])
+  assert.equal(h.documents.get('schedules/parallel2').meetings[0].roomId, 'be205')
+  assert.equal(h.documents.get('schedules/parallel3').meetings[0].roomId, 'be206')
+  h.documents.get('rooms/be204').floor = 4
+  await assert.rejects(h.plot([h.assignment('parallel0', 0, 'be203')]), /same building and floor/)
+})
+
+test('provided parallel rooms cannot be approved while disconnected but can return to Draft', async () => {
+  const h = parallelHarness()
+  const data = h.documents.get('schedules/parallel0')
+  data.providedRoomKeys = data.meetings.map(h.plotting.plotMeetingKey)
+  await h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Draft' }])
+  assert.equal(h.documents.get('schedules/parallel0').status, 'Draft')
+  await assert.rejects(h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }]), /Parallel classes must use/)
+  assert.equal(h.documents.get('schedules/parallel0').status, 'Draft')
+})
+
+test('an unrelated disconnected parallel group does not prevent plotting an ordinary schedule', async () => {
+  const h = parallelHarness()
+  h.documents.set('schedules/ordinary', h.schedule({ subjectCode: 'ITE 100', meetings: [h.meeting({ days: ['Wed'], day: 'Wed' })] }))
+  await h.plot([h.assignment('ordinary')])
+  assert.equal(h.documents.get('schedules/ordinary').status, 'Plot')
+})
+
 test('plots the new schedules collection and keeps a same-ID legacy record unchanged', async () => {
   const h = harness('schedules')
   const legacy = h.schedule({ subjectCode: 'LEGACY' })
