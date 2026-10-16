@@ -595,7 +595,11 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
   async (event) => {
     const before = event.data?.before.data();
     const after = event.data?.after.data();
-    if (!before || !after || before.status === after.status) return;
+    if (!before || !after) return;
+    const statusChanged = before.status !== after.status;
+    const registrarRecommended = before.registrarRecommend !== true && after.registrarRecommend === true;
+    const deanRecommended = before.deanRecommend !== true && after.deanRecommend === true;
+    if (!statusChanged && !registrarRecommended && !deanRecommended) return;
 
     const userId = stringValue(after.userId);
     if (!userId) return;
@@ -604,19 +608,31 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
     const status = stringValue(after.status);
     let notification: Pick<NotificationPayload, "title" | "message" | "type"> | null = null;
 
-    if (status === "Recommending Approval") {
+    if (deanRecommended && status === "Recommending Approval") {
       notification = {
-        title: "Reservation recommended for approval",
-        message: `Your request for ${roomName} has been recommended by your department and is awaiting final approval.`,
+        title: "Dean recommended your reservation",
+        message: `Your request for ${roomName} has been recommended by the Dean and is awaiting University Administrator approval.`,
         type: "booking_recommended",
       };
-    } else if (status === "Approved") {
+    } else if (registrarRecommended && !statusChanged) {
+      notification = {
+        title: "Registrar recommended your reservation",
+        message: `Your request for ${roomName} has been recommended by the Registrar and is awaiting Dean review.`,
+        type: "booking_recommended",
+      };
+    } else if (statusChanged && status === "Recommending Approval") {
+      notification = {
+        title: "Reservation recommended for approval",
+        message: `Your request for ${roomName} has been recommended and is awaiting University Administrator review.`,
+        type: "booking_recommended",
+      };
+    } else if (statusChanged && status === "Approved") {
       notification = {
         title: "Reservation approved",
         message: `Your reservation for ${roomName} has been approved.`,
         type: "booking_approved",
       };
-    } else if (status === "Declined") {
+    } else if (statusChanged && status === "Declined") {
       const reason = stringValue(after.declinedReason);
       notification = {
         title: "Reservation declined",
@@ -625,14 +641,14 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
           : `Your request for ${roomName} was declined.`,
         type: "booking_rejected",
       };
-    } else if (status === "Cancelled") {
+    } else if (statusChanged && status === "Cancelled") {
       const reason = stringValue(after.cancellationReason);
       notification = {
         title: "Reservation cancelled",
         message: `Your reservation for ${roomName} has been cancelled.${reason ? ` ${reason}` : ""}`,
         type: "booking_cancelled",
       };
-    } else if (status === "Completed") {
+    } else if (statusChanged && status === "Completed") {
       notification = {
         title: "Reservation completed",
         message: `Your session in ${roomName} has concluded.`,

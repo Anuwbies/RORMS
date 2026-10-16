@@ -128,6 +128,9 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
       const legacyProvidedRoomKeys = readRegistrarPlot(data.registrarPlot)?.providedRoomKeys
       const requestedStatuses = new Set(rowAssignments.map(assignment => assignment.targetStatus).filter(Boolean))
       if (requestedStatuses.size > 1) throw new Error('Choose one status for this schedule before saving.')
+      if (scheduleCollection === 'schedules' && !requestedStatuses.size && rowAssignments.some(assignment => assignment.roomId)) {
+        throw new Error('Check each schedule checkbox before clicking Plot.')
+      }
       const parallel = Boolean((data.groupId || data.type === 'parallel') && candidateMeetings.some(candidate => candidate.sourceScheduleId === id
         && plotParallelGroup(candidateMeetings, [], candidate).length > 0))
       for (const assignment of rowAssignments) {

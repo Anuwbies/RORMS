@@ -47,7 +47,7 @@ export const ROLE_ALLOWED_TABS: Record<string, DashboardSection[]> = {
     'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'manageReservations', 'reserveRoom', 'myReservations', 'buildingsRooms'
   ],
   'Program Head': [
-    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'manageReservations', 'reserveRoom', 'myReservations', 'buildingsRooms'
+    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
   ],
   'Instructor': [
     'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
@@ -296,7 +296,7 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
       case 'myReservations':
         return <MyReservationsPage />
       case 'manageReservations':
-        return <ManageReservationsPage userRole={userRole || 'Instructor'} />
+        return <ManageReservationsPage userRole={normRole} />
       case 'buildingsRooms':
         return <BuildingsRoomsPage />
       case 'departments':

@@ -33,6 +33,7 @@ interface LogEntry {
   outcome: LogOutcome
   actorId?: string
   newStatus?: string
+  reviewStage?: 'Registrar' | 'Dean'
   reservationSnapshot?: { date: string; department: string; beforeStatus: string; afterStatus: string }
   sourceId?: string
   sourcePath?: string
@@ -53,7 +54,7 @@ interface LogEntry {
 }
 
 const LOG_CATEGORIES = [
-  { id: 'Reservations', description: 'Reservation status change history', icon: ClockIcon },
+  { id: 'Reservations', description: 'Reservation reviews and status history', icon: ClockIcon },
   { id: 'Facilities', description: 'Buildings, rooms, and comments', icon: BuildingIcon },
   { id: 'Scheduling', description: 'Schedule updates and room plotting', icon: CalendarIcon },
   { id: 'Accounts', description: 'Members, invitations, and access', icon: UsersIcon },
@@ -112,6 +113,7 @@ function reservationLogEntry(id: string, data: Record<string, unknown>): LogEntr
   const reference = logText(data.targetId) || 'Unknown reservation'
   const before = logText(status.before) || 'Unknown'
   const after = logText(status.after) || 'Unknown'
+  const reviewStage = data.reviewStage === 'Registrar' || data.reviewStage === 'Dean' ? data.reviewStage : undefined
   const actions: Record<string, string> = {
     Approved: 'Approved reservation',
     Declined: 'Declined reservation',
@@ -127,9 +129,10 @@ function reservationLogEntry(id: string, data: Record<string, unknown>): LogEntr
     actorId: logText(data.actorId),
     role,
     category: 'Reservations',
-    action: actions[after] || 'Changed reservation status',
-    detail: `Changed status from ${before} to ${after}.`,
+    action: reviewStage ? `${reviewStage} recommended reservation` : actions[after] || 'Changed reservation status',
+    detail: reviewStage ? `${reviewStage} recommendation recorded${before === after ? ` while status remained ${after}` : `; status changed from ${before} to ${after}`}.` : `Changed status from ${before} to ${after}.`,
     newStatus: logText(status.after),
+    reviewStage,
     reservationSnapshot: { date: logText(data.reservationDate), department: logText(data.department), beforeStatus: before, afterStatus: after },
     sourceId: logText(data.targetId),
     sourcePath: logText(data.targetId) ? `reservations/${reference}` : '',

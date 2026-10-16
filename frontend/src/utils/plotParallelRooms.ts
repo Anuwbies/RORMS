@@ -75,7 +75,11 @@ export function stagePlotRoomSelections(pending: ReadonlyMap<string, PlotAssignm
   const next = new Map(pending)
   const changedGroups = new Set(selections.filter(({ meeting, roomId }) => (pending.get(schedulePlotSelectionKey(meeting))?.roomId ?? meeting.roomId ?? '') !== roomId)
     .map(({ meeting }) => parallelPlotSelectionGroupKey(meeting)).filter((key): key is string => Boolean(key)))
-  for (const [key, assignment] of next) if (assignment.parallelGroupKey && changedGroups.has(assignment.parallelGroupKey)) {
+  const changedRows = new Set(selections.filter(({ meeting, roomId }) => !parallelPlotSelectionGroupKey(meeting)
+    && (pending.get(schedulePlotSelectionKey(meeting))?.roomId ?? meeting.roomId ?? '') !== roomId)
+    .map(({ meeting }) => String(meeting.sourceScheduleId || meeting.id)))
+  for (const [key, assignment] of next) if (assignment.parallelGroupKey && changedGroups.has(assignment.parallelGroupKey)
+    || changedRows.has(assignment.scheduleId)) {
     if (assignment.roomId === assignment.expectedRoomId) next.delete(key)
     else {
       const { targetStatus: _status, ...roomChoice } = assignment

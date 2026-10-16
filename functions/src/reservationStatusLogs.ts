@@ -9,6 +9,8 @@ interface StatusChangeRequest {
   reservationId: string;
   status: ReservationStatus;
   expectedStatus: ReservationStatus;
+  recommendation?: "Registrar" | "Dean";
+  declinedReason?: string;
 }
 
 function isStatus(value: unknown): value is ReservationStatus {
@@ -22,10 +24,17 @@ function parseRequest(value: unknown): StatusChangeRequest {
   const data = value as Record<string, unknown>;
   if (typeof data.reservationId !== "string" || !data.reservationId.trim()
     || data.reservationId.includes("/") || data.reservationId.length > 1500
-    || !isStatus(data.status) || !isStatus(data.expectedStatus)) {
+    || !isStatus(data.status) || !isStatus(data.expectedStatus)
+    || (data.recommendation !== undefined && data.recommendation !== "Registrar" && data.recommendation !== "Dean")
+    || (data.status === "Declined" && (typeof data.declinedReason !== "string" || !data.declinedReason.trim() || data.declinedReason.trim().length > 500))
+    || (data.status !== "Declined" && data.declinedReason !== undefined)) {
     throw new HttpsError("invalid-argument", "A valid reservation ID and statuses are required.");
   }
-  return { reservationId: data.reservationId, status: data.status, expectedStatus: data.expectedStatus };
+  return {
+    reservationId: data.reservationId, status: data.status, expectedStatus: data.expectedStatus,
+    recommendation: data.recommendation as StatusChangeRequest["recommendation"],
+    declinedReason: data.status === "Declined" ? (data.declinedReason as string).trim() : undefined,
+  };
 }
 
 function text(value: unknown): string {
@@ -58,12 +67,16 @@ export async function changeReservationStatus(
     if (!reservation) throw new HttpsError("not-found", "This reservation no longer exists.");
     const membership = memberships.docs.find(snapshot => {
       const member = snapshot.data();
-      return member.status === "accepted" && (data.status === "Recommending Approval"
-        ? ["Dean", "Program Head"].includes(member.role) && !!text(reservation.department)
-          && text(member.department) === text(reservation.department)
-        : data.status === "Approved"
-          ? ["Registrar", "University Administrator"].includes(member.role)
-          : ["Admin", "Registrar", "University Administrator"].includes(member.role));
+      return member.status === "accepted" && (data.recommendation === "Registrar"
+        ? member.role === "Registrar"
+        : data.recommendation === "Dean"
+          ? member.role === "Dean" && !!text(reservation.department)
+            && text(member.department) === text(reservation.department)
+          : data.status === "Approved"
+            ? member.role === "University Administrator"
+            : data.status === "Declined"
+              ? member.role === "Registrar" || member.role === "University Administrator"
+            : ["Admin", "Registrar", "University Administrator"].includes(member.role));
     });
     const profile = profileSnapshot.data() || {};
     if (!membership || profile.isActive === false) {
@@ -72,20 +85,45 @@ export async function changeReservationStatus(
     if (!isStatus(reservation.status)) {
       throw new HttpsError("failed-precondition", "This reservation has an invalid status. Reload the page before continuing.");
     }
-    // A repeated request must not create a second event or overwrite the timestamp.
-    if (reservation.status === data.status) return { changed: false, logId: null };
     if (reservation.status !== data.expectedStatus) {
       throw new HttpsError("failed-precondition", "The reservation status changed. Reopen the reservation and try again.");
     }
 
-    if (data.status === "Recommending Approval" && reservation.status !== "Pending") {
-      throw new HttpsError("failed-precondition", "Only pending requests can be recommended for approval.");
-    }
-    if (data.status === "Approved" && reservation.status !== "Recommending Approval") {
-      throw new HttpsError("failed-precondition", "A department Dean or Program Head must recommend approval first.");
-    }
-    if (reservation.status === "Pending" && data.status !== "Recommending Approval") {
-      throw new HttpsError("failed-precondition", "This request is awaiting department review.");
+    const canReview = reservation.status === "Pending" || reservation.status === "Recommending Approval";
+    const registrarRecommended = reservation.registrarRecommend === true;
+    const deanRecommended = reservation.deanRecommend === true;
+    if (data.recommendation === "Registrar") {
+      if (!canReview || data.status !== reservation.status) {
+        throw new HttpsError("failed-precondition", "Only open requests can receive a Registrar recommendation.");
+      }
+      if (registrarRecommended) return { changed: false, logId: null };
+    } else if (data.recommendation === "Dean") {
+      if (!canReview || data.status !== "Recommending Approval" || !registrarRecommended) {
+        throw new HttpsError("failed-precondition", "A Registrar must recommend this request before the Dean.");
+      }
+      if (deanRecommended) return { changed: false, logId: null };
+    } else {
+      if (reservation.status === data.status) return { changed: false, logId: null };
+      if (data.status === "Declined" && membership.data().role === "Registrar") {
+        if (!canReview || registrarRecommended) {
+          throw new HttpsError("failed-precondition", "The Registrar can decline only before recommending an open request.");
+        }
+      } else if (data.status === "Approved" || data.status === "Declined") {
+        if (reservation.status !== "Recommending Approval" || !registrarRecommended || !deanRecommended) {
+          throw new HttpsError("failed-precondition", "Registrar and Dean recommendations are required before University Administrator review.");
+        }
+      } else if (data.status === "Cancelled") {
+        if (reservation.status !== "Recommending Approval" && reservation.status !== "Approved"
+          && !(reservation.status === "Pending" && membership.data().role === "Registrar")) {
+          throw new HttpsError("failed-precondition", "Only recommended or approved requests can be cancelled here.");
+        }
+      } else if (data.status === "Completed") {
+        if (reservation.status !== "Approved") {
+          throw new HttpsError("failed-precondition", "Only approved requests can be completed.");
+        }
+      } else {
+        throw new HttpsError("failed-precondition", "Use the Registrar and Dean recommendation steps before approval.");
+      }
     }
 
     if (data.status === "Approved" && reservation.requestType === "Extended") {
@@ -93,12 +131,29 @@ export async function changeReservationStatus(
     }
 
     const member = membership.data();
+    const nextStatus = data.recommendation === "Registrar" ? reservation.status : data.status;
+    const changes: Record<string, { before: unknown; after: unknown }> = {
+      status: { before: reservation.status, after: nextStatus },
+    };
+    if (data.recommendation === "Registrar") changes.registrarRecommend = { before: registrarRecommended, after: true };
+    if (data.recommendation === "Registrar" && deanRecommended) changes.deanRecommend = { before: true, after: false };
+    if (data.recommendation === "Dean") changes.deanRecommend = { before: deanRecommended, after: true };
+    if (data.status === "Approved" && !data.recommendation) changes.universityAdministratorRecommend = { before: reservation.universityAdministratorRecommend === true, after: true };
+    if (data.status === "Declined" && data.declinedReason) changes.declinedReason = { before: text(reservation.declinedReason), after: data.declinedReason };
     transaction.update(reservationRef, {
       status: data.status, updatedAt: FieldValue.serverTimestamp(),
-      ...(data.status === "Recommending Approval" ? {
+      ...(data.status === "Declined" ? { declinedReason: data.declinedReason } : {}),
+      ...(data.recommendation === "Registrar" ? {
+        registrarRecommend: true, registrarRecommendedBy: uid,
+        registrarRecommendedAt: FieldValue.serverTimestamp(),
+        ...(deanRecommended ? { deanRecommend: false } : {}),
+      } : {}),
+      ...(data.recommendation === "Dean" ? {
+        deanRecommend: true,
         recommendedBy: uid, recommendedAt: FieldValue.serverTimestamp(),
         recommendedByRole: member.role,
       } : {}),
+      ...(data.status === "Approved" && member.role === "University Administrator" ? { universityAdministratorRecommend: true } : {}),
     });
     transaction.create(logRef, {
       action: "reservation.status_changed",
@@ -108,7 +163,8 @@ export async function changeReservationStatus(
       actorName: actorName(profile, member, uid),
       actorRole: member.role,
       membershipId: membership.id,
-      changes: { status: { before: reservation.status, after: data.status } },
+      changes,
+      ...(data.recommendation ? { reviewStage: data.recommendation } : {}),
       createdAt: FieldValue.serverTimestamp(),
       source: "user",
       roomId: text(reservation.roomId),

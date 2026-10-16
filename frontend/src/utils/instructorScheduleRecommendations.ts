@@ -1,5 +1,5 @@
 import { facultyScheduleInstructorConflict, facultyScheduleRoomConflict, parseExcelScheduleDays, parseExcelScheduleTime,
-  splitScheduleMeetings, type FacultySubjectAssignment } from './ScheduleValidation'
+  splitScheduleMeetings, type FacultySubjectAssignment } from './ScheduleValidation.ts'
 
 const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 // Match the standard whole-day calendar (07:30–18:00); preserve lesson duration.
@@ -12,7 +12,7 @@ function combinations<T>(choices: readonly T[][]): T[][] {
 
 /** Null means no recommendation search applies; an empty list means no alternatives fit. */
 export function recommendInstructorScheduleOptions(assignments: readonly FacultySubjectAssignment[], rowKey: string,
-  column: number, value: string): string[] | null {
+  column: number, value: string, alwaysRecommend = false): string[] | null {
   const isTime = column === 15 || column === 16, isDay = column === 17 || column === 18
   if (!isTime && !isDay) return null
   const roomColumn = column + (isTime ? 4 : 2)
@@ -21,7 +21,7 @@ export function recommendInstructorScheduleOptions(assignments: readonly Faculty
     || target.end <= target.start || !target.days?.length)) return null
   const conflictsByTarget = new Map(targets.map(target => [target,
     assignments.filter(other => other !== target && facultyScheduleInstructorConflict(target, other))]))
-  if (!targets.some(target => conflictsByTarget.get(target)!.length)) return null
+  if (!alwaysRecommend && !targets.some(target => conflictsByTarget.get(target)!.length)) return null
   const valid = (proposed: FacultySubjectAssignment[]) => {
     const replacements = new Map(targets.map((target, index) => [target, proposed[index]]))
     return proposed.every((target, index) => assignments.every(other => other === targets[index]
@@ -35,7 +35,7 @@ export function recommendInstructorScheduleOptions(assignments: readonly Faculty
       || original.length > 1 && original.length !== targets.length) return null
     const choices = original.map((time, index) => {
       const affected = original.length === 1 ? targets : [targets[index]]
-      if (!affected.some(target => conflictsByTarget.get(target)!.length)) return [time!]
+      if (!alwaysRecommend && !affected.some(target => conflictsByTarget.get(target)!.length)) return [time!]
       const duration = time!.end - time!.start
       const starts = new Set<number>([time!.start])
       for (let start = OPENING; start + duration <= CLOSING; start += 30) starts.add(start)
@@ -61,7 +61,7 @@ export function recommendInstructorScheduleOptions(assignments: readonly Faculty
       const affected = positional ? [targets[index]] : targets
       const overlaps = affected.some(target => conflictsByTarget.get(target)!.some(other =>
         (other.days ?? (other.day ? [other.day] : [])).some(otherDay => otherDay.toUpperCase() === day)))
-      return overlaps ? departmentDays : [day]
+      return alwaysRecommend ? DAYS : overlaps ? departmentDays : [day]
     })
     for (const days of combinations(choices)) {
       if (!positional && new Set(days).size !== days.length) continue
@@ -80,6 +80,7 @@ export function recommendInstructorScheduleOptions(assignments: readonly Faculty
     if (!candidate.changes || seen.has(key) || !valid(candidate.proposed)) continue
     seen.add(key)
     recommendations.push(candidate.text)
+    if (alwaysRecommend && recommendations.length >= 30) break
   }
   return recommendations
 }

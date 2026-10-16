@@ -29,6 +29,7 @@ interface ReservationLogDetails {
   date: string
   time: string
   action: string
+  reviewStage?: 'Registrar' | 'Dean'
   outcome: string
   sourceId?: string
   reservationSnapshot?: { date: string; department: string; beforeStatus: string; afterStatus: string }
@@ -95,7 +96,7 @@ export function ReservationLogDetailsModal({ event, source, isLoading, sourceNot
             </dl>
 
             <div className={panel}>
-              <h5 className={`mb-2 ${label}`}>Recorded status change</h5>
+              <h5 className={`mb-2 ${label}`}>{event.reviewStage ? `${event.reviewStage} recommendation` : 'Recorded status change'}</h5>
               <dl className="grid grid-cols-2 gap-3">
                 <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-2.5"><dt className={`mb-2 ${label}`}>Before</dt><dd><Status value={recorded?.beforeStatus || 'Unknown'} /></dd></div>
                 <div className="min-w-0 rounded-lg border border-[#c6dbb6] bg-[#f3f7ee] p-2.5"><dt className={`mb-2 ${label}`}>After</dt><dd><Status value={recorded?.afterStatus || 'Unknown'} /></dd></div>

@@ -55,6 +55,7 @@ function harness(scheduleCollection = 'schedule') {
   const assignment = (scheduleId = 'class1', index = 0, roomId = 'room1') => {
     const data = documents.get(`${scheduleCollection}/${scheduleId}`)
     return { scheduleId, meetingKey: plotting.plotMeetingKey(data.meetings[index]), roomId, expectedRoomId: data.meetings[index].roomId,
+      ...(scheduleCollection === 'schedules' && roomId ? { targetStatus: 'Plot' } : {}),
       expectedRevision: plotting.plotScheduleRevision(data) }
   }
   const plot = assignments => service.plotScheduleRooms({ membershipId: 'manager', departmentCode: 'CITE', academicYearId: 'year', academicYear: '2026-2027',
@@ -186,7 +187,7 @@ test('assigning the final room requires manual approval before Plot can save any
   for (let index = 0; index < 4; index++) h.documents.get(`schedules/parallel${index}`).status = 'Draft'
   const last = h.documents.get('schedules/parallel3')
   last.meetings[0] = { ...last.meetings[0], roomId: '', room: '', buildingId: '' }
-  await assert.rejects(h.plot([h.assignment('parallel3', 0, 'be206')]), /Check the completed parallel group checkbox/)
+  await assert.rejects(h.plot([{ ...h.assignment('parallel3', 0, 'be206'), targetStatus: undefined }]), /Check the completed parallel group checkbox/)
   for (let index = 0; index < 4; index++) assert.equal(h.documents.get(`schedules/parallel${index}`).status, 'Draft')
   assert.equal(h.documents.get('schedules/parallel3').meetings[0].roomId, '')
   await h.plot([{ ...h.assignment('parallel3', 0, 'be206'), targetStatus: 'Plot' }])
@@ -315,6 +316,8 @@ test('Registrar-selected rooms stay editable and their checkbox can return them 
 
 test('newly selected rooms support checkbox approval and clearing saves a blank room', async () => {
   const h = harness('schedules')
+  await assert.rejects(h.plot([{ ...h.assignment(), targetStatus: undefined }]), /Check each schedule checkbox/)
+  assert.equal(h.documents.get('schedules/class1').meetings[0].roomId, '')
   await assert.rejects(h.plot([{ ...h.assignment('class1', 0, ''), targetStatus: 'Plot' }]), /Assign a room/)
   await h.plot([{ ...h.assignment(), targetStatus: 'Plot' }])
   assert.equal(h.documents.get('schedules/class1').status, 'Plot')
@@ -345,7 +348,7 @@ test('combining an uncheck with a room change cannot bypass overlap validation',
     h.meeting({ days: ['Wed'], day: 'Wed' }),
   ] }))
   h.documents.set('schedules/other', h.schedule({ department: 'CAS', meetings: [h.meeting({ roomId: 'room2', days: ['Wed'], day: 'Wed' })] }))
-  await assert.rejects(h.plot([{ ...h.assignment(), targetStatus: 'Draft' }, h.assignment('class1', 1, 'room2')]), /overlaps/)
+  await assert.rejects(h.plot([{ ...h.assignment(), targetStatus: 'Draft' }, { ...h.assignment('class1', 1, 'room2'), targetStatus: undefined }]), /overlaps/)
   assert.equal(h.documents.get('schedules/class1').status, 'Plot')
   assert.equal(h.documents.get('schedules/class1').meetings[1].roomId, '')
 })

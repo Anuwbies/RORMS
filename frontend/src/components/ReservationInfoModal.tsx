@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { CalendarIcon, ClockIcon, UserIcon, HourglassIcon, DoorIcon } from './Icons'
 import { Button } from './Button'
 import { ExtendedReservationBadge } from './ExtendedReservationBadge'
+import { ReservationReviewIndicators } from './ReservationReviewIndicators'
 import { roomScheduleSection } from '../utils/roomSchedule'
 
 type ReservationStatus = 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
@@ -28,6 +29,10 @@ interface ReservationInfoModalProps {
     classSection?: string
     department?: string
     status: ReservationStatus
+    deanRecommend?: boolean
+    registrarRecommend?: boolean
+    universityAdministratorRecommend?: boolean
+    declinedReason?: string
     createdAt?: any
     updatedAt?: any
   }
@@ -38,6 +43,7 @@ interface ReservationInfoModalProps {
   onDelete?: (reservationId: string) => void
   onViewRoom?: () => void
   isCanceling?: boolean
+  showReviewIndicators?: boolean
 }
 
 const statusClasses: Record<ReservationStatus, string> = {
@@ -59,7 +65,8 @@ export function ReservationInfoModal({
   reservation,
   roomName,
   roomType,
-  requester
+  requester,
+  showReviewIndicators,
 }: ReservationInfoModalProps) {
   const [avatarError, setAvatarError] = useState(false)
 
@@ -121,6 +128,17 @@ export function ReservationInfoModal({
                   {reservation.status}
                 </span>
               </div>
+
+              {showReviewIndicators && (
+                <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3">
+                  <ReservationReviewIndicators
+                    registrarRecommend={reservation.registrarRecommend}
+                    deanRecommend={reservation.deanRecommend}
+                    universityAdministratorRecommend={reservation.universityAdministratorRecommend}
+                    status={reservation.status}
+                  />
+                </div>
+              )}
 
               {requester && (
                 <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5 flex items-center gap-3">
@@ -200,6 +218,13 @@ export function ReservationInfoModal({
                   {reservation.purpose || 'No purpose specified.'}
                 </p>
               </div>
+
+              {reservation.status === 'Declined' && reservation.declinedReason?.trim() && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                  <h5 className="mb-1 text-xs font-bold uppercase tracking-widest text-rose-700">Reason for declining</h5>
+                  <p className="break-words text-sm font-semibold leading-relaxed text-rose-800">{reservation.declinedReason}</p>
+                </div>
+              )}
 
               <div className="flex flex-wrap justify-between items-center gap-2 text-[0.65rem] text-slate-400 font-bold uppercase tracking-widest">
                 <span>Requested {reservation.createdAt?.toDate ? reservation.createdAt.toDate().toLocaleDateString() : 'date unavailable'}</span>

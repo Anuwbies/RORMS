@@ -14,6 +14,9 @@ export interface UniversityDashboardReservation {
   endTime?: string
   purpose?: string
   status?: string
+  registrarRecommend?: boolean
+  deanRecommend?: boolean
+  universityAdministratorRecommend?: boolean
 }
 
 const manilaDate = new Intl.DateTimeFormat('en-CA', {
@@ -29,7 +32,9 @@ export function universityDateKey(date: Date): string {
 export function universityDashboardData(rooms: UniversityDashboardRoom[], reservations: UniversityDashboardReservation[], now: Date) {
   const today = universityDateKey(now)
   const status = (value?: string) => (value || '').trim().toLowerCase()
-  const pending = reservations.filter(item => status(item.status) === 'recommending approval')
+  const pending = reservations.filter(item => status(item.status) === 'recommending approval'
+    && item.registrarRecommend === true && item.deanRecommend === true
+    && item.universityAdministratorRecommend !== true)
   const todayReservations = reservations.filter(item => item.date === today && ['pending', 'recommending approval', 'approved', 'completed'].includes(status(item.status)))
     .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''))
   const available = rooms.filter(item => status(item.status) === 'available').length

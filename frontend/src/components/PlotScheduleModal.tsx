@@ -541,7 +541,7 @@ export function PlotScheduleModal({
     const groupById = new Map(groupOptions.map(option => [option.id, option]))
     return <div className="flex min-w-0 items-center gap-1" onClick={event => event.stopPropagation()}>
       <span className="shrink-0">Room:</span>
-      <SingleSelectDropdown portal searchable retainValueOnOpen variant="meeting" menuAnchorSelector="[data-schedule-meeting]" ariaLabel={`Room for ${meeting.subjectCode || 'class'}, ${meeting.days?.join(', ')}, ${meeting.startTime}-${meeting.endTime}`}
+      <SingleSelectDropdown portal searchable retainValueOnOpen placeholder="search..." clearValue="" variant="meeting" fitMenuToOptions={groupOptions.length > 0} menuAnchorSelector="[data-schedule-meeting]" ariaLabel={`Room for ${meeting.subjectCode || 'class'}, ${meeting.days?.join(', ')}, ${meeting.startTime}-${meeting.endTime}`}
         options={[...new Set([...groupOptions.map(option => option.id), ...recommended, ...roomPlot.roomOptions, ...(selected ? [selected] : [])])]}
         recommendedOptions={[...groupOptions.map(option => option.id), ...recommended]}
         value={selected} getOptionLabel={id => groupById.get(id)?.label || (id ? roomPlot.labels.get(id) || (id === meeting.roomId ? getRoomName(meeting) : 'Unnamed room') : '')}
@@ -1342,13 +1342,13 @@ export function PlotScheduleModal({
               <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
             )}
             {roomPlot.enabled && <p role={roomPlot.error || livePlotError ? 'alert' : 'status'} className={`mt-1 max-w-xl whitespace-normal ${roomPlot.error || livePlotError ? 'text-rose-700' : 'text-gray-600'}`}>
-              {roomPlot.error || livePlotError || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.needsParallelApproval ? 'Check the completed parallel group checkbox, then click Plot to approve the whole group.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} schedules ready to ${roomPlot.hasDraftChanges ? 'update' : 'plot'}.` : 'Check or uncheck assigned rooms, or choose rooms, then save your changes.')}
+              {roomPlot.error || livePlotError || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.needsPlotApproval ? 'Check each schedule checkbox, then click Plot to approve.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} schedules ready to ${roomPlot.hasDraftChanges ? 'update' : 'plot'}.` : 'Check or uncheck assigned rooms, or choose rooms, then save your changes.')}
             </p>}
           </div>
           <div className="flex items-center gap-3">
             {roomPlot.enabled ? (
               <Button type="button" variant="primary" onClick={() => { void roomPlot.save() }}
-                disabled={isLoading || Boolean(scheduleLoadError) || !roomPlot.ready || !roomPlot.permitted || roomPlot.saving || !roomPlot.pendingCount || roomPlot.needsParallelApproval || Boolean(livePlotError) || memberRole === 'Dean'}
+                disabled={isLoading || Boolean(scheduleLoadError) || !roomPlot.ready || !roomPlot.permitted || roomPlot.saving || !roomPlot.pendingCount || roomPlot.needsPlotApproval || Boolean(livePlotError) || memberRole === 'Dean'}
                 className="w-45 px-4 text-sm flex items-center justify-center gap-2 !bg-[var(--brand-color)] hover:!bg-[var(--brand-color-hover)] text-white shadow-sm disabled:opacity-50 cursor-pointer"
                 icon={roomPlot.saving ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <CheckCircleIcon className="h-4 w-4" />}>
                 {roomPlot.saving ? roomPlot.hasDraftChanges ? 'Saving…' : 'Plotting…' : roomPlot.hasDraftChanges ? 'Save Changes' : 'Plot'}

@@ -39,6 +39,7 @@ interface ReservationItem {
   endTime: string
   purpose: string
   status: 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+  registrarRecommend?: boolean
   roomName?: string
   buildingName?: string
   requesterName?: string
@@ -297,9 +298,9 @@ export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageP
     }
   }, [rooms])
 
-  // Pending reservations count
+  // Requests awaiting the Registrar's recommendation
   const pendingReservationsCount = useMemo(() => {
-    return weeklyReservations.filter(r => r.status === 'Recommending Approval').length
+    return weeklyReservations.filter(r => (r.status === 'Pending' || r.status === 'Recommending Approval') && r.registrarRecommend !== true).length
   }, [weeklyReservations])
 
   const formatReservationDate = (dateStr: string) => {
@@ -603,7 +604,7 @@ export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageP
                   <h3 className="font-semibold text-gray-900 leading-tight">Campus Reservations This Week</h3>
                   {pendingReservationsCount > 0 && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[0.7rem] font-bold bg-amber-100 text-amber-800 animate-pulse">
-                      {pendingReservationsCount} Recommended
+                      {pendingReservationsCount} Awaiting Registrar
                     </span>
                   )}
                 </div>

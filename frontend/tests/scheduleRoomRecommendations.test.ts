@@ -31,6 +31,15 @@ test('room conflicts offer available rooms, including occupancy from other works
   assert.deepEqual(recommendations(), ['C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
 })
 
+test('workbook mode recommends other available rooms without a room conflict', () => {
+  const h = setup()
+  h.second.rows[0].values[17] = 'SAT'
+  const assignments = departmentFacultyScheduleAssignments(parseDepartmentScheduleImportRows(h.sheets, directory), directory)
+  const suggestions = recommendScheduleRooms(assignments, directory.rooms,
+    facultyScheduleRowKey(h.first.name, h.first.rows[0].rowNumber), 19, 0, { alwaysRecommend: true })
+  assert.deepEqual(suggestions, ['B 101', 'C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+})
+
 test('TBA room entries offer available rooms without requiring an overlap', () => {
   const h = setup()
   h.first.rows[0].values[19] = ' tba '

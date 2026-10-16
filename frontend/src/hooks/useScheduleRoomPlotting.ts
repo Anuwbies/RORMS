@@ -71,9 +71,12 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
     setHistory(previous => movePlotSelectionHistory(previous, redo))
   }
   const needsParallelApproval = [...pending.values()].some(assignment => assignment.parallelGroupKey && !assignment.targetStatus)
+  const needsPlotApproval = needsParallelApproval || scheduleCollection === 'schedules'
+    && [...pending.values()].some(assignment => assignment.roomId && !assignment.targetStatus)
   const save = async () => {
     if (!options || !year || !permitted || !pending.size || busy.current) return
     if (needsParallelApproval) { setError('Check the completed parallel group checkbox before clicking Plot.'); return }
+    if (needsPlotApproval) { setError('Check each schedule checkbox before clicking Plot.'); return }
     busy.current = true; setSaving(true); setError(''); setMessage('')
     const startedContext = context
     try {
@@ -85,8 +88,8 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   }
   return { enabled: Boolean(options), permitted, ready, saving, error, message,
     pendingCount: new Set([...pending.values()].map(assignment => assignment.scheduleId)).size, labels,
-    pending, rooms, needsParallelApproval, hasDraftChanges: [...pending.values()].some(assignment => assignment.targetStatus === 'Draft'),
+    pending, rooms, needsParallelApproval, needsPlotApproval, hasDraftChanges: [...pending.values()].some(assignment => assignment.targetStatus === 'Draft' || !assignment.roomId),
     canUndo: history.past.length > 0, canRedo: history.future.length > 0,
     undo: () => changeHistory(false), redo: () => changeHistory(true),
-    roomOptions: ['', ...roomChoices.map(room => room.id)], selected, select, selectGroup, marked, toggleMarked, toggleMarkedGroup, save }
+    roomOptions: [...roomChoices.map(room => room.id), ''], selected, select, selectGroup, marked, toggleMarked, toggleMarkedGroup, save }
 }

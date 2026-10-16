@@ -8,6 +8,7 @@ import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdow
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
+import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
@@ -40,6 +41,9 @@ interface Reservation {
   classSection?: string
   department?: string
   status: ReservationStatus
+  deanRecommend?: boolean
+  registrarRecommend?: boolean
+  universityAdministratorRecommend?: boolean
   createdAt: any
   updatedAt: any
   isHidden?: boolean
@@ -70,15 +74,6 @@ interface Building {
   id: string
   name: string
   code: string
-}
-
-const statusClasses: Record<ReservationStatus, string> = {
-  Pending: 'bg-amber-100 text-amber-700',
-  'Recommending Approval': 'bg-sky-100 text-sky-700',
-  Approved: 'bg-emerald-100 text-emerald-700',
-  Declined: 'bg-rose-100 text-rose-700',
-  Cancelled: 'bg-slate-100 text-slate-700',
-  Completed: 'bg-blue-100 text-blue-700',
 }
 
 const roomStatusClasses: Record<RoomStatus, string> = {
@@ -371,9 +366,12 @@ function MyReservationsPage() {
       header: 'Status',
       width: '20%',
       render: (res) => (
-        <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[res.status]}`}>
-          {res.status}
-        </span>
+        <ReservationReviewIndicators
+          registrarRecommend={res.registrarRecommend}
+          deanRecommend={res.deanRecommend}
+          universityAdministratorRecommend={res.universityAdministratorRecommend}
+          status={res.status}
+        />
       )
     },
     {
@@ -718,6 +716,7 @@ function MyReservationsPage() {
         onDelete={handleDeleteReservation}
         isCanceling={isCanceling}
         reservation={selectedReservation as any}
+        showReviewIndicators
         roomName={selectedReservation && rooms[selectedReservation.roomId] ? rooms[selectedReservation.roomId].name : 'Unknown Room'}
         roomType={(selectedReservation && rooms[selectedReservation.roomId]?.type) || 'Unknown Room Type'}
       />

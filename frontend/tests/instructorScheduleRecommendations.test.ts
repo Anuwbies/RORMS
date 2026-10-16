@@ -50,6 +50,19 @@ test('time alternatives preserve duration, use numeric ranges and avoid instruct
   h.verify(15, choices)
 })
 
+test('workbook mode recommends safe time and day alternatives without a conflict', () => {
+  const h = setup([])
+  h.second.rows[0].values[13] = 'Diaz, Jeremie'
+  const assignments = () => departmentFacultyScheduleAssignments(parseDepartmentScheduleImportRows(h.sheets, directory), directory)
+  const rowKey = facultyScheduleRowKey(h.first.name, h.first.rows[0].rowNumber)
+  const times = recommendInstructorScheduleOptions(assignments(), rowKey, 15, h.first.rows[0].values[15], true)!
+  const days = recommendInstructorScheduleOptions(assignments(), rowKey, 17, h.first.rows[0].values[17], true)!
+  assert.ok(times.length > 0 && times.every(time => time !== '13:30-15:00'))
+  assert.deepEqual([...days].sort(), ['MON', 'TUE', 'WED', 'THU', 'SAT', 'SUN'].sort())
+  h.verify(15, times)
+  h.verify(17, days)
+})
+
 test('day alternatives keep the time and exclude instructor and room conflicts', () => {
   const h = setup()
   assert.deepEqual([...h.recommendations(17)].sort(), ['MON', 'TUE', 'WED', 'THU', 'SAT', 'SUN'].sort())

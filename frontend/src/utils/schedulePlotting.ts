@@ -58,8 +58,9 @@ export function isProvidedScheduleRoom(meeting: ScheduleMeetingRecord): boolean 
 
 export function assignedSchedulePlotStatus(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): 'Draft' | 'Plot' {
   const id = String(meeting.sourceScheduleId || meeting.id)
-  return [...pending.values()].find(assignment => assignment.scheduleId === id && assignment.targetStatus)?.targetStatus
-    ?? (meeting.status === 'Plot' ? 'Plot' : 'Draft')
+  const rowAssignments = [...pending.values()].filter(assignment => assignment.scheduleId === id)
+  return rowAssignments.find(assignment => assignment.targetStatus)?.targetStatus
+    ?? (rowAssignments.some(assignment => assignment.roomId !== assignment.expectedRoomId) ? 'Draft' : meeting.status === 'Plot' ? 'Plot' : 'Draft')
 }
 
 /** A checkbox stages a row status change, preserving its room and synchronizing calendar copies. */
@@ -78,7 +79,9 @@ export function toggleAssignedSchedulePlot(pending: ReadonlyMap<string, PlotAssi
       next.set(key, roomChoice)
     }
   }
+  if (targetStatus === 'Draft' && (meeting.status || 'Draft') === 'Draft') return next
   if (targetStatus === (meeting.status || 'Draft') && ![...next.values()].some(assignment => assignment.scheduleId === id)) return next
+  for (const [key, assignment] of next) if (assignment.scheduleId === id) next.set(key, { ...assignment, targetStatus })
   next.set(key, { scheduleId: id, targetStatus,
     meetingKey: plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>), roomId,
     expectedRoomId: selected?.expectedRoomId ?? meeting.roomId ?? '', expectedRevision: selected?.expectedRevision ?? plotScheduleRevision(meeting) })

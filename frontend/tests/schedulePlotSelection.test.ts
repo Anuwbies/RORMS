@@ -83,7 +83,7 @@ test('checkbox approval uses the staged room and retains room edits when uncheck
   assert.equal(checked.get(key)?.targetStatus, 'Plot')
   assert.equal(checked.get(key)?.roomId, 'room2')
   const unchecked = toggleAssignedSchedulePlot(checked, saved)
-  assert.equal(unchecked.get(key)?.targetStatus, 'Draft')
+  assert.equal(unchecked.get(key)?.targetStatus, undefined)
   assert.equal(unchecked.get(key)?.roomId, 'room2')
   assert.equal(unchecked.get(key)?.expectedRoomId, '')
   assert.equal(pending.get(key)?.targetStatus, undefined)

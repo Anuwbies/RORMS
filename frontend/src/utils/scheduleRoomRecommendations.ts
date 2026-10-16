@@ -120,11 +120,12 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
   rowKey: string, column: number, entryIndex: number, options?: {
     hasConflict?: (assignment: FacultySubjectAssignment) => boolean
     isRoomAvailable?: (room: ScheduleDirectory['rooms'][number]) => boolean
+    alwaysRecommend?: boolean
   }): string[] {
   const targets = assignments.filter(assignment => assignment.rowKey === rowKey
     && assignment.roomColumn === column && (entryIndex < 0 || assignment.roomEntryIndex === entryIndex))
   if (!targets.length || targets.some(target => target.start === undefined || target.end === undefined || target.end <= target.start || !target.days?.length)) return []
-  if (!targets.some(target => isExcelScheduleTba(target.room ?? '')
+  if (!options?.alwaysRecommend && !targets.some(target => isExcelScheduleTba(target.room ?? '')
     || options?.hasConflict?.(target)
     || rooms.some(room => !isExcelScheduleTba(target.room ?? '') && (target.roomId === room.id
       || [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(target.room ?? '')))
@@ -153,6 +154,11 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
   }
   const buildingRank = new Map([...buildingUsage].sort(([left, a], [right, b]) => b.size - a.size || left.localeCompare(right))
     .slice(0, 3).map(([building], index) => [building, index]))
+  if (options?.alwaysRecommend && !buildingRank.size) {
+    for (const building of [...new Set(rooms.map(room => room.buildingId).filter(Boolean))].sort().slice(0, 3)) {
+      buildingRank.set(building, buildingRank.size)
+    }
+  }
   const targetSet = new Set(targets)
   const parallelCosts = new Map(targets.map(target => [target, parallelRoomRecommendationCosts(assignments, rooms, target)]))
   const changeCost = (roomId: string) => Math.max(0, ...targets.map(target => parallelCosts.get(target)?.get(roomId) ?? 0))
@@ -160,6 +166,8 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
     if (scheduleRoomStatusIssue(room)) return false
     if (!buildingRank.has(room.buildingId)) return false
     if (options?.isRoomAvailable && !options.isRoomAvailable(room)) return false
+    if (options?.alwaysRecommend && targets.every(target => target.roomId === room.id
+      || [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(target.room ?? '')))) return false
     const candidates = new Map(targets.map(target => [target, { ...target, roomId: room.id, room: room.name || room.code }]))
     if (targets.some(target => target.parallelGroup !== undefined)) {
       const proposed = assignments.map(assignment => candidates.get(assignment) ?? assignment)

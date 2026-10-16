@@ -1567,6 +1567,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           classSection: reservationData.classSection.trim().toUpperCase(),
                           department,
                           status: 'Pending',
+                          deanRecommend: false,
+                          registrarRecommend: false,
+                          universityAdministratorRecommend: false,
                           createdAt: serverTimestamp(),
                           updatedAt: serverTimestamp()
                         })
@@ -1643,7 +1646,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 <h3 className="text-xl font-bold text-gray-900 leading-snug">
                   Request Sent Successfully
                 </h3>
-                <p className="text-xs font-semibold text-amber-700">{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}Pending Dean/Program Head recommendation</p>
+                <p className="text-xs font-semibold text-amber-700">{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}Pending Registrar recommendation</p>
                 <p className="text-sm text-gray-600 font-medium mt-0.5 whitespace-nowrap">
                   Your reservation for <span className="font-bold text-gray-900">{successDetails.roomName}</span> has been submitted.
                 </p>

@@ -690,7 +690,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   const recommendRooms = useCallback((cell: CellEditLocation, entryIndex: number) => {
     const name = sheetsRef.current[cell.sheet]?.name
     return name && validationDirectory ? recommendScheduleRooms(currentScheduleAssignments(), validationDirectory.rooms,
-      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex) : []
+      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex, { alwaysRecommend: true }) : []
   }, [currentScheduleAssignments, validationDirectory])
 
   const recommendParallelGroups = useCallback((cell: CellEditLocation, entryIndex: number) => {
@@ -722,7 +722,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   const recommendMeetingSlots = useCallback((cell: CellEditLocation) => {
     const name = sheetsRef.current[cell.sheet]?.name, value = readCellValue(cell)
     if (!name) return null
-    return recommendInstructorScheduleOptions(currentScheduleAssignments(), facultyScheduleRowKey(name, cell.row), cell.column, value)
+    return recommendInstructorScheduleOptions(currentScheduleAssignments(), facultyScheduleRowKey(name, cell.row), cell.column, value, true)
   }, [currentScheduleAssignments, readCellValue])
 
   const cellActions = useMemo<ScheduleCellActions>(() => ({

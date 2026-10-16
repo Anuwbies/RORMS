@@ -9,13 +9,17 @@ import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdow
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
+import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
 import { db, functions, auth } from '../../firebase'
 import { httpsCallable } from 'firebase/functions'
 import { 
   collection, 
+  getDocs,
   onSnapshot, 
   query, 
+  runTransaction,
+  serverTimestamp,
   where,
   doc, 
   deleteDoc,
@@ -23,7 +27,7 @@ import {
 
 type ReservationStatus = 'Pending' | 'Recommending Approval' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
 const updateReservationStatus = httpsCallable<
-  { reservationId: string; status: ReservationStatus; expectedStatus: ReservationStatus },
+  { reservationId: string; status: ReservationStatus; expectedStatus: ReservationStatus; recommendation?: 'Registrar' | 'Dean'; declinedReason?: string },
   { changed: boolean; logId: string | null }
 >(functions, 'updateReservationStatus')
 type RoomStatus = 'Available' | 'Occupied' | 'Maintenance'
@@ -57,6 +61,10 @@ interface Reservation {
   duration?: number
   attendees?: number
   status: ReservationStatus
+  deanRecommend?: boolean
+  registrarRecommend?: boolean
+  universityAdministratorRecommend?: boolean
+  declinedReason?: string
   purpose?: string
   requestType?: 'Standard' | 'Extended'
   subjectCode?: string
@@ -137,21 +145,35 @@ const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 interface StatusUpdateModalProps {
   reservation: Reservation
   allowedStatuses: ReservationStatus[]
+  registrarReview?: boolean
   onClose: () => void
-  onUpdate: (id: string, newStatus: ReservationStatus) => Promise<void>
+  onUpdate: (id: string, newStatus: ReservationStatus, declinedReason?: string) => Promise<void>
+  onReview?: (id: string, decision: 'approve' | 'decline', declinedReason?: string) => Promise<void>
 }
 
-function StatusUpdateModal({ reservation, allowedStatuses, onClose, onUpdate }: StatusUpdateModalProps) {
+function StatusUpdateModal({ reservation, allowedStatuses, registrarReview, onClose, onUpdate, onReview }: StatusUpdateModalProps) {
   const [selectedStatus, setSelectedStatus] = useState<ReservationStatus>(reservation.status)
+  const [selectedReviewAction, setSelectedReviewAction] = useState<'approve' | 'decline' | null>(null)
+  const [declinedReason, setDeclinedReason] = useState('')
   const [isUpdating, setIsUpdating] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [avatarError, setAvatarError] = useState(false)
+  const isDeclining = registrarReview ? selectedReviewAction === 'decline' : selectedStatus === 'Declined'
 
   const handleUpdate = async () => {
+    if (isDeclining && !declinedReason.trim()) {
+      setErrorMessage('Enter a reason for declining this reservation.')
+      return
+    }
     setErrorMessage('')
     setIsUpdating(true)
     try {
-      await onUpdate(reservation.id, selectedStatus)
+      if (registrarReview) {
+        if (!selectedReviewAction || !onReview) throw new Error('Select Approve or Decline.')
+        await onReview(reservation.id, selectedReviewAction, isDeclining ? declinedReason.trim() : undefined)
+      } else {
+        await onUpdate(reservation.id, selectedStatus, isDeclining ? declinedReason.trim() : undefined)
+      }
       onClose()
     } catch (error) {
       console.error('Error updating status:', error)
@@ -197,7 +219,24 @@ function StatusUpdateModal({ reservation, allowedStatuses, onClose, onUpdate }: 
               Select New Status
             </label>
             <div className="grid grid-cols-1 gap-2">
-              {allowedStatuses.map((status) => (
+              {registrarReview ? (['approve', 'decline'] as const).map((decision) => (
+                <button
+                  key={decision}
+                  type="button"
+                  onClick={() => setSelectedReviewAction(decision)}
+                  className={`flex items-center justify-between rounded-xl border px-4 py-3 text-sm font-bold transition-all ${
+                    selectedReviewAction === decision
+                      ? 'border-[var(--brand-color)] bg-[var(--brand-color)]/5 text-[var(--brand-color)]'
+                      : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="flex items-center gap-3">
+                    <span className={`h-2.5 w-2.5 rounded-full ${decision === 'approve' ? 'bg-emerald-100' : 'bg-rose-100'}`} />
+                    {decision === 'approve' ? 'Approve' : 'Decline'}
+                  </span>
+                  {selectedReviewAction === decision && <CheckIcon className="h-4 w-4" strokeWidth={3} />}
+                </button>
+              )) : allowedStatuses.map((status) => (
                 <button
                   key={status}
                   type="button"
@@ -216,6 +255,20 @@ function StatusUpdateModal({ reservation, allowedStatuses, onClose, onUpdate }: 
                 </button>
               ))}
             </div>
+            {isDeclining && <div className="mt-4">
+              <label htmlFor="status-decline-reason" className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500">Reason for declining</label>
+              <textarea
+                id="status-decline-reason"
+                value={declinedReason}
+                onChange={event => setDeclinedReason(event.target.value)}
+                maxLength={500}
+                rows={3}
+                required
+                disabled={isUpdating}
+                className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 focus:border-rose-400 focus:outline-none"
+                placeholder="Explain why this request was declined"
+              />
+            </div>}
           </div>
 
           {errorMessage && <p role="alert" className="mb-4 text-sm text-rose-700">{errorMessage}</p>}
@@ -231,7 +284,7 @@ function StatusUpdateModal({ reservation, allowedStatuses, onClose, onUpdate }: 
             <Button
               variant="brand"
               onClick={handleUpdate}
-              disabled={isUpdating || selectedStatus === reservation.status}
+              disabled={isUpdating || (registrarReview ? !selectedReviewAction : selectedStatus === reservation.status) || (isDeclining && !declinedReason.trim())}
               className="flex-1 h-12 text-base"
             >
               {isUpdating ? 'Updating...' : 'Update Status'}
@@ -247,7 +300,7 @@ function StatusUpdateModal({ reservation, allowedStatuses, onClose, onUpdate }: 
 interface ConfirmationModalProps {
   reservation: Reservation
   type: 'decline' | 'delete'
-  onConfirm: () => Promise<void>
+  onConfirm: (reason?: string) => Promise<void>
   onClose: () => void
 }
 
@@ -255,12 +308,18 @@ function ConfirmationModal({ reservation, type, onConfirm, onClose }: Confirmati
   const [isProcessing, setIsProcessing] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [avatarError, setAvatarError] = useState(false)
+  const [declinedReason, setDeclinedReason] = useState('')
+  const isDecline = type === 'decline'
 
   const handleConfirm = async () => {
+    if (isDecline && !declinedReason.trim()) {
+      setErrorMessage('Enter a reason for declining this reservation.')
+      return
+    }
     setErrorMessage('')
     setIsProcessing(true)
     try {
-      await onConfirm()
+      await onConfirm(isDecline ? declinedReason.trim() : undefined)
       onClose()
     } catch (error) {
       console.error(`Error during ${type} action:`, error)
@@ -270,7 +329,6 @@ function ConfirmationModal({ reservation, type, onConfirm, onClose }: Confirmati
     }
   }
 
-  const isDecline = type === 'decline'
   const headerBg = 'bg-rose-600'
   const title = isDecline ? 'Decline Reservation' : 'Delete Reservation'
   const description = isDecline 
@@ -308,10 +366,25 @@ function ConfirmationModal({ reservation, type, onConfirm, onClose }: Confirmati
             </div>
           </div>
 
+          {isDecline && <div>
+            <label htmlFor="reservation-decline-reason" className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-500">Reason for declining</label>
+            <textarea
+              id="reservation-decline-reason"
+              value={declinedReason}
+              onChange={event => setDeclinedReason(event.target.value)}
+              maxLength={500}
+              rows={3}
+              required
+              disabled={isProcessing}
+              className="w-full rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700 focus:border-rose-400 focus:outline-none"
+              placeholder="Explain why this request was declined"
+            />
+          </div>}
+
           <div className="rounded-xl p-4 border bg-rose-50 border-rose-100">
             <p className="text-xs leading-relaxed text-rose-700">
               <span className="font-bold uppercase tracking-wider">Warning:</span> {isDecline 
-                ? 'This action will notify the requester that their reservation has been declined. This can be undone by manually changing the status later.' 
+                ? 'This action will notify the requester that their reservation has been declined and include your reason.' 
                 : 'This action is permanent and cannot be undone. All data associated with this reservation record will be removed from the system.'}
             </p>
           </div>
@@ -330,7 +403,7 @@ function ConfirmationModal({ reservation, type, onConfirm, onClose }: Confirmati
             <Button
               type="button"
               onClick={handleConfirm}
-              disabled={isProcessing}
+              disabled={isProcessing || (isDecline && !declinedReason.trim())}
               className="flex-1 !bg-rose-600 hover:!bg-rose-700 !text-white shadow-md shadow-rose-600/20 hover:shadow-lg h-12 text-base"
             >
               {isProcessing ? 'Processing...' : (isDecline ? 'Confirm Decline' : 'Confirm Delete')}
@@ -488,8 +561,10 @@ function RoomDetailsModal({ room, onClose }: RoomDetailsModalProps) {
 }
 
 function ManageReservationsPage({ userRole }: { userRole: string }) {
-  const isDepartmentReviewer = userRole === 'Dean' || userRole === 'Program Head'
-  const isFinalApprover = userRole === 'Registrar' || userRole === 'University Administrator'
+  const isDepartmentReviewer = userRole === 'Dean'
+  const isRegistrar = userRole === 'Registrar'
+  const isUniversityAdministrator = userRole === 'University Administrator'
+  const canManageRecords = userRole === 'Admin' || isRegistrar || isUniversityAdministrator
   const [department, setDepartment] = useState<string | null>(null)
   const [statusError, setStatusError] = useState('')
   const [reservations, setReservations] = useState<Reservation[]>([])
@@ -525,11 +600,17 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     // Use a department-only query so no new composite index is needed.
     const reservationQuery = isDepartmentReviewer
       ? query(collection(db, 'reservations'), where('department', '==', department))
-      : query(collection(db, 'reservations'), where('status', 'in', STATUS_ORDER.filter(status => status !== 'Pending')))
+      : isRegistrar || isUniversityAdministrator
+        ? query(collection(db, 'reservations'))
+        : query(collection(db, 'reservations'), where('status', 'in', STATUS_ORDER.filter(status => status !== 'Pending')))
     return onSnapshot(reservationQuery, snapshot => {
-      setReservations(snapshot.docs.map(record => ({ id: record.id, ...record.data() })) as Reservation[])
+      const records = snapshot.docs.map(record => ({ id: record.id, ...record.data() })) as Reservation[]
+      setReservations(records.filter(record => {
+        const terminal = ['Approved', 'Declined', 'Cancelled', 'Completed'].includes(record.status)
+        return isUniversityAdministrator ? record.deanRecommend === true || terminal : true
+      }))
     }, () => { setReservations([]); setStatusError('Could not load reservation requests. Please reload and try again.') })
-  }, [department, isDepartmentReviewer])
+  }, [department, isDepartmentReviewer, isRegistrar, isUniversityAdministrator])
 
   useEffect(() => {
     const unsubBuildings = onSnapshot(collection(db, 'buildings'), (snapshot) => {
@@ -652,25 +733,136 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       })
   }, [enrichedReservations, searchTerm, selectedStatuses, selectedBuildings])
 
-  const handleStatusUpdate = async (id: string, newStatus: ReservationStatus) => {
+  const handleStatusUpdate = async (id: string, newStatus: ReservationStatus, recommendation?: 'Registrar' | 'Dean', declinedReason?: string) => {
     setStatusError('')
     const reservation = editingReservation?.id === id ? editingReservation
       : confirmingAction?.reservation.id === id ? confirmingAction.reservation
         : reservations.find(record => record.id === id)
     if (!reservation) throw new Error('This reservation no longer exists. Reload the page and try again.')
-    await updateReservationStatus({ reservationId: id, status: newStatus, expectedStatus: reservation.status })
+    await updateReservationStatus({ reservationId: id, status: newStatus, expectedStatus: reservation.status, ...(recommendation ? { recommendation } : {}), ...(declinedReason ? { declinedReason } : {}) })
+  }
+
+  const saveRegistrarDecisionInFirestore = async (reservation: Reservation, decision: 'recommend' | 'decline', reason?: string) => {
+    const uid = auth.currentUser?.uid
+    if (!uid) throw new Error('Sign in before reviewing a reservation.')
+    const declinedReason = reason?.trim() || ''
+    if (decision === 'decline' && (!declinedReason || declinedReason.length > 500)) {
+      throw new Error('Enter a reason for declining this reservation (up to 500 characters).')
+    }
+    const memberships = await getDocs(query(collection(db, 'memberships'), where('userId', '==', uid)))
+    const acceptedMembership = memberships.docs.find(record => {
+      const member = record.data()
+      return member.status === 'accepted' && member.role === 'Registrar'
+    })
+    if (!acceptedMembership) throw new Error('An accepted Registrar membership is required to recommend reservations.')
+
+    const reservationRef = doc(db, 'reservations', reservation.id)
+    const memberRef = acceptedMembership.ref
+    const profileRef = doc(db, 'users', uid)
+    const logRef = doc(collection(db, 'logs'))
+    await runTransaction(db, async transaction => {
+      const [reservationSnapshot, memberSnapshot, profileSnapshot] = await Promise.all([
+        transaction.get(reservationRef), transaction.get(memberRef), transaction.get(profileRef),
+      ])
+      if (!reservationSnapshot.exists()) throw new Error('This reservation no longer exists. Reload the page and try again.')
+      const current = reservationSnapshot.data()
+      const member = memberSnapshot.data()
+      const profile = profileSnapshot.data()
+      if (member?.status !== 'accepted' || member.role !== 'Registrar' || profile?.isActive === false) {
+        throw new Error('An active Registrar membership is required to recommend reservations.')
+      }
+      if (current.status !== reservation.status) throw new Error('The reservation status changed. Reload the page and try again.')
+      if (current.status !== 'Pending' && current.status !== 'Recommending Approval') {
+        throw new Error('Only open requests can receive a Registrar recommendation.')
+      }
+      if (current.registrarRecommend === true) {
+        if (decision === 'recommend') return
+        throw new Error('The Registrar can decline only before recommending an open request.')
+      }
+
+      const wasDeanRecommended = current.deanRecommend === true
+      transaction.update(reservationRef, {
+        ...(decision === 'recommend' ? {
+          registrarRecommend: true,
+          registrarRecommendedBy: uid,
+          registrarRecommendedAt: serverTimestamp(),
+          ...(wasDeanRecommended ? { deanRecommend: false } : {}),
+        } : {
+          status: 'Declined',
+          declinedReason,
+        }),
+        updatedAt: serverTimestamp(),
+      })
+      transaction.set(logRef, {
+        action: 'reservation.status_changed',
+        targetCollection: 'reservations',
+        targetId: reservation.id,
+        actorId: uid,
+        actorName: formatUserName(profile, member) || uid,
+        actorRole: 'Registrar',
+        membershipId: acceptedMembership.id,
+        changes: {
+          status: { before: current.status, after: decision === 'recommend' ? current.status : 'Declined' },
+          ...(decision === 'recommend' ? {
+            registrarRecommend: { before: false, after: true },
+            ...(wasDeanRecommended ? { deanRecommend: { before: true, after: false } } : {}),
+          } : {
+            declinedReason: { before: typeof current.declinedReason === 'string' ? current.declinedReason.trim() : '', after: declinedReason },
+          }),
+        },
+        ...(decision === 'recommend' ? { reviewStage: 'Registrar' } : {}),
+        createdAt: serverTimestamp(),
+        source: 'user',
+        roomId: current.roomId || '',
+        buildingId: current.buildingId || '',
+        requesterId: current.userId || '',
+        department: current.department || '',
+        reservationDate: current.date || '',
+      })
+    })
+  }
+
+  const canAdvanceReservation = (reservation: Reservation) => {
+    const open = reservation.status === 'Pending' || reservation.status === 'Recommending Approval'
+    if (isRegistrar) return open && reservation.registrarRecommend !== true
+    if (isDepartmentReviewer) return open && reservation.registrarRecommend === true && reservation.deanRecommend !== true
+    if (isUniversityAdministrator) return reservation.status === 'Recommending Approval' && reservation.registrarRecommend === true && reservation.deanRecommend === true && reservation.universityAdministratorRecommend !== true
+    return false
+  }
+
+  const allowedStatusesFor = (reservation: Reservation): ReservationStatus[] => {
+    if (!canManageRecords) return []
+    if (isRegistrar && reservation.status === 'Pending') return ['Cancelled']
+    if (reservation.status === 'Recommending Approval') {
+      return [
+        ...(isUniversityAdministrator && reservation.registrarRecommend === true && reservation.deanRecommend === true ? ['Approved' as const, 'Declined' as const] : []),
+        'Cancelled',
+      ]
+    }
+    return reservation.status === 'Approved' ? ['Cancelled', 'Completed'] : []
   }
 
   const handleApprove = async (id: string) => {
     try {
-      await handleStatusUpdate(id, isDepartmentReviewer ? 'Recommending Approval' : 'Approved')
+      setStatusError('')
+      const reservation = reservations.find(record => record.id === id)
+      if (!reservation) throw new Error('This reservation no longer exists. Reload the page and try again.')
+      if (isRegistrar) await saveRegistrarDecisionInFirestore(reservation, 'recommend')
+      else if (isDepartmentReviewer) await handleStatusUpdate(id, 'Recommending Approval', 'Dean')
+      else if (isUniversityAdministrator) await handleStatusUpdate(id, 'Approved')
     } catch (error) {
       console.error('Error approving reservation:', error)
       setStatusError(error instanceof Error ? error.message : 'Could not approve the reservation. Please try again.')
     }
   }
 
-  const handleReject = (id: string) => handleStatusUpdate(id, 'Declined')
+  const handleReject = (id: string, reason: string) => {
+    const reservation = confirmingAction?.reservation.id === id ? confirmingAction.reservation : reservations.find(record => record.id === id)
+    if (!reservation) throw new Error('This reservation no longer exists. Reload the page and try again.')
+    return isRegistrar
+      ? saveRegistrarDecisionInFirestore(reservation, 'decline', reason)
+      : handleStatusUpdate(id, 'Declined', undefined, reason)
+  }
 
   const handleDelete = async (id: string) => {
     try {
@@ -765,9 +957,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       width: '15%',
       render: (res) => (
         <div className="flex flex-col items-start gap-1">
-          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[res.status] || 'bg-slate-100 text-slate-700'}`}>
-            {res.status}
-          </span>
+          <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={res.status} />
           <ExtendedReservationBadge requestType={res.requestType} />
         </div>
       )
@@ -779,10 +969,10 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       render: (res) => (
         <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
           <IconButton
-            label={isDepartmentReviewer ? 'Recommending Approval' : 'Approve reservation'}
-            disabled={isDepartmentReviewer ? res.status !== 'Pending' : !isFinalApprover || res.status !== 'Recommending Approval'}
+            label={isRegistrar ? 'Recommend as Registrar' : isDepartmentReviewer ? res.registrarRecommend === true ? 'Recommend as Dean' : 'Awaiting Registrar recommendation' : 'Approve as University Administrator'}
+            disabled={!canAdvanceReservation(res)}
             className={`h-8 w-8 rounded-lg bg-white transition-all border border-slate-200 ${
-              (isDepartmentReviewer ? res.status === 'Pending' : isFinalApprover && res.status === 'Recommending Approval')
+              canAdvanceReservation(res)
                 ? 'text-emerald-500 hover:border-emerald-300 hover:text-emerald-600 hover:shadow hover:-translate-y-0.5' 
                 : 'opacity-30 cursor-not-allowed text-slate-400'
             }`}
@@ -790,33 +980,33 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           >
             <CheckIcon className="h-4 w-4" />
           </IconButton>
-          {!isDepartmentReviewer && <><IconButton
+          {(isRegistrar || isUniversityAdministrator) && <IconButton
             label="Decline reservation"
-            disabled={res.status !== 'Recommending Approval'}
+            disabled={!canAdvanceReservation(res)}
             className={`h-8 w-8 rounded-lg bg-white transition-all border border-slate-200 ${
-              res.status === 'Recommending Approval'
+              canAdvanceReservation(res)
                 ? 'text-rose-500 hover:border-rose-300 hover:text-rose-600 hover:shadow hover:-translate-y-0.5' 
                 : 'opacity-30 cursor-not-allowed text-slate-400'
             }`}
             onClick={() => setConfirmingAction({ reservation: res, type: 'decline' })}
           >
             <CloseIcon className="h-4 w-4" />
-          </IconButton>
-          <IconButton
-            label="Edit status"
-            disabled={res.status !== 'Recommending Approval' && res.status !== 'Approved'}
+          </IconButton>}
+          {canManageRecords && <><IconButton
+            label={isRegistrar ? 'Manual edit status' : 'Edit status'}
+            disabled={allowedStatusesFor(res).length === 0}
             className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
             onClick={() => setEditingReservation(res)}
           >
             <EditIcon className="h-4 w-4" />
           </IconButton>
-          <IconButton
+          {!isRegistrar && <IconButton
             label="Delete reservation"
             className="h-8 w-8 rounded-lg bg-white text-rose-500 shadow-sm border border-slate-200 hover:border-rose-200 hover:text-rose-600 hover:shadow hover:-translate-y-0.5 transition-all"
             onClick={() => setConfirmingAction({ reservation: res, type: 'delete' })}
           >
             <TrashIcon className="h-4 w-4" />
-          </IconButton></>}
+          </IconButton>}</>}
         </div>
       )
     }
@@ -837,7 +1027,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     {
       id: 'status',
       title: 'Status',
-      options: isDepartmentReviewer ? STATUS_ORDER : STATUS_ORDER.filter(status => status !== 'Pending'),
+      options: isRegistrar || isDepartmentReviewer ? STATUS_ORDER : STATUS_ORDER.filter(status => status !== 'Pending'),
       selectedValues: selectedStatuses,
       onChange: setSelectedStatuses
     }
@@ -848,7 +1038,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader 
           title="Manage Reservations" 
-          description={isDepartmentReviewer ? 'Review your department’s requests and mark them Recommending Approval.' : 'Review recommended requests for final approval by the Registrar or University Administrator.'}
+          description={isRegistrar ? 'Recommend pending requests before Dean review.' : isDepartmentReviewer ? 'View your department requests and review them after Registrar recommendation.' : isUniversityAdministrator ? 'Give final approval after Registrar and Dean recommendations.' : 'Manage reservation records.'}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
@@ -908,6 +1098,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           roomName={viewingReservation.roomName || 'Unknown Room'}
           roomType={rooms.find(room => room.id === viewingReservation.roomId)?.type || 'Unknown Room Type'}
           requester={viewingReservation.requester}
+          showReviewIndicators
           onViewRoom={() => {
             handleViewRoomInfo(viewingReservation.roomId)
             setViewingReservation(null)
@@ -925,11 +1116,15 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       {editingReservation && (
         <StatusUpdateModal
           reservation={editingReservation}
-          allowedStatuses={editingReservation.status === 'Recommending Approval'
-            ? [...(isFinalApprover ? ['Approved' as const] : []), 'Declined', 'Cancelled']
-            : editingReservation.status === 'Approved' ? ['Cancelled', 'Completed'] : []}
+          allowedStatuses={allowedStatusesFor(editingReservation)}
+          registrarReview={isRegistrar && canAdvanceReservation(editingReservation)}
           onClose={() => setEditingReservation(null)}
-          onUpdate={handleStatusUpdate}
+          onUpdate={(id, status, reason) => handleStatusUpdate(id, status, undefined, reason)}
+          onReview={(id, decision, reason) => {
+            const reservation = editingReservation.id === id ? editingReservation : reservations.find(record => record.id === id)
+            if (!reservation) throw new Error('This reservation no longer exists. Reload the page and try again.')
+            return saveRegistrarDecisionInFirestore(reservation, decision === 'approve' ? 'recommend' : 'decline', reason)
+          }}
         />
       )}
 
@@ -937,7 +1132,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         <ConfirmationModal
           reservation={confirmingAction.reservation}
           type={confirmingAction.type}
-          onConfirm={() => confirmingAction.type === 'decline' ? handleReject(confirmingAction.reservation.id) : handleDelete(confirmingAction.reservation.id)}
+          onConfirm={(reason) => confirmingAction.type === 'decline' ? handleReject(confirmingAction.reservation.id, reason || '') : handleDelete(confirmingAction.reservation.id)}
           onClose={() => setConfirmingAction(null)}
         />
       )}

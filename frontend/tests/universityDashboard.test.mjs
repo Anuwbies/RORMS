@@ -22,17 +22,18 @@ test('today includes pending, approved and completed bookings in time order, exc
     { id: 'later', date: '2026-10-14', startTime: '15:00', status: 'Approved' },
     { id: 'early', date: '2026-10-14', startTime: '08:00', status: 'Completed' },
     { id: 'pending', date: '2026-10-14', startTime: '10:00', status: 'Pending' },
-    { id: 'recommended', date: '2026-10-14', startTime: '11:00', status: 'Recommending Approval' },
+    { id: 'recommended', date: '2026-10-14', startTime: '11:00', status: 'Recommending Approval', registrarRecommend: true, deanRecommend: true },
+    { id: 'awaiting-dean', date: '2026-10-14', startTime: '12:00', status: 'Recommending Approval', registrarRecommend: true, deanRecommend: false },
     { id: 'cancelled', date: '2026-10-14', status: 'Cancelled' },
     { id: 'declined', date: '2026-10-14', status: 'Declined' },
     { id: 'tomorrow', date: '2026-10-15', status: 'Pending' },
   ]
   const result = universityDashboardData([], bookings, new Date('2026-10-13T16:01:00Z'))
-  assert.equal(result.todayReservations.map(item => item.id).join(','), 'early,pending,recommended,later')
+  assert.equal(result.todayReservations.map(item => item.id).join(','), 'early,pending,recommended,awaiting-dean,later')
   assert.equal(result.pending.map(item => item.id).join(','), 'recommended')
   assert.equal(result.week[0].approved, 1)
-  assert.equal(result.week[0].pending, 2)
-  assert.equal(result.week[0].total, 3)
+  assert.equal(result.week[0].pending, 3)
+  assert.equal(result.week[0].total, 4)
   assert.equal(result.week[1].total, 1)
 })
 

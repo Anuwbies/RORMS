@@ -21,6 +21,8 @@ export interface SingleSelectDropdownProps<T extends string> {
   menuAnchorSelector?: string
   retainValueOnOpen?: boolean
   recommendedOptions?: readonly T[]
+  clearValue?: T
+  fitMenuToOptions?: boolean
 }
 
 export function SingleSelectDropdown<T extends string>({ 
@@ -39,7 +41,9 @@ export function SingleSelectDropdown<T extends string>({
   variant = 'default',
   menuAnchorSelector,
   retainValueOnOpen = false,
-  recommendedOptions = []
+  recommendedOptions = [],
+  clearValue,
+  fitMenuToOptions = false
 }: SingleSelectDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -48,12 +52,14 @@ export function SingleSelectDropdown<T extends string>({
   const listId = useId()
   const dropdownRef = useRef<HTMLDivElement>(null)
   const menuWidthRef = useRef<HTMLDivElement>(null)
+  const menuOptionWidthRef = useRef<HTMLSpanElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const [menuPosition, setMenuPosition] = useState<{ left: number; top: number; width: number; maxHeight?: number } | null>(null)
   const [menuMinWidth, setMenuMinWidth] = useState<number | null>(null)
   const query = searchKey(search)
   const filteredOptions = searchable ? options.filter(option => searchKey(getOptionLabel(option)).includes(query)) : options
   const meetingVariant = variant === 'meeting'
+  const longestOption = options.map(option => getOptionLabel(option)).reduce((longest, label) => label.length > longest.length ? label : longest, '')
 
   useEffect(() => {
     onToggle?.(isOpen)
@@ -82,7 +88,8 @@ export function SingleSelectDropdown<T extends string>({
     if (!portal || !isOpen || !dropdownRef.current) return
     const anchor = menuAnchorSelector ? dropdownRef.current.closest(menuAnchorSelector) : null
     const rect = (anchor ?? dropdownRef.current).getBoundingClientRect()
-    const width = Math.min(anchor ? rect.width : Math.max(rect.width, 220), window.innerWidth - 16)
+    const baseWidth = anchor ? rect.width : Math.max(rect.width, 220)
+    const width = Math.min(Math.max(baseWidth, fitMenuToOptions ? (menuOptionWidthRef.current?.offsetWidth ?? 0) + 64 : 0), window.innerWidth - 16)
     const top = anchor ? rect.bottom + 4 : Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 260))
     setMenuPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
       top, width, ...(anchor ? { maxHeight: Math.max(32, Math.min(220, window.innerHeight - top - 20)) } : {}) })
@@ -92,14 +99,12 @@ export function SingleSelectDropdown<T extends string>({
     window.addEventListener('resize', close)
     document.addEventListener('keydown', key, true)
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); document.removeEventListener('keydown', key, true) }
-  }, [isOpen, portal, menuAnchorSelector])
+  }, [isOpen, portal, menuAnchorSelector, fitMenuToOptions, longestOption])
 
   const handleSelect = (option: T) => {
     onChange(option)
     setIsOpen(false)
   }
-
-  const longestOption = options.map(option => getOptionLabel(option)).reduce((longest, label) => label.length > longest.length ? label : longest, '')
 
   useLayoutEffect(() => {
     if (!menuWidthRef.current) {
@@ -131,7 +136,7 @@ export function SingleSelectDropdown<T extends string>({
             tabIndex={searchable ? -1 : undefined} onMouseDown={event => { if (searchable) event.preventDefault() }} onClick={() => handleSelect(option)}
             className={`flex w-full items-center gap-2 ${meetingVariant ? 'rounded' : 'rounded-xl'} px-3 py-2 text-left text-sm font-medium transition-all active:scale-[0.98] ${activeIndex === index ? 'bg-gray-100' : ''} ${selected ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)]' : muted ? 'text-gray-400 font-medium hover:bg-gray-50 hover:text-gray-600 active:bg-gray-100' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 active:bg-gray-100'}`}>
             {recommendedOptions.includes(option) ? <span className="min-w-0 flex-1">
-              <span className="block truncate">{getOptionLabel(option) || 'None'}</span>
+              <span className={`block ${fitMenuToOptions ? 'whitespace-normal break-words' : 'truncate'}`}>{getOptionLabel(option) || 'None'}</span>
               <span className="block text-xs font-normal text-[var(--brand-color)]">Recommended</span>
             </span> : <span className="truncate">{getOptionLabel(option) || 'None'}</span>}
             {selected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)] shrink-0" strokeWidth={3} />}
@@ -157,6 +162,8 @@ export function SingleSelectDropdown<T extends string>({
           <span className="whitespace-nowrap">{longestOption}</span>
         </div>
       </div>
+      {fitMenuToOptions && <span ref={menuOptionWidthRef} aria-hidden="true"
+        className="pointer-events-none absolute invisible w-max whitespace-nowrap px-3 py-2 text-sm font-medium">{longestOption}</span>}
 
       {searchable ? <input
         type="text" role="combobox" autoComplete="off" aria-label={ariaLabel} aria-autocomplete="list" aria-expanded={isOpen}
@@ -165,10 +172,15 @@ export function SingleSelectDropdown<T extends string>({
         disabled={isDisabled} value={isOpen && (!retainValueOnOpen || searchStarted) ? search : getOptionLabel(value)} placeholder={isOpen && (!retainValueOnOpen || searchStarted) ? 'search...' : placeholder}
         onFocus={event => { setSearch(''); setSearchStarted(false); setActiveIndex(-1); setIsOpen(true); if (retainValueOnOpen) event.currentTarget.select() }}
         onClick={() => setIsOpen(true)}
-        onChange={event => { setSearch(event.target.value); setSearchStarted(true); setActiveIndex(-1); setIsOpen(true) }}
+        onChange={event => {
+          const text = event.target.value
+          setSearch(text); setSearchStarted(true); setActiveIndex(-1); setIsOpen(true)
+          if (!text && clearValue !== undefined && value !== clearValue) onChange(clearValue)
+        }}
         onKeyDown={event => {
           if (!isOpen && !event.ctrlKey && !event.metaKey && !event.altKey && (event.key.length === 1 || event.key === 'Backspace' || event.key === 'Delete')) {
             event.preventDefault(); setSearch(event.key.length === 1 ? event.key : ''); setSearchStarted(true); setActiveIndex(-1); setIsOpen(true)
+            if ((event.key === 'Backspace' || event.key === 'Delete') && clearValue !== undefined && value !== clearValue) onChange(clearValue)
           } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault(); setIsOpen(true)
             setActiveIndex(index => filteredOptions.length ? event.key === 'ArrowDown' ? (index + 1) % filteredOptions.length : index <= 0 ? filteredOptions.length - 1 : index - 1 : -1)

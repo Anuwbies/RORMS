@@ -82,6 +82,7 @@ test('real plotting hook undoes/redoes room choices and resets after successful 
   assert.equal(h.render().selected(meeting), 'room1')
   h.render().redo()
   assert.equal(h.render().selected(meeting), 'room2')
+  h.render().toggleMarked(meeting)
   await h.render().save()
   assert.equal(h.render().pendingCount, 0)
   assert.equal(h.render().canUndo, false)
@@ -92,12 +93,15 @@ test('failed Plot keeps history; saving blocks edits and undo', async () => {
   let finish
   const h = mount(() => new Promise((_, reject) => { finish = reject }))
   h.render().select(meeting, 'room2')
+  h.render().toggleMarked(meeting)
   const saving = h.render().save()
   h.render().undo(); h.render().select(meeting, 'room3')
   assert.equal(h.render().selected(meeting), 'room2')
   finish(new Error('conflict')); await saving
   assert.equal(h.render().error, 'conflict')
   assert.equal(h.render().canUndo, true)
+  h.render().undo()
+  assert.equal(h.render().selected(meeting), 'room2')
   h.render().undo()
   assert.equal(h.render().selected(meeting), 'room1')
   assert.equal(h.render().error, '')
@@ -231,4 +235,51 @@ test('assign rooms, manually check the group, then Plot is required, including u
   assert.equal(request.assignments.length, 4)
   assert.ok(request.assignments.every(assignment => assignment.targetStatus === 'Plot'))
   assert.equal(h.render().pendingCount, 0)
+})
+
+test('ordinary room choices require manual approval, and subsequent edits revoke it', async () => {
+  for (const status of ['Draft', 'Plot']) {
+    let saves = 0, request
+    const h = mount(async input => { saves++; request = input })
+    const saved = { ...meeting, status, roomId: status === 'Draft' ? '' : 'room1', providedRoomKeys: [] }
+    h.render().select(saved, 'room2')
+    assert.equal(h.render().marked(saved), false)
+    assert.equal(h.render().needsPlotApproval, true)
+    await h.render().save()
+    assert.equal(saves, 0)
+    assert.match(h.render().error, /Check each schedule checkbox/)
+    h.render().toggleMarked(saved)
+    assert.equal(h.render().needsPlotApproval, false)
+    h.render().select(saved, 'room3')
+    assert.equal(h.render().marked(saved), false)
+    assert.equal(h.render().needsPlotApproval, true)
+    h.render().toggleMarked(saved)
+    h.render().undo()
+    assert.equal(h.render().needsPlotApproval, true)
+    h.render().redo()
+    await h.render().save()
+    assert.equal(saves, 1)
+    assert.equal(request.assignments[0].targetStatus, 'Plot')
+    assert.equal(request.assignments[0].roomId, 'room3')
+  }
+})
+
+test('one row checkbox approves all staged meetings and any room edit revokes row approval', () => {
+  const h = mount()
+  const first = { ...meeting, status: 'Draft', roomId: '', providedRoomKeys: [] }
+  const second = { ...first, id: 'class:2', format: 'Lab', startTime: '09:00', endTime: '10:30' }
+  h.render().select(first, 'room1')
+  h.render().select(second, 'room2')
+  h.render().toggleMarked(first)
+  assert.equal(h.render().needsPlotApproval, false)
+  assert.ok([...h.render().pending.values()].every(assignment => assignment.targetStatus === 'Plot'))
+  h.render().select(second, 'room3')
+  assert.equal(h.render().marked(first), false)
+  assert.equal(h.render().needsPlotApproval, true)
+  assert.ok([...h.render().pending.values()].every(assignment => !assignment.targetStatus))
+  h.render().toggleMarked(first)
+  h.render().toggleMarked(first)
+  assert.equal(h.render().needsPlotApproval, true)
+  assert.equal(h.render().selected(first), 'room1')
+  assert.equal(h.render().selected(second), 'room3')
 })
