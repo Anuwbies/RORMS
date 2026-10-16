@@ -164,7 +164,7 @@ export function validateOtherDepartmentRoomAssignments(assignments: readonly Fac
   for (const assignment of assignments) for (const other of external) {
     if (!other.departmentCode || !facultyScheduleRoomConflict(assignment, other)) continue
     const overlap = facultyScheduleOverlap(assignment, other)!
-    const message = `${other.departmentCode} is using Room ${assignment.room} on ${overlap.days.map(day => day.toUpperCase()).join('/')} (${other.timeText}).`
+    const message = `${other.departmentCode} is also using Room ${assignment.room} on ${overlap.days.map(day => day.toUpperCase()).join('/')} (${other.timeText}).`
     issues.set(JSON.stringify([assignment.location, message]), { severity: 'warning', location: assignment.location, message })
   }
   return [...issues.values()]
@@ -250,6 +250,21 @@ export function isValidScheduleCollege(value: string): boolean {
   return !normalized || SCHEDULE_COLLEGE_CHOICES.some(choice => choice.toUpperCase() === normalized)
 }
 
+export const isScheduleTbaNotice = (message: string) => message.startsWith('TBA: ')
+
+export function scheduleValidationTone(messages: readonly string[]): 'blue' | 'purple' | 'danger' {
+  if (messages.some(message => !isScheduleTbaNotice(message) && !message.startsWith('Duplicate Subject '))) return 'danger'
+  return messages.some(message => message.startsWith('Duplicate Subject ')) ? 'purple' : 'blue'
+}
+
+export function scheduleTbaNotices(row: WorkbookScheduleRow): string[] {
+  return [13, 14, 15, 16, 17, 18, 19, 20].flatMap(column => {
+    if (!splitScheduleResources(row.rawValues[column] ?? '').some(isExcelScheduleTba)) return []
+    const field = ['Faculty', 'Time', 'Day', 'Room'][Math.floor((column - 13) / 2)]
+    return [`TBA: ${field} (${column % 2 ? 'Lec' : 'Lab'}) is still to be assigned.`]
+  })
+}
+
 /** Check subject identities against the department's published course directory. */
 export function validateDepartmentScheduleCourseRows(rows: readonly WorkbookScheduleRow[],
   courses: readonly DepartmentCourseIdentity[]): ReadonlyMap<string, readonly string[]> {
@@ -306,6 +321,7 @@ export function validateDepartmentFacultyScheduleRows(rows: readonly WorkbookSch
       }
     }
     for (const issue of courseIssues.get(location) ?? []) issues.add(issue)
+    for (const notice of scheduleTbaNotices(row)) issues.add(notice)
     if (issues.size) messages.set(location, [...issues])
   }
   return messages

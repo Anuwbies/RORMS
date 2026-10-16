@@ -20,6 +20,7 @@ export interface SingleSelectDropdownProps<T extends string> {
   variant?: 'default' | 'meeting'
   menuAnchorSelector?: string
   retainValueOnOpen?: boolean
+  recommendedOptions?: readonly T[]
 }
 
 export function SingleSelectDropdown<T extends string>({ 
@@ -37,7 +38,8 @@ export function SingleSelectDropdown<T extends string>({
   getOptionLabel = (option: T) => option,
   variant = 'default',
   menuAnchorSelector,
-  retainValueOnOpen = false
+  retainValueOnOpen = false,
+  recommendedOptions = []
 }: SingleSelectDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -128,7 +130,10 @@ export function SingleSelectDropdown<T extends string>({
           return <button key={option} id={`${listId}-${index}`} type="button" role={searchable ? 'option' : undefined} aria-selected={searchable ? selected : undefined}
             tabIndex={searchable ? -1 : undefined} onMouseDown={event => { if (searchable) event.preventDefault() }} onClick={() => handleSelect(option)}
             className={`flex w-full items-center gap-2 ${meetingVariant ? 'rounded' : 'rounded-xl'} px-3 py-2 text-left text-sm font-medium transition-all active:scale-[0.98] ${activeIndex === index ? 'bg-gray-100' : ''} ${selected ? 'bg-[var(--brand-color)]/10 text-[var(--brand-color)]' : muted ? 'text-gray-400 font-medium hover:bg-gray-50 hover:text-gray-600 active:bg-gray-100' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 active:bg-gray-100'}`}>
-            <span className="truncate">{getOptionLabel(option) || 'None'}</span>
+            {recommendedOptions.includes(option) ? <span className="min-w-0 flex-1">
+              <span className="block truncate">{getOptionLabel(option) || 'None'}</span>
+              <span className="block text-xs font-normal text-[var(--brand-color)]">Recommended</span>
+            </span> : <span className="truncate">{getOptionLabel(option) || 'None'}</span>}
             {selected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)] shrink-0" strokeWidth={3} />}
           </button>
         })}

@@ -11,7 +11,7 @@ import { ExcelFacultySuggestions } from './ExcelFacultySuggestions'
 import { completeScheduleResourceText, insertScheduleChoice, SCHEDULE_TIME_CHOICES, SCHEDULE_DAY_CHOICES } from '../utils/scheduleResourceCompletion'
 import { formatScheduleTimeInput, hasExtraScheduleValues, isScheduleCellCharacterAllowed } from '../utils/departmentScheduleEdits'
 import { rankScheduleCourses, resolveScheduleCourse, scheduleCourseYear, type DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
-import { isScheduleColumnEditable, SCHEDULE_COLLEGE_CHOICES, splitScheduleResources } from '../utils/ScheduleValidation'
+import { facultyScheduleRowKey, isScheduleColumnEditable, SCHEDULE_COLLEGE_CHOICES, scheduleValidationTone, splitScheduleResources } from '../utils/ScheduleValidation'
 
 interface ScheduleSuggestionProps {
   suggestionDirectory?: ScheduleDirectory | null
@@ -321,6 +321,7 @@ interface ScheduleRowProps extends ScheduleSuggestionProps {
   columnLabels: readonly string[]
   actions: ScheduleCellActions
   validationMessage?: string
+  status: string
 }
 
 const EditableYearHeader = memo(function EditableYearHeader({ initialLabel, rowSpan, endsTable, renameRequest, onRename, collapsed = false }: { initialLabel: string; sourceLabel?: string; rowSpan: number; endsTable: boolean; renameRequest?: number; onRename: (label: string) => void; collapsed?: boolean }) {
@@ -333,7 +334,7 @@ const EditableYearHeader = memo(function EditableYearHeader({ initialLabel, rowS
 
   const beginEditing = () => {
     activeRef.current = true
-    setEditorWidth(headerRef.current?.querySelector<HTMLElement>('[data-year-label-viewport]')?.clientHeight ?? headerRef.current?.clientHeight ?? 0)
+    setEditorWidth(headerRef.current?.querySelector<HTMLElement>('[data-year-label-text]')?.getBoundingClientRect().height ?? headerRef.current?.clientHeight ?? 0)
     setDraft(label)
     setEditing(true)
   }
@@ -368,7 +369,7 @@ const EditableYearHeader = memo(function EditableYearHeader({ initialLabel, rowS
           }}
         />
       ) : collapsed ? <span className="block truncate">{label}</span>
-        : <span className="block max-h-full rotate-180 overflow-hidden text-ellipsis whitespace-nowrap [writing-mode:vertical-rl]">{label}</span>
+        : <span data-year-label-text className="block rotate-180 whitespace-nowrap [writing-mode:vertical-rl]">{label}</span>
 
   return (
     <th
@@ -376,7 +377,7 @@ const EditableYearHeader = memo(function EditableYearHeader({ initialLabel, rowS
       scope="rowgroup"
       data-year-header
       rowSpan={collapsed ? 1 : rowSpan}
-      colSpan={collapsed ? 23 : undefined}
+      colSpan={collapsed ? 24 : undefined}
       title={label}
       tabIndex={editing ? -1 : 0}
       aria-label={`Year label: ${label}`}
@@ -393,9 +394,7 @@ const EditableYearHeader = memo(function EditableYearHeader({ initialLabel, rowS
       }}
     >
       {collapsed ? <div className="sticky left-0 inline-block w-[var(--schedule-pinned-width,6rem)] border border-black bg-[#e3edda] px-3 py-2 group-focus-visible:outline-2 group-focus-visible:-outline-offset-2 group-focus-visible:outline-[var(--brand-color)]">{content}</div> : (
-        <span className="absolute inset-0">
-          <span data-year-label-viewport className="sticky top-[var(--schedule-header-height,0px)] flex h-[min(100%,var(--schedule-label-height,100%))] items-center justify-center overflow-hidden">{content}</span>
-        </span>
+        <span data-year-label-viewport className="sticky flex items-center justify-center py-2" style={editing ? { minHeight: editorWidth + 16 } : undefined}>{content}</span>
       )}
     </th>
   )
@@ -406,11 +405,14 @@ const CollapsedYearRow = memo(function CollapsedYearRow({ label, start, sheetInd
   return <tr data-row-index={start}><EditableYearHeader initialLabel={label} rowSpan={1} endsTable collapsed renameRequest={renameRequest} onRename={renameYear} /></tr>
 })
 
-const ScheduleRow = memo(function ScheduleRow({ row, rowIndex, yearEndsTable, yearLabel, yearSourceLabel, yearRowSpan, displayRowNumber, renameRequest, sheetIndex, selectedColumn, selectionTop, selectionBottom, columnLabels, actions, validationMessage, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel }: ScheduleRowProps) {
+const ScheduleRow = memo(function ScheduleRow({ row, rowIndex, yearEndsTable, yearLabel, yearSourceLabel, yearRowSpan, displayRowNumber, renameRequest, sheetIndex, selectedColumn, selectionTop, selectionBottom, columnLabels, actions, validationMessage, status, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel }: ScheduleRowProps) {
   const renameYear = useCallback((label: string) => actions.renameYear(sheetIndex, rowIndex, label), [actions, sheetIndex, rowIndex])
-  const duplicateOnly = validationMessage?.split('\n').every(message => message.startsWith('Duplicate Subject '))
+  const tone = scheduleValidationTone(validationMessage?.split('\n') ?? [])
+  const rowColor = tone === 'blue' ? 'bg-blue-100 text-blue-900' : tone === 'purple' ? 'bg-purple-100 text-purple-900' : 'bg-rose-100 text-rose-900'
+  const counterText = tone === 'blue' ? 'text-blue-900' : tone === 'purple' ? 'text-purple-900' : 'text-rose-900'
+  const counterBackground = tone === 'blue' ? 'bg-blue-100' : tone === 'purple' ? 'bg-purple-100' : 'bg-rose-100'
   return (
-    <tr data-row-index={rowIndex} aria-invalid={validationMessage ? true : undefined} className={`${validationMessage ? duplicateOnly ? 'bg-purple-100 text-purple-900' : 'bg-rose-100 text-rose-900' : rowIndex % 2 === 1 ? 'bg-slate-50' : ''} ${rowIndex > 0 && yearLabel !== undefined ? '[&>th]:border-t [&>td]:border-t' : ''}`}>
+    <tr data-row-index={rowIndex} aria-invalid={validationMessage ? true : undefined} className={`${validationMessage ? rowColor : rowIndex % 2 === 1 ? 'bg-slate-50' : ''} ${rowIndex > 0 && yearLabel !== undefined ? '[&>th]:border-t [&>td]:border-t' : ''}`}>
       {yearLabel !== undefined && yearLabel !== '' && (
         <EditableYearHeader initialLabel={yearLabel} sourceLabel={yearSourceLabel} rowSpan={yearRowSpan} endsTable={yearEndsTable} renameRequest={renameRequest} onRename={renameYear} />
       )}
@@ -423,9 +425,9 @@ const ScheduleRow = memo(function ScheduleRow({ row, rowIndex, yearEndsTable, ye
         aria-label={`Select row ${displayRowNumber}${validationMessage ? `. ${validationMessage}` : ''}`}
         aria-invalid={validationMessage ? true : undefined}
         aria-selected={selectedColumn === -1}
-        className={`sticky left-[var(--schedule-year-width,3rem)] z-[4] whitespace-nowrap border-r border-b border-black px-3 py-2 font-normal ${validationMessage ? duplicateOnly ? 'text-purple-900' : 'text-rose-900' : 'text-slate-500'} ${selectedColumn === -1
+        className={`sticky left-[var(--schedule-year-width,3rem)] z-[4] whitespace-nowrap border-r border-b border-black px-3 py-2 font-normal ${validationMessage ? counterText : 'text-slate-500'} ${selectedColumn === -1
           ? `bg-[#e7eddf] outline-none after:pointer-events-none after:absolute after:left-0 after:-right-px after:top-0 after:-bottom-px after:z-[1] after:border-l-2 after:border-[var(--brand-color)] ${selectionTop ? 'after:border-t-2' : ''} ${selectionBottom ? 'after:border-b-2' : ''}`
-          : `${validationMessage ? duplicateOnly ? 'bg-purple-100' : 'bg-rose-100' : rowIndex % 2 === 1 ? 'bg-slate-50' : 'bg-white'} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand-color)]`}`}
+          : `${validationMessage ? counterBackground : rowIndex % 2 === 1 ? 'bg-slate-50' : 'bg-white'} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand-color)]`}`}
         onPointerDown={event => actions.startSelection(event, sheetIndex, -1, rowIndex)}
         onPointerMove={actions.moveSelection}
         onPointerUp={event => {
@@ -459,6 +461,7 @@ const ScheduleRow = memo(function ScheduleRow({ row, rowIndex, yearEndsTable, ye
           suggestionYearLevel={suggestionYearLevel}
         />
       ))}
+      <td aria-label={status ? `Schedule status: ${status}` : 'No schedule status'} className={`border-r border-b border-black px-3 py-2 font-medium ${status === 'Plot' ? 'text-[#526f34]' : status ? 'text-slate-600' : ''}`}>{status}</td>
     </tr>
   )
 })
@@ -473,9 +476,12 @@ interface DepartmentScheduleImportTableBodyProps extends ScheduleSuggestionProps
   actions: ScheduleCellActions
   hasSheet: boolean
   rowIssues?: ReadonlyMap<number, readonly string[]>
+  rowStatuses?: ReadonlyMap<string, string>
+  statusesReady: boolean
+  sheetName: string
 }
 
-export const DepartmentScheduleImportTableBody = memo(function DepartmentScheduleImportTableBody({ rows, yearSections, yearRenameRequest, sheetIndex, selection, columnLabels, actions, hasSheet, rowIssues, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError }: DepartmentScheduleImportTableBodyProps) {
+export const DepartmentScheduleImportTableBody = memo(function DepartmentScheduleImportTableBody({ rows, yearSections, yearRenameRequest, sheetIndex, selection, columnLabels, actions, hasSheet, rowIssues, rowStatuses, statusesReady, sheetName, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError }: DepartmentScheduleImportTableBodyProps) {
   const first = selection?.sheet === sheetIndex ? Math.min(selection.anchor, selection.end) : -1
   const last = selection?.sheet === sheetIndex ? Math.max(selection.anchor, selection.end) : -1
   let sectionIndex = 0
@@ -488,7 +494,7 @@ export const DepartmentScheduleImportTableBody = memo(function DepartmentSchedul
         const selected = index >= first && index <= last
         return <Fragment key={row.rowNumber}>
           {index > 0 && index === section.start && (
-            <tr aria-hidden="true"><td colSpan={23} className="h-[calc((1lh_+_1rem_+_1px)/2)] border-0 bg-white p-0" /></tr>
+            <tr aria-hidden="true"><td colSpan={24} className="h-[calc((1lh_+_1rem_+_1px)/2)] border-0 bg-white p-0" /></tr>
           )}
           {section.hidden ? <CollapsedYearRow
             label={section.label}
@@ -512,6 +518,7 @@ export const DepartmentScheduleImportTableBody = memo(function DepartmentSchedul
             columnLabels={columnLabels}
             actions={actions}
             validationMessage={rowIssues?.get(row.rowNumber)?.join('\n') || undefined}
+            status={rowStatuses?.get(facultyScheduleRowKey(sheetName, row.rowNumber)) ?? (statusesReady && row.values.slice(1).some(value => value.trim()) ? 'Draft' : '')}
             suggestionDirectory={suggestionDirectory}
             suggestionError={suggestionError}
             courseSuggestions={courseSuggestions}
@@ -520,7 +527,7 @@ export const DepartmentScheduleImportTableBody = memo(function DepartmentSchedul
           />}
         </Fragment>
       })}
-      {hasSheet && !rows.length && <tr><td colSpan={23} className="px-4 py-8 text-slate-500">Headers matched. This worksheet has no data rows.</td></tr>}
+      {hasSheet && !rows.length && <tr><td colSpan={24} className="px-4 py-8 text-slate-500">Headers matched. This worksheet has no data rows.</td></tr>}
     </tbody>
   )
 })

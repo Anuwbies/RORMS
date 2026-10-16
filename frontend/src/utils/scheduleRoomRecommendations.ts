@@ -1,5 +1,5 @@
 import type { ScheduleDirectory } from './excelScheduleRows'
-import { areParallelFacultyMeetings, excelScheduleRoomKey, facultyScheduleRoomConflict, isExcelScheduleTba, parallelRoomConnectionIssue, parallelRoomPosition, type FacultySubjectAssignment } from './ScheduleValidation'
+import { areParallelFacultyMeetings, excelScheduleRoomKey, facultyScheduleRoomConflict, isExcelScheduleTba, parallelRoomConnectionIssue, parallelRoomPosition, type FacultySubjectAssignment } from './ScheduleValidation.ts'
 
 /** A disconnected group may need several edits before its validation can clear. */
 function parallelRoomRecommendationCosts(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
@@ -45,11 +45,15 @@ function parallelRoomRecommendationCosts(assignments: readonly FacultySubjectAss
 
 /** Recommend against every meeting affected by this room entry, across all sheets. */
 export function recommendScheduleRooms(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
-  rowKey: string, column: number, entryIndex: number): string[] {
+  rowKey: string, column: number, entryIndex: number, options?: {
+    hasConflict?: (assignment: FacultySubjectAssignment) => boolean
+    isRoomAvailable?: (room: ScheduleDirectory['rooms'][number]) => boolean
+  }): string[] {
   const targets = assignments.filter(assignment => assignment.rowKey === rowKey
     && assignment.roomColumn === column && (entryIndex < 0 || assignment.roomEntryIndex === entryIndex))
   if (!targets.length || targets.some(target => target.start === undefined || target.end === undefined || target.end <= target.start || !target.days?.length)) return []
   if (!targets.some(target => isExcelScheduleTba(target.room ?? '')
+    || options?.hasConflict?.(target)
     || (target.parallelGroup !== undefined && !target.room?.trim())
     || parallelRoomConnectionIssue(assignments, rooms, target)
     || assignments.some(other => other !== target && facultyScheduleRoomConflict(target, other)))) return []
@@ -79,6 +83,7 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
   const changeCost = (roomId: string) => Math.max(0, ...targets.map(target => parallelCosts.get(target)?.get(roomId) ?? 0))
   const available = rooms.filter(room => {
     if (!buildingRank.has(room.buildingId)) return false
+    if (options?.isRoomAvailable && !options.isRoomAvailable(room)) return false
     const candidates = new Map(targets.map(target => [target, { ...target, roomId: room.id, room: room.name || room.code }]))
     if (targets.some(target => target.parallelGroup !== undefined)) {
       const proposed = assignments.map(assignment => candidates.get(assignment) ?? assignment)

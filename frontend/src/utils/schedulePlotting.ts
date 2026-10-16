@@ -11,16 +11,18 @@ export interface PlotRoom {
   startTime: string
   endTime: string
   capacity: number
+  floor?: number
 }
 
 export interface PlottedRoom { key: string; roomId: string; room: string; buildingId: string }
-export interface RegistrarPlot { version: 1; revisionId: string; assignments: PlottedRoom[]; savedBy: string }
+export interface RegistrarPlot { version: 1; revisionId: string; assignments: PlottedRoom[]; savedBy: string; providedRoomKeys?: string[] }
 export interface PlotAssignment {
   scheduleId: string
   meetingKey: string
   roomId: string
   expectedRoomId: string
   expectedRevision: string
+  targetStatus?: 'Draft' | 'Plot'
 }
 
 export const plotScheduleRevision = (schedule: Record<string, unknown>) => JSON.stringify([
@@ -31,13 +33,43 @@ export const schedulePlotSelectionKey = (meeting: ScheduleMeetingRecord) => JSON
   meeting.sourceScheduleId || meeting.id, plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>),
 ])
 
-/** A check queues approval of the current room; it never changes saved data by itself. */
+/** The department workbook owns this list; older Registrar metadata remains readable. */
+export function readProvidedRoomKeys(schedule: Record<string, unknown>): string[] | undefined {
+  if (Array.isArray(schedule.providedRoomKeys) && schedule.providedRoomKeys.every(key => typeof key === 'string')) return schedule.providedRoomKeys as string[]
+  const legacy = readRegistrarPlot(schedule.registrarPlot)?.providedRoomKeys
+  if (legacy === undefined) return
+  // Older Plot metadata did not include TBA. Protect those explicit labels until the workbook is saved again.
+  const meetings: unknown[] = Array.isArray(schedule.meetings) ? schedule.meetings : [schedule]
+  const tbaKeys = meetings.flatMap(value => {
+    if (!value || typeof value !== 'object') return []
+    const meeting = value as Partial<WorkbookScheduleMeeting>
+    return typeof meeting.room === 'string' && meeting.room.trim().toUpperCase() === 'TBA' ? [plotMeetingKey(meeting)] : []
+  })
+  return [...new Set([...legacy, ...tbaKeys])]
+}
+
+export function isProvidedScheduleRoom(meeting: ScheduleMeetingRecord): boolean {
+  const keys = readProvidedRoomKeys(meeting)
+  return keys === undefined ? Boolean(meeting.roomId || typeof meeting.room === 'string' && meeting.room.trim())
+    : keys.includes(plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>))
+}
+
+export function assignedSchedulePlotStatus(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): 'Draft' | 'Plot' {
+  const id = String(meeting.sourceScheduleId || meeting.id)
+  return [...pending.values()].find(assignment => assignment.scheduleId === id && assignment.targetStatus)?.targetStatus
+    ?? (meeting.status === 'Plot' ? 'Plot' : 'Draft')
+}
+
+/** A checkbox stages a row status change, preserving its room and synchronizing calendar copies. */
 export function toggleAssignedSchedulePlot(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): Map<string, PlotAssignment> {
   const next = new Map(pending)
-  if (!meeting.roomId || (meeting.status || 'Draft') !== 'Draft') return next
+  if (!meeting.roomId || !isProvidedScheduleRoom(meeting) || !['Draft', 'Plot'].includes(meeting.status || 'Draft')) return next
+  const id = String(meeting.sourceScheduleId || meeting.id)
+  const targetStatus = assignedSchedulePlotStatus(pending, meeting) === 'Plot' ? 'Draft' : 'Plot'
+  for (const [key, assignment] of next) if (assignment.scheduleId === id && assignment.targetStatus) next.delete(key)
+  if (targetStatus === (meeting.status || 'Draft')) return next
   const key = schedulePlotSelectionKey(meeting)
-  if (next.has(key)) next.delete(key)
-  else next.set(key, { scheduleId: String(meeting.sourceScheduleId || meeting.id),
+  next.set(key, { scheduleId: id, targetStatus,
     meetingKey: plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>), roomId: meeting.roomId,
     expectedRoomId: meeting.roomId, expectedRevision: plotScheduleRevision(meeting) })
   return next
@@ -60,7 +92,9 @@ export function readRegistrarPlot(value: unknown): RegistrarPlot | undefined {
     if (![room.key, room.roomId, room.room, room.buildingId].every(field => typeof field === 'string')) return
     assignments.push({ key: String(room.key), roomId: String(room.roomId), room: String(room.room), buildingId: String(room.buildingId) })
   }
-  return { version: 1, revisionId: data.revisionId, assignments, savedBy: data.savedBy }
+  if (data.providedRoomKeys !== undefined && (!Array.isArray(data.providedRoomKeys) || data.providedRoomKeys.some(key => typeof key !== 'string'))) return
+  return { version: 1, revisionId: data.revisionId, assignments, savedBy: data.savedBy,
+    ...(Array.isArray(data.providedRoomKeys) ? { providedRoomKeys: data.providedRoomKeys as string[] } : {}) }
 }
 
 export function hasPendingRoomAllocation(meetings: readonly WorkbookScheduleMeeting[]): boolean {
@@ -117,7 +151,7 @@ const minutes = (value: string) => {
   return match && +match[1] < 24 && +match[2] < 60 ? +match[1] * 60 + +match[2] : NaN
 }
 
-export function assertPlotRoom(meeting: WorkbookScheduleMeeting, room: PlotRoom, maxStudents: number | null): void {
+export function assertPlotRoom(meeting: Pick<WorkbookScheduleMeeting, 'startTime' | 'endTime' | 'days'>, room: PlotRoom, maxStudents: number | null): void {
   if (room.status !== 'Available') throw new Error(`${room.code || room.name} is not available for plotting.`)
   const start = minutes(meeting.startTime), end = minutes(meeting.endTime)
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !meeting.days.length) throw new Error('This meeting has invalid days or times.')
@@ -128,7 +162,8 @@ export function assertPlotRoom(meeting: WorkbookScheduleMeeting, room: PlotRoom,
   if (maxStudents !== null && maxStudents > room.capacity) throw new Error(`${room.code || room.name} does not have enough capacity for this class.`)
 }
 
-export function plotMeetingsOverlap(left: WorkbookScheduleMeeting, right: WorkbookScheduleMeeting): boolean {
-  return Boolean(left.roomId && left.roomId === right.roomId && Array.isArray(left.days) && Array.isArray(right.days) && left.days.some(day => right.days.includes(day))
-    && minutes(left.startTime) < minutes(right.endTime) && minutes(right.startTime) < minutes(left.endTime))
+export function plotMeetingsOverlap(left: Pick<ScheduleMeetingRecord, 'roomId' | 'days' | 'startTime' | 'endTime'>,
+  right: Pick<ScheduleMeetingRecord, 'roomId' | 'days' | 'startTime' | 'endTime'>): boolean {
+  return Boolean(left.roomId && left.roomId === right.roomId && Array.isArray(left.days) && Array.isArray(right.days) && left.days.some(day => right.days?.includes(day))
+    && minutes(left.startTime ?? '') < minutes(right.endTime ?? '') && minutes(right.startTime ?? '') < minutes(left.endTime ?? ''))
 }

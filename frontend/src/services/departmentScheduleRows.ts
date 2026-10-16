@@ -7,9 +7,9 @@ import { assertDepartmentScheduleRows, extractDepartmentTemplateRows, findDepart
 import { extractDepartmentScheduleImportRows } from '../utils/departmentScheduleImportRows'
 import type { DepartmentScheduleImportSheet } from '../utils/departmentScheduleImport'
 import type { WorkbookEditSnapshot } from '../utils/excelWorkbookState'
-import type { DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
+import { workbookTermPaths, type DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
 import { scheduleMeetingRecords } from '../utils/scheduleMeetings'
-import { departmentExternalRoomAssignments, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
+import { departmentExternalRoomAssignments, facultyScheduleRowKey, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
 
 function departmentRoomScheduleQueries(term: DepartmentWorkbookTerm) {
   return [query(collection(db, 'schedules'), where('academicYearId', '==', term.academicYearId)),
@@ -20,14 +20,33 @@ function externalRoomAssignments(documents: readonly QueryDocumentSnapshot<Docum
   return departmentExternalRoomAssignments(scheduleMeetingRecords([...new Map(documents.map(document => [document.id, document])).values()]), term, rooms)
 }
 
+function departmentRowStatuses(documents: readonly QueryDocumentSnapshot<DocumentData>[], term: DepartmentWorkbookTerm): ReadonlyMap<string, string> {
+  const paths = workbookTermPaths(term)
+  const sourcePaths = [paths.document, paths.previousDocument, paths.namedLegacyDocument, paths.legacyDocument]
+  const unique = [...new Map(documents.map(document => [document.id, document])).values()]
+  const statuses = new Map<string, string>()
+  for (const path of sourcePaths) for (const document of unique) {
+    const row: Record<string, unknown> = document.data()
+    if (row.sourceWorkbook !== path || row.departmentId !== term.departmentId || typeof row.sourceSheet !== 'string'
+      || typeof row.sourceRow !== 'number' || !Number.isSafeInteger(row.sourceRow) || row.sourceRow < 1
+      || typeof row.status !== 'string' || !row.status.trim()) continue
+    const key = facultyScheduleRowKey(row.sourceSheet, row.sourceRow)
+    if (!statuses.has(key)) statuses.set(key, row.status.trim())
+  }
+  return statuses
+}
+
 export function subscribeDepartmentRoomSchedules(term: DepartmentWorkbookTerm, rooms: ScheduleDirectory['rooms'],
-  onAssignments: (assignments: readonly FacultySubjectAssignment[]) => void, onError: (error: Error) => void) {
+  onAssignments: (assignments: readonly FacultySubjectAssignment[], statuses: ReadonlyMap<string, string>) => void, onError: (error: Error) => void) {
   const queries = departmentRoomScheduleQueries(term)
   const loaded = new Map<number, readonly QueryDocumentSnapshot<DocumentData>[]>()
   let failed = false
   const unsubscribes = queries.map((reference, index) => onSnapshot(reference, snapshot => {
     loaded.set(index, snapshot.docs)
-    if (!failed && loaded.size === queries.length) onAssignments(externalRoomAssignments([...loaded.values()].flat(), term, rooms))
+    if (!failed && loaded.size === queries.length) {
+      const documents = [...loaded.entries()].filter(([key]) => key !== index).flatMap(([, rows]) => rows).concat(snapshot.docs)
+      onAssignments(externalRoomAssignments(documents, term, rooms), departmentRowStatuses(documents, term))
+    }
   }, error => { failed = true; onError(error) }))
   return () => unsubscribes.forEach(unsubscribe => unsubscribe())
 }

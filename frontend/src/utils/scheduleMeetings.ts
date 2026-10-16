@@ -4,6 +4,8 @@ export interface ScheduleMeetingRecord extends Record<string, unknown> {
   instructorId?: string
   department?: string
   roomId?: string
+  /** Explicit department workbook room entries, including TBA, keyed by meeting. */
+  providedRoomKeys?: string[]
   buildingId?: string
   format?: string
   startTime?: string

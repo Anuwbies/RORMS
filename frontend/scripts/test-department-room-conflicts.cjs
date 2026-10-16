@@ -40,7 +40,7 @@ const current = { location: 'current-row', code: 'ITE 101', section: '1', room: 
 const external = convert(record('one'), record('duplicate'))
 const issues = validateOtherDepartmentRoomAssignments([current], external)
 assert.equal(issues.length, 1, 'Same department/day/room/time warning is deduplicated')
-assert.equal(issues[0].message, 'CBA is using Room PTC 403 on MON (07:30–09:00).')
+assert.equal(issues[0].message, 'CBA is also using Room PTC 403 on MON (07:30–09:00).')
 for (const overrides of [{ startTime: '09:30', endTime: '11:00' }, { endTime: '08:00' }, { days: ['Wed'] }, { roomId: 'room-2' }]) {
   assert.equal(validateOtherDepartmentRoomAssignments([current], convert(record('no-overlap', overrides))).length, 0)
 }
@@ -87,19 +87,34 @@ Module._load = function(request, ...args) {
   return originalLoad.call(this, request, ...args)
 }
 const { loadDepartmentScheduleDirectory, subscribeDepartmentRoomSchedules } = require('../src/services/departmentScheduleRows.ts')
+const { workbookTermPaths } = require('../src/utils/departmentWorkbookPaths.ts')
 async function main() {
   const loaded = await loadDepartmentScheduleDirectory('CITE', term)
   assert.equal(loaded.externalRoomAssignments.length, 2, 'Overlapping year queries do not duplicate documents')
   savedDocuments = []
   assert.equal((await loadDepartmentScheduleDirectory('CITE', term)).externalRoomAssignments.length, 0, 'Save refreshes saved schedules')
-  let received, failures = 0
-  const unsubscribe = subscribeDepartmentRoomSchedules(term, rooms, rows => { received = rows }, () => { failures++ })
-  listeners[0].next({ docs: [workbook] })
+  let received, statuses, failures = 0
+  const unsubscribe = subscribeDepartmentRoomSchedules(term, rooms, (rows, nextStatuses) => { received = rows; statuses = nextStatuses }, () => { failures++ })
+  const paths = workbookTermPaths(term)
+  const savedRow = document('current-row', { departmentId: term.departmentId, sourceWorkbook: paths.document,
+    sourceSheet: 'Schedule', sourceRow: 3, status: 'Plot' })
+  const legacyRow = document('legacy-row', { departmentId: term.departmentId, sourceWorkbook: paths.legacyDocument,
+    sourceSheet: 'Schedule', sourceRow: 3, status: 'Draft' })
+  const foreignRow = document('foreign-row', { departmentId: 'other', sourceWorkbook: paths.document,
+    sourceSheet: 'Schedule', sourceRow: 4, status: 'Plot' })
+  listeners[0].next({ docs: [workbook, savedRow, legacyRow, foreignRow] })
   assert.equal(received, undefined, 'Wait for both year query snapshots')
-  listeners[1].next({ docs: [workbook] })
+  listeners[1].next({ docs: [workbook, savedRow, legacyRow, foreignRow] })
   assert.equal(received.length, 2)
+  assert.equal(statuses.get(JSON.stringify(['Schedule', 3])), 'Plot', 'The current saved row takes precedence over a legacy copy')
+  assert.equal(statuses.has(JSON.stringify(['Schedule', 4])), false, 'Another department cannot supply a row status')
+  listeners[1].next({ docs: [workbook, document('current-row', { ...savedRow.data(), status: 'Draft' }), legacyRow] })
+  assert.equal(statuses.get(JSON.stringify(['Schedule', 3])), 'Draft', 'The latest year snapshot updates the status immediately')
+  listeners[0].next({ docs: [workbook, document('current-row', { ...savedRow.data(), status: 'Draft' }), legacyRow] })
+  assert.equal(statuses.get(JSON.stringify(['Schedule', 3])), 'Draft', 'A live status update reaches the workbook')
   listeners.forEach(listener => listener.next({ docs: [] }))
   assert.deepEqual(received, [], 'Removing another department schedule clears warnings')
+  assert.equal(statuses.size, 0, 'Removing saved schedules clears their statuses')
   listeners[0].error(new Error('Permission denied'))
   assert.equal(failures, 1)
   unsubscribe()
@@ -107,6 +122,6 @@ async function main() {
   failReads = true
   await assert.rejects(loadDepartmentScheduleDirectory('CITE', term), /Schedule read failed/)
   assert.equal((await loadDepartmentScheduleDirectory('CITE')).externalRoomAssignments, undefined, 'Standalone workbooks do not invent term conflicts')
-  console.log('Passed: cross-department room conflicts, term/status filters, room aliases, split meetings, live/Save parity, refresh, subscription cleanup and load failures.')
+  console.log('Passed: cross-department room conflicts, live row statuses, term/status filters, room aliases, split meetings, live/Save parity, refresh, subscription cleanup and load failures.')
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

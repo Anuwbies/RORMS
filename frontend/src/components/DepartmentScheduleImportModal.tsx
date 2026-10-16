@@ -10,7 +10,7 @@ import { clampColumnSelectionToYear, isColumnCellSelected, scheduleSelectionYear
 import { applyScheduleCellValues, completeScheduleTimeText, filterScheduleEditableChanges, indexScheduleRows, linkScheduleCourseChanges, normalizeScheduleCellText, type ScheduleCellValueChange } from '../utils/departmentScheduleEdits'
 import { DepartmentScheduleImportTableBody, type ScheduleCellActions } from './DepartmentScheduleImportTableBody'
 import { SCHEDULE_CELL_CLIPBOARD_TYPE, planScheduleCellPaste, readScheduleCellClipboard, readScheduleCourseClipboard, scheduleClipboardText, type ScheduleCellClipboard } from '../utils/scheduleCellClipboard'
-import { UploadIcon } from './Icons'
+import { DownloadIcon, UploadIcon } from './Icons'
 import { SCHEDULE_ROW_CLIPBOARD_TYPE, planScheduleRowPaste, readScheduleRowClipboard, sameScheduleClipboardText, scheduleRowClipboardText, type ScheduleRowClipboard } from '../utils/scheduleCellClipboard'
 import { SCHEDULE_COLUMN_COUNT } from '../utils/excelScheduleTemplate'
 import { changeDepartmentScheduleRows, toggleDepartmentScheduleYearVisibility } from '../utils/departmentScheduleRowActions'
@@ -18,11 +18,12 @@ import { ScheduleRowCountModal } from './ScheduleRowCountModal'
 import { Button } from './Button'
 import type { DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
 import { loadFirestoreDepartmentWorkbook, saveFirestoreDepartmentWorkbook, type LoadedFirestoreDepartmentWorkbook, type SavedFirestoreDepartmentWorkbook } from '../services/firestoreDepartmentWorkbooks'
-import { createDepartmentScheduleWorkbookState, readDepartmentScheduleWorkbookState, type DepartmentScheduleWorkbookState } from '../utils/departmentScheduleWorkbookState'
+import { createDepartmentScheduleWorkbookSnapshot, createDepartmentScheduleWorkbookState, readDepartmentScheduleWorkbookState, type DepartmentScheduleWorkbookState } from '../utils/departmentScheduleWorkbookState'
+import { createExcelExport } from '../utils/excelWorkbookExport'
 import { loadDepartmentScheduleDirectory, subscribeDepartmentRoomSchedules } from '../services/departmentScheduleRows'
 import type { ScheduleDirectory } from '../utils/excelScheduleRows'
 import { parseDepartmentScheduleImportRows, extractDepartmentScheduleImportRows } from '../utils/departmentScheduleImportRows'
-import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
+import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, scheduleValidationTone, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
 import { useExcelValidationTooltip } from './ExcelValidationTooltip'
 import { loadDepartmentCourseSuggestions } from '../services/firestoreDepartmentCourses'
 import type { DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
@@ -57,6 +58,10 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     return { sheets, indexes: indexScheduleRows(sheets) }
   })
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const fileMenuRef = useRef<HTMLDivElement>(null)
+  const fileMenuId = useId()
+  const [fileMenuOpen, setFileMenuOpen] = useState(false)
+  const [exportError, setExportError] = useState('')
   const dialogRef = useRef<HTMLDialogElement>(null)
   const tableRef = useRef<HTMLTableElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -108,10 +113,51 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   const [validationDirectory, setValidationDirectory] = useState<ScheduleDirectory | null>(null)
   const [validationError, setValidationError] = useState('')
   const [validationMessages, setValidationMessages] = useState<ReadonlyMap<string, readonly string[]>>(new Map())
+  const [rowStatuses, setRowStatuses] = useState<ReadonlyMap<string, string>>(new Map())
+  const [statusesReady, setStatusesReady] = useState(!term)
   const roomAssignmentsRef = useRef<readonly FacultySubjectAssignment[]>([])
   const roomAssignmentsSheetsRef = useRef<readonly DepartmentScheduleImportSheet[] | null>(null)
   const [courseSuggestions, setCourseSuggestions] = useState<readonly DepartmentCourseSuggestion[] | null>(null)
   const [courseSuggestionError, setCourseSuggestionError] = useState('')
+  const footerError = storageError || exportError || validationError || courseSuggestionError
+
+  useEffect(() => {
+    if (!fileMenuOpen) return
+    fileMenuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus()
+    const dismiss = (event: PointerEvent) => {
+      if (event.target instanceof Node && !fileMenuRef.current?.contains(event.target)) setFileMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
+  }, [fileMenuOpen])
+
+  useEffect(() => {
+    if (loading || saving || !storageReady) setFileMenuOpen(false)
+  }, [loading, saving, storageReady])
+
+  const closeFileMenu = () => {
+    setFileMenuOpen(false)
+    fileMenuRef.current?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')?.focus()
+  }
+
+  const exportWorkbook = () => {
+    closeFileMenu()
+    setExportError('')
+    try {
+      const { snapshot, ownedNames } = createDepartmentScheduleWorkbookSnapshot(sheetsRef.current, selectedSheet, columnWidths, storedStateRef.current)
+      const bytes = createExcelExport(snapshot, ownedNames)
+      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${(file?.name || storedFileName || 'Department Schedule').replace(/\.xlsx$/i, '')}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : 'This workbook could not be exported. Please try again.')
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -132,17 +178,25 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     setValidationDirectory(null)
     roomAssignmentsRef.current = []
     setValidationMessages(new Map())
+    setRowStatuses(new Map())
+    setStatusesReady(!term)
     setValidationError('')
     void loadDepartmentScheduleDirectory(term?.departmentCode ?? '', term).then(directory => {
       if (cancelled) return
       setValidationDirectory(directory)
-      if (term) unsubscribe = subscribeDepartmentRoomSchedules(term, directory.rooms, externalRoomAssignments => {
+      if (term) unsubscribe = subscribeDepartmentRoomSchedules(term, directory.rooms, (externalRoomAssignments, statuses) => {
         if (!cancelled) {
           setValidationDirectory(previous => previous ? { ...previous, externalRoomAssignments } : previous)
+          setRowStatuses(statuses)
+          setStatusesReady(true)
           setValidationError('')
         }
       }, () => {
-        if (!cancelled) setValidationError('Validation could not load other departments’ room schedules. Reopen the workbook to retry.')
+        if (!cancelled) {
+          setRowStatuses(new Map())
+          setStatusesReady(false)
+          setValidationError('Validation or schedule statuses could not load. Reopen the workbook to retry.')
+        }
       })
     }).catch(() => {
       if (!cancelled) setValidationError('Validation could not load the instructor directory, rooms, or other departments’ schedules. Reopen the workbook to retry.')
@@ -307,7 +361,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   })), [visibleRows, sheet?.name, validationMessages])
   const { showValidationTooltip, hideValidationTooltip, validationTooltip } = useExcelValidationTooltip(
     range => rowIssues.get(visibleRows[range.s.r]?.rowNumber) ?? [],
-    range => rowIssues.get(visibleRows[range.s.r]?.rowNumber)?.every(message => message.startsWith('Duplicate Subject ')) ? 'purple' : 'danger', dialogRef.current)
+    range => scheduleValidationTone(rowIssues.get(visibleRows[range.s.r]?.rowNumber) ?? []), dialogRef.current)
 
   useEffect(() => { hideValidationTooltip() }, [selectedSheet, loading, contextMenu, rowCountModal, hideValidationTooltip])
 
@@ -943,23 +997,42 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     const scroll = scrollRef.current
     const header = tableRef.current?.tHead
     if (loading || !scroll || !header) return
-    const measureLabelViewport = () => {
+    const measureHeader = () => {
       const headerHeight = header.getBoundingClientRect().height
       scroll.style.setProperty('--schedule-header-height', `${headerHeight}px`)
       const yearHeader = header.rows[0]?.cells[0]
       if (yearHeader) scroll.style.setProperty('--schedule-year-width', `${yearHeader.getBoundingClientRect().width}px`)
       const rowHeader = header.rows[0]?.cells[1]
       if (yearHeader && rowHeader) scroll.style.setProperty('--schedule-pinned-width', `${yearHeader.getBoundingClientRect().width + rowHeader.getBoundingClientRect().width}px`)
-      scroll.style.setProperty('--schedule-label-height', `${Math.max(0, scroll.clientHeight - headerHeight)}px`)
     }
-    measureLabelViewport()
-    const observer = new ResizeObserver(measureLabelViewport)
+    const measureYearLabels = () => {
+      const headerHeight = header.getBoundingClientRect().height
+      const visibleHeight = Math.max(0, scroll.clientHeight - headerHeight)
+      tableRef.current?.querySelectorAll<HTMLTableCellElement>('tbody th[data-year-header][aria-expanded="true"]').forEach(year => {
+        const label = year.querySelector<HTMLElement>('[data-year-label-viewport]')
+        if (!label) return
+        const fitsOnScreen = year.offsetHeight <= visibleHeight
+        year.style.verticalAlign = fitsOnScreen ? 'middle' : 'top'
+        label.style.position = fitsOnScreen ? 'static' : 'sticky'
+        label.style.top = fitsOnScreen ? '' : `${Math.max(headerHeight, headerHeight + (visibleHeight - label.offsetHeight) / 2)}px`
+      })
+    }
+    const measure = () => {
+      measureHeader()
+      measureYearLabels()
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
     observer.observe(scroll)
     observer.observe(header)
     if (header.rows[0]?.cells[0]) observer.observe(header.rows[0].cells[0])
     if (header.rows[0]?.cells[1]) observer.observe(header.rows[0].cells[1])
-    return () => observer.disconnect()
-  }, [loading])
+    tableRef.current?.querySelectorAll('tbody th[data-year-header][aria-expanded="true"]').forEach(year => observer.observe(year))
+    tableRef.current?.querySelectorAll<HTMLElement>('tbody [data-year-label-viewport]').forEach(label => observer.observe(label))
+    return () => {
+      observer.disconnect()
+    }
+  }, [loading, selectedSheet, visibleRows.length, sheet?.yearSections])
 
   const stopResize = () => {
     setResizing(false)
@@ -1132,12 +1205,13 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
                 onFocusCapture={event => showRowValidationTooltip(event.target)}
                 onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) hideValidationTooltip() }}
                 className={`${columnWidths ? 'table-fixed' : 'w-full min-w-[1800px]'} border-separate border-spacing-0 text-center text-sm [&_th]:text-center [&_th]:align-middle [&_td]:text-center [&_td]:align-middle [&_thead_th]:relative [&_th]:break-words [&_tr>:first-child]:border-l-0 [&_tr>:last-child]:border-r-0`}
-                style={columnWidths ? { width: 48 + columnWidths.reduce((sum, width) => sum + width, 0) } : undefined}
+                style={columnWidths ? { width: 48 + columnWidths.reduce((sum, width) => sum + width, 0) + 96 } : undefined}
               >
                 <caption className="sr-only">{sheet ? `Imported schedule from ${sheet.name}` : 'Required department schedule headers'}</caption>
                 <colgroup>
                   <col className="w-12" />
                   {Array.from({ length: 22 }, (_, index) => <col key={index} style={columnWidths ? { width: columnWidths[index] } : undefined} />)}
+                  <col className="w-24" />
                 </colgroup>
                 <thead className="sticky top-0 z-10 bg-[#ffff00] text-black">
                   <tr>
@@ -1149,6 +1223,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
                         {resizeHandle(group.offset + 1, group.width, group.label)}
                       </th>
                     ))}
+                    <th scope="col" rowSpan={2} className="border-t border-r border-b border-black bg-[#ffff00] px-3 py-2 font-bold">Status</th>
                   </tr>
                   <tr>
                     {DISPLAY_HEADER_GROUPS.flatMap(group => group.children.map((label, index) => (
@@ -1167,6 +1242,9 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
                   actions={cellActions}
                   hasSheet={Boolean(sheet)}
                   rowIssues={rowIssues}
+                  rowStatuses={rowStatuses}
+                  statusesReady={statusesReady}
+                  sheetName={sheet?.name ?? ''}
                   suggestionDirectory={validationDirectory}
                   suggestionError={validationDirectory ? undefined : validationError}
                   courseSuggestions={courseSuggestions}
@@ -1177,9 +1255,30 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
           )}
         </div>
         <footer className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">
-          <Button type="button" variant="outline" disabled={loading || saving || readOnly || !storageReady} icon={<UploadIcon className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()}>Import XLSX</Button>
+          <div ref={fileMenuRef} className="relative" onKeyDown={event => {
+            if (!fileMenuOpen) return
+            if (event.key === 'Escape') {
+              event.preventDefault()
+              event.stopPropagation()
+              closeFileMenu()
+            } else if (event.key === 'Tab') setFileMenuOpen(false)
+            else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+              event.preventDefault()
+              const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'))
+              const index = items.indexOf(document.activeElement as HTMLButtonElement)
+              const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+                : (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
+              items[next]?.focus()
+            }
+          }}>
+            <Button type="button" variant="outline" disabled={loading || saving || !storageReady} icon={<UploadIcon className="h-4 w-4" />} aria-haspopup="menu" aria-expanded={fileMenuOpen} aria-controls={fileMenuId} onClick={() => setFileMenuOpen(open => !open)}>Import / Export</Button>
+            {fileMenuOpen && <div id={fileMenuId} role="menu" aria-label="Import or export schedule" className="absolute bottom-full left-0 z-50 mb-2 w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+              <button type="button" role="menuitem" disabled={readOnly} onClick={() => { closeFileMenu(); fileInputRef.current?.click() }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><UploadIcon className="h-4 w-4" />Import XLSX</button>
+              <button type="button" role="menuitem" disabled={!sheets.length} onClick={exportWorkbook} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><DownloadIcon className="h-4 w-4" />Export XLSX</button>
+            </div>}
+          </div>
           <div className="min-w-0 flex-1 text-sm">
-            {(storageError || validationError || courseSuggestionError) && <p role="alert" className="text-rose-700">{storageError || validationError || courseSuggestionError}</p>}
+            {footerError && <p role="alert" className="text-rose-700">{footerError}</p>}
             {pendingLiveUpdate ? <p role="status" aria-live="polite" className="text-amber-700">
                 {hasLocalEdits ? 'Another user saved a newer workbook. Your unsaved edits are kept.' : 'A newer saved workbook is ready.'}{' '}
                 {hasLocalEdits && <><button type="button" disabled={loading || saving || resizing} className="font-medium underline" onClick={() => resolveLiveUpdate('merge')}>Merge and keep my edits</button>{' · '}</>}
@@ -1187,7 +1286,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
                 <button type="button" disabled={loading || saving || resizing} className="font-medium underline" onClick={() => resolveLiveUpdate('remote')}>{hasLocalEdits ? 'Discard edits and load latest' : 'Load latest'}</button>
               </p>
                 : liveWorkbook.error ? <p role="alert" className="text-rose-700">{liveWorkbook.error}{' '}<button type="button" className="font-medium underline" onClick={liveWorkbook.retry}>Retry live updates</button></p>
-                  : !(storageError || validationError || courseSuggestionError) && <p role="status" aria-live="polite" className="text-slate-500">{storageStatus || (readOnly ? 'This semester is read-only.' : !term ? 'Open a department and semester from My Department to save this workbook.' : '')}</p>}
+                  : !footerError && <p role="status" aria-live="polite" className="text-slate-500">{storageStatus || (readOnly ? 'This semester is read-only.' : !term ? 'Open a department and semester from My Department to save this workbook.' : '')}</p>}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-3">
             {!loading && storageReady && <p role="status" aria-live="polite" className={`text-sm ${hasUnsavedChanges && !saving ? 'text-amber-700' : 'text-slate-500'}`}>

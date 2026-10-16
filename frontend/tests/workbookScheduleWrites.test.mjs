@@ -55,6 +55,21 @@ test('unchanged plotted row preserves its status, room and Registrar metadata on
   assert.equal(writes[0].data.createdAt, 'original')
 })
 
+test('workbook Save preserves provided-room mode and a checkbox-returned Draft status', async () => {
+  const initial = harness()
+  const key = initial.plotting.plotMeetingKey(meeting)
+  const previous = { ...row, id, status: 'Draft', registrarPlot: { version: 1, revisionId: 'unplot1', savedBy: 'registrar',
+    providedRoomKeys: [key], assignments: [{ key, roomId: 'room1', room: 'PTC 201', buildingId: 'ptc' }] } }
+  const { service, plotting } = harness(previous)
+  const prepared = await service.prepareWorkbookScheduleWrites(term, [row], sourceWorkbook, [sourceWorkbook], 'schedules', 'Draft')
+  const writes = []
+  prepared.apply({ set: (_path, data) => writes.push(data), delete: () => assert.fail('Should retain the row') }, 2, 'workbook2', 'dean')
+  assert.equal(writes[0].status, 'Draft')
+  assert.equal(writes[0].providedRoomKeys[0], key)
+  assert.equal(writes[0].registrarPlot.providedRoomKeys[0], key)
+  assert.equal(plotting.isProvidedScheduleRoom({ ...writes[0], ...writes[0].meetings[0] }), true)
+})
+
 test('compact workbook room clears remove existing assignments, including Registrar-plotted rooms', async () => {
   const initial = harness()
   const plot = { version: 1, revisionId: 'plot1', savedBy: 'registrar', assignments: [{ key: initial.plotting.plotMeetingKey(meeting), roomId: 'room1', room: 'PTC 201', buildingId: 'ptc' }] }
@@ -104,6 +119,32 @@ test('Draft override saves a new row with an assigned room without removing its 
   prepared.apply({ set: (path, data) => writes.push(data), delete: () => assert.fail() }, 1, 'workbook1', 'dean')
   assert.equal(writes[0].status, 'Draft')
   assert.equal(writes[0].meetings[0].roomId, 'room1')
+  assert.equal(writes[0].providedRoomKeys[0], harness().plotting.plotMeetingKey(meeting))
+  assert.equal(writes[0].registrarPlot, undefined)
+})
+
+test('department workbook records explicit TBA as provided and blank room cells as unprovided before Plot', async () => {
+  for (const roomText of ['TBA', '  TBA  ', '', '  ', 'Unknown Room']) {
+    const { service, plotting } = harness()
+    const source = { ...row, rawValues: row.rawValues.map((value, column) => column === 19 ? roomText : value),
+      meetings: [{ ...meeting, room: roomText, roomId: '', buildingId: '' }] }
+    const prepared = await service.prepareWorkbookScheduleWrites(term, [source], sourceWorkbook, [sourceWorkbook], 'schedules', 'Draft')
+    const writes = []
+    prepared.apply({ set: (_path, data) => writes.push(data), delete: () => assert.fail() }, 1, 'source1', 'dean')
+    assert.equal(writes[0].registrarPlot, undefined)
+    assert.equal(writes[0].providedRoomKeys.length, roomText.trim() ? 1 : 0)
+    assert.equal(plotting.isProvidedScheduleRoom({ ...writes[0], ...writes[0].meetings[0] }), Boolean(roomText.trim()))
+  }
+})
+
+test('workbook room edits recompute source flags independently for separate meetings', async () => {
+  const { service, plotting } = harness({ ...row, id, providedRoomKeys: [] })
+  const source = { ...row, meetings: [meeting, { ...meeting, startTime: '09:00', endTime: '10:30', room: 'TBA', roomId: '' },
+    { ...meeting, format: 'Lab', room: '', roomId: '' }] }
+  const prepared = await service.prepareWorkbookScheduleWrites(term, [source], sourceWorkbook, [sourceWorkbook], 'schedules', 'Draft')
+  const writes = []
+  prepared.apply({ set: (_path, data) => writes.push(data), delete: () => assert.fail() }, 2, 'source2', 'dean')
+  assert.deepEqual(Array.from(writes[0].providedRoomKeys), source.meetings.slice(0, 2).map(plotting.plotMeetingKey))
 })
 
 test('other workbook callers retain their existing Plot behavior when no override is provided', async () => {

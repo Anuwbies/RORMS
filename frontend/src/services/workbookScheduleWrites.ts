@@ -3,7 +3,7 @@ import { db } from '../firebase'
 import type { DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
 import type { WorkbookScheduleRow } from '../utils/excelScheduleRows'
 import type { WorkbookAuditChange } from '../utils/workbookAudit'
-import { readRegistrarPlot, retainRegistrarRooms } from '../utils/schedulePlotting'
+import { plotMeetingKey, readRegistrarPlot, retainRegistrarRooms } from '../utils/schedulePlotting'
 
 function sameValue(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true
@@ -50,7 +50,10 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
       && sourceRow.yearLevel === savedRow.yearLevel && sourceRow.course === savedRow.course
     const first = row.meetings[0]
     return { ...row, id: rowId(row.sourceSheet, row.sourceRow, row.sourceKey), source: 'workbook', schemaVersion: 2, sourceWorkbook,
-      ...(collectionName === 'schedules' ? { membershipId: term.membershipId } : {}),
+      // Explicit workbook room text, including TBA and unresolved room labels, is provided.
+      // An empty room cell leaves assignment to the Registrar.
+      ...(collectionName === 'schedules' ? { membershipId: term.membershipId,
+        providedRoomKeys: [...new Set(sourceRow.meetings.filter(meeting => meeting.room.trim()).map(plotMeetingKey))] } : {}),
       departmentId: term.departmentId, department: term.departmentCode, academicYearId: term.academicYearId,
       academicYear: term.academicYear, semester: term.semester === 'sem1' ? '1st Semester' : '2nd Semester', semesterKey: term.semester,
       orderIndex: index, status: keepPlot ? 'Plot' as const : statusOverride ?? row.status, type: row.sourceKey ? first?.format === 'Flexible' ? 'open lab' : 'normal' : row.parallelSourceRow !== null ? 'parallel' : row.college.toLowerCase() || 'normal',
