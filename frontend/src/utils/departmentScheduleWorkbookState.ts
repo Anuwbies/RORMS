@@ -18,7 +18,7 @@ function metadata(value: unknown): ScheduleMetadata {
   if (data.version !== 1 || !Array.isArray(data.rowNumbers)
     || data.rowNumbers.some(row => !Number.isSafeInteger(row) || row < 1)
     || new Set(data.rowNumbers).size !== data.rowNumbers.length
-    || data.columnWidths !== null && (!Array.isArray(data.columnWidths) || data.columnWidths.length !== 22
+    || data.columnWidths !== null && (!Array.isArray(data.columnWidths) || ![22, 23].includes(data.columnWidths.length)
       || data.columnWidths.some(width => !Number.isFinite(width) || width <= 0))) {
     throw new Error('Invalid saved schedule settings.')
   }
@@ -76,7 +76,8 @@ export function readDepartmentScheduleWorkbookState(editorState: string): Depart
   }
   const selectedSheet = Math.max(0, sheets.findIndex(sheet => sheet.name === snapshot.selectedSheet))
   const settings = workbook.Sheets[sheets[selectedSheet].name]?.[METADATA_KEY] as ScheduleMetadata | undefined
-  return { sheets, selectedSheet, columnWidths: settings?.columnWidths ?? null, snapshot, ownedNames }
+  const savedWidths = settings?.columnWidths ?? null
+  return { sheets, selectedSheet, columnWidths: savedWidths?.length === 22 ? [...savedWidths, 96] : savedWidths, snapshot, ownedNames }
 }
 
 function uniqueSheetName(name: string, used: Set<string>): string {
@@ -102,7 +103,7 @@ export function createDepartmentScheduleWorkbookSnapshot(sheets: readonly Depart
     worksheet['!merges'] = scheduleHeaderMerges(scheduleHeaderAt({ r: 0, c: 0 }))
     worksheet[METADATA_KEY] = { version: 1, rowNumbers: sheet.rows.map(row => row.rowNumber),
       yearSections: sheet.yearSections, columnWidths } satisfies ScheduleMetadata
-    if (columnWidths) worksheet['!cols'] = columnWidths.slice(1).map(wpx => ({ wpx }))
+    if (columnWidths) worksheet['!cols'] = columnWidths.slice(1, 22).map(wpx => ({ wpx }))
     workbook.Sheets[names[index]] = worksheet
   })
   const keep = <T>(map?: Map<string, T>) => new Map([...map ?? []].filter(([name]) => retained.includes(name)))

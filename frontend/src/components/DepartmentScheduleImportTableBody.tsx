@@ -11,7 +11,7 @@ import { ExcelFacultySuggestions } from './ExcelFacultySuggestions'
 import { completeScheduleResourceText, insertScheduleChoice, SCHEDULE_TIME_CHOICES, SCHEDULE_DAY_CHOICES } from '../utils/scheduleResourceCompletion'
 import { formatScheduleTimeInput, hasExtraScheduleValues, isScheduleCellCharacterAllowed } from '../utils/departmentScheduleEdits'
 import { rankScheduleCourses, resolveScheduleCourse, scheduleCourseYear, type DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
-import { facultyScheduleRowKey, isScheduleColumnEditable, SCHEDULE_COLLEGE_CHOICES, scheduleValidationTone, splitScheduleResources } from '../utils/ScheduleValidation'
+import { facultyScheduleRowKey, isScheduleColumnEditable, scheduleEditableColleges, SCHEDULE_COLLEGE_CHOICES, scheduleValidationTone, splitScheduleResources } from '../utils/ScheduleValidation'
 
 interface ScheduleSuggestionProps {
   suggestionDirectory?: ScheduleDirectory | null
@@ -307,6 +307,7 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
 
 interface ScheduleRowProps extends ScheduleSuggestionProps {
   row: DepartmentScheduleImportRow
+  editableCollege: string
   rowIndex: number
   yearEndsTable: boolean
   yearLabel?: string
@@ -405,7 +406,7 @@ const CollapsedYearRow = memo(function CollapsedYearRow({ label, start, sheetInd
   return <tr data-row-index={start}><EditableYearHeader initialLabel={label} rowSpan={1} endsTable collapsed renameRequest={renameRequest} onRename={renameYear} /></tr>
 })
 
-const ScheduleRow = memo(function ScheduleRow({ row, rowIndex, yearEndsTable, yearLabel, yearSourceLabel, yearRowSpan, displayRowNumber, renameRequest, sheetIndex, selectedColumn, selectionTop, selectionBottom, columnLabels, actions, validationMessage, status, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel }: ScheduleRowProps) {
+const ScheduleRow = memo(function ScheduleRow({ row, editableCollege, rowIndex, yearEndsTable, yearLabel, yearSourceLabel, yearRowSpan, displayRowNumber, renameRequest, sheetIndex, selectedColumn, selectionTop, selectionBottom, columnLabels, actions, validationMessage, status, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel }: ScheduleRowProps) {
   const renameYear = useCallback((label: string) => actions.renameYear(sheetIndex, rowIndex, label), [actions, sheetIndex, rowIndex])
   const tone = scheduleValidationTone(validationMessage?.split('\n') ?? [])
   const rowColor = tone === 'blue' ? 'bg-blue-100 text-blue-900' : tone === 'purple' ? 'bg-purple-100 text-purple-900' : 'bg-rose-100 text-rose-900'
@@ -442,7 +443,7 @@ const ScheduleRow = memo(function ScheduleRow({ row, rowIndex, yearEndsTable, ye
         <EditableScheduleCell
           key={column}
           value={value}
-          editable={isScheduleColumnEditable(row.values[0], column)}
+          editable={isScheduleColumnEditable(editableCollege, column)}
           label={`${columnLabels[column]}, row ${rowIndex + 1}`}
           sheetIndex={sheetIndex}
           rowNumber={row.rowNumber}
@@ -461,7 +462,26 @@ const ScheduleRow = memo(function ScheduleRow({ row, rowIndex, yearEndsTable, ye
           suggestionYearLevel={suggestionYearLevel}
         />
       ))}
-      <td aria-label={status ? `Schedule status: ${status}` : 'No schedule status'} className={`border-r border-b border-black px-3 py-2 font-medium ${status === 'Plot' ? 'text-[#526f34]' : status ? 'text-slate-600' : ''}`}>{status}</td>
+      <td
+        data-edit-cell={`${sheetIndex}:${row.rowNumber}:21`}
+        data-row-index={rowIndex}
+        tabIndex={0}
+        aria-label={`${status ? `Schedule status: ${status}` : 'No schedule status'}${validationMessage ? `. ${validationMessage}` : ''}`}
+        aria-readonly="true"
+        aria-selected={selectedColumn === 21 || selectedColumn === -1}
+        className={`relative max-w-0 border-r border-b border-slate-300 px-3 py-2 ${selectedColumn === 21 || selectedColumn === -1
+          ? `bg-[#62853e]/15 outline-none after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:-bottom-px ${selectedColumn === -1 ? 'after:-right-px after:z-[1] last:after:right-0 last:after:border-r-2' : 'after:border-x-2'} after:border-[var(--brand-color)] ${selectionTop ? 'after:border-t-2' : ''} ${selectionBottom ? 'after:border-b-2' : ''}`
+          : 'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--brand-color)]'}`}
+        onPointerDown={event => actions.startSelection(event, sheetIndex, 21, rowIndex)}
+        onPointerMove={actions.moveSelection}
+        onPointerUp={event => {
+          actions.endSelection()
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+        }}
+        onPointerCancel={actions.endSelection}
+        onLostPointerCapture={actions.endSelection}
+        onFocus={() => actions.focusCell(sheetIndex, 21, rowIndex)}
+      ><span className="block overflow-hidden text-ellipsis whitespace-pre">{status}</span></td>
     </tr>
   )
 })
@@ -482,6 +502,7 @@ interface DepartmentScheduleImportTableBodyProps extends ScheduleSuggestionProps
 }
 
 export const DepartmentScheduleImportTableBody = memo(function DepartmentScheduleImportTableBody({ rows, yearSections, yearRenameRequest, sheetIndex, selection, columnLabels, actions, hasSheet, rowIssues, rowStatuses, statusesReady, sheetName, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError }: DepartmentScheduleImportTableBodyProps) {
+  const editableColleges = useMemo(() => scheduleEditableColleges(rows, yearSections), [rows, yearSections])
   const first = selection?.sheet === sheetIndex ? Math.min(selection.anchor, selection.end) : -1
   const last = selection?.sheet === sheetIndex ? Math.max(selection.anchor, selection.end) : -1
   let sectionIndex = 0
@@ -504,6 +525,7 @@ export const DepartmentScheduleImportTableBody = memo(function DepartmentSchedul
             actions={actions}
           /> : <ScheduleRow
             row={row}
+            editableCollege={editableColleges[index]}
             rowIndex={index}
             yearEndsTable={section.start + section.count >= rows.length}
             yearLabel={index === section.start ? section.label : undefined}

@@ -720,7 +720,10 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
       copiedCellsRef.current = null
       return
     }
-    const values = rows.slice(first, last + 1).map(row => row.values[selection.column])
+    const values = rows.slice(first, last + 1).map(row => selection.column === 21
+      ? rowStatuses.get(facultyScheduleRowKey(sheetsRef.current[selection.sheet]?.name ?? '', row.rowNumber))
+        ?? (statusesReady && row.values.slice(1).some(value => value.trim()) ? 'Draft' : '')
+      : row.values[selection.column])
     if (!values.length) return
     const cells: ScheduleCellClipboard = { version: 1, column: selection.column, values }
     const text = scheduleClipboardText(values)
@@ -729,7 +732,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     try { clipboard.setData(SCHEDULE_CELL_CLIPBOARD_TYPE, JSON.stringify(cells)) } catch { /* Some browsers retain only standard clipboard types. */ }
     copiedCellsRef.current = { cells, text }
     copiedRowsRef.current = null
-  }, [])
+  }, [rowStatuses, statusesReady])
 
   const pasteRowsForSelection = useCallback((selection: ColumnCellSelection) => {
     const sheet = sheetsRef.current[selection.sheet]
@@ -740,7 +743,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
 
   const pasteSelectionFromClipboard = useCallback((clipboard: Pick<DataTransfer, 'getData'>) => {
     const selection = selectionRef.current
-    if (!selection) return
+    if (!selection || selection.column === 21) return
     const text = clipboard.getData('text/plain')
     if (selection.column === -1) {
       const rememberedRows = copiedRowsRef.current
@@ -794,7 +797,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
 
   const canPasteSelection = useCallback((text: string): boolean => {
     const selection = selectionRef.current
-    if (!selection) return false
+    if (!selection || selection.column === 21) return false
     const rows = pasteRowsForSelection(selection)
     try {
       if (selection.column === -1) {
@@ -966,7 +969,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     })
     headerConstraintsRef.current = constraints
     if (columnWidths) return columnWidths
-    const widths = Array<number>(22).fill(0)
+    const widths = Array<number>(23).fill(0)
     tableRef.current?.querySelectorAll<HTMLTableCellElement>('thead th[data-column-index]').forEach(cell => {
       widths[Number(cell.dataset.columnIndex)] = cell.getBoundingClientRect().width
     })
@@ -1083,7 +1086,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
       aria-valuenow={columnWidths ? Math.round(columnWidths.slice(start, start + count).reduce((sum, width) => sum + width, 0)) : undefined}
       tabIndex={0}
       title={`Drag to resize ${label}; use Left/Right arrow keys when focused`}
-      className={`absolute inset-y-0 z-20 w-2 ${start + count === 22 ? 'right-0' : 'right-[-0.5px] translate-x-1/2'} cursor-col-resize touch-none select-none hover:bg-black/20 focus-visible:bg-black/20 focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]`}
+      className={`absolute inset-y-0 z-20 w-2 ${start + count === 23 ? 'right-0' : 'right-[-0.5px] translate-x-1/2'} cursor-col-resize touch-none select-none hover:bg-black/20 focus-visible:bg-black/20 focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]`}
       onPointerDown={event => startResize(event, start, count)}
       onPointerMove={event => {
         const resize = resizeRef.current
@@ -1204,14 +1207,13 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
                 }}
                 onFocusCapture={event => showRowValidationTooltip(event.target)}
                 onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget)) hideValidationTooltip() }}
-                className={`${columnWidths ? 'table-fixed' : 'w-full min-w-[1800px]'} border-separate border-spacing-0 text-center text-sm [&_th]:text-center [&_th]:align-middle [&_td]:text-center [&_td]:align-middle [&_thead_th]:relative [&_th]:break-words [&_tr>:first-child]:border-l-0 [&_tr>:last-child]:border-r-0`}
-                style={columnWidths ? { width: 48 + columnWidths.reduce((sum, width) => sum + width, 0) + 96 } : undefined}
+                className={`${columnWidths ? 'table-fixed' : 'w-full min-w-[1800px]'} border-separate border-spacing-0 text-center text-sm [&_th]:text-center [&_th]:align-middle [&_td]:text-center [&_td]:align-middle [&_thead_th]:relative [&_th]:break-words [&_tr>:first-child]:border-l-0`}
+                style={columnWidths ? { width: 48 + columnWidths.reduce((sum, width) => sum + width, 0) } : undefined}
               >
                 <caption className="sr-only">{sheet ? `Imported schedule from ${sheet.name}` : 'Required department schedule headers'}</caption>
                 <colgroup>
                   <col className="w-12" />
-                  {Array.from({ length: 22 }, (_, index) => <col key={index} style={columnWidths ? { width: columnWidths[index] } : undefined} />)}
-                  <col className="w-24" />
+                  {Array.from({ length: 23 }, (_, index) => <col key={index} className={index === 22 ? 'w-24' : undefined} style={columnWidths ? { width: columnWidths[index] } : undefined} />)}
                 </colgroup>
                 <thead className="sticky top-0 z-10 bg-[#ffff00] text-black">
                   <tr>
@@ -1223,7 +1225,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
                         {resizeHandle(group.offset + 1, group.width, group.label)}
                       </th>
                     ))}
-                    <th scope="col" rowSpan={2} className="border-t border-r border-b border-black bg-[#ffff00] px-3 py-2 font-bold">Status</th>
+                    <th scope="col" rowSpan={2} data-column-start={22} data-column-index={22} className="border-t border-r border-b border-black bg-[#ffff00] px-3 py-2 font-bold">Status{resizeHandle(22, 1, 'Status')}</th>
                   </tr>
                   <tr>
                     {DISPLAY_HEADER_GROUPS.flatMap(group => group.children.map((label, index) => (

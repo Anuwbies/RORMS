@@ -28,6 +28,8 @@ function load(file) {
 }
 const { DepartmentScheduleImportTableBody } = load(resolve(root, 'components/DepartmentScheduleImportTableBody.tsx'))
 const { createEmptyDepartmentScheduleSheet } = load(resolve(root, 'utils/departmentScheduleImport.ts'))
+const { filterScheduleEditableChanges, indexScheduleRows } = load(resolve(root, 'utils/departmentScheduleEdits.ts'))
+const { facultyScheduleRowKey, validateFacultyScheduleAssignments } = load(resolve(root, 'utils/ScheduleValidation.ts'))
 const actions = Object.fromEntries(['startSelection', 'moveSelection', 'endSelection', 'focusCell', 'beginEditing', 'updateCell', 'finishEditing', 'renameYear'].map(name => [name, () => {}]))
 function table(rowIssues, selection = null) {
   const sheet = createEmptyDepartmentScheduleSheet()
@@ -52,6 +54,62 @@ test('fixing a row removes red styling and keeps the existing full-value titles'
   const html = table(new Map())
   assert.ok(!html.includes('bg-rose-100') && !html.includes('aria-invalid="true"'))
   assert.match(html, /title="ITE 101"/)
+})
+
+test('parallel continuation rows can edit their own Lec faculty, time, day and room', () => {
+  const sheet = createEmptyDepartmentScheduleSheet()
+  for (let index = 0; index < 4; index++) {
+    sheet.rows[index].values[0] = index === 0 ? 'PARALLEL' : ''
+    sheet.rows[index].values[2] = 'ITE 083'
+    sheet.rows[index].values[3] = 'Project Management'
+    sheet.rows[index].values[4] = 'BSIT'
+    sheet.rows[index].values[19] = `PTC ${403 + index}`
+  }
+  sheet.rows[4].values[2] = 'ITE 292'
+  sheet.rows[10].values[2] = 'ITE 083'
+  sheet.rows[10].values[3] = 'Project Management'
+  const changes = [0, 1, 2, 3, 4, 10].flatMap(index => [13, 15, 17, 19, 20].map(column => ({
+    cell: { sheet: 0, row: sheet.rows[index].rowNumber, column }, value: 'Edited',
+  })))
+  const allowed = filterScheduleEditableChanges([sheet], indexScheduleRows([sheet]), changes)
+  assert.deepEqual(allowed.map(({ cell }) => [cell.row, cell.column]),
+    [0, 1, 2, 3].flatMap(index => [13, 15, 17, 19].map(column => [sheet.rows[index].rowNumber, column])))
+  const html = renderToStaticMarkup(createElement('table', null, createElement(DepartmentScheduleImportTableBody, {
+    rows: sheet.rows, yearSections: sheet.yearSections, sheetIndex: 0, selection: null, actions,
+    columnLabels: Array(21).fill('Column'), hasSheet: true,
+  })))
+  for (let index = 1; index < 4; index++) for (const column of [13, 15, 17, 19]) {
+    const tag = html.match(new RegExp(`<td[^>]*data-edit-cell="0:${sheet.rows[index].rowNumber}:${column}"[^>]*>`))?.[0]
+    assert.ok(tag && !tag.includes('aria-readonly'), `row ${index + 1}, column ${column}`)
+  }
+})
+
+test('parallel rows without repeated Section values do not conflict with their shared instructor', () => {
+  const assignments = [403, 404, 405, 406].map((room, index) => ({
+    location: `row-${index}`, rowKey: `row-${index}`, parallelGroup: 'row-0', code: 'ITE 083', section: '',
+    faculty: 'Narvasa, Jan Julienne', instructorId: 'instructor', room: `PTC ${room}`,
+    meetingKind: 'Lec', start: 900, end: 1080, days: ['Wed'],
+  }))
+  assert.deepEqual([...validateFacultyScheduleAssignments(assignments)].filter(issue => issue.message.includes('also assigned')), [])
+  assignments[1].section = '5'
+  assignments[2].section = '5'
+  assert.ok(validateFacultyScheduleAssignments(assignments).some(issue => issue.message.includes('also assigned')))
+})
+
+test('Status renders as a selectable read-only grid cell and rejects workbook edits', () => {
+  const sheet = createEmptyDepartmentScheduleSheet()
+  sheet.rows[0].values[2] = 'ITE 083'
+  const html = renderToStaticMarkup(createElement('table', null, createElement(DepartmentScheduleImportTableBody, {
+    rows: sheet.rows, yearSections: sheet.yearSections, sheetIndex: 0,
+    selection: { sheet: 0, column: 21, anchor: 0, end: 0 }, actions,
+    columnLabels: Array(21).fill('Column'), hasSheet: true, statusesReady: true,
+    sheetName: sheet.name, rowStatuses: new Map([[facultyScheduleRowKey(sheet.name, sheet.rows[0].rowNumber), 'Plot']]),
+  })))
+  const tag = html.match(new RegExp(`<td[^>]*data-edit-cell="0:${sheet.rows[0].rowNumber}:21"[^>]*>`))?.[0]
+  assert.ok(tag?.includes('aria-readonly="true"') && tag.includes('aria-selected="true"'))
+  assert.ok(tag.includes('border-slate-300') && html.includes('>Plot</span></td>'))
+  const changes = [{ cell: { sheet: 0, row: sheet.rows[0].rowNumber, column: 21 }, value: 'Edited' }]
+  assert.deepEqual(filterScheduleEditableChanges([sheet], indexScheduleRows([sheet]), changes), [])
 })
 
 test('duplicate-only rows and their tooltip use purple', () => {

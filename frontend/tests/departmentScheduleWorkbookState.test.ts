@@ -11,13 +11,19 @@ test('Firestore serialization preserves blank rows, year labels, visibility, row
   sheet.yearSections![1].hidden = true
   sheet.rows[0].rowNumber = 100
   sheet.rows[0].values[3] = 'A course with spaces'
-  const widths = Array.from({ length: 22 }, (_, index) => index === 0 ? 40 : 100)
+  const widths = Array.from({ length: 23 }, (_, index) => index === 0 ? 40 : 100)
   const saved = createDepartmentScheduleWorkbookState([sheet], 0, widths)
   const split = splitFirestoreWorkbookState(saved.editorState)
   const reopened = readDepartmentScheduleWorkbookState(joinFirestoreWorkbookState(split.manifest, split.sheets))
   assert.deepEqual(reopened.sheets, [sheet])
   assert.deepEqual(reopened.columnWidths, widths)
   assert.equal(reopened.sheets[0].rows.length, 40)
+})
+
+test('older 22-column widths gain a default read-only Status width', () => {
+  const saved = createDepartmentScheduleWorkbookState([createEmptyDepartmentScheduleSheet()], 0, Array(22).fill(100))
+  const reopened = readDepartmentScheduleWorkbookState(saved.editorState)
+  assert.deepEqual(reopened.columnWidths, [...Array(22).fill(100), 96])
 })
 
 test('repeated saves replace owned sheets and retain unrelated worksheet data and overrides', () => {

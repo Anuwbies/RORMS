@@ -66,13 +66,14 @@ const assigned = (value: string | undefined) => Boolean(value?.trim()
 
 export function areParallelFacultyMeetings(a: FacultySubjectAssignment, b: FacultySubjectAssignment): boolean {
   if (a.parallelGroup === undefined || a.parallelGroup !== b.parallelGroup) return false
+  if (a.rowKey && b.rowKey && a.rowKey === b.rowKey) return false
   const sameFaculty = a.instructorId && b.instructorId ? a.instructorId === b.instructorId
     : excelScheduleFacultyKeys((a.faculty ?? '').replace(/\s*\(NEW\)\s*$/i, '')).some(key => excelScheduleFacultyKeys((b.faculty ?? '').replace(/\s*\(NEW\)\s*$/i, '')).includes(key))
   const aDays = a.days ?? (a.day ? [a.day] : []), bDays = b.days ?? (b.day ? [b.day] : [])
   return Boolean(sameFaculty && assigned(a.faculty) && assigned(b.faculty)
     && subjectKey(a.code || a.subjectTitle || '') !== ''
     && subjectKey(a.code || a.subjectTitle || '') === subjectKey(b.code || b.subjectTitle || '')
-    && a.section.trim() && b.section.trim() && subjectKey(a.section) !== subjectKey(b.section)
+    && (!a.section.trim() || !b.section.trim() || subjectKey(a.section) !== subjectKey(b.section))
     && a.meetingKind === b.meetingKind && a.start !== undefined && a.end !== undefined
     && a.end > a.start && a.start === b.start && a.end === b.end
     && aDays.length > 0 && aDays.length === bDays.length && aDays.every(day => bDays.includes(day)))
@@ -243,6 +244,33 @@ export function isScheduleColumnEditable(college: string, column: number): boole
   const normalized = college.trim().replace(/\s+/g, ' ').toUpperCase().replace(/^OPENLAB$/, 'OPEN LAB')
   if (normalized === 'OPEN LAB') return true
   return column % 2 === 1 ? normalized === 'LECTURE' || normalized === 'PARALLEL' : normalized === 'LABORATORY'
+}
+
+/** Blank College cells that continue the same parallel subject inherit its Lec edit rule. */
+export function scheduleEditableColleges(
+  rows: readonly { values: readonly string[] }[],
+  yearSections?: readonly { start: number; count: number }[],
+  overrides?: ReadonlyMap<string, string>,
+): string[] {
+  const colleges: string[] = []
+  let parallel: { code: string; title: string; course: string } | undefined
+  let sectionEnd = rows.length
+  for (let index = 0; index < rows.length; index++) {
+    const section = yearSections?.find(item => item.start === index)
+    if (section) { parallel = undefined; sectionEnd = section.start + section.count }
+    if (index >= sectionEnd) parallel = undefined
+    const value = (column: number) => (overrides?.get(`${index}:${column}`) ?? rows[index].values[column] ?? '').trim()
+    const college = value(0).replace(/\s+/g, ' ').toUpperCase()
+    const code = value(2).toUpperCase()
+    const title = value(3).toLowerCase()
+    const course = value(4).toUpperCase()
+    if (college === 'PARALLEL') parallel = code || title ? { code, title, course } : undefined
+    else if (college || !parallel || !(code && parallel.code && code === parallel.code || title && parallel.title && title === parallel.title)
+      || course && parallel.course && course !== parallel.course) parallel = undefined
+    colleges.push(college || (parallel ? 'PARALLEL' : ''))
+    if (parallel && course && !parallel.course) parallel.course = course
+  }
+  return colleges
 }
 
 export function isValidScheduleCollege(value: string): boolean {

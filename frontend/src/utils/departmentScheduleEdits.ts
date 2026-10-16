@@ -2,7 +2,7 @@ import type { CellEditLocation } from './cellTextHistory'
 import type { DepartmentScheduleImportSheet } from './departmentScheduleImport'
 import { resolveScheduleCourse, scheduleCourseYear, type DepartmentCourseSuggestion } from './departmentCourseSuggestions'
 import { titleCaseName } from './userName'
-import { isScheduleColumnEditable } from './ScheduleValidation'
+import { isScheduleColumnEditable, scheduleEditableColleges } from './ScheduleValidation'
 
 export interface ScheduleCellValueChange {
   cell: CellEditLocation
@@ -96,13 +96,21 @@ export function indexScheduleRows(sheets: readonly DepartmentScheduleImportSheet
 /** Check user edits before recording history; row pastes use their incoming College. */
 export function filterScheduleEditableChanges(sheets: readonly DepartmentScheduleImportSheet[], indexes: readonly ReadonlyMap<number, number>[],
   changes: readonly ScheduleCellValueChange[]): ScheduleCellValueChange[] {
-  const colleges = new Map<string, string>()
-  const rowKey = (cell: CellEditLocation) => JSON.stringify([cell.sheet, cell.row])
-  for (const change of changes) if (change.cell.column === 0) colleges.set(rowKey(change.cell), change.value)
+  const overrides = new Map<number, Map<string, string>>()
+  for (const { cell, value } of changes) {
+    if (cell.column !== 0 && cell.column !== 2 && cell.column !== 3 && cell.column !== 4) continue
+    const index = indexes[cell.sheet]?.get(cell.row)
+    if (index === undefined) continue
+    const sheetOverrides = overrides.get(cell.sheet) ?? new Map<string, string>()
+    sheetOverrides.set(`${index}:${cell.column}`, value)
+    overrides.set(cell.sheet, sheetOverrides)
+  }
+  const colleges = sheets.map((sheet, sheetIndex) => scheduleEditableColleges(sheet.rows, sheet.yearSections, overrides.get(sheetIndex)))
   return changes.filter(({ cell }) => {
+    if (cell.column < 0 || cell.column > 20) return false
     const index = indexes[cell.sheet]?.get(cell.row)
     const row = index === undefined ? undefined : sheets[cell.sheet]?.rows[index]
-    return row !== undefined && isScheduleColumnEditable(colleges.get(rowKey(cell)) ?? row.values[0], cell.column)
+    return index !== undefined && row !== undefined && isScheduleColumnEditable(colleges[cell.sheet][index], cell.column)
   })
 }
 
