@@ -6,7 +6,7 @@ import { excelScheduleFacultyKeys, excelScheduleRoomKey, isExcelScheduleTba, par
 export interface ScheduleDirectory {
   departmentCode: string
   faculty: { id: string; fullName: string; department: string }[]
-  rooms: { id: string; code: string; name: string; buildingId: string }[]
+  rooms: { id: string; code: string; name: string; buildingId: string; floor?: number }[]
 }
 
 export interface WorkbookScheduleMeeting {

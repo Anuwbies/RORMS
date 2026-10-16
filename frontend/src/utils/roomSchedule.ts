@@ -3,6 +3,12 @@ import { scheduleMeetingRecords, type ScheduleMeetingRecord } from './scheduleMe
 interface ScheduleDocument { id: string; data: () => Record<string, unknown> }
 interface ScheduleTerm { id?: string; academicYear?: string }
 
+export function scheduleMatchesDepartment(meeting: { department?: unknown }, department: unknown): boolean {
+  const current = typeof department === 'string' ? department.trim().toUpperCase() : ''
+  const source = typeof meeting.department === 'string' ? meeting.department.trim().toUpperCase() : ''
+  return Boolean(current && source === current)
+}
+
 function minutes(value?: string): number | null {
   const match = /^(\d{1,2}):(\d{2})$/.exec(value ?? '')
   if (!match || Number(match[1]) > 23 || Number(match[2]) > 59) return null

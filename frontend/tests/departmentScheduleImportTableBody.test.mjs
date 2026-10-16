@@ -110,3 +110,14 @@ test('room dropdown recommendations are labeled without changing room names or o
   assert.match(html, /aria-selected="true"[^>]*>BE 201<span/)
   assert.match(html, />BE 202<\/button>/)
 })
+
+test('the time dropdown can show an empty recommendation status alongside the manual TBA option', () => {
+  const { ExcelFacultySuggestions } = load(resolve(root, 'components/ExcelFacultySuggestions.tsx'))
+  const html = renderToStaticMarkup(createElement(ExcelFacultySuggestions, {
+    id: 'times', anchor: { current: null }, names: ['TBA'], recommendedNames: [], statusMessage: 'No recommendations available.',
+    loading: false, activeIndex: -1, onSelect: () => {}, label: 'Time options', matchAnchorWidth: true,
+  }))
+  assert.match(html, /role="status"[^>]*>No recommendations available\.<\/p>/)
+  assert.match(html, /role="option"[^>]*>TBA<\/button>/)
+  assert.ok(!html.includes('>Recommended</span>'))
+})

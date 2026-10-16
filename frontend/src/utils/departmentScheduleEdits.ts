@@ -1,6 +1,8 @@
 import type { CellEditLocation } from './cellTextHistory'
 import type { DepartmentScheduleImportSheet } from './departmentScheduleImport'
 import { resolveScheduleCourse, scheduleCourseYear, type DepartmentCourseSuggestion } from './departmentCourseSuggestions'
+import { titleCaseName } from './userName'
+import { isScheduleColumnEditable } from './ScheduleValidation'
 
 export interface ScheduleCellValueChange {
   cell: CellEditLocation
@@ -30,10 +32,16 @@ export function hasExtraScheduleValues(column: number, value: string): boolean {
   return scheduleValueLimit(column, value) < value.length
 }
 
-export function normalizeScheduleCellText(column: number, value: string): string {
+export function normalizeScheduleCellText(column: number, value: string, allowTimeTba = true): string {
   if (column === 12) return value.replace(/[^0-9]/g, '')
-  if (column >= 15 && column <= 18) value = [...value].filter(character => character === '\r' || character === '\n' || isScheduleCellCharacterAllowed(column, character)).join('')
+  // Stored/selected TBA must survive completion and history; direct time input still rejects letters.
+  if (column === 15 || column === 16) value = value.split(/(\r\n|[/;\r\n])/).map(part =>
+    allowTimeTba && /^TBA$/i.test(part.trim()) ? 'TBA' : [...part]
+      .filter(character => character === '\r' || character === '\n' || isScheduleCellCharacterAllowed(column, character)).join('')).join('')
+  else if (column === 17 || column === 18) value = [...value].filter(character => character === '\r' || character === '\n' || isScheduleCellCharacterAllowed(column, character)).join('')
   value = value.slice(0, scheduleValueLimit(column, value))
+  if (column === 13 || column === 14) return titleCaseName(value).replace(/\bTba\b/g, 'TBA')
+  if (column === 0) return value.toUpperCase().replace(/\bOPENLAB\b/g, 'OPEN LAB')
   return column === 2 || column >= 17 && column <= 20 ? value.toUpperCase() : value
 }
 
@@ -50,9 +58,17 @@ export function completeScheduleTimeText(value: string): string {
   }).join('')
 }
 
-export function formatScheduleTimeInput(value: string, caret = value.length): { value: string; caret: number } {
-  const text = normalizeScheduleCellText(15, value)
-  const cursor = normalizeScheduleCellText(15, value.slice(0, caret)).length
+export function formatScheduleTimeInput(value: string, caret = value.length, previousValue = ''): { value: string; caret: number } {
+  const selectedTbaCount = previousValue.split(/\r\n|[/;\r\n]/).filter(part => /^TBA$/i.test(part.trim())).length
+  const sanitize = (text: string) => {
+    let remainingTba = selectedTbaCount
+    return text.split(/(\r\n|[/;\r\n])/).map(part => {
+      if (/^TBA$/i.test(part.trim()) && remainingTba > 0) { remainingTba--; return 'TBA' }
+      return normalizeScheduleCellText(15, part, false)
+    }).join('')
+  }
+  const text = normalizeScheduleCellText(15, sanitize(value))
+  const cursor = normalizeScheduleCellText(15, sanitize(value.slice(0, caret))).length
   const parts = text.split(/([-–—/;\r\n])/)
   let formatted = '', offset = 0, nextCaret = cursor
   parts.forEach((part, index) => {
@@ -75,6 +91,19 @@ export function formatScheduleTimeInput(value: string, caret = value.length): { 
 
 export function indexScheduleRows(sheets: readonly DepartmentScheduleImportSheet[]): ReadonlyMap<number, number>[] {
   return sheets.map(sheet => new Map(sheet.rows.map((row, index) => [row.rowNumber, index])))
+}
+
+/** Check user edits before recording history; row pastes use their incoming College. */
+export function filterScheduleEditableChanges(sheets: readonly DepartmentScheduleImportSheet[], indexes: readonly ReadonlyMap<number, number>[],
+  changes: readonly ScheduleCellValueChange[]): ScheduleCellValueChange[] {
+  const colleges = new Map<string, string>()
+  const rowKey = (cell: CellEditLocation) => JSON.stringify([cell.sheet, cell.row])
+  for (const change of changes) if (change.cell.column === 0) colleges.set(rowKey(change.cell), change.value)
+  return changes.filter(({ cell }) => {
+    const index = indexes[cell.sheet]?.get(cell.row)
+    const row = index === undefined ? undefined : sheets[cell.sheet]?.rows[index]
+    return row !== undefined && isScheduleColumnEditable(colleges.get(rowKey(cell)) ?? row.values[0], cell.column)
+  })
 }
 
 /** Expand user changes before recording history; undo/redo still applies raw saved changes. */

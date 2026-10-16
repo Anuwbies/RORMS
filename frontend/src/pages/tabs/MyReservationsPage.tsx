@@ -10,7 +10,7 @@ import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
 import { ConfirmModal } from '../../components/ConfirmModal'
-import { ScheduleModal } from '../../components/ScheduleModal'
+import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { useSnackbar } from '../../components/Snackbar'
 import { db, auth } from '../../firebase'
 import { 
@@ -667,7 +667,7 @@ function MyReservationsPage() {
       )}
 
       {/* Room Schedule Timetable Modal */}
-      <ScheduleModal
+      <RoomScheduleModal
         isOpen={isRoomScheduleModalOpen}
         room={selectedRoomForSchedule}
         buildingName={

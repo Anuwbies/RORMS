@@ -2,6 +2,7 @@ export interface ScheduleMeetingRecord extends Record<string, unknown> {
   id: string
   parentId?: string
   instructorId?: string
+  department?: string
   roomId?: string
   buildingId?: string
   format?: string

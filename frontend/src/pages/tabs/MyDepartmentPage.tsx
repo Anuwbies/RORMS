@@ -5,7 +5,7 @@ import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, EditIcon, C
 import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
-import { ScheduleModal } from '../../components/ScheduleModal'
+import { PersonalScheduleModal } from '../../components/PersonalScheduleModal'
 import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
 import { DepartmentCoursesImportModal } from '../../components/DepartmentCoursesImportModal'
@@ -689,8 +689,9 @@ function MyDepartmentPage() {
       )}
 
       {/* Instructor Schedule Modal */}
-      <ScheduleModal
+      <PersonalScheduleModal
         isOpen={isScheduleModalOpen}
+        schedulesOnly
         member={selectedMember ? { ...selectedMember, departmentName: departmentInfo?.name || selectedMember.department } : null}
         initialAcademicYear={selectedAcademicYear?.academicYear}
         initialSemester={selectedSemesterPhase?.name}
@@ -1063,6 +1064,16 @@ function MyDepartmentPage() {
                     Add Instructor
                   </Button>
                 )}
+                {(currentUserRole === 'Dean' || currentUserRole === 'Program Head') && (
+                  <Button
+                    type="button"
+                    variant="brand"
+                    icon={<BookIcon className="h-5 w-5" />}
+                    onClick={() => setIsCoursesModalOpen(true)}
+                  >
+                    Manage Courses
+                  </Button>
+                )}
                 {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head' || currentUserRole === 'Instructor') && (
                   <Button
                     type="button"
@@ -1075,16 +1086,6 @@ function MyDepartmentPage() {
                     }}
                   >
                     {currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? 'Manage Schedule' : 'Department Schedule'}
-                  </Button>
-                )}
-                {(currentUserRole === 'Dean' || currentUserRole === 'Program Head') && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    icon={<BookIcon className="h-5 w-5" />}
-                    onClick={() => setIsCoursesModalOpen(true)}
-                  >
-                    Manage Courses
                   </Button>
                 )}
               </div>

@@ -61,6 +61,48 @@ export function formatFacultySubject(value: string): string {
 const assigned = (value: string | undefined) => Boolean(value?.trim()
   && !/^(?:TBA|TBD|TBC|N\/?A|NONE|VACANT|TO BE ASSIGNED|TO BE ANNOUNCED|[-–—]+)$/i.test(value.trim()))
 
+export function areParallelFacultyMeetings(a: FacultySubjectAssignment, b: FacultySubjectAssignment): boolean {
+  if (a.parallelGroup === undefined || a.parallelGroup !== b.parallelGroup) return false
+  const sameFaculty = a.instructorId && b.instructorId ? a.instructorId === b.instructorId
+    : excelScheduleFacultyKeys((a.faculty ?? '').replace(/\s*\(NEW\)\s*$/i, '')).some(key => excelScheduleFacultyKeys((b.faculty ?? '').replace(/\s*\(NEW\)\s*$/i, '')).includes(key))
+  const aDays = a.days ?? (a.day ? [a.day] : []), bDays = b.days ?? (b.day ? [b.day] : [])
+  return Boolean(sameFaculty && assigned(a.faculty) && assigned(b.faculty)
+    && subjectKey(a.code || a.subjectTitle || '') !== ''
+    && subjectKey(a.code || a.subjectTitle || '') === subjectKey(b.code || b.subjectTitle || '')
+    && a.section.trim() && b.section.trim() && subjectKey(a.section) !== subjectKey(b.section)
+    && a.meetingKind === b.meetingKind && a.start !== undefined && a.end !== undefined
+    && a.end > a.start && a.start === b.start && a.end === b.end
+    && aDays.length > 0 && aDays.length === bDays.length && aDays.every(day => bDays.includes(day)))
+}
+
+export function parallelRoomPosition(room: ScheduleDirectory['rooms'][number]) {
+  const match = [room.code, room.name].map(value => /^(.*?)(\d+)([A-Z]*)$/.exec(excelScheduleRoomKey(value))).find(Boolean)
+  return match ? { building: room.buildingId, prefix: match[1], number: Number(match[2]), suffix: match[3],
+    floor: room.floor ?? Math.floor(Number(match[2]) / 100) } : undefined
+}
+
+/** Room-number adjacency is the workbook's connection rule; use real building/floor metadata. */
+export function parallelRoomConnectionIssue(assignments: readonly FacultySubjectAssignment[],
+  rooms: ReadonlyArray<ScheduleDirectory['rooms'][number]>, target: FacultySubjectAssignment): string | undefined {
+  if (target.parallelGroup === undefined) return
+  const group = assignments.filter(other => other === target || areParallelFacultyMeetings(target, other))
+  if (group.length < 2) return
+  const resolved = group.flatMap(assignment => {
+    if (!assigned(assignment.room)) return []
+    const matches = assignment.roomId ? rooms.filter(room => room.id === assignment.roomId)
+      : rooms.filter(room => [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(assignment.room!)))
+    return matches.length === 1 ? [matches[0]] : []
+  })
+  if (resolved.length < 2) return
+  const positions = resolved.map(parallelRoomPosition)
+  const first = positions[0]
+  const sameLocation = first && first.building && positions.every(position => position && position.building === first.building
+    && position.floor === first.floor && position.prefix === first.prefix && position.suffix === first.suffix)
+  const numbers = positions.map(position => position?.number ?? NaN).sort((a, b) => a - b)
+  if (sameLocation && numbers.every((number, index) => index === 0 || number === numbers[index - 1] + 1)) return
+  return `Parallel classes must use separate, consecutive rooms in the same building and floor. Assigned rooms: ${resolved.map(room => room.code || room.name).join(' / ')}.`
+}
+
 export function facultyScheduleOverlap(a: FacultySubjectAssignment, b: FacultySubjectAssignment) {
   if (a.start === undefined || a.end === undefined || b.start === undefined || b.end === undefined
     || a.end <= a.start || b.end <= b.start || a.start >= b.end || b.start >= a.end) return null
@@ -70,24 +112,21 @@ export function facultyScheduleOverlap(a: FacultySubjectAssignment, b: FacultySu
     : excelScheduleFacultyKeys((a.faculty ?? '').replace(/\s*\(NEW\)\s*$/i, '')).some(key => excelScheduleFacultyKeys((b.faculty ?? '').replace(/\s*\(NEW\)\s*$/i, '')).includes(key))
   const sameRoom = a.roomId && b.roomId ? a.roomId === b.roomId
     : excelScheduleRoomKey(a.room ?? '') === excelScheduleRoomKey(b.room ?? '')
-  const parallel = a.parallelGroup !== undefined && a.parallelGroup === b.parallelGroup
-    && sameFaculty && assigned(a.faculty) && assigned(b.faculty)
-    && subjectKey(a.code || a.subjectTitle || '') !== ''
-    && subjectKey(a.code || a.subjectTitle || '') === subjectKey(b.code || b.subjectTitle || '')
-    && a.section.trim() && b.section.trim() && subjectKey(a.section) !== subjectKey(b.section)
-    && a.meetingKind === b.meetingKind && a.start === b.start && a.end === b.end
-    && (a.days ?? (a.day ? [a.day] : [])).length === (b.days ?? (b.day ? [b.day] : [])).length
-    && days.length === (a.days ?? (a.day ? [a.day] : [])).length
-  return parallel ? null : { days, sameFaculty, sameRoom }
+  return areParallelFacultyMeetings(a, b) ? null : { days, sameFaculty, sameRoom }
 }
 
 export function facultyScheduleRoomConflict(a: FacultySubjectAssignment, b: FacultySubjectAssignment): boolean {
   return Boolean(assigned(a.room) && assigned(b.room) && facultyScheduleOverlap(a, b)?.sameRoom)
 }
 
+export function facultyScheduleInstructorConflict(a: FacultySubjectAssignment, b: FacultySubjectAssignment): boolean {
+  return Boolean(assigned(a.faculty) && assigned(b.faculty) && facultyScheduleOverlap(a, b)?.sameFaculty)
+}
+
 /** Only instructor/room overlaps, duplicate subjects, department membership and room existence. */
 export function validateFacultyScheduleAssignments(
   assignments: readonly FacultySubjectAssignment[], _courses: readonly DepartmentCourse[] = [],
+  rooms: ReadonlyArray<ScheduleDirectory['rooms'][number]> = [],
 ): TemplateIssue[] {
   const issues: TemplateIssue[] = []
   const seen = new Set<string>()
@@ -99,6 +138,8 @@ export function validateFacultyScheduleAssignments(
   }
   const bySection = new Map<string, FacultySubjectAssignment[]>()
   for (const assignment of assignments) {
+    const roomConnectionIssue = parallelRoomConnectionIssue(assignments, rooms, assignment)
+    if (roomConnectionIssue) warn(assignment, roomConnectionIssue)
     if (assigned(assignment.faculty) && assignment.facultyStatus === 'invalid') {
       warn(assignment, `${assignment.faculty} is not an active member of ${assignment.departmentCode || 'this department'}.`)
     }
@@ -146,23 +187,75 @@ export function validateFacultyScheduleAssignments(
 
 export const facultyScheduleRowKey = (sheet: string, row: number) => JSON.stringify([sheet, row])
 
+export type DepartmentCourseIdentity = Pick<DepartmentCourseSuggestion, 'code' | 'title'>
+export const SCHEDULE_COLLEGE_CHOICES = ['OPEN LAB', 'LECTURE', 'LABORATORY', 'PARALLEL'] as const
+
+/** College controls only Faculty, Time, Day and Room Lec/Lab columns. */
+export function isScheduleColumnEditable(college: string, column: number): boolean {
+  if (column < 13 || column > 20) return true
+  const normalized = college.trim().replace(/\s+/g, ' ').toUpperCase().replace(/^OPENLAB$/, 'OPEN LAB')
+  if (normalized === 'OPEN LAB') return true
+  return column % 2 === 1 ? normalized === 'LECTURE' || normalized === 'PARALLEL' : normalized === 'LABORATORY'
+}
+
+export function isValidScheduleCollege(value: string): boolean {
+  const normalized = value.trim().replace(/\s+/g, ' ').toUpperCase()
+  return !normalized || SCHEDULE_COLLEGE_CHOICES.some(choice => choice.toUpperCase() === normalized)
+}
+
+/** Check subject identities against the department's published course directory. */
+export function validateDepartmentScheduleCourseRows(rows: readonly WorkbookScheduleRow[],
+  courses: readonly DepartmentCourseIdentity[]): ReadonlyMap<string, readonly string[]> {
+  const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toUpperCase()
+  const titlesByCode = new Map<string, Set<string>>()
+  const titles = new Set<string>()
+  for (const course of courses) {
+    const code = normalize(course.code)
+    const title = normalize(course.title)
+    const codeTitles = titlesByCode.get(code) ?? new Set<string>()
+    codeTitles.add(title)
+    titlesByCode.set(code, codeTitles)
+    titles.add(title)
+  }
+  const messages = new Map<string, readonly string[]>()
+  for (const row of rows) {
+    const issues: string[] = []
+    const code = normalize(row.subjectCode)
+    const title = normalize(row.subjectTitle)
+    const hasCode = Boolean(code) && !isExcelScheduleTba(code)
+    const hasTitle = Boolean(title) && !isExcelScheduleTba(title)
+    if (hasCode && !titlesByCode.has(code)) issues.push(`Code ${row.subjectCode} does not exist in the department courses.`)
+    if (hasTitle && !titles.has(title)) issues.push(`Descriptive title ${row.subjectTitle} does not exist in the department courses.`)
+    if (hasCode && hasTitle && titlesByCode.has(code) && titles.has(title) && !titlesByCode.get(code)!.has(title)) {
+      issues.push(`Code ${row.subjectCode} and descriptive title ${row.subjectTitle} do not match the same department course.`)
+    }
+    if (issues.length) messages.set(facultyScheduleRowKey(row.sourceSheet, row.sourceRow), issues)
+  }
+  return messages
+}
+
 /** Validate parsed 21-column workbook rows, including multiple meetings in each Lec/Lab cell. */
 export function validateDepartmentFacultyScheduleRows(rows: readonly WorkbookScheduleRow[], directory: ScheduleDirectory,
-  rowDescriptions: ReadonlyMap<string, string> = new Map()): ReadonlyMap<string, readonly string[]> {
+  rowDescriptions: ReadonlyMap<string, string> = new Map(), courses?: readonly DepartmentCourseIdentity[]): ReadonlyMap<string, readonly string[]> {
   const assignments = departmentFacultyScheduleAssignments(rows, directory, rowDescriptions)
+  const courseIssues = courses === undefined ? new Map<string, readonly string[]>() : validateDepartmentScheduleCourseRows(rows, courses)
   const messages = new Map<string, string[]>()
-  for (const issue of validateFacultyScheduleAssignments(assignments)) messages.set(issue.location, [...(messages.get(issue.location) ?? []), issue.message])
+  for (const issue of validateFacultyScheduleAssignments(assignments, [], directory.rooms)) messages.set(issue.location, [...(messages.get(issue.location) ?? []), issue.message])
   for (const row of rows) {
     const location = facultyScheduleRowKey(row.sourceSheet, row.sourceRow)
     const issues = new Set(messages.get(location) ?? [])
+    if (!isValidScheduleCollege(row.college)) {
+      issues.add(`${row.college} is not a valid College. Choose OPEN LAB, LECTURE, LABORATORY, or PARALLEL.`)
+    }
     for (const meeting of row.meetings) {
-      if (meeting.time.trim() && !parseExcelScheduleTime(meeting.time)) {
-        issues.add(`${meeting.time} is not a valid time. Use a range such as 7:30-9:00.`)
+      if (meeting.time.trim() && !isExcelScheduleTba(meeting.time) && !parseExcelScheduleTime(meeting.time)) {
+        issues.add(`${meeting.time} is not a valid time. Use a range such as 7:30-9:00 or select TBA.`)
       }
-      if (meeting.day.trim() && !parseExcelScheduleDays(meeting.day).length) {
-        issues.add(`${meeting.day} is not a valid day. Use MON, TUE, WED, THU, FRI, SAT, or SUN.`)
+      if (meeting.day.trim() && !isValidExcelScheduleDays(meeting.day)) {
+        issues.add(`${meeting.day} is not a valid day. Use MON, TUE, WED, THU, FRI, SAT, SUN, or TBA.`)
       }
     }
+    for (const issue of courseIssues.get(location) ?? []) issues.add(issue)
     if (issues.size) messages.set(location, [...issues])
   }
   return messages
@@ -361,10 +454,15 @@ export function parseExcelScheduleTime(text: string): ScheduleTimeRange | null {
 
 const DAY_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
+export function isValidExcelScheduleDays(text: string): boolean {
+  const parts = text.trim().split('/')
+  return parts.length <= 2 && parts.every(isExcelScheduleTba) || parseExcelScheduleDays(text).length > 0
+}
+
 export function parseExcelScheduleDays(text: string): string[] {
   const parts = text.trim().toUpperCase().split('/')
   if (parts.length > 2) return []
-  const days = parts.map(part => DAY_ORDER.find(day => day.toUpperCase() === part.trim()))
+  const days = parts.filter(part => !isExcelScheduleTba(part)).map(part => DAY_ORDER.find(day => day.toUpperCase() === part.trim()))
   if (days.some(day => !day) || new Set(days).size !== days.length) return []
   return DAY_ORDER.filter(day => days.includes(day))
 }

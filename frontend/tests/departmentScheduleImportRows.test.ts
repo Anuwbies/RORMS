@@ -7,7 +7,8 @@ import type { ScheduleDirectory } from '../src/utils/excelScheduleRows.ts'
 import { parseExcelScheduleDays } from '../src/utils/ScheduleValidation.ts'
 
 const directory: ScheduleDirectory = { departmentCode: 'CITE', faculty: [{ id: 'member1', fullName: 'Engelbert Cruz', department: 'CITE' }],
-  rooms: [{ id: 'room1', code: 'PTC 201', name: 'Lecture 201', buildingId: 'ptc' }] }
+  rooms: [{ id: 'room1', code: 'PTC 201', name: 'Lecture 201', buildingId: 'ptc' },
+    ...[200, 202, 203].map(number => ({ id: `room${number}`, code: `PTC ${number}`, name: `Lecture ${number}`, buildingId: 'ptc' }))] }
 const values = () => ['CITE', 'IT', 'ITE 101', 'Computing', 'BSIT', '2', '1', '3', '2', '3', '5.00', '40', '1', 'Cruz, Engelbert', '', '7:30-9:00', '', 'WED', '', 'PTC 201', '']
 function extract(sheets: DepartmentScheduleImportSheet[]) {
   const saved = createDepartmentScheduleWorkbookState(sheets, 0, null)
@@ -20,11 +21,12 @@ function parallelSheet() {
     sheet.rows[index].values = values()
     sheet.rows[index].values[0] = index === 0 ? 'PARALLEL' : ''
     sheet.rows[index].values[12] = String(index + 1)
+    sheet.rows[index].values[19] = `PTC ${[201, 200, 202, 203][index]}`
   }
   return sheet
 }
 
-test('four parallel sections share one instructor meeting and room without overlap warnings', () => {
+test('four parallel sections share one instructor meeting in connected rooms without overlap warnings', () => {
   const sheet = parallelSheet()
   const rows = extract([sheet])
   assert.equal(rows.length, 4)
@@ -50,6 +52,7 @@ test('parallel exemption requires matching instructor, days, times and different
   for (const [field, value] of [[13, 'Other Faculty'], [17, 'WED/FRI'], [15, '8:00-10:00'], [12, '1']] as const) {
     const sheet = parallelSheet()
     sheet.rows[1].values[field] = value
+    sheet.rows[1].values[19] = sheet.rows[0].values[19]
     assert.ok(extract([sheet])[1].validationIssues.some(message => message.includes('is also assigned on')), `${field}: ${value}`)
   }
   const sheet = parallelSheet()
@@ -248,8 +251,8 @@ test('blank fields, durations and unmatched courses remain allowed while malform
   sheet.rows[0].values[15] = 'invalid time'
   sheet.rows[0].values[17] = 'invalid day'
   assert.deepEqual(extract([sheet])[0].validationIssues, [
-    'invalid time is not a valid time. Use a range such as 7:30-9:00.',
-    'invalid day is not a valid day. Use MON, TUE, WED, THU, FRI, SAT, or SUN.',
+    'invalid time is not a valid time. Use a range such as 7:30-9:00 or select TBA.',
+    'invalid day is not a valid day. Use MON, TUE, WED, THU, FRI, SAT, SUN, or TBA.',
   ])
 })
 
@@ -274,6 +277,80 @@ test('only the seven three-letter days and at most two slash-separated days are 
   }
   for (const value of ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']) assert.equal(parseExcelScheduleDays(value)[0]?.toUpperCase(), value)
   assert.deepEqual(parseExcelScheduleDays('MON/SAT'), ['Mon', 'Sat'])
+})
+
+test('TBA is accepted for Lec and Lab days without assigning a weekday', () => {
+  const sheet = createEmptyDepartmentScheduleSheet()
+  sheet.rows[0].values = values()
+  sheet.rows[0].values[17] = ' tba '
+  sheet.rows[0].values[14] = 'Cruz, Engelbert'
+  sheet.rows[0].values[16] = '7:30-9:00'
+  sheet.rows[0].values[18] = 'TBA'
+  sheet.rows[0].values[20] = 'PTC 201'
+  const row = extract([sheet])[0]
+  assert.deepEqual(row.validationIssues, [])
+  assert.ok(row.meetings.every(meeting => meeting.day.toUpperCase() === 'TBA' && meeting.days.length === 0))
+  assert.equal(departmentScheduleImportRowIssues([sheet], directory).size, 0)
+})
+
+test('TBA Lec and Lab times save as unassigned times without overlap or invalid-time warnings', () => {
+  const sheet = createEmptyDepartmentScheduleSheet()
+  sheet.rows[0].values = values()
+  sheet.rows[0].values[15] = 'TBA'
+  sheet.rows[0].values[14] = 'Cruz, Engelbert'
+  sheet.rows[0].values[16] = 'TBA'
+  sheet.rows[0].values[18] = 'WED'
+  sheet.rows[0].values[20] = 'PTC 201'
+  sheet.rows[1].values = values()
+  sheet.rows[1].values[2] = 'ITE 102'
+  sheet.rows[1].values[12] = '2'
+  const rows = extract([sheet])
+  assert.ok(rows.every(row => row.validationIssues.length === 0))
+  assert.ok(rows[0].meetings.every(meeting => meeting.time === 'TBA' && !meeting.startTime && !meeting.endTime))
+  assert.equal(rows[0].rawValues[15], 'TBA')
+  assert.equal(rows[0].rawValues[16], 'TBA')
+})
+
+test('mixed TBA/time and time/TBA preserve both meetings and check only the assigned time for overlaps', () => {
+  for (const column of [15, 16]) for (const time of ['TBA/13:30-15:00', '7:30-9:00/TBA']) {
+    const sheet = createEmptyDepartmentScheduleSheet()
+    sheet.rows[0].values = values()
+    if (column === 16) {
+      sheet.rows[0].values[13] = ''; sheet.rows[0].values[15] = ''; sheet.rows[0].values[17] = ''; sheet.rows[0].values[19] = ''
+      sheet.rows[0].values[14] = 'Cruz, Engelbert'; sheet.rows[0].values[20] = 'PTC 201'
+    }
+    sheet.rows[0].values[column] = time
+    sheet.rows[0].values[column + 2] = 'FRI/FRI'
+    sheet.rows[1].values = values()
+    sheet.rows[1].values[2] = 'ITE 102'; sheet.rows[1].values[12] = '2'; sheet.rows[1].values[17] = 'FRI'
+    sheet.rows[1].values[15] = time.startsWith('TBA') ? '7:30-9:00' : '13:30-15:00'
+    let rows = extract([sheet])
+    assert.ok(rows.every(row => row.validationIssues.length === 0))
+    assert.equal(rows[0].meetings.length, 2)
+    assert.equal(rows[0].rawValues[column], time)
+    assert.equal(rows[0].meetings.filter(meeting => meeting.startTime && meeting.endTime).length, 1)
+    sheet.rows[1].values[15] = time.startsWith('TBA') ? '13:30-15:00' : '7:30-9:00'
+    rows = extract([sheet])
+    assert.ok(rows.every(row => row.validationIssues.some(message => message.includes('is also assigned on'))))
+  }
+})
+
+test('a paired TBA day does not occupy a room or instructor slot while the assigned day still does', () => {
+  const sheet = createEmptyDepartmentScheduleSheet()
+  sheet.rows[0].values = values()
+  sheet.rows[0].values[15] = '7:30-9:00/13:30-15:00'
+  sheet.rows[0].values[17] = 'TBA/FRI'
+  sheet.rows[1].values = values()
+  sheet.rows[1].values[2] = 'ITE 102'
+  sheet.rows[1].values[12] = '2'
+  sheet.rows[1].values[17] = 'FRI'
+  let rows = extract([sheet])
+  assert.ok(rows.every(row => row.validationIssues.length === 0))
+  assert.deepEqual(rows[0].meetings.map(meeting => meeting.days), [[], ['Fri']])
+  sheet.rows[0].values[17] = 'FRI/TBA'
+  rows = extract([sheet])
+  assert.ok(rows.every(row => row.validationIssues.some(message => message.includes('is also assigned on'))))
+  assert.ok(rows.every(row => row.validationIssues.every(message => !message.includes('not a valid day'))))
 })
 
 test('live row issues match Save, update after edits and clear when a conflicting row is removed', () => {

@@ -8,7 +8,7 @@ import { BuildingBrowser } from '../../components/BuildingBrowser'
 import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { RoomComments } from '../../components/RoomComments'
 import { useRoomCommentNotices } from '../../hooks/useRoomCommentNotices'
-import { ScheduleModal } from '../../components/ScheduleModal'
+import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { Button } from '../../components/Button'
 import { IconOnlyButton } from '../../components/IconOnlyButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
@@ -1748,7 +1748,7 @@ function BuildingsRoomsPage() {
       />
 
       {/* Room Schedule Timetable Modal */}
-      <ScheduleModal
+      <RoomScheduleModal
         key={selectedRoomForSchedule?.id ?? 'room-schedule'}
         isOpen={isRoomScheduleModalOpen}
         room={rooms.find(room => room.id === selectedRoomForSchedule?.id) ?? selectedRoomForSchedule}

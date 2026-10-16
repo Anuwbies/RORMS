@@ -31,6 +31,34 @@ test('room conflicts offer available rooms, including occupancy from other works
   assert.deepEqual(recommendations(), ['C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
 })
 
+test('TBA room entries offer available rooms without requiring an overlap', () => {
+  const h = setup()
+  h.first.rows[0].values[19] = ' tba '
+  assert.deepEqual(h.recommendations(), ['B 101', 'C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+  h.first.rows[0].values[14] = 'Cruz, Engelbert'
+  h.first.rows[0].values[16] = '7:30-9:00'
+  h.first.rows[0].values[18] = 'FRI'
+  h.first.rows[0].values[20] = 'TBA'
+  assert.deepEqual(h.recommendations(20), ['B 101', 'C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+})
+
+test('shared and separate TBA room entries check every affected meeting', () => {
+  const h = setup()
+  h.first.rows[0].values[15] = '7:30-9:00/10:00-11:00'
+  h.first.rows[0].values[19] = 'TBA'
+  h.second.rows[1].values = values('B101', '10:00-11:00')
+  assert.deepEqual(h.recommendations(), ['C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+  h.first.rows[0].values[19] = 'A101/TBA'
+  assert.deepEqual(h.recommendations(19, 1), ['A 101', 'C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+})
+
+test('TBA rooms still require valid days and times before recommending', () => {
+  const h = setup()
+  h.first.rows[0].values[19] = 'TBA'
+  h.first.rows[0].values[17] = 'BAT'; assert.deepEqual(h.recommendations(), [])
+  h.first.rows[0].values[17] = 'FRI'; h.first.rows[0].values[15] = ''; assert.deepEqual(h.recommendations(), [])
+})
+
 function buildingFixture(busy = false) {
   const rooms = ['PTC', 'ITS', 'MBA', 'BE'].flatMap(buildingId => [101, 102, 103].map(number => ({
     id: `${buildingId}${number}`, code: `${buildingId}${number}`, name: `${buildingId} ${number}`, buildingId,
@@ -67,6 +95,18 @@ test('only the third building is capped at five distinct available rooms', () =>
   assert.equal(result.filter(name => name.startsWith('ITS')).length, 10)
   assert.deepEqual(result.filter(name => name.startsWith('MBA')), ['MBA 102', 'MBA 103', 'MBA 104', 'MBA 105', 'MBA 106'])
   assert.equal(result.length, 25)
+})
+
+test('TBA recommendations retain the top-three buildings and the third-building room cap', () => {
+  const { rooms, assignments } = buildingFixture()
+  assignments[0].room = 'TBA'; assignments[0].roomId = ''
+  for (let number = 104; number <= 108; number++) rooms.push({
+    id: `MBA${number}`, code: `MBA${number}`, name: `MBA ${number}`, buildingId: 'MBA',
+  })
+  const result = recommendScheduleRooms(assignments, rooms, 'target', 19, 0)
+  assert.equal(result.filter(name => name.startsWith('MBA')).length, 5)
+  assert.ok(result.every(name => !name.startsWith('BE')))
+  assert.ok(result.includes('PTC 101') && result.includes('ITS 101'))
 })
 
 test('occupied top-three buildings do not cause recommendations from a fourth building', () => {
@@ -129,18 +169,25 @@ test('separate room entries and Lec/Lab columns recommend against only their aff
   assert.ok(h.recommendations(20, 0).length === 0)
 })
 
-test('parallel sections can share a room; other bookings still exclude candidate rooms', () => {
+test('parallel room recommendations preserve a connected chain and exclude occupied replacement rooms', () => {
   const h = setup()
   h.sheets.splice(1)
+  const parallelDirectory: ScheduleDirectory = { ...directory, rooms: Array.from({ length: 8 }, (_, index) => ({
+    id: `ptc${300 + index}`, code: `PTC ${300 + index}`, name: `PTC ${300 + index}`, buildingId: 'ptc', floor: 3,
+  })) }
+  const recommend = () => recommendScheduleRooms(departmentFacultyScheduleAssignments(parseDepartmentScheduleImportRows(h.sheets, parallelDirectory), parallelDirectory),
+    parallelDirectory.rooms, facultyScheduleRowKey(h.first.name, h.first.rows[0].rowNumber), 19, 0)
   for (let index = 0; index < 4; index++) {
     h.first.rows[index].values = values()
     h.first.rows[index].values[0] = index === 0 ? 'PARALLEL' : ''
     h.first.rows[index].values[12] = String(index + 1)
+    h.first.rows[index].values[19] = `PTC ${300 + index}`
   }
-  assert.deepEqual(h.recommendations(), [])
-  h.first.rows[4].values = values(); h.first.rows[4].values[2] = 'ITE 102'
-  h.first.rows[5].values = values('B101'); h.first.rows[5].values[2] = 'ITE 103'
-  assert.deepEqual(h.recommendations(), ['C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+  assert.deepEqual(recommend(), [])
+  h.first.rows[4].values = values('PTC 300'); h.first.rows[4].values[2] = 'ITE 102'
+  assert.deepEqual(recommend(), ['PTC 304'])
+  h.first.rows[5].values = values('PTC 304'); h.first.rows[5].values[2] = 'ITE 103'
+  assert.deepEqual(recommend(), [])
 })
 
 test('internally overlapping meetings sharing one room cannot be fixed by merely choosing a different room', () => {

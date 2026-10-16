@@ -2,25 +2,27 @@ import type { WorkbookEditSnapshot } from './excelWorkbookState.ts'
 import { detectDepartmentScheduleYearSections, type DepartmentScheduleImportSheet } from './departmentScheduleImport.ts'
 import { scheduleHeaderAt, type ScheduleSetup, type ScheduleYear } from './excelScheduleTemplate.ts'
 import { extractWorkbookScheduleRows, type ScheduleDirectory } from './excelScheduleRows.ts'
-import { facultyScheduleRowKey, validateDepartmentFacultyScheduleRows } from './ScheduleValidation.ts'
+import { facultyScheduleRowKey, validateDepartmentFacultyScheduleRows, type DepartmentCourseIdentity } from './ScheduleValidation.ts'
 import { createDepartmentScheduleWorkbookSnapshot } from './departmentScheduleWorkbookState.ts'
 
 /** The editor uses the same validation as Save without serializing a workbook. */
-export function departmentScheduleImportRowIssues(sheets: readonly DepartmentScheduleImportSheet[], directory: ScheduleDirectory): ReadonlyMap<string, readonly string[]> {
-  return new Map(parseDepartmentScheduleImportRows(sheets, directory)
+export function departmentScheduleImportRowIssues(sheets: readonly DepartmentScheduleImportSheet[], directory: ScheduleDirectory,
+  courses?: readonly DepartmentCourseIdentity[]): ReadonlyMap<string, readonly string[]> {
+  return new Map(parseDepartmentScheduleImportRows(sheets, directory, courses)
     .filter(row => row.validationIssues.length)
     .map(row => [facultyScheduleRowKey(row.sourceSheet, row.sourceRow), row.validationIssues]))
 }
 
-export function parseDepartmentScheduleImportRows(sheets: readonly DepartmentScheduleImportSheet[], directory: ScheduleDirectory) {
+export function parseDepartmentScheduleImportRows(sheets: readonly DepartmentScheduleImportSheet[], directory: ScheduleDirectory,
+  courses?: readonly DepartmentCourseIdentity[]) {
   if (!sheets.length) return []
   const state = createDepartmentScheduleWorkbookSnapshot(sheets, 0, null)
-  return extractDepartmentScheduleImportRows(state.snapshot, state.ownedNames, sheets, directory)
+  return extractDepartmentScheduleImportRows(state.snapshot, state.ownedNames, sheets, directory, courses)
 }
 
 /** Project the compact workbook's editable year sections into saved schedule records. */
 export function extractDepartmentScheduleImportRows(snapshot: WorkbookEditSnapshot, sheetNames: readonly string[],
-  sheets: readonly DepartmentScheduleImportSheet[], directory: ScheduleDirectory) {
+  sheets: readonly DepartmentScheduleImportSheet[], directory: ScheduleDirectory, courses?: readonly DepartmentCourseIdentity[]) {
   const setups = new Map<string, ScheduleSetup>()
   const sourceSheets = new Map(sheetNames.map((name, index) => [name, sheets[index]]))
   const sectionForRow = new Map<string, Map<number, { label: string; sourceLabel?: string; start: number }>>()
@@ -54,6 +56,6 @@ export function extractDepartmentScheduleImportRows(snapshot: WorkbookEditSnapsh
       course: row.course || curriculum?.[1].replace(/\s/g, '').toUpperCase() || '',
     }
   })
-  const validation = validateDepartmentFacultyScheduleRows(rows, directory, rowDescriptions)
+  const validation = validateDepartmentFacultyScheduleRows(rows, directory, rowDescriptions, courses)
   return rows.map(row => ({ ...row, validationIssues: [...(validation.get(facultyScheduleRowKey(row.sourceSheet, row.sourceRow)) ?? [])] }))
 }

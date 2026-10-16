@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { completeScheduleResourceText } from '../src/utils/scheduleResourceCompletion.ts'
+import { completeScheduleResourceText, insertScheduleTimeTba } from '../src/utils/scheduleResourceCompletion.ts'
 import type { ScheduleDirectory } from '../src/utils/excelScheduleRows.ts'
 
 const directory: ScheduleDirectory = {
@@ -54,9 +54,25 @@ test('time shorthand completes both ends and both meeting ranges when leaving th
     ['730', '7:30'], ['900', '9:00'], ['1000', '10:00'], ['0730', '7:30'], ['7', '7:00'],
     ['730-900', '7:30-9:00'], ['1300-1430/1530-1700', '13:00-14:30/15:30-17:00'],
     ['730am-900am', '7:30-9:00'], ['7:30-9:00', '7:30-9:00'],
-    ['1260-2500', '1260-2500'], ['1300PM', '13:00'],
+    ['1260-2500', '1260-2500'], ['1300PM', '13:00'], ['TBA', 'TBA'],
+    ['tba/730-900', 'TBA/7:30-9:00'], ['730-900/tba', '7:30-9:00/TBA'],
   ]) {
     assert.equal(completeScheduleResourceText(text, 15, null), expected, text)
     assert.equal(completeScheduleResourceText(text, 16, null), expected, text)
   }
+})
+
+test('selecting the single TBA choice fills an empty time entry without replacing the existing time', () => {
+  assert.equal(insertScheduleTimeTba('7:30/', 0, 5), '7:30/TBA')
+  assert.equal(insertScheduleTimeTba('7:30-9:00/', 0, 10), '7:30-9:00/TBA')
+  assert.equal(insertScheduleTimeTba('/7:30-9:00', 0, 10), 'TBA/7:30-9:00')
+  assert.equal(insertScheduleTimeTba('TBA/'), 'TBA/TBA')
+  assert.equal(insertScheduleTimeTba(''), 'TBA')
+})
+
+test('TBA selection can replace either existing time entry or the whole selected value', () => {
+  const text = '7:30-9:00/13:30-15:00'
+  assert.equal(insertScheduleTimeTba(text, 3), 'TBA/13:30-15:00')
+  assert.equal(insertScheduleTimeTba(text), '7:30-9:00/TBA')
+  assert.equal(insertScheduleTimeTba(text, 0, text.length), 'TBA')
 })

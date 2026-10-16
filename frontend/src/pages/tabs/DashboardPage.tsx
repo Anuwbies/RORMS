@@ -19,9 +19,9 @@ const ROLE_DEPARTMENTS: Record<DashboardRole, string> = {
   'University Administrator': 'General Service Department',
   Admin: 'Administrative Office',
   Registrar: "Registrar's Office",
-  Dean: 'BITE',
-  'Program Head': 'BITE',
-  Instructor: 'BITE',
+  Dean: 'CITE',
+  'Program Head': 'CITE',
+  Instructor: 'CITE',
 }
 
 export function DashboardPage({ userRole }: DashboardPageProps = {}) {

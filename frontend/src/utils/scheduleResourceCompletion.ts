@@ -1,7 +1,25 @@
 import type { ScheduleDirectory } from './excelScheduleRows'
-import { filterFacultyNames } from './excelFacultySuggestions'
+import { facultyFragment, filterFacultyNames } from './excelFacultySuggestions'
 import { excelScheduleFacultyKeys, excelScheduleRoomKey } from './ScheduleValidation'
 import { completeScheduleTimeText, normalizeScheduleCellText } from './departmentScheduleEdits'
+
+export const SCHEDULE_TIME_CHOICES = ['7:30-9:00', '9:00-10:30', '10:30-12:00', '12:00-1:30', '1:30-3:00', '3:00-4:30', '4:30-6:00'] as const
+export const SCHEDULE_DAY_CHOICES = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'] as const
+
+/** Fill an empty paired entry first; otherwise replace the entry at the selection. */
+export function insertScheduleChoice(text: string, choice: string, start = text.length, end = start, column = 15): string {
+  const entries = text.split(/(\r\n|[/;\r\n])/)
+  if (entries.length === 3 && Boolean(entries[0].trim()) !== Boolean(entries[2].trim())) {
+    entries[entries[0].trim() ? 2 : 0] = choice
+    return completeScheduleResourceText(entries.join(''), column)
+  }
+  const part = facultyFragment(text, start, end)
+  return completeScheduleResourceText(text.slice(0, part.start) + choice + text.slice(part.end), column)
+}
+
+export function insertScheduleTba(text: string, start = text.length, end = start, column = 15): string {
+  return insertScheduleChoice(text, 'TBA', start, end, column)
+}
 
 /** Complete only exact or unambiguous directory matches, preserving meeting separators. */
 export function completeScheduleResourceText(text: string, column: number, directory?: ScheduleDirectory | null): string {

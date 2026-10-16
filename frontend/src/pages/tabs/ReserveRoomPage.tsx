@@ -7,7 +7,7 @@ import { Button } from '../../components/Button'
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { RoomInfoModal } from '../../components/RoomInfoModal'
-import { ScheduleModal } from '../../components/ScheduleModal'
+import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
 import { TimePicker } from '../../components/TimePicker'
 import { DatePicker } from '../../components/DatePicker'
@@ -1099,7 +1099,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       />
 
       {/* Room Schedule Timetable Modal */}
-      <ScheduleModal
+      <RoomScheduleModal
         isOpen={isRoomScheduleModalOpen}
         room={selectedRoomForSchedule}
         buildingName={

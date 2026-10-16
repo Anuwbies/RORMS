@@ -1,13 +1,15 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { formatUserName } from '../../utils/userName'
 import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
+import { scheduleMatchesDepartment } from '../../utils/roomSchedule'
 import { CalendarIcon, ClockIcon, LayersIcon, SpinnerIcon, DownloadIcon } from '../../components/Icons'
 import { SectionHeader } from '../../components/SectionHeader'
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { Button } from '../../components/Button'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
-import { ScheduleModal, resolveCurrentSemester } from '../../components/ScheduleModal'
+import { PersonalScheduleModal } from '../../components/PersonalScheduleModal'
+import { resolveCurrentSemester } from '../../utils/academicSemester'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged, type User } from 'firebase/auth'
 import { collection, query, where, onSnapshot, limit, doc } from 'firebase/firestore'
@@ -192,7 +194,8 @@ function MySchedulePage() {
             const q = query(collection(db, 'schedule'))
             unsubscribeSchedule = onSnapshot(q, (snapshot) => {
               const validIds = [mId, user.uid]
-              const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => Boolean(item.instructorId && validIds.includes(item.instructorId)))
+              const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => Boolean(item.instructorId && validIds.includes(item.instructorId))
+                && scheduleMatchesDepartment(item, memData.department))
               fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
               setSchedules(fetched)
               setIsLoading(false)
@@ -239,6 +242,7 @@ function MySchedulePage() {
   const filteredSchedules = useMemo(() => {
     if (!schedules.length) return []
     return schedules.filter(s => {
+      if (!scheduleMatchesDepartment(s, currentMembership?.department)) return false
       if (selectedAcademicYear?.academicYear && s.academicYear) {
         if (s.academicYear !== selectedAcademicYear.academicYear) return false
       }
@@ -249,7 +253,7 @@ function MySchedulePage() {
       if (!SCHEDULE_STATUSES.some(allowed => allowed === status)) return false
       return true
     })
-  }, [schedules, selectedAcademicYear?.academicYear, selectedSemester])
+  }, [schedules, currentMembership?.department, selectedAcademicYear?.academicYear, selectedSemester])
 
   // Stats Calculation from filteredSchedules
   const totalSessions = filteredSchedules.length
@@ -612,7 +616,7 @@ function MySchedulePage() {
             </span>
           </div>
         ) : (
-          <ScheduleModal
+          <PersonalScheduleModal
             isOpen={true}
             onClose={() => {}}
             member={{

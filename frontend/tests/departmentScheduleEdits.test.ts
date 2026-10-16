@@ -98,6 +98,35 @@ test('time cells accept time characters and meeting separators but reject unrela
   assert.equal(isScheduleCellCharacterAllowed(13, ' '), true)
 })
 
+test('selected TBA time survives workbook edits and history while direct time input still rejects it', () => {
+  const sheets = workbook(1), indexes = indexScheduleRows(sheets)
+  for (const column of [15, 16]) {
+    for (const character of 'TBA') assert.equal(isScheduleCellCharacterAllowed(column, character), false)
+    assert.equal(formatScheduleTimeInput('TBA').value, '')
+    assert.equal(normalizeScheduleCellText(column, ' tba '), 'TBA')
+    const cell = { sheet: 0, row: 4, column }
+    const selected = applyScheduleCellValues(sheets, indexes, [{ cell, value: 'TBA' }])
+    assert.equal(selected[0].rows[0].values[column], 'TBA')
+    const changed = applyScheduleCellValues(selected, indexes, [{ cell, value: '7:30-9:00' }])
+    const restored = applyScheduleCellValues(changed, indexes, [{ cell, value: 'TBA' }])
+    assert.equal(restored[0].rows[0].values[column], 'TBA')
+  }
+})
+
+test('paired TBA times survive normalization and editing the other entry without enabling typed TBA', () => {
+  for (const column of [15, 16]) {
+    assert.equal(normalizeScheduleCellText(column, ' tba / 7:30 - 9:00 '), 'TBA/7:30-9:00')
+    assert.equal(normalizeScheduleCellText(column, '7:30-9:00/tba'), '7:30-9:00/TBA')
+    assert.equal(normalizeScheduleCellText(column, 'TBA/TBA/7:30-9:00'), 'TBA/TBA')
+  }
+  assert.equal(formatScheduleTimeInput('TBA/730-900', 11, 'TBA/').value, 'TBA/7:30-9:00')
+  assert.equal(formatScheduleTimeInput('730-900/TBA', 11, '/TBA').value, '7:30-9:00/TBA')
+  assert.equal(formatScheduleTimeInput('TBA/7:30-9:00').value, '/7:30-9:00')
+  let value = 'TBA/'
+  for (const character of '730-900') value = formatScheduleTimeInput(value + character, value.length + 1, value).value
+  assert.equal(value, 'TBA/7:30-9:00')
+})
+
 test('Faculty, F2F Time, Days and Room entries are limited to two values', () => {
   for (const [column, text, expected] of [
     [13, 'Cruz, Engelbert/Narvasa, Jan/Other Faculty', 'Cruz, Engelbert/Narvasa, Jan'],

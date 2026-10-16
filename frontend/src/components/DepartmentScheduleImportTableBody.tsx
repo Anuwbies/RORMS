@@ -8,10 +8,10 @@ import type { ScheduleDirectory } from '../utils/excelScheduleRows'
 import { facultyFragment, filterFacultyNames } from '../utils/excelFacultySuggestions'
 import { filterRoomNames } from '../utils/excelRoomSuggestions'
 import { ExcelFacultySuggestions } from './ExcelFacultySuggestions'
-import { completeScheduleResourceText } from '../utils/scheduleResourceCompletion'
+import { completeScheduleResourceText, insertScheduleChoice, SCHEDULE_TIME_CHOICES, SCHEDULE_DAY_CHOICES } from '../utils/scheduleResourceCompletion'
 import { formatScheduleTimeInput, hasExtraScheduleValues, isScheduleCellCharacterAllowed } from '../utils/departmentScheduleEdits'
 import { rankScheduleCourses, resolveScheduleCourse, scheduleCourseYear, type DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
-import { splitScheduleResources } from '../utils/ScheduleValidation'
+import { isScheduleColumnEditable, SCHEDULE_COLLEGE_CHOICES, splitScheduleResources } from '../utils/ScheduleValidation'
 
 interface ScheduleSuggestionProps {
   suggestionDirectory?: ScheduleDirectory | null
@@ -31,6 +31,7 @@ export interface WorkbookCellActions {
   finishEditing: (cell: CellEditLocation, save: boolean) => void
   chooseCourse?: (cell: CellEditLocation, course: Pick<DepartmentCourseSuggestion, 'code' | 'title'>) => void
   recommendRooms?: (cell: CellEditLocation, entryIndex: number) => readonly string[]
+  recommendMeetingSlots?: (cell: CellEditLocation) => readonly string[] | null
 }
 
 export interface ScheduleCellActions extends WorkbookCellActions {
@@ -39,6 +40,7 @@ export interface ScheduleCellActions extends WorkbookCellActions {
 
 interface EditableScheduleCellProps extends ScheduleSuggestionProps {
   value: string
+  editable?: boolean
   label: string
   sheetIndex: number
   rowNumber: number
@@ -52,7 +54,7 @@ interface EditableScheduleCellProps extends ScheduleSuggestionProps {
   validationMessage?: string
 }
 
-export const EditableScheduleCell = memo(function EditableScheduleCell({ value, label, sheetIndex, rowNumber, rowIndex, column, selected, rowSelected, selectionTop, selectionBottom, actions, validationMessage, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel = 0 }: EditableScheduleCellProps) {
+export const EditableScheduleCell = memo(function EditableScheduleCell({ value, editable = true, label, sheetIndex, rowNumber, rowIndex, column, selected, rowSelected, selectionTop, selectionBottom, actions, validationMessage, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel = 0 }: EditableScheduleCellProps) {
   const cellRef = useRef<HTMLTableCellElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const activeRef = useRef(false)
@@ -62,15 +64,21 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const [caret, setCaret] = useState({ start: 0, end: 0 })
+  const isCollege = column === 0
   const isRoom = column === 19 || column === 20
   const isCourse = column === 2 || column === 3
-  const hasSuggestions = isCourse || isRoom || column === 13 || column === 14
-  const fragment = isCourse ? { start: 0, end: value.length, query: value.slice(0, caret.start).trim() } : facultyFragment(value, caret.start, caret.end)
+  const isTime = column === 15 || column === 16, isDay = column === 17 || column === 18
+  const isMeetingSlot = isTime || isDay
+  const hasSuggestions = isCollege || isCourse || isRoom || isMeetingSlot || column === 13 || column === 14
+  const fragment = isCourse ? { start: 0, end: value.length, query: value.trim() } : facultyFragment(value, caret.start, caret.end)
   const roomEntryIndex = isRoom ? splitScheduleResources(value.slice(fragment.start, fragment.end)).length > 1
     ? -1 : splitScheduleResources(value.slice(0, fragment.start)).length - 1 : 0
   const recommendedRooms = useMemo(() => editing && isRoom
     ? actions.recommendRooms?.({ sheet: sheetIndex, row: rowNumber, column }, roomEntryIndex) ?? [] : [],
-  [editing, isRoom, actions, sheetIndex, rowNumber, column, roomEntryIndex, validationMessage])
+  [editing, isRoom, actions, sheetIndex, rowNumber, column, roomEntryIndex, value, validationMessage])
+  const recommendedSlots = useMemo(() => editing && isMeetingSlot
+    ? actions.recommendMeetingSlots?.({ sheet: sheetIndex, row: rowNumber, column }) ?? null : null,
+  [editing, isMeetingSlot, actions, sheetIndex, rowNumber, column, value, validationMessage])
   const seenCourseValues = new Set<string>()
   const courseMatches = editing && isCourse ? rankScheduleCourses(courseSuggestions ?? [], fragment.query, suggestionYearLevel)
     .filter(course => {
@@ -80,14 +88,16 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
       seenCourseValues.add(key)
       return true
     }) : []
-  const matches = !editing || !hasSuggestions ? [] : isCourse
+  const matches = !editing || !hasSuggestions ? [] : isCollege ? [...SCHEDULE_COLLEGE_CHOICES] : isCourse
     ? courseMatches.map(course => column === 2 ? course.code : course.title) : isRoom
-    ? [...new Set([...recommendedRooms, ...filterRoomNames(suggestionDirectory?.rooms ?? [], fragment.query)])]
-    : filterFacultyNames(suggestionDirectory?.faculty.map(member => member.fullName) ?? [], fragment.query)
+    ? [...new Set([...recommendedRooms, ...filterRoomNames(suggestionDirectory?.rooms ?? [], fragment.query), 'TBA'])]
+    : isMeetingSlot ? [...new Set([...(recommendedSlots ?? []), ...(isTime ? SCHEDULE_TIME_CHOICES : SCHEDULE_DAY_CHOICES), 'TBA'])]
+    : [...new Set([...filterFacultyNames(suggestionDirectory?.faculty.map(member => member.fullName) ?? [], fragment.query), 'TBA'])]
   const suggestionsVisible = editing && hasSuggestions && suggestionsOpen
   const cell = { sheet: sheetIndex, row: rowNumber, column }
 
   const beginEditing = (initialValue = value, selectAll = true) => {
+    if (!editable) return
     activeRef.current = true
     selectAllRef.current = selectAll
     actions.beginEditing(cell)
@@ -116,6 +126,17 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
   }
 
   const chooseSuggestion = (name: string) => {
+    if (isCollege) {
+      finishEditing(true, true, name)
+      return
+    }
+    if (isMeetingSlot || name === 'TBA' && !isCourse) {
+      const input = inputRef.current
+      const chosen = name.includes('/') ? name
+        : insertScheduleChoice(value, name, input?.selectionStart ?? caret.start, input?.selectionEnd ?? caret.end, column)
+      finishEditing(true, true, chosen)
+      return
+    }
     if (isCourse) {
       const course = courseMatches[matches.indexOf(name)]
       if (course) finishEditing(true, true, column === 2 ? course.code : course.title, course)
@@ -129,8 +150,9 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
   return (
     <td
       ref={cellRef}
-      title={validationMessage ? undefined : value}
-      aria-label={validationMessage ? `${label}. ${validationMessage}` : label}
+      title={!editable ? 'Choose a compatible College value to edit this Lec/Lab cell.' : validationMessage ? undefined : value}
+      aria-label={`${validationMessage ? `${label}. ${validationMessage}` : label}${editable ? '' : '. Read-only for this College value.'}`}
+      aria-readonly={!editable || undefined}
       aria-invalid={validationMessage ? true : undefined}
       data-edit-cell={`${sheetIndex}:${rowNumber}:${column}`}
       data-row-index={rowIndex}
@@ -187,7 +209,7 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
           }}
           onChange={event => {
             const input = event.currentTarget
-            const next = column === 15 || column === 16 ? formatScheduleTimeInput(input.value, input.selectionStart ?? input.value.length) : null
+            const next = column === 15 || column === 16 ? formatScheduleTimeInput(input.value, input.selectionStart ?? input.value.length, value) : null
             actions.updateCell(cell, next?.value ?? input.value)
             setCaret({ start: next?.caret ?? input.selectionStart ?? 0, end: next?.caret ?? input.selectionEnd ?? 0 })
             if (next && next.value !== input.value) requestAnimationFrame(() => {
@@ -266,14 +288,17 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
         id={suggestionsId}
         anchor={cellRef}
         names={matches}
-        recommendedNames={isRoom ? recommendedRooms : undefined}
-        loading={isCourse ? !courseSuggestions && !courseSuggestionError : !suggestionDirectory && !suggestionError}
-        error={isCourse ? courseSuggestionError : suggestionError}
+        recommendedNames={isRoom ? recommendedRooms : isMeetingSlot ? recommendedSlots ?? undefined : undefined}
+        loading={isCollege || isMeetingSlot ? false : isCourse ? !courseSuggestions && !courseSuggestionError : !suggestionDirectory && !suggestionError}
+        error={isCollege || isMeetingSlot ? undefined : isCourse ? courseSuggestionError : suggestionError}
         activeIndex={activeIndex}
         onSelect={chooseSuggestion}
-        label={isCourse ? 'Department courses, same year level first' : isRoom ? 'System rooms' : 'Department instructors and program heads'}
-        noun={isCourse ? 'department courses' : isRoom ? 'rooms' : 'instructors or program heads'}
+        label={isCollege ? 'College options' : isCourse ? 'Department courses, same year level first' : isRoom ? 'System rooms' : isTime ? 'Time options' : isDay ? 'Day options' : 'Department instructors and program heads'}
+        noun={isCollege ? 'College options' : isCourse ? 'department courses' : isRoom ? 'rooms' : isTime ? 'time recommendations' : isDay ? 'day recommendations' : 'instructors or program heads'}
+        emptyMessage={isMeetingSlot ? 'No recommendations available.' : undefined}
+        statusMessage={isMeetingSlot && recommendedSlots !== null && recommendedSlots.length === 0 ? 'No recommendations available.' : undefined}
         matchAnchorWidth
+        expandToFit
         portalTarget={cellRef.current?.closest('dialog')}
       />}
     </td>
@@ -415,6 +440,7 @@ const ScheduleRow = memo(function ScheduleRow({ row, rowIndex, yearEndsTable, ye
         <EditableScheduleCell
           key={column}
           value={value}
+          editable={isScheduleColumnEditable(row.values[0], column)}
           label={`${columnLabels[column]}, row ${rowIndex + 1}`}
           sheetIndex={sheetIndex}
           rowNumber={row.rowNumber}

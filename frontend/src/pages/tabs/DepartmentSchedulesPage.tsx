@@ -14,7 +14,7 @@ import { FilterDropdown } from '../../components/FilterDropdown'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { SummaryCard } from '../../components/SummaryCard'
 import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
-import { ScheduleModal } from '../../components/ScheduleModal'
+import { PlotScheduleModal } from '../../components/PlotScheduleModal'
 import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
@@ -534,7 +534,7 @@ export function DepartmentSchedulesPage() {
       />}
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}
-      <ScheduleModal
+      <PlotScheduleModal
         isOpen={isScheduleModalOpen}
         plotting={workbookMembership ? { membershipId: workbookMembership.id, departmentCode: selectedDepartment?.code || '' } : undefined}
         member={selectedMember ? { ...selectedMember, departmentName: selectedDepartment?.name || selectedMember.department } : null}
