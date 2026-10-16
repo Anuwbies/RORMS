@@ -13,7 +13,8 @@ import { ExcelValidationTooltip } from './ExcelValidationTooltip'
 import { scheduleRoomOverlapMessages } from '../utils/scheduleRoomOverlaps'
 import { isProvidedScheduleRoom, schedulePlotSelectionKey } from '../utils/schedulePlotting'
 import { plotParallelRoomGroupRecommendations, plotRoomRecommendations, type PlotParallelRoomGroupOption } from '../utils/plotRoomRecommendations'
-import { plotParallelRoomMessages } from '../utils/plotParallelRooms'
+import { parallelPlotCheckboxState, plotParallelGroup, plotParallelRoomMessages } from '../utils/plotParallelRooms'
+import { scheduleRoomStatusIssue } from '../utils/ScheduleValidation'
 import { toPng } from 'html-to-image'
 import jsPDF from 'jspdf'
 
@@ -425,16 +426,32 @@ export function PlotScheduleModal({
     ? plotParallelRoomGroupRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules) : new Map<string, readonly PlotParallelRoomGroupOption[]>(),
   [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled])
   const parallelMessages = useMemo(() => plotParallelRoomMessages(proposedMeetings, roomPlot.rooms), [proposedMeetings, roomPlot.rooms])
+  const roomStatusMessages = useMemo(() => {
+    const rooms = new Map(roomPlot.rooms.map(room => [room.id, room]))
+    const messages = new Map<string, string[]>()
+    for (const meeting of proposedMeetings) {
+      const room = rooms.get(meeting.roomId ?? '')
+      const issue = room && scheduleRoomStatusIssue(room)
+      if (issue) messages.set(meeting.id, [issue])
+    }
+    return messages
+  }, [proposedMeetings, roomPlot.rooms])
   const overlapMessages = useMemo(() => {
     const messages = scheduleRoomOverlapMessages(proposedMeetings,
       meeting => roomPlot.labels.get(meeting.roomId ?? '') || roomScheduleRoom(meeting, roomsMap))
     for (const [id, issues] of parallelMessages) messages.set(id, [...(messages.get(id) ?? []), ...issues])
+    for (const [id, issues] of roomStatusMessages) messages.set(id, [...(messages.get(id) ?? []), ...issues])
     return messages
-  }, [proposedMeetings, roomPlot.labels, roomsMap, parallelMessages])
+  }, [proposedMeetings, roomPlot.labels, roomsMap, parallelMessages, roomStatusMessages])
   const parallelPlotError = proposedMeetings.find(meeting => parallelMessages.has(meeting.id)
     && [...roomPlot.pending.values()].some(assignment => assignment.scheduleId === String(meeting.sourceScheduleId || meeting.id)
       && assignment.targetStatus !== 'Draft'))
   const liveParallelError = parallelPlotError ? parallelMessages.get(parallelPlotError.id)?.[0] : undefined
+  const statusPlotError = proposedMeetings.find(meeting => roomStatusMessages.has(meeting.id)
+    && [...roomPlot.pending.values()].some(assignment => assignment.scheduleId === String(meeting.sourceScheduleId || meeting.id)
+      && assignment.targetStatus !== 'Draft'))
+  const liveRoomStatusError = statusPlotError ? roomStatusMessages.get(statusPlotError.id)?.[0] : undefined
+  const livePlotError = liveRoomStatusError || liveParallelError
 
   useEffect(() => {
     const dismiss = () => setOverlapHover(null)
@@ -483,7 +500,28 @@ export function PlotScheduleModal({
     return { backgroundColor: '#f1f5f9', borderColor: '#cbd5e1' } // Draft
   }
 
-  const getRoomName = (meeting: { roomId?: string; room?: unknown }) => roomScheduleRoom(meeting, roomsMap)
+  const getRoomName = (meeting: { roomId?: string; room?: unknown }) =>
+    (meeting.roomId ? roomsMap.get(meeting.roomId) : '') || (typeof meeting.room === 'string' ? meeting.room.trim() : '')
+
+  const renderPlotCheckbox = (meeting: ScheduleMeetingRecord, parallel = false) => {
+    if (!roomPlot.enabled || meeting.source !== 'workbook' || meeting.schemaVersion !== 2) return null
+    const termMeetings = allSchedules.filter(item => scheduleMatchesTerm(item, selectedAcademicYear, selectedSemester))
+    const members = parallel ? plotParallelGroup(termMeetings, roomPlot.rooms, meeting)
+      : termMeetings.filter(item => String(item.sourceScheduleId || item.id) === String(meeting.sourceScheduleId || meeting.id))
+    const state = parallel ? parallelPlotCheckboxState(members, roomPlot.rooms, roomPlot.pending) : null
+    const hasRoom = Boolean(roomPlot.selected(meeting))
+    const marked = state ? state.checked : hasRoom && roomPlot.marked(meeting)
+    const errors = groupOverlapMessages(members)
+    const blocked = (state ? !state.valid : !hasRoom) || !marked && errors.length > 0
+    const label = blocked ? errors[0] || (parallel ? 'Assign complete, connected rooms before plotting this parallel group' : 'Assign a room before plotting this schedule')
+      : `${marked ? 'Return' : 'Mark'} ${meeting.subjectCode || 'schedule'}${parallel ? ' parallel group' : ''} ${marked ? 'to Draft' : 'for plotting'}`
+    return <button type="button" role="checkbox" aria-checked={marked} aria-label={label} title={label}
+      disabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving || blocked}
+      onClick={event => { event.stopPropagation(); if (blocked) return; if (parallel) roomPlot.toggleMarkedGroup(members, errors); else roomPlot.toggleMarked(meeting, errors) }}
+      className={`ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded border focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:cursor-default ${marked ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white' : 'border-gray-300 bg-white text-gray-500 enabled:hover:border-[var(--brand-color)]'}`}>
+      {marked && <CheckIcon className="h-3.5 w-3.5" />}
+    </button>
+  }
 
   const renderMeetingRoom = (meeting: ScheduleMeetingRecord) => {
     if (!roomPlot.enabled || meeting.source !== 'workbook' || meeting.schemaVersion !== 2) return (
@@ -493,16 +531,8 @@ export function PlotScheduleModal({
       if (!meeting.roomId) return (
         <span className="truncate" title="Room provided by the department workbook. Update the workbook to change it.">Room: <span className="text-gray-700 font-medium truncate">{getRoomName(meeting)}</span></span>
       )
-      const marked = roomPlot.marked(meeting)
-      const label = `${marked ? 'Return' : 'Mark'} ${meeting.subjectCode || 'schedule'} ${marked ? 'to Draft' : 'for plotting'}`
       return <div className="flex min-w-0 items-center gap-1" onClick={event => event.stopPropagation()}>
         <span className="min-w-0 flex-1 truncate">Room: <span className="text-gray-700 font-medium" title={getRoomName(meeting)}>{getRoomName(meeting)}</span></span>
-        <button type="button" role="checkbox" aria-checked={marked} aria-label={label} title={label}
-          disabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving}
-          onClick={() => roomPlot.toggleMarked(meeting)}
-          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded border focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:cursor-default ${marked ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white' : 'border-gray-300 bg-white text-gray-500 enabled:hover:border-[var(--brand-color)]'}`}>
-          {marked && <CheckIcon className="h-3.5 w-3.5" />}
-        </button>
       </div>
     }
     const selected = roomPlot.selected(meeting)
@@ -514,7 +544,7 @@ export function PlotScheduleModal({
       <SingleSelectDropdown portal searchable retainValueOnOpen variant="meeting" menuAnchorSelector="[data-schedule-meeting]" ariaLabel={`Room for ${meeting.subjectCode || 'class'}, ${meeting.days?.join(', ')}, ${meeting.startTime}-${meeting.endTime}`}
         options={[...new Set([...groupOptions.map(option => option.id), ...recommended, ...roomPlot.roomOptions, ...(selected ? [selected] : [])])]}
         recommendedOptions={[...groupOptions.map(option => option.id), ...recommended]}
-        value={selected} getOptionLabel={id => groupById.get(id)?.label || (id ? roomPlot.labels.get(id) || (id === meeting.roomId ? getRoomName(meeting) : 'Unnamed room') : 'TBA')}
+        value={selected} getOptionLabel={id => groupById.get(id)?.label || (id ? roomPlot.labels.get(id) || (id === meeting.roomId ? getRoomName(meeting) : 'Unnamed room') : '')}
         onChange={id => { const group = groupById.get(id); if (group) roomPlot.selectGroup(group.assignments); else roomPlot.select(meeting, id) }}
         isDisabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving}
         className="w-0 min-w-0 flex-1 [&>input]:!h-7 [&>input]:!px-2 [&>input]:!text-xs" />
@@ -1221,6 +1251,7 @@ export function PlotScheduleModal({
                                       <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
                                         {scheduleCardLabel(group.parent)}
                                       </span>
+                                      {renderPlotCheckbox(group.parent, true)}
                                     </div>
                                   </div>
                                   <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 cursor-default min-w-0" onClick={e => e.stopPropagation()}>
@@ -1245,6 +1276,7 @@ export function PlotScheduleModal({
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
                                       {scheduleCardLabel(group.parent)}
                                     </span>
+                                    {renderPlotCheckbox(group.parent)}
                                   </div>
                                   <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                     <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></span>
@@ -1277,6 +1309,7 @@ export function PlotScheduleModal({
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
                                       {scheduleCardLabel(group.parent)}
                                     </span>
+                                    {renderPlotCheckbox(group.parent)}
                                   </div>
                                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
                                     <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></span>
@@ -1308,14 +1341,14 @@ export function PlotScheduleModal({
             ) : (
               <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
             )}
-            {roomPlot.enabled && <p role={roomPlot.error || liveParallelError ? 'alert' : 'status'} className={`mt-1 max-w-xl whitespace-normal ${roomPlot.error || liveParallelError ? 'text-rose-700' : 'text-gray-600'}`}>
-              {roomPlot.error || liveParallelError || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} schedules ready to ${roomPlot.hasDraftChanges ? 'update' : 'plot'}.` : 'Check or uncheck assigned rooms, or choose rooms, then save your changes.')}
+            {roomPlot.enabled && <p role={roomPlot.error || livePlotError ? 'alert' : 'status'} className={`mt-1 max-w-xl whitespace-normal ${roomPlot.error || livePlotError ? 'text-rose-700' : 'text-gray-600'}`}>
+              {roomPlot.error || livePlotError || roomPlot.message || (!roomPlot.permitted ? 'This semester is read only.' : roomPlot.needsParallelApproval ? 'Check the completed parallel group checkbox, then click Plot to approve the whole group.' : roomPlot.pendingCount ? `${roomPlot.pendingCount} schedules ready to ${roomPlot.hasDraftChanges ? 'update' : 'plot'}.` : 'Check or uncheck assigned rooms, or choose rooms, then save your changes.')}
             </p>}
           </div>
           <div className="flex items-center gap-3">
             {roomPlot.enabled ? (
               <Button type="button" variant="primary" onClick={() => { void roomPlot.save() }}
-                disabled={isLoading || Boolean(scheduleLoadError) || !roomPlot.ready || !roomPlot.permitted || roomPlot.saving || !roomPlot.pendingCount || memberRole === 'Dean'}
+                disabled={isLoading || Boolean(scheduleLoadError) || !roomPlot.ready || !roomPlot.permitted || roomPlot.saving || !roomPlot.pendingCount || roomPlot.needsParallelApproval || Boolean(livePlotError) || memberRole === 'Dean'}
                 className="w-45 px-4 text-sm flex items-center justify-center gap-2 !bg-[var(--brand-color)] hover:!bg-[var(--brand-color-hover)] text-white shadow-sm disabled:opacity-50 cursor-pointer"
                 icon={roomPlot.saving ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <CheckCircleIcon className="h-4 w-4" />}>
                 {roomPlot.saving ? roomPlot.hasDraftChanges ? 'Saving…' : 'Plotting…' : roomPlot.hasDraftChanges ? 'Save Changes' : 'Plot'}

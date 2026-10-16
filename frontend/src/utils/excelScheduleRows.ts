@@ -7,7 +7,7 @@ import type { FacultySubjectAssignment } from './ScheduleValidation.ts'
 export interface ScheduleDirectory {
   departmentCode: string
   faculty: { id: string; fullName: string; department: string }[]
-  rooms: { id: string; code: string; name: string; buildingId: string; floor?: number }[]
+  rooms: { id: string; code: string; name: string; buildingId: string; floor?: number; status?: string }[]
   externalRoomAssignments?: readonly FacultySubjectAssignment[]
 }
 

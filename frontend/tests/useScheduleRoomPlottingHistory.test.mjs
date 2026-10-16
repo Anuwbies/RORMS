@@ -8,7 +8,7 @@ const compile = path => ts.transpileModule(readFileSync(new URL(path, import.met
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2023 },
 }).outputText
 
-function mount(save = async () => {}) {
+function mount(save = async () => {}, roomFixtures = []) {
   const slots = [], effects = []
   let cursor = 0
   const auth = { currentUser: { uid: 'registrar' } }
@@ -37,15 +37,26 @@ function mount(save = async () => {}) {
   const plotting = { exports: {} }, history = { exports: {} }
   vm.runInNewContext(compile('../src/utils/schedulePlotting.ts'), plotting)
   vm.runInNewContext(compile('../src/utils/plotSelectionHistory.ts'), history)
+  const utilityModules = new Map()
+  const loadUtility = path => {
+    if (utilityModules.has(path.href)) return utilityModules.get(path.href)
+    const module = { exports: {}, require: name => loadUtility(new URL(name.endsWith('.ts') ? name : `${name}.ts`, path)) }
+    vm.runInNewContext(ts.transpileModule(readFileSync(path, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2023 } }).outputText, module)
+    utilityModules.set(path.href, module.exports)
+    return module.exports
+  }
   const context = { exports: {}, Error, require: name => {
     if (name === 'react') return hooks
-    if (name === 'firebase/firestore') return { collection: () => 'rooms', onSnapshot: (_, receive) => { receive({ docs: [] }); return () => {} } }
+    if (name === 'firebase/firestore') return { collection: () => 'rooms', onSnapshot: (_, receive) => {
+      receive({ docs: roomFixtures.map(room => ({ id: room.id, data: () => room })) }); return () => {}
+    } }
     if (name === '../firebase') return { auth, db: {} }
     if (name === '../utils/departmentWorkbookPermissions') return { schedulePlottingPhases: () => ['Plotting'] }
     if (name === '../utils/departmentWorkbookPaths') return { semesterKey: semester => semester === '1st Semester' ? 'sem1' : 'sem2' }
     if (name === '../utils/schedulePlotting') return plotting.exports
     if (name === '../utils/plotSelectionHistory') return history.exports
-    if (name === '../services/plotScheduleRooms') return { plotScheduleRooms: save, readPlotRoom: () => {} }
+    if (name === '../utils/plotParallelRooms') return loadUtility(new URL('../src/utils/plotParallelRooms.ts', import.meta.url))
+    if (name === '../services/plotScheduleRooms') return { plotScheduleRooms: save, readPlotRoom: (id, data) => ({ ...data, id }) }
     throw new Error(`Unexpected import ${name}`)
   } }
   vm.runInNewContext(compile('../src/hooks/useScheduleRoomPlotting.ts'), context)
@@ -129,4 +140,95 @@ test('workbook-provided TBA cannot stage any room assignment', () => {
   h.render().toggleMarked(tba)
   assert.equal(h.render().pendingCount, 0)
   assert.equal(h.render().selected(tba), '')
+})
+
+test('an unprovided room starts blank and its checkbox preserves choices through undo and redo', () => {
+  const h = mount()
+  const draft = { ...meeting, status: 'Draft', roomId: '', room: '', providedRoomKeys: [] }
+  assert.equal(h.render().selected(draft), '')
+  h.render().toggleMarked(draft)
+  assert.equal(h.render().pendingCount, 0)
+  h.render().select(draft, 'room2')
+  h.render().toggleMarked(draft, ['Room overlap'])
+  assert.equal(h.render().marked(draft), false)
+  h.render().toggleMarked(draft)
+  assert.equal(h.render().marked(draft), true)
+  h.render().toggleMarked(draft)
+  assert.equal(h.render().marked(draft), false)
+  assert.equal(h.render().selected(draft), 'room2')
+  h.render().undo()
+  assert.equal(h.render().marked(draft), true)
+  h.render().redo()
+  assert.equal(h.render().marked(draft), false)
+  assert.equal(h.render().selected(draft), 'room2')
+  h.render().toggleMarked(draft)
+  h.render().select(draft, '')
+  assert.equal(h.render().selected(draft), '')
+  assert.equal(h.render().marked(draft), false)
+  assert.equal(h.render().pendingCount, 0)
+})
+
+test('a provided-room checkbox cannot approve a schedule with errors and becomes checkable after correction', () => {
+  const h = mount()
+  const draft = { ...meeting, status: 'Draft', registrarPlot: undefined }
+  const errors = ['Room overlap: SSP 005 overlaps another class in PTC 403.']
+  h.render().toggleMarked(draft, errors)
+  assert.equal(h.render().marked(draft), false)
+  assert.equal(h.render().pendingCount, 0)
+  assert.equal(h.render().canUndo, false)
+  assert.equal(h.render().error, errors[0])
+  h.render().toggleMarked(draft, [])
+  assert.equal(h.render().marked(draft), true)
+  assert.equal(h.render().pendingCount, 1)
+  assert.equal(h.render().error, '')
+})
+
+test('a conflicted approved schedule can still be unchecked to return to Draft', () => {
+  const h = mount()
+  const provided = { ...meeting, registrarPlot: undefined }
+  h.render().toggleMarked(provided, ['Room overlap'])
+  assert.equal(h.render().marked(provided), false)
+  assert.equal(h.render().hasDraftChanges, true)
+  assert.equal(h.render().selected(provided), 'room1')
+})
+
+test('a parallel group with complete rooms cannot be approved when any member has a validation error', () => {
+  const rooms = [402, 403].map(number => ({ id: String(number), code: `PTC ${number}`, name: `PTC ${number}`,
+    buildingId: 'ptc', floor: 4, status: 'Available' }))
+  const h = mount(async () => {}, rooms)
+  const members = rooms.map((room, index) => ({ ...meeting, id: `row${index}`, sourceScheduleId: `row${index}`, groupId: 'group',
+    faculty: 'Teacher', subjectCode: 'ITE 083', classSection: String(index + 1), roomId: room.id, room: room.name, status: 'Draft', registrarPlot: undefined }))
+  h.render().toggleMarkedGroup(members, ['Room overlap in section 2'])
+  assert.equal(h.render().pendingCount, 0)
+  assert.equal(h.render().canUndo, false)
+  h.render().toggleMarkedGroup(members, [])
+  assert.equal(h.render().pendingCount, 2)
+  assert.ok([...h.render().pending.values()].every(assignment => assignment.targetStatus === 'Plot'))
+})
+
+test('assign rooms, manually check the group, then Plot is required, including undo/redo', async () => {
+  let saves = 0, request
+  const rooms = [402, 403, 404, 405].map(number => ({ id: String(number), code: `PTC ${number}`, name: `PTC ${number}`,
+    buildingId: 'ptc', floor: 4, status: 'Available' }))
+  const h = mount(async input => { saves++; request = input }, rooms)
+  const meetings = rooms.map((_, index) => ({ ...meeting, id: `class${index}`, sourceScheduleId: `class${index}`, groupId: 'group',
+    faculty: 'Teacher', subjectCode: 'ITE 083', classSection: String(index + 1), roomId: '', room: '', status: 'Draft', providedRoomKeys: [] }))
+  h.render().selectGroup(meetings.map((meeting, index) => ({ meeting, roomId: rooms[index].id })))
+  assert.equal(h.render().needsParallelApproval, true)
+  assert.ok([...h.render().pending.values()].every(assignment => !assignment.targetStatus))
+  await h.render().save()
+  assert.equal(saves, 0)
+  assert.match(h.render().error, /Check the completed parallel group checkbox/)
+  h.render().toggleMarkedGroup(meetings)
+  assert.equal(h.render().needsParallelApproval, false)
+  assert.ok([...h.render().pending.values()].every(assignment => assignment.targetStatus === 'Plot'))
+  h.render().undo()
+  assert.equal(h.render().needsParallelApproval, true)
+  h.render().redo()
+  assert.equal(h.render().needsParallelApproval, false)
+  await h.render().save()
+  assert.equal(saves, 1)
+  assert.equal(request.assignments.length, 4)
+  assert.ok(request.assignments.every(assignment => assignment.targetStatus === 'Plot'))
+  assert.equal(h.render().pendingCount, 0)
 })

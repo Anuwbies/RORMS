@@ -48,8 +48,47 @@ test('other groups, returned records and separate Lec/Lab meetings do not join a
   }
 })
 
-test('unassigned and TBA rooms retain workbook treatment while known rooms are checked', () => {
+test('a missing room marks all four parallel sections red until every room is assigned', () => {
   const meetings = group([203, 204, 205, 206])
   meetings[3] = { ...meetings[3], roomId: '', room: 'TBA' }
+  const messages = plotParallelRoomMessages(meetings, rooms)
+  assert.equal(messages.size, 4)
+  for (const issues of messages.values()) {
+    assert.equal(issues[0], 'All 4 parallel sections must have assigned rooms. 3 of 4 rooms assigned.')
+  }
+  meetings[3].roomId = 'be206'
   assert.equal(plotParallelRoomMessages(meetings, rooms).size, 0)
+})
+
+test('one assigned room and three TBA rooms produces errors for editable and provided groups', () => {
+  for (const provided of [false, true]) {
+    const meetings = group([203, 204, 205, 206]).map((meeting, index) => ({ ...meeting,
+      ...(index ? { roomId: '', room: 'TBA' } : {}),
+      ...(provided ? { providedRoomKeys: ['source-room-key'] } : { providedRoomKeys: [] }),
+    }))
+    const messages = plotParallelRoomMessages(meetings, rooms)
+    assert.equal(messages.size, 4)
+    for (const issues of messages.values()) assert.match(issues[0], /1 of 4 rooms assigned/)
+  }
+})
+
+test('blank, unknown and deleted rooms cannot satisfy the parallel room requirement', () => {
+  for (const change of [{ roomId: '', room: '' }, { roomId: '', room: 'Unknown Room' }, { roomId: 'deleted-room', room: 'BE 206' }]) {
+    const meetings = group([203, 204, 205, 206])
+    meetings[3] = { ...meetings[3], ...change }
+    assert.equal(plotParallelRoomMessages(meetings, rooms).size, 4)
+  }
+})
+
+test('a completely unassigned group stays clear until its first room is selected and clears when undone', () => {
+  for (const room of ['', 'TBA']) {
+    const meetings = group([203, 204, 205, 206]).map(meeting => ({ ...meeting, roomId: '', room }))
+    assert.equal(plotParallelRoomMessages(meetings, rooms).size, 0)
+    meetings[0].roomId = 'be203'
+    const messages = plotParallelRoomMessages(meetings, rooms)
+    assert.equal(messages.size, 4)
+    assert.match(messages.get('class0')![0], /1 of 4 rooms assigned/)
+    meetings[0].roomId = ''
+    assert.equal(plotParallelRoomMessages(meetings, rooms).size, 0)
+  }
 })

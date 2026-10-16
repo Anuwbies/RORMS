@@ -64,6 +64,13 @@ export function formatFacultySubject(value: string): string {
 const assigned = (value: string | undefined) => Boolean(value?.trim()
   && !/^(?:TBA|TBD|TBC|N\/?A|NONE|VACANT|TO BE ASSIGNED|TO BE ANNOUNCED|[-–—]+)$/i.test(value.trim()))
 
+export function scheduleRoomStatusIssue(room: Pick<ScheduleDirectory['rooms'][number], 'name' | 'code' | 'status'>): string | undefined {
+  const status = room.status?.trim().toLowerCase()
+  const name = room.name.trim() || room.code.trim()
+  if (status === 'unavailable') return `Room ${name} is unavailable. Choose an available room.`
+  if (status === 'maintenance') return `Room ${name} is under maintenance. Choose an available room.`
+}
+
 export function areParallelFacultyMeetings(a: FacultySubjectAssignment, b: FacultySubjectAssignment): boolean {
   if (a.parallelGroup === undefined || a.parallelGroup !== b.parallelGroup) return false
   if (a.rowKey && b.rowKey && a.rowKey === b.rowKey) return false
@@ -83,6 +90,28 @@ export function parallelRoomPosition(room: ScheduleDirectory['rooms'][number]) {
   const match = [room.code, room.name].map(value => /^(.*?)(\d+)([A-Z]*)$/.exec(excelScheduleRoomKey(value))).find(Boolean)
   return match ? { building: room.buildingId, prefix: match[1], number: Number(match[2]), suffix: match[3],
     floor: room.floor ?? Math.floor(Number(match[2]) / 100) } : undefined
+}
+
+/** A parallel group may be left unassigned for plotting, but a partial room assignment is invalid. */
+export function parallelRoomAssignmentIssue(assignments: readonly FacultySubjectAssignment[],
+  rooms: ReadonlyArray<ScheduleDirectory['rooms'][number]>, target: FacultySubjectAssignment): string | undefined {
+  if (target.parallelGroup === undefined) return
+  const group = assignments.filter(other => other === target || areParallelFacultyMeetings(target, other))
+  if (group.length < 2 || !group.some(member => assigned(member.room))) return
+  const sections = new Map<string, FacultySubjectAssignment[]>()
+  for (const member of group) {
+    const key = member.rowKey ?? member.location
+    sections.set(key, [...(sections.get(key) ?? []), member])
+  }
+  const resolved = (member: FacultySubjectAssignment) => {
+    if (!assigned(member.room)) return false
+    const matches = member.roomId ? rooms.filter(room => room.id === member.roomId)
+      : rooms.filter(room => [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(member.room!)))
+    return matches.length === 1
+  }
+  const assignedSections = [...sections.values()].filter(meetings => meetings.every(resolved)).length
+  if (assignedSections === sections.size) return
+  return `All ${sections.size} parallel sections must have assigned rooms. ${assignedSections} of ${sections.size} rooms assigned.`
 }
 
 /** Room-number adjacency is the workbook's connection rule; use real building/floor metadata. */
@@ -186,6 +215,8 @@ export function validateFacultyScheduleAssignments(
   }
   const bySection = new Map<string, FacultySubjectAssignment[]>()
   for (const assignment of assignments) {
+    const roomAssignmentIssue = parallelRoomAssignmentIssue(assignments, rooms, assignment)
+    if (roomAssignmentIssue) warn(assignment, roomAssignmentIssue)
     const roomConnectionIssue = parallelRoomConnectionIssue(assignments, rooms, assignment)
     if (roomConnectionIssue) warn(assignment, roomConnectionIssue)
     if (assigned(assignment.faculty) && assignment.facultyStatus === 'invalid') {
@@ -193,6 +224,14 @@ export function validateFacultyScheduleAssignments(
     }
     if (assigned(assignment.room) && assignment.roomExists === false) {
       warn(assignment, `Room ${assignment.room} does not exist in the rooms collection.`)
+    }
+    if (assigned(assignment.room)) {
+      const matches = assignment.roomId ? rooms.filter(room => room.id === assignment.roomId)
+        : rooms.filter(room => [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(assignment.room!)))
+      if (matches.length === 1) {
+        const roomStatusIssue = scheduleRoomStatusIssue(matches[0])
+        if (roomStatusIssue) warn(assignment, roomStatusIssue)
+      }
     }
     for (const [field, subject] of [assignment.code, assignment.subjectTitle ?? ''].entries()) {
       if (!subject.trim() || !assignment.section.trim()) continue

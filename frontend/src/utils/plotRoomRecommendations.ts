@@ -10,13 +10,14 @@ export interface PlotParallelRoomGroupOption {
   assignments: readonly { meeting: ScheduleMeetingRecord; roomId: string }[]
 }
 
-/** Offer one-click four-room chains that satisfy Plot's room constraints for every affected meeting. */
+/** Offer a complete room chain sized to the actual parallel meeting group. */
 export function plotParallelRoomGroupRecommendations(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[],
   targets: readonly ScheduleMeetingRecord[]): ReadonlyMap<string, readonly PlotParallelRoomGroupOption[]> {
   const active = meetings.filter(meeting => !['Return', 'Returned'].includes(meeting.status ?? ''))
   const assignments = plotFacultyScheduleAssignments(active, rooms)
   const targetByKey = new Map(targets.map(meeting => [schedulePlotSelectionKey(meeting), meeting]))
   const result = new Map<string, readonly PlotParallelRoomGroupOption[]>()
+  const roomById = new Map(rooms.map(room => [room.id, room]))
   const roomByName = new Map<string, PlotRoom[]>()
   for (const room of rooms) {
     const name = room.code.trim() || room.name.trim()
@@ -35,7 +36,7 @@ export function plotParallelRoomGroupRecommendations(meetings: readonly Schedule
       const key = schedulePlotSelectionKey(active[index])
       if (!representatives.has(key)) representatives.set(key, index)
     }
-    if (representatives.size !== 4 || new Set([...representatives.values()].map(index => assignments[index].rowKey)).size !== 4
+    if (!representatives.size || new Set([...representatives.values()].map(index => assignments[index].rowKey)).size !== representatives.size
       || [...representatives].some(([key, index]) => !targetByKey.has(key) || active[index].source !== 'workbook'
         || active[index].schemaVersion !== 2 || isProvidedScheduleRoom(targetByKey.get(key)!))) continue
 
@@ -60,7 +61,7 @@ export function plotParallelRoomGroupRecommendations(meetings: readonly Schedule
         const matches = roomByName.get(entry.room) ?? []
         return member && matches.length === 1 ? [{ meeting: member.meeting, roomId: matches[0].id }] : []
       })
-      if (changes.length !== 4) return []
+      if (changes.length !== representatives.size) return []
       const valid = changes.every(({ meeting, roomId }) => {
         const room = rooms.find(item => item.id === roomId)
         if (!room) return false
@@ -74,7 +75,11 @@ export function plotParallelRoomGroupRecommendations(meetings: readonly Schedule
             || !plotMeetingsOverlap({ ...item, roomId }, other))
         })
       })
-      return valid ? [{ id: `parallel-room-group:${targetKey}:${index}`, label: candidate.label, assignments: changes }] : []
+      const label = changes.map(({ roomId }) => {
+        const room = roomById.get(roomId)
+        return room?.name.trim() || room?.code.trim() || ''
+      }).join(' / ')
+      return valid ? [{ id: `parallel-room-group:${targetKey}:${index}`, label, assignments: changes }] : []
     })
     for (const member of members) result.set(member.key, options)
   }

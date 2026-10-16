@@ -75,7 +75,7 @@ export async function loadDepartmentScheduleDirectory(departmentCode: string, te
       const fullName = departmentFacultyNames([item.data()], profiles, departmentCode)[0]
       return fullName ? [{ id: item.id, fullName, department: departmentCode }] : []
     }),
-    rooms: rooms.docs.map(item => { const data = item.data(); return { id: item.id, code: String(data.code ?? ''), name: String(data.name ?? ''), buildingId: String(data.buildingId ?? ''),
+    rooms: rooms.docs.map(item => { const data = item.data(); return { id: item.id, code: String(data.code ?? ''), name: String(data.name ?? ''), buildingId: String(data.buildingId ?? ''), status: String(data.status ?? ''),
       floor: typeof data.floor === 'number' && Number.isFinite(data.floor) ? data.floor : undefined } }),
   }
   if (term) {

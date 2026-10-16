@@ -42,6 +42,26 @@ test('TBA room entries offer available rooms without requiring an overlap', () =
   assert.deepEqual(h.recommendations(20), ['B 101', 'C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
 })
 
+test('unavailable and maintenance rooms are excluded from room recommendations', () => {
+  const h = setup()
+  h.first.rows[0].values[19] = 'TBA'
+  h.second.rows[0].values[19] = 'C101'
+  h.second.rows[0].values[17] = 'SAT'
+  h.second.rows[1].values[19] = 'D101'
+  h.second.rows[1].values[17] = 'SAT'
+  h.first.rows[0].values[17] = 'FRI'
+  directory.rooms.find(room => room.id === 'C')!.status = 'Unavailable'
+  directory.rooms.find(room => room.id === 'D')!.status = 'Maintenance'
+  try {
+    assert.deepEqual(h.recommendations(), ['A 101', 'B 101', 'E 101', 'F 101', 'G 101'])
+    h.first.rows[0].values[19] = 'C101'
+    assert.deepEqual(h.recommendations(), ['A 101', 'B 101', 'E 101', 'F 101', 'G 101'])
+  } finally {
+    delete directory.rooms.find(room => room.id === 'C')!.status
+    delete directory.rooms.find(room => room.id === 'D')!.status
+  }
+})
+
 test('shared and separate TBA room entries check every affected meeting', () => {
   const h = setup()
   h.first.rows[0].values[15] = '7:30-9:00/10:00-11:00'

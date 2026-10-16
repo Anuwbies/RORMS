@@ -25,7 +25,7 @@ export function scheduleRoomWorkbookLocation(editorState: string, row: ScheduleR
   return { workbookRow: index + 3, sheetName: sheet.name, values }
 }
 
-/** Keep slash-separated room positions aligned with Faculty/Time, including TBA slots. */
+/** Keep slash-separated room positions aligned with Faculty/Time, including blank slots. */
 export function scheduleRoomWorkbookTexts(before: readonly WorkbookScheduleMeeting[], after: readonly WorkbookScheduleMeeting[], values: readonly string[]) {
   const result = [values[19] ?? '', values[20] ?? '']
   for (const [offset, format] of ['Lec', 'Lab'].entries()) {
@@ -33,7 +33,7 @@ export function scheduleRoomWorkbookTexts(before: readonly WorkbookScheduleMeeti
     const current = after.filter(meeting => meeting.format === format)
     if (original.length !== current.length) throw new Error('The schedule meetings changed. Reopen the schedule before plotting.')
     if (!current.some((meeting, index) => meeting.roomId !== original[index].roomId || meeting.room !== original[index].room)) continue
-    const rooms = current.map(meeting => meeting.room.trim() || 'TBA')
+    const rooms = current.map(meeting => meeting.room.trim())
     result[offset] = rooms.every(room => room === rooms[0]) ? rooms[0] ?? '' : rooms.join('/')
   }
   return result

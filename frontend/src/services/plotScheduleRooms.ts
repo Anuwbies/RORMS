@@ -8,7 +8,7 @@ import { scheduleMeetingRecords } from '../utils/scheduleMeetings'
 import { assertPlotRoom, hasPendingRoomAllocation, plotMeetingKey, plotMeetingsOverlap, plottedScheduleFields, plotScheduleRevision, readProvidedRoomKeys, readRegistrarPlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
 import { prepareScheduleRoomWorkbookSync } from './scheduleRoomWorkbookSync'
 import type { ScheduleRoomWorkbookRow } from '../utils/scheduleRoomWorkbookCells'
-import { plotParallelRoomMessages } from '../utils/plotParallelRooms'
+import { plotParallelGroup, plotParallelRoomMessages } from '../utils/plotParallelRooms'
 
 interface PlotRequest {
   membershipId: string
@@ -50,12 +50,33 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
   const scheduleCollection = request.scheduleCollection ?? 'schedule'
   // Include unassigned rows: two registrars assigning existing rows concurrently must read each other's changes.
   const candidates = await getDocs(collection(db, scheduleCollection))
-  const ids = [...new Set([...candidates.docs.map(item => item.id), ...request.assignments.map(item => item.scheduleId)])]
-  const roomIds = [...new Set(request.assignments.map(item => item.roomId).filter(Boolean))]
+  const assignments = request.assignments.map(assignment => ({ ...assignment }))
+  const candidateMeetings = scheduleMeetingRecords(candidates.docs).filter(meeting => scheduleMatchesTerm(meeting,
+    { id: request.academicYearId, academicYear: request.academicYear }, request.semester))
+  for (const assignment of request.assignments) {
+    const target = candidateMeetings.find(meeting => String(meeting.sourceScheduleId || meeting.id) === assignment.scheduleId
+      && plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>) === assignment.meetingKey)
+    if (!target || !target.groupId && target.type !== 'parallel') continue
+    const group = plotParallelGroup(candidateMeetings, [], target)
+    if (!group.length) continue
+    const groupRows = new Set(group.map(meeting => String(meeting.sourceScheduleId || meeting.id)))
+    const statuses = new Set(request.assignments.filter(item => groupRows.has(item.scheduleId)).map(item => item.targetStatus).filter(Boolean))
+    if (statuses.size > 1) throw new Error('Choose one status for the entire parallel group before saving.')
+    if (!statuses.size) throw new Error('Check the completed parallel group checkbox before clicking Plot.')
+    const targetStatus = [...statuses][0]!
+    for (const meeting of group) {
+      const scheduleId = String(meeting.sourceScheduleId || meeting.id), meetingKey = plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>)
+      const selected = assignments.find(item => item.scheduleId === scheduleId && item.meetingKey === meetingKey)
+      if (selected) selected.targetStatus = targetStatus
+      else assignments.push({ scheduleId, meetingKey, targetStatus, roomId: meeting.roomId ?? '', expectedRoomId: meeting.roomId ?? '', expectedRevision: plotScheduleRevision(meeting) })
+    }
+  }
+  const ids = [...new Set([...candidates.docs.map(item => item.id), ...assignments.map(item => item.scheduleId)])]
+  const roomIds = [...new Set(assignments.map(item => item.roomId).filter(Boolean))]
   const revisionId = crypto.randomUUID()
   let workbookSync: Awaited<ReturnType<typeof prepareScheduleRoomWorkbookSync>> | undefined
   if (scheduleCollection === 'schedules') {
-    const selectedIds = new Set(request.assignments.map(assignment => assignment.scheduleId))
+    const selectedIds = new Set(assignments.map(assignment => assignment.scheduleId))
     const sourceRows = candidates.docs.filter(document => selectedIds.has(document.id)).map(document => {
       const data = document.data()
       if (typeof data.sourceWorkbook !== 'string' || typeof data.sourceSheet !== 'string' || !Number.isSafeInteger(data.sourceRow)
@@ -95,19 +116,21 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
     for (const room of parallelRooms) if (room.exists()) roomMap.set(room.id, readPlotRoom(room.id, room.data()!))
     const changed = new Map<string, Record<string, unknown>>()
     const statusOnlyDraftIds = new Set<string>()
-    for (const id of new Set(request.assignments.map(item => item.scheduleId))) {
+    for (const id of new Set(assignments.map(item => item.scheduleId))) {
       const data = current.get(id)
       if (!data || data.department !== request.departmentCode || !scheduleMatchesTerm({ ...data, id }, { id: request.academicYearId, academicYear: request.academicYear }, request.semester)) throw new Error('This schedule was removed or moved to another department or term. Reopen the schedule.')
       if (!['Draft', 'Plot'].includes(String(data.status))) throw new Error('Only Draft or Plot schedules can be assigned rooms.')
-      const assignments = request.assignments.filter(item => item.scheduleId === id)
+      const rowAssignments = assignments.filter(item => item.scheduleId === id)
       const keys = new Set<string>()
       const meetings = workbookMeetings(data)
       const sourceProvidedRoomKeys = readProvidedRoomKeys(data)
       const providedRoomKeys = sourceProvidedRoomKeys ?? meetings.filter(meeting => meeting.room.trim()).map(plotMeetingKey)
       const legacyProvidedRoomKeys = readRegistrarPlot(data.registrarPlot)?.providedRoomKeys
-      const requestedStatuses = new Set(assignments.map(assignment => assignment.targetStatus).filter(Boolean))
+      const requestedStatuses = new Set(rowAssignments.map(assignment => assignment.targetStatus).filter(Boolean))
       if (requestedStatuses.size > 1) throw new Error('Choose one status for this schedule before saving.')
-      for (const assignment of assignments) {
+      const parallel = Boolean((data.groupId || data.type === 'parallel') && candidateMeetings.some(candidate => candidate.sourceScheduleId === id
+        && plotParallelGroup(candidateMeetings, [], candidate).length > 0))
+      for (const assignment of rowAssignments) {
         if (keys.has(assignment.meetingKey)) throw new Error('The same meeting was selected more than once.')
         keys.add(assignment.meetingKey)
         const index = meetings.findIndex(meeting => plotMeetingKey(meeting) === assignment.meetingKey)
@@ -121,18 +144,18 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
         if (scheduleCollection === 'schedules' && sourceProvidedRoomKeys === undefined && assignment.roomId !== meeting.roomId) {
           throw new Error('Save this schedule from the department workbook first to record its provided rooms, then reopen it for plotting.')
         }
-        if (assignment.targetStatus !== undefined && (!provided || !meeting.roomId || assignment.roomId !== meeting.roomId
-          || !['Draft', 'Plot'].includes(assignment.targetStatus))) throw new Error('Only schedules with provided rooms can change status using a checkbox.')
-        if (assignment.targetStatus === 'Draft') continue
+        if (assignment.targetStatus !== undefined && (!parallel && assignment.targetStatus === 'Plot' && !assignment.roomId
+          || !['Draft', 'Plot'].includes(assignment.targetStatus))) throw new Error('Assign a room before changing status using a checkbox.')
+        if (assignment.targetStatus === 'Draft' && assignment.roomId === meeting.roomId) continue
         if (assignment.roomId) {
           const room = roomMap.get(assignment.roomId)
           if (!room) throw new Error('A selected room was removed. Choose another room.')
           assertPlotRoom(meeting, room, typeof data.maxStudents === 'number' ? data.maxStudents : null)
           if (assignment.roomId !== meeting.roomId) meetings[index] = { ...meeting, roomId: room.id, room: room.name.trim() || room.code, buildingId: room.buildingId }
-        } else meetings[index] = { ...meeting, roomId: '', room: 'TBA', buildingId: '' }
+        } else meetings[index] = { ...meeting, roomId: '', room: scheduleCollection === 'schedules' ? '' : 'TBA', buildingId: '' }
       }
       const fields = { ...plottedScheduleFields(meetings), ...(requestedStatuses.has('Draft') ? { status: 'Draft' } : {}) }
-      if (requestedStatuses.has('Draft') && assignments.every(assignment => assignment.roomId === assignment.expectedRoomId)) statusOnlyDraftIds.add(id)
+      if (requestedStatuses.has('Draft') && rowAssignments.every(assignment => assignment.roomId === assignment.expectedRoomId)) statusOnlyDraftIds.add(id)
       changed.set(id, { ...data, ...fields, registrarPlot: { version: 1, revisionId, savedBy: user.uid,
         ...(legacyProvidedRoomKeys !== undefined ? { providedRoomKeys: legacyProvidedRoomKeys } : {}),
         assignments: meetings.filter(meeting => meeting.roomId).map(meeting => ({ key: plotMeetingKey(meeting), roomId: meeting.roomId, room: meeting.room, buildingId: meeting.buildingId })) },

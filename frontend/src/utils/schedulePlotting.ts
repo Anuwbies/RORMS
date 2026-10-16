@@ -23,6 +23,8 @@ export interface PlotAssignment {
   expectedRoomId: string
   expectedRevision: string
   targetStatus?: 'Draft' | 'Plot'
+  /** Local staging metadata; never persisted on the schedule document. */
+  parallelGroupKey?: string
 }
 
 export const plotScheduleRevision = (schedule: Record<string, unknown>) => JSON.stringify([
@@ -63,15 +65,23 @@ export function assignedSchedulePlotStatus(pending: ReadonlyMap<string, PlotAssi
 /** A checkbox stages a row status change, preserving its room and synchronizing calendar copies. */
 export function toggleAssignedSchedulePlot(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): Map<string, PlotAssignment> {
   const next = new Map(pending)
-  if (!meeting.roomId || !isProvidedScheduleRoom(meeting) || !['Draft', 'Plot'].includes(meeting.status || 'Draft')) return next
+  const key = schedulePlotSelectionKey(meeting)
+  const selected = pending.get(key)
+  const roomId = selected?.roomId ?? meeting.roomId ?? ''
+  if (!roomId || !['Draft', 'Plot'].includes(meeting.status || 'Draft')) return next
   const id = String(meeting.sourceScheduleId || meeting.id)
   const targetStatus = assignedSchedulePlotStatus(pending, meeting) === 'Plot' ? 'Draft' : 'Plot'
-  for (const [key, assignment] of next) if (assignment.scheduleId === id && assignment.targetStatus) next.delete(key)
-  if (targetStatus === (meeting.status || 'Draft')) return next
-  const key = schedulePlotSelectionKey(meeting)
+  for (const [key, assignment] of next) if (assignment.scheduleId === id && assignment.targetStatus) {
+    if (assignment.roomId === assignment.expectedRoomId) next.delete(key)
+    else {
+      const { targetStatus: _status, ...roomChoice } = assignment
+      next.set(key, roomChoice)
+    }
+  }
+  if (targetStatus === (meeting.status || 'Draft') && ![...next.values()].some(assignment => assignment.scheduleId === id)) return next
   next.set(key, { scheduleId: id, targetStatus,
-    meetingKey: plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>), roomId: meeting.roomId,
-    expectedRoomId: meeting.roomId, expectedRevision: plotScheduleRevision(meeting) })
+    meetingKey: plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>), roomId,
+    expectedRoomId: selected?.expectedRoomId ?? meeting.roomId ?? '', expectedRevision: selected?.expectedRevision ?? plotScheduleRevision(meeting) })
   return next
 }
 
@@ -105,7 +115,7 @@ export function hasPendingRoomAllocation(meetings: readonly WorkbookScheduleMeet
 export function plottedScheduleFields(meetings: WorkbookScheduleMeeting[]) {
   const first = meetings[0]
   const physical = meetings.filter(m => !m.modality || m.modality === 'F2F' || m.modality === 'Unspecified')
-  const resources = (format: WorkbookScheduleMeeting['format']) => physical.filter(m => m.format === format).map(m => m.room || 'TBA')
+  const resources = (format: WorkbookScheduleMeeting['format']) => physical.filter(m => m.format === format).map(m => m.room)
   return {
     meetings, status: meetings.some(m => m.roomId) ? 'Plot' as const : 'Draft' as const,
     roomId: first?.roomId ?? '', buildingId: first?.buildingId ?? '',

@@ -1,12 +1,12 @@
 import type { ScheduleDirectory } from './excelScheduleRows'
-import { areParallelFacultyMeetings, excelScheduleRoomKey, facultyScheduleRoomConflict, isExcelScheduleTba, parallelRoomConnectionIssue, parallelRoomPosition, type FacultySubjectAssignment } from './ScheduleValidation.ts'
+import { areParallelFacultyMeetings, excelScheduleRoomKey, facultyScheduleRoomConflict, isExcelScheduleTba, parallelRoomConnectionIssue, parallelRoomPosition, scheduleRoomStatusIssue, type FacultySubjectAssignment } from './ScheduleValidation.ts'
 
 export interface ParallelRoomGroupRecommendation {
   label: string
   rooms: readonly { rowKey: string; room: string }[]
 }
 
-/** Find complete four-room chains that can be assigned to a parallel class in row order. */
+/** Find complete room chains for the actual parallel group, in row order. */
 export function recommendParallelRoomGroups(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
   rowKey: string, column: number, entryIndex: number, externalAssignments: readonly FacultySubjectAssignment[] = [],
   usageRooms: ScheduleDirectory['rooms'] = rooms): ParallelRoomGroupRecommendation[] {
@@ -14,9 +14,9 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
     && assignment.roomEntryIndex === entryIndex)
   if (!target?.parallelGroup || target.start === undefined || target.end === undefined || !target.days?.length) return []
   const group = assignments.filter(assignment => assignment === target || areParallelFacultyMeetings(target, assignment))
-  if (group.length !== 4 || group.some(assignment => !assignment.rowKey || assignment.roomColumn !== column
+  if (!group.length || group.some(assignment => !assignment.rowKey || assignment.roomColumn !== column
     || assignment.roomEntryIndex !== entryIndex || assignment.start === undefined || assignment.end === undefined || !assignment.days?.length)
-    || new Set(group.map(assignment => assignment.rowKey)).size !== 4) return []
+    || new Set(group.map(assignment => assignment.rowKey)).size !== group.length) return []
   const groupSet = new Set(group)
   const occupied = [...assignments.filter(assignment => !groupSet.has(assignment)), ...externalAssignments]
   const roomsById = new Map(usageRooms.map(room => [room.id, room]))
@@ -41,6 +41,7 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
     .map(([building], index) => [building, index]))
   const locations = new Map<string, Map<number, ScheduleDirectory['rooms'][number]>>()
   for (const room of rooms) {
+    if (scheduleRoomStatusIssue(room)) continue
     const position = parallelRoomPosition(room)
     if (!position?.building) continue
     const key = JSON.stringify([position.building, position.floor, position.prefix, position.suffix])
@@ -50,9 +51,9 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
   }
   const recommendations: { option: ParallelRoomGroupRecommendation; buildingId: string; retained: number }[] = []
   for (const numbered of locations.values()) for (const start of numbered.keys()) {
-    const chain = Array.from({ length: 4 }, (_, index) => numbered.get(start + index))
+    const chain = Array.from({ length: group.length }, (_, index) => numbered.get(start + index))
     if (!chain.every((room): room is ScheduleDirectory['rooms'][number] => Boolean(room))) continue
-    for (const ordered of [chain, [...chain].reverse()]) {
+    for (const ordered of group.length === 1 ? [chain] : [chain, [...chain].reverse()]) {
       const available = ordered.every((room, index) => {
         const candidate = { ...group[index], roomId: room.id, room: room.code || room.name }
         return !occupied.some(other => facultyScheduleRoomConflict(candidate, other))
@@ -61,7 +62,7 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
       const entries = ordered.map((room, index) => ({ rowKey: group[index].rowKey!, room: room.code.trim() || room.name.trim() }))
       const retained = ordered.filter((room, index) => group[index].roomId === room.id
         || [room.code, room.name].some(value => excelScheduleRoomKey(group[index].room ?? '') === excelScheduleRoomKey(value))).length
-      if (retained === 4) continue
+      if (retained === group.length) continue
       recommendations.push({ option: { label: entries.map(entry => entry.room).join(' / '), rooms: entries },
         buildingId: ordered[0].buildingId, retained })
     }
@@ -86,6 +87,7 @@ function parallelRoomRecommendationCosts(assignments: readonly FacultySubjectAss
   const peerRooms = new Set(group.filter(other => other !== target).map(resolve).filter((id): id is string => Boolean(id)))
   const locations = new Map<string, Map<number, ScheduleDirectory['rooms'][number]>>()
   for (const room of rooms) {
+    if (scheduleRoomStatusIssue(room)) continue
     const position = parallelRoomPosition(room)
     if (!position?.building) continue
     const candidate = { ...target, roomId: room.id, room: room.name || room.code }
@@ -124,6 +126,9 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
   if (!targets.length || targets.some(target => target.start === undefined || target.end === undefined || target.end <= target.start || !target.days?.length)) return []
   if (!targets.some(target => isExcelScheduleTba(target.room ?? '')
     || options?.hasConflict?.(target)
+    || rooms.some(room => !isExcelScheduleTba(target.room ?? '') && (target.roomId === room.id
+      || [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(target.room ?? '')))
+      && Boolean(scheduleRoomStatusIssue(room)))
     || (target.parallelGroup !== undefined && !target.room?.trim())
     || parallelRoomConnectionIssue(assignments, rooms, target)
     || assignments.some(other => other !== target && facultyScheduleRoomConflict(target, other)))) return []
@@ -152,6 +157,7 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
   const parallelCosts = new Map(targets.map(target => [target, parallelRoomRecommendationCosts(assignments, rooms, target)]))
   const changeCost = (roomId: string) => Math.max(0, ...targets.map(target => parallelCosts.get(target)?.get(roomId) ?? 0))
   const available = rooms.filter(room => {
+    if (scheduleRoomStatusIssue(room)) return false
     if (!buildingRank.has(room.buildingId)) return false
     if (options?.isRoomAvailable && !options.isRoomAvailable(room)) return false
     const candidates = new Map(targets.map(target => [target, { ...target, roomId: room.id, room: room.name || room.code }]))

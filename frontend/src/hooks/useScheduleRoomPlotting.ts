@@ -5,9 +5,10 @@ import { schedulePlottingPhases } from '../utils/departmentWorkbookPermissions'
 import { semesterKey } from '../utils/departmentWorkbookPaths'
 import type { AcademicYearData } from '../utils/academicSemester'
 import type { ScheduleMeetingRecord } from '../utils/scheduleMeetings'
-import { assignedSchedulePlotStatus, isProvidedScheduleRoom, plotMeetingKey, plotScheduleRevision, schedulePlotSelectionKey, toggleAssignedSchedulePlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
+import { assignedSchedulePlotStatus, isProvidedScheduleRoom, schedulePlotSelectionKey, toggleAssignedSchedulePlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
 import { plotScheduleRooms, readPlotRoom } from '../services/plotScheduleRooms'
 import { createPlotSelectionHistory, movePlotSelectionHistory, recordPlotSelection } from '../utils/plotSelectionHistory'
+import { parallelPlotCheckboxState, stagePlotRoomSelections, toggleParallelSchedulePlot } from '../utils/plotParallelRooms'
 
 export interface SchedulePlottingOptions { membershipId: string; departmentCode: string }
 
@@ -40,7 +41,7 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
 
   const phase = year?.[semesterKey(semester)]?.phase ?? 'Closed'
   const permitted = Boolean(options?.membershipId && auth.currentUser && schedulePlottingPhases('Registrar').includes(phase))
-  const availableRooms = useMemo(() => rooms.filter(room => room.status === 'Available').sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)), [rooms])
+  const roomChoices = useMemo(() => [...rooms].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id)), [rooms])
   const labels = useMemo(() => new Map(rooms.map(room => [room.id, room.name.trim() || 'Unnamed room'])), [rooms])
   const key = schedulePlotSelectionKey
   const selected = (meeting: ScheduleMeetingRecord) => pending.get(key(meeting))?.roomId ?? meeting.roomId ?? ''
@@ -48,33 +49,31 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
     if (!permitted || busy.current) return
     if (assignments.some(({ meeting }) => scheduleCollection === 'schedules' && isProvidedScheduleRoom(meeting))) return
     setError(''); setMessage('')
-    setPending(previous => {
-      const next = new Map(previous)
-      for (const { meeting, roomId } of assignments) {
-        const id = key(meeting)
-        const existing = next.get(id)
-        const expectedRoomId = existing?.expectedRoomId ?? meeting.roomId ?? ''
-        if (roomId === expectedRoomId) next.delete(id)
-        else next.set(id, { scheduleId: String(meeting.sourceScheduleId || meeting.id), meetingKey: plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0]), roomId,
-          expectedRoomId, expectedRevision: existing?.expectedRevision ?? plotScheduleRevision(meeting) })
-      }
-      return next
-    })
+    setPending(previous => stagePlotRoomSelections(previous, assignments))
   }
   const select = (meeting: ScheduleMeetingRecord, roomId: string) => selectGroup([{ meeting, roomId }])
   const marked = (meeting: ScheduleMeetingRecord) => assignedSchedulePlotStatus(pending, meeting) === 'Plot'
-  const toggleMarked = (meeting: ScheduleMeetingRecord) => {
+  const toggleMarked = (meeting: ScheduleMeetingRecord, validationErrors: readonly string[] = []) => {
     if (!permitted || busy.current) return
+    if (validationErrors.length && !marked(meeting)) { setError(validationErrors[0]); return }
     setError(''); setMessage('')
     setPending(previous => toggleAssignedSchedulePlot(previous, meeting))
+  }
+  const toggleMarkedGroup = (meetings: readonly ScheduleMeetingRecord[], validationErrors: readonly string[] = []) => {
+    if (!permitted || !ready || busy.current) return
+    if (validationErrors.length && !parallelPlotCheckboxState(meetings, rooms, pending).checked) { setError(validationErrors[0]); return }
+    setError(''); setMessage('')
+    setPending(previous => toggleParallelSchedulePlot(previous, meetings, rooms))
   }
   const changeHistory = (redo: boolean) => {
     if (!options || !isOpen || !permitted || !ready || busy.current) return
     setError(''); setMessage('')
     setHistory(previous => movePlotSelectionHistory(previous, redo))
   }
+  const needsParallelApproval = [...pending.values()].some(assignment => assignment.parallelGroupKey && !assignment.targetStatus)
   const save = async () => {
     if (!options || !year || !permitted || !pending.size || busy.current) return
+    if (needsParallelApproval) { setError('Check the completed parallel group checkbox before clicking Plot.'); return }
     busy.current = true; setSaving(true); setError(''); setMessage('')
     const startedContext = context
     try {
@@ -86,8 +85,8 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   }
   return { enabled: Boolean(options), permitted, ready, saving, error, message,
     pendingCount: new Set([...pending.values()].map(assignment => assignment.scheduleId)).size, labels,
-    pending, rooms, hasDraftChanges: [...pending.values()].some(assignment => assignment.targetStatus === 'Draft'),
+    pending, rooms, needsParallelApproval, hasDraftChanges: [...pending.values()].some(assignment => assignment.targetStatus === 'Draft'),
     canUndo: history.past.length > 0, canRedo: history.future.length > 0,
     undo: () => changeHistory(false), redo: () => changeHistory(true),
-    roomOptions: ['', ...availableRooms.map(room => room.id)], selected, select, selectGroup, marked, toggleMarked, save }
+    roomOptions: ['', ...roomChoices.map(room => room.id)], selected, select, selectGroup, marked, toggleMarked, toggleMarkedGroup, save }
 }

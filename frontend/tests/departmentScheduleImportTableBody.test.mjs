@@ -129,7 +129,49 @@ test('four-room parallel recommendations fill distinct connected rooms and avoid
   const occupied = [{ ...assignments[0], rowKey: 'outside', parallelGroup: undefined, room: 'PTC 402', roomId: 'room-1' }]
   assert.ok(recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0, occupied)
     .every(option => option.rooms.every(entry => entry.room !== 'PTC 402')))
-  assert.equal(recommendParallelRoomGroups(assignments.slice(0, 3), rooms, 'row-2', 19, 0).length, 0)
+  assert.ok(recommendParallelRoomGroups(assignments.slice(0, 3), rooms, 'row-2', 19, 0)
+    .every(option => option.rooms.length === 3))
+  rooms[1].status = 'Maintenance'
+  rooms[6].status = 'Unavailable'
+  const safe = recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0)
+  assert.ok(safe.length > 0)
+  assert.ok(safe.every(option => option.rooms.every(entry => entry.room !== 'PTC 402' && entry.room !== 'PTC 407')))
+})
+
+test('partial parallel room assignments warn on all four rows until every room is assigned', () => {
+  const rooms = Array.from({ length: 4 }, (_, index) => ({
+    id: `room-${index}`, code: `PTC ${401 + index}`, name: `Room ${401 + index}`, buildingId: 'PTC', floor: 4,
+  }))
+  const assignments = rooms.map((room, index) => ({
+    location: `row-${index}`, rowKey: `row-${index}`, parallelGroup: 'row-0', code: 'ITE 083', section: String(index + 1),
+    faculty: 'Teacher', instructorId: 'teacher', room: index === 0 ? room.code : 'TBA',
+    roomId: index === 0 ? room.id : '', roomColumn: 19, roomEntryIndex: 0,
+    meetingKind: 'Lec', start: 450, end: 540, days: ['Wed'],
+  }))
+  const messages = entries => validateFacultyScheduleAssignments(entries, [], rooms).map(issue => issue.message)
+  assert.equal(messages(assignments).filter(message => message.includes('1 of 4 rooms assigned')).length, 4)
+  assert.equal(messages(assignments.map(item => ({ ...item, room: 'TBA', roomId: '' }))).length, 0)
+  assert.equal(messages(assignments.map((item, index) => ({ ...item, room: rooms[index].name, roomId: rooms[index].id }))).length, 0)
+  const unknown = assignments.map((item, index) => ({ ...item, room: index === 3 ? 'Unknown room' : rooms[index].name,
+    roomId: index === 3 ? '' : rooms[index].id }))
+  assert.equal(messages(unknown).filter(message => message.includes('3 of 4 rooms assigned')).length, 4)
+})
+
+test('selected unavailable and maintenance rooms report their status', () => {
+  const rooms = [
+    { id: 'unavailable', code: 'PTC 401', name: 'PTC Room 401', buildingId: 'PTC', status: 'Unavailable' },
+    { id: 'maintenance', code: 'PTC 402', name: 'PTC Room 402', buildingId: 'PTC', status: 'Maintenance' },
+    { id: 'available', code: 'PTC 403', name: 'PTC Room 403', buildingId: 'PTC', status: 'Available' },
+  ]
+  const assignments = rooms.map((room, index) => ({
+    location: `row-${index}`, rowKey: `row-${index}`, code: 'ITE 101', section: String(index + 1),
+    room: room.code, roomId: room.id, roomColumn: 19, roomEntryIndex: 0,
+    start: 450, end: 540, days: ['Mon'],
+  }))
+  const messages = validateFacultyScheduleAssignments(assignments, [], rooms).map(issue => issue.message)
+  assert.ok(messages.includes('Room PTC Room 401 is unavailable. Choose an available room.'))
+  assert.ok(messages.includes('Room PTC Room 402 is under maintenance. Choose an available room.'))
+  assert.ok(!messages.some(message => message.includes('PTC Room 403')))
 })
 
 test('duplicate-only rows and their tooltip use purple', () => {

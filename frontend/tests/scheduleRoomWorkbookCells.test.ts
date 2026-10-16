@@ -46,6 +46,13 @@ test('same room can be shared across multiple meetings; unchanged room text is p
   assert.deepEqual(scheduleRoomWorkbookTexts(after, after, values), [' PTC 201 / PTC 201 ', ''])
 })
 
+test('unprovided room slots stay blank when another room is assigned or cleared', () => {
+  const before = [meeting({ room: '' }), meeting({ room: '', startTime: '09:00', endTime: '10:30' })]
+  const after = before.map((entry, index) => index === 1 ? { ...entry, room: 'PTC 202', roomId: 'room2' } : entry)
+  assert.deepEqual(scheduleRoomWorkbookTexts(before, after, Array(21).fill('')), ['/PTC 202', ''])
+  assert.deepEqual(scheduleRoomWorkbookTexts(after, before, Array(21).fill('')), ['', ''])
+})
+
 test('missing, unmarked, or changed workbook source rows fail before plotting', () => {
   const sheet = createEmptyDepartmentScheduleSheet()
   sheet.rows[0].values[2] = 'New code'

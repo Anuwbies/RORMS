@@ -45,6 +45,13 @@ test('a parallel room choice fills four consecutive rooms and appears for each e
   assert.deepEqual(Array.from(first.assignments, entry => entry.meeting.id), parallel.map(item => item.id))
 })
 
+test('Plot labels a four-room choice with room names while keeping the correct room IDs', () => {
+  const namedRooms = rooms.map(item => ({ ...item, name: `Room ${item.code}` }))
+  const choices = recommendations(parallel, namedRooms).get(schedulePlotSelectionKey(parallel[0])) ?? []
+  assert.equal(choices[0]?.label, 'Room PTC 300 / Room PTC 301 / Room PTC 302 / Room PTC 303')
+  assert.deepEqual(Array.from(choices[0].assignments, entry => entry.roomId), ['ptc-300', 'ptc-301', 'ptc-302', 'ptc-303'])
+})
+
 test('cross-department occupancy and room constraints exclude unsafe four-room choices', () => {
   const occupied = meeting('outside', { groupId: undefined, department: 'CBA', instructorId: 'other', faculty: 'Other', roomId: 'ptc-300' })
   const choices = recommendations([...parallel, occupied])
@@ -56,11 +63,20 @@ test('cross-department occupancy and room constraints exclude unsafe four-room c
     .get(schedulePlotSelectionKey(parallel[0]))?.some(option => option.assignments.some(entry => entry.roomId === 'ptc-302')), false)
 })
 
-test('provided rooms and incomplete parallel groups are never bulk-editable', () => {
+test('provided rooms are never bulk-editable, while smaller actual parallel groups are supported', () => {
   const withProvidedRoom = parallel.map((item, index) => index === 1
     ? { ...item, providedRoomKeys: [JSON.stringify(['instructor', '07:30', '09:00', ['Mon'], 'Lec', ''])] } : item)
   assert.equal(plotParallelRoomGroupRecommendations(withProvidedRoom, rooms, withProvidedRoom).size, 0)
-  assert.equal(recommendations(parallel.slice(0, 3)).size, 0)
+  for (const count of [1, 2, 3]) {
+    const members = parallel.slice(0, count)
+    const choices = plotParallelRoomGroupRecommendations(members, rooms, members)
+    assert.equal(choices.size, count)
+    for (const member of members) {
+      const options = choices.get(schedulePlotSelectionKey(member)) ?? []
+      assert.ok(options.length > 0)
+      assert.ok(options.every(option => option.assignments.length === count))
+    }
+  }
 })
 
 test('staged room values do not make a previously editable group look department-provided', () => {

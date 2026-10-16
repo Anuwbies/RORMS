@@ -82,18 +82,18 @@ function parallelHarness(numbers = [203, 204, 403, 404]) {
 test('Plot rejects disconnected parallel rooms atomically using all saved peer rooms', async () => {
   const h = parallelHarness()
   const before = h.documents.get('schedules/parallel0')
-  await assert.rejects(h.plot([h.assignment('parallel0', 0, 'be203')]), /Parallel classes must use separate, consecutive rooms/)
+  await assert.rejects(h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }]), /Parallel classes must use separate, consecutive rooms/)
   assert.equal(h.documents.get('schedules/parallel0'), before)
   assert.equal(h.documents.get('schedules/parallel0').registrarPlot, undefined)
 })
 
 test('Plot accepts fixing the complete parallel chain together and reads peer floor metadata', async () => {
   const h = parallelHarness()
-  await h.plot([h.assignment('parallel2', 0, 'be205'), h.assignment('parallel3', 0, 'be206')])
+  await h.plot([{ ...h.assignment('parallel2', 0, 'be205'), targetStatus: 'Plot' }, { ...h.assignment('parallel3', 0, 'be206'), targetStatus: 'Plot' }])
   assert.equal(h.documents.get('schedules/parallel2').meetings[0].roomId, 'be205')
   assert.equal(h.documents.get('schedules/parallel3').meetings[0].roomId, 'be206')
   h.documents.get('rooms/be204').floor = 4
-  await assert.rejects(h.plot([h.assignment('parallel0', 0, 'be203')]), /same building and floor/)
+  await assert.rejects(h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }]), /same building and floor/)
 })
 
 test('provided parallel rooms cannot be approved while disconnected but can return to Draft', async () => {
@@ -111,6 +111,111 @@ test('an unrelated disconnected parallel group does not prevent plotting an ordi
   h.documents.set('schedules/ordinary', h.schedule({ subjectCode: 'ITE 100', meetings: [h.meeting({ days: ['Wed'], day: 'Wed' })] }))
   await h.plot([h.assignment('ordinary')])
   assert.equal(h.documents.get('schedules/ordinary').status, 'Plot')
+})
+
+test('Plot rejects assigning only one of four parallel rooms without any partial writes', async () => {
+  const h = parallelHarness([203, 204, 205, 206])
+  for (let index = 0; index < 4; index++) {
+    const data = h.documents.get(`schedules/parallel${index}`)
+    data.status = 'Draft'
+    data.meetings[0] = { ...data.meetings[0], roomId: '', room: '', buildingId: '' }
+  }
+  const before = h.documents.get('schedules/parallel0')
+  await assert.rejects(h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }]), /All 4 parallel sections.*1 of 4 rooms assigned/)
+  assert.equal(h.documents.get('schedules/parallel0'), before)
+  assert.equal(h.documents.get('schedules/parallel0').meetings[0].roomId, '')
+  await h.plot([203, 204, 205, 206].map((number, index) => ({ ...h.assignment(`parallel${index}`, 0, `be${number}`), targetStatus: 'Plot' })))
+  for (let index = 0; index < 4; index++) assert.equal(h.documents.get(`schedules/parallel${index}`).status, 'Plot')
+})
+
+test('provided parallel-room approval requires rooms for every section, including explicit TBA peers', async () => {
+  const h = parallelHarness([203, 204, 205, 206])
+  for (let index = 0; index < 4; index++) {
+    const data = h.documents.get(`schedules/parallel${index}`)
+    data.status = 'Draft'
+    if (index) data.meetings[0] = { ...data.meetings[0], roomId: '', room: 'TBA', buildingId: '' }
+    data.providedRoomKeys = data.meetings.map(h.plotting.plotMeetingKey)
+  }
+  await assert.rejects(h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }]), /All 4 parallel sections.*1 of 4 rooms assigned/)
+  assert.equal(h.documents.get('schedules/parallel0').status, 'Draft')
+})
+
+test('three rooms cannot plot; the fourth connected room completes the group', async () => {
+  const h = parallelHarness([203, 204, 205, 206])
+  const last = h.documents.get('schedules/parallel3')
+  last.status = 'Draft'
+  last.meetings[0] = { ...last.meetings[0], roomId: '', room: '', buildingId: '' }
+  await assert.rejects(h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }]), /3 of 4 rooms assigned/)
+  await h.plot([{ ...h.assignment('parallel3', 0, 'be206'), targetStatus: 'Plot' }])
+  assert.equal(h.documents.get('schedules/parallel3').meetings[0].roomId, 'be206')
+})
+
+test('parallel checkbox approval and return to Draft update all four rows atomically', async () => {
+  const h = parallelHarness([203, 204, 205, 206])
+  for (let index = 0; index < 4; index++) {
+    const data = h.documents.get(`schedules/parallel${index}`)
+    data.status = 'Draft'
+    data.providedRoomKeys = data.meetings.map(h.plotting.plotMeetingKey)
+  }
+  await h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }])
+  for (let index = 0; index < 4; index++) assert.equal(h.documents.get(`schedules/parallel${index}`).status, 'Plot')
+  await h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Draft' }])
+  for (let index = 0; index < 4; index++) {
+    const data = h.documents.get(`schedules/parallel${index}`)
+    assert.equal(data.status, 'Draft')
+    assert.equal(data.meetings[0].roomId, `be${203 + index}`)
+  }
+})
+
+test('one-, two- and three-schedule parallel groups approve and return to Draft without requiring four', async () => {
+  for (const count of [1, 2, 3]) {
+    const h = parallelHarness([203, 204, 205].slice(0, count))
+    for (let index = 0; index < count; index++) h.documents.get(`schedules/parallel${index}`).status = 'Draft'
+    await h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }])
+    for (let index = 0; index < count; index++) assert.equal(h.documents.get(`schedules/parallel${index}`).status, 'Plot')
+    await h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Draft' }])
+    for (let index = 0; index < count; index++) {
+      assert.equal(h.documents.get(`schedules/parallel${index}`).status, 'Draft')
+      assert.equal(h.documents.get(`schedules/parallel${index}`).meetings[0].roomId, `be${203 + index}`)
+    }
+  }
+})
+
+test('assigning the final room requires manual approval before Plot can save any parallel section', async () => {
+  const h = parallelHarness([203, 204, 205, 206])
+  for (let index = 0; index < 4; index++) h.documents.get(`schedules/parallel${index}`).status = 'Draft'
+  const last = h.documents.get('schedules/parallel3')
+  last.meetings[0] = { ...last.meetings[0], roomId: '', room: '', buildingId: '' }
+  await assert.rejects(h.plot([h.assignment('parallel3', 0, 'be206')]), /Check the completed parallel group checkbox/)
+  for (let index = 0; index < 4; index++) assert.equal(h.documents.get(`schedules/parallel${index}`).status, 'Draft')
+  assert.equal(h.documents.get('schedules/parallel3').meetings[0].roomId, '')
+  await h.plot([{ ...h.assignment('parallel3', 0, 'be206'), targetStatus: 'Plot' }])
+  for (let index = 0; index < 4; index++) assert.equal(h.documents.get(`schedules/parallel${index}`).status, 'Plot')
+})
+
+test('a conflict in any peer rejects the whole parallel checkbox approval', async () => {
+  const h = parallelHarness([203, 204, 205, 206])
+  for (let index = 0; index < 4; index++) {
+    const data = h.documents.get(`schedules/parallel${index}`)
+    data.status = 'Draft'
+    data.providedRoomKeys = data.meetings.map(h.plotting.plotMeetingKey)
+  }
+  h.documents.set('schedules/other', h.schedule({ department: 'CAS', meetings: [h.meeting({ roomId: 'be206', room: 'BE 206' })] }))
+  await assert.rejects(h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }]), /overlaps/)
+  for (let index = 0; index < 4; index++) assert.equal(h.documents.get(`schedules/parallel${index}`).status, 'Draft')
+})
+
+test('room removal cannot save an incomplete parallel group, but provided rooms can return to Draft', async () => {
+  const h = parallelHarness([203, 204, 205, 206])
+  await assert.rejects(h.plot([{ ...h.assignment('parallel3', 0, ''), targetStatus: 'Plot' }]), /3 of 4 rooms assigned/)
+  assert.equal(h.documents.get('schedules/parallel3').meetings[0].roomId, 'be206')
+  h.documents.delete('rooms/be206')
+  await assert.rejects(h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Plot' }]), /selected room was removed/)
+  const first = h.documents.get('schedules/parallel0')
+  first.providedRoomKeys = first.meetings.map(h.plotting.plotMeetingKey)
+  await h.plot([{ ...h.assignment('parallel0', 0, 'be203'), targetStatus: 'Draft' }])
+  assert.equal(h.documents.get('schedules/parallel0').status, 'Draft')
+  assert.equal(h.documents.get('schedules/parallel0').meetings[0].roomId, 'be203')
 })
 
 test('plots the new schedules collection and keeps a same-ID legacy record unchanged', async () => {
@@ -193,14 +298,33 @@ test('returning to Draft is allowed with existing conflicts or an unavailable ro
   await assert.rejects(h.plot([{ ...h.assignment(), targetStatus: 'Plot' }]), /overlaps/)
 })
 
-test('Registrar-selected rooms stay editable and cannot forge a provided-room status toggle', async () => {
+test('Registrar-selected rooms stay editable and their checkbox can return them to Draft', async () => {
   const h = harness('schedules')
   await h.plot([h.assignment()])
   assert.equal(h.documents.get('schedules/class1').providedRoomKeys.length, 0)
   assert.equal(h.documents.get('schedules/class1').registrarPlot.providedRoomKeys, undefined)
   await h.plot([h.assignment('class1', 0, 'room2')])
   assert.equal(h.documents.get('schedules/class1').meetings[0].roomId, 'room2')
-  await assert.rejects(h.plot([{ ...h.assignment('class1', 0, 'room2'), targetStatus: 'Draft' }]), /Only schedules with provided rooms/)
+  await h.plot([{ ...h.assignment('class1', 0, 'room2'), targetStatus: 'Draft' }])
+  assert.equal(h.documents.get('schedules/class1').status, 'Draft')
+  assert.equal(h.documents.get('schedules/class1').meetings[0].roomId, 'room2')
+  await h.plot([{ ...h.assignment('class1', 0, 'room2'), targetStatus: 'Plot' }])
+  assert.equal(h.documents.get('schedules/class1').status, 'Plot')
+  assert.equal(h.documents.get('schedules/class1').providedRoomKeys.length, 0)
+})
+
+test('newly selected rooms support checkbox approval and clearing saves a blank room', async () => {
+  const h = harness('schedules')
+  await assert.rejects(h.plot([{ ...h.assignment('class1', 0, ''), targetStatus: 'Plot' }]), /Assign a room/)
+  await h.plot([{ ...h.assignment(), targetStatus: 'Plot' }])
+  assert.equal(h.documents.get('schedules/class1').status, 'Plot')
+  await h.plot([h.assignment('class1', 0, '')])
+  const saved = h.documents.get('schedules/class1')
+  assert.equal(saved.status, 'Draft')
+  assert.equal(saved.meetings[0].room, '')
+  assert.equal(saved.meetings[0].roomId, '')
+  assert.equal(saved.f2fRoom.flexible[0], '')
+  assert.equal(saved.providedRoomKeys.length, 0)
 })
 
 test('Draft status toggles still reject stale revisions and unauthorized actors', async () => {

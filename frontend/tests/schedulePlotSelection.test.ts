@@ -68,7 +68,25 @@ test('recorded provided-room provenance survives Plot while newly chosen rooms r
   assert.equal(isProvidedScheduleRoom({ ...saved, registrarPlot: { ...plot, providedRoomKeys: [key] } }), true)
   const assigned = { ...saved, registrarPlot: { ...plot, providedRoomKeys: [] } }
   assert.equal(isProvidedScheduleRoom(assigned), false)
-  assert.equal(toggleAssignedSchedulePlot(new Map(), assigned).size, 0)
+  const unchecked = toggleAssignedSchedulePlot(new Map(), assigned)
+  assert.equal(unchecked.get(schedulePlotSelectionKey(assigned))?.targetStatus, 'Draft')
+  assert.equal(unchecked.get(schedulePlotSelectionKey(assigned))?.roomId, 'room1')
+})
+
+test('checkbox approval uses the staged room and retains room edits when unchecked', () => {
+  const saved = meeting({ roomId: '', room: '', providedRoomKeys: [] })
+  const key = schedulePlotSelectionKey(saved)
+  const choice: PlotAssignment = { scheduleId: 'class1', meetingKey: plotMeetingKey(saved as Parameters<typeof plotMeetingKey>[0]),
+    roomId: 'room2', expectedRoomId: '', expectedRevision: '["revision1",""]' }
+  const pending = new Map([[key, choice]])
+  const checked = toggleAssignedSchedulePlot(pending, saved)
+  assert.equal(checked.get(key)?.targetStatus, 'Plot')
+  assert.equal(checked.get(key)?.roomId, 'room2')
+  const unchecked = toggleAssignedSchedulePlot(checked, saved)
+  assert.equal(unchecked.get(key)?.targetStatus, 'Draft')
+  assert.equal(unchecked.get(key)?.roomId, 'room2')
+  assert.equal(unchecked.get(key)?.expectedRoomId, '')
+  assert.equal(pending.get(key)?.targetStatus, undefined)
 })
 
 test('workbook source metadata takes precedence over legacy Plot metadata, including TBA', () => {
