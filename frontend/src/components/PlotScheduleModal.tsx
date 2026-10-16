@@ -12,7 +12,7 @@ import { DatePicker } from './DatePicker'
 import { ExcelValidationTooltip } from './ExcelValidationTooltip'
 import { scheduleRoomOverlapMessages } from '../utils/scheduleRoomOverlaps'
 import { isProvidedScheduleRoom, schedulePlotSelectionKey } from '../utils/schedulePlotting'
-import { plotRoomRecommendations } from '../utils/plotRoomRecommendations'
+import { plotParallelRoomGroupRecommendations, plotRoomRecommendations, type PlotParallelRoomGroupOption } from '../utils/plotRoomRecommendations'
 import { plotParallelRoomMessages } from '../utils/plotParallelRooms'
 import { toPng } from 'html-to-image'
 import jsPDF from 'jspdf'
@@ -421,6 +421,9 @@ export function PlotScheduleModal({
   const roomRecommendations = useMemo(() => roomPlot.enabled
     ? plotRoomRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules) : new Map<string, readonly string[]>(),
   [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled])
+  const parallelRoomRecommendations = useMemo(() => roomPlot.enabled
+    ? plotParallelRoomGroupRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules) : new Map<string, readonly PlotParallelRoomGroupOption[]>(),
+  [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled])
   const parallelMessages = useMemo(() => plotParallelRoomMessages(proposedMeetings, roomPlot.rooms), [proposedMeetings, roomPlot.rooms])
   const overlapMessages = useMemo(() => {
     const messages = scheduleRoomOverlapMessages(proposedMeetings,
@@ -504,13 +507,15 @@ export function PlotScheduleModal({
     }
     const selected = roomPlot.selected(meeting)
     const recommended = roomRecommendations.get(schedulePlotSelectionKey(meeting)) ?? []
+    const groupOptions = parallelRoomRecommendations.get(schedulePlotSelectionKey(meeting)) ?? []
+    const groupById = new Map(groupOptions.map(option => [option.id, option]))
     return <div className="flex min-w-0 items-center gap-1" onClick={event => event.stopPropagation()}>
       <span className="shrink-0">Room:</span>
       <SingleSelectDropdown portal searchable retainValueOnOpen variant="meeting" menuAnchorSelector="[data-schedule-meeting]" ariaLabel={`Room for ${meeting.subjectCode || 'class'}, ${meeting.days?.join(', ')}, ${meeting.startTime}-${meeting.endTime}`}
-        options={[...new Set([...recommended, ...roomPlot.roomOptions, ...(selected ? [selected] : [])])]}
-        recommendedOptions={recommended}
-        value={selected} getOptionLabel={id => id ? roomPlot.labels.get(id) || (id === meeting.roomId ? getRoomName(meeting) : 'Unnamed room') : 'TBA'}
-        onChange={id => roomPlot.select(meeting, id)}
+        options={[...new Set([...groupOptions.map(option => option.id), ...recommended, ...roomPlot.roomOptions, ...(selected ? [selected] : [])])]}
+        recommendedOptions={[...groupOptions.map(option => option.id), ...recommended]}
+        value={selected} getOptionLabel={id => groupById.get(id)?.label || (id ? roomPlot.labels.get(id) || (id === meeting.roomId ? getRoomName(meeting) : 'Unnamed room') : 'TBA')}
+        onChange={id => { const group = groupById.get(id); if (group) roomPlot.selectGroup(group.assignments); else roomPlot.select(meeting, id) }}
         isDisabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving}
         className="w-0 min-w-0 flex-1 [&>input]:!h-7 [&>input]:!px-2 [&>input]:!text-xs" />
     </div>

@@ -8,7 +8,8 @@ export interface ParallelRoomGroupRecommendation {
 
 /** Find complete four-room chains that can be assigned to a parallel class in row order. */
 export function recommendParallelRoomGroups(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
-  rowKey: string, column: number, entryIndex: number, externalAssignments: readonly FacultySubjectAssignment[] = []): ParallelRoomGroupRecommendation[] {
+  rowKey: string, column: number, entryIndex: number, externalAssignments: readonly FacultySubjectAssignment[] = [],
+  usageRooms: ScheduleDirectory['rooms'] = rooms): ParallelRoomGroupRecommendation[] {
   const target = assignments.find(assignment => assignment.rowKey === rowKey && assignment.roomColumn === column
     && assignment.roomEntryIndex === entryIndex)
   if (!target?.parallelGroup || target.start === undefined || target.end === undefined || !target.days?.length) return []
@@ -18,6 +19,26 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
     || new Set(group.map(assignment => assignment.rowKey)).size !== 4) return []
   const groupSet = new Set(group)
   const occupied = [...assignments.filter(assignment => !groupSet.has(assignment)), ...externalAssignments]
+  const roomsById = new Map(usageRooms.map(room => [room.id, room]))
+  const roomsByAlias = new Map<string, Set<ScheduleDirectory['rooms'][number]>>()
+  for (const room of usageRooms) for (const value of [room.name, room.code]) {
+    const key = excelScheduleRoomKey(value)
+    if (!key) continue
+    const matches = roomsByAlias.get(key) ?? new Set()
+    matches.add(room)
+    roomsByAlias.set(key, matches)
+  }
+  const buildingUsage = new Map<string, Set<string>>()
+  for (const assignment of assignments) {
+    const matches = roomsByAlias.get(excelScheduleRoomKey(assignment.room ?? ''))
+    const room = roomsById.get(assignment.roomId ?? '') ?? (matches?.size === 1 ? [...matches][0] : undefined)
+    if (!room?.buildingId) continue
+    const schedules = buildingUsage.get(room.buildingId) ?? new Set<string>()
+    schedules.add(assignment.rowKey ?? assignment.location)
+    buildingUsage.set(room.buildingId, schedules)
+  }
+  const buildingRank = new Map([...buildingUsage].sort(([left, a], [right, b]) => b.size - a.size || left.localeCompare(right))
+    .map(([building], index) => [building, index]))
   const locations = new Map<string, Map<number, ScheduleDirectory['rooms'][number]>>()
   for (const room of rooms) {
     const position = parallelRoomPosition(room)
@@ -27,7 +48,7 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
     if (!numbered.has(position.number)) numbered.set(position.number, room)
     locations.set(key, numbered)
   }
-  const recommendations: { option: ParallelRoomGroupRecommendation; retained: number }[] = []
+  const recommendations: { option: ParallelRoomGroupRecommendation; buildingId: string; retained: number }[] = []
   for (const numbered of locations.values()) for (const start of numbered.keys()) {
     const chain = Array.from({ length: 4 }, (_, index) => numbered.get(start + index))
     if (!chain.every((room): room is ScheduleDirectory['rooms'][number] => Boolean(room))) continue
@@ -41,10 +62,12 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
       const retained = ordered.filter((room, index) => group[index].roomId === room.id
         || [room.code, room.name].some(value => excelScheduleRoomKey(group[index].room ?? '') === excelScheduleRoomKey(value))).length
       if (retained === 4) continue
-      recommendations.push({ option: { label: `${entries.map(entry => entry.room).join(' / ')} · Fill 4 rooms`, rooms: entries }, retained })
+      recommendations.push({ option: { label: entries.map(entry => entry.room).join(' / '), rooms: entries },
+        buildingId: ordered[0].buildingId, retained })
     }
   }
-  return recommendations.sort((a, b) => b.retained - a.retained || a.option.label.localeCompare(b.option.label))
+  return recommendations.sort((a, b) => (buildingRank.get(a.buildingId) ?? Infinity) - (buildingRank.get(b.buildingId) ?? Infinity)
+    || b.retained - a.retained || a.option.label.localeCompare(b.option.label))
     .slice(0, 5).map(({ option }) => option)
 }
 

@@ -44,21 +44,24 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   const labels = useMemo(() => new Map(rooms.map(room => [room.id, room.name.trim() || 'Unnamed room'])), [rooms])
   const key = schedulePlotSelectionKey
   const selected = (meeting: ScheduleMeetingRecord) => pending.get(key(meeting))?.roomId ?? meeting.roomId ?? ''
-  const select = (meeting: ScheduleMeetingRecord, roomId: string) => {
+  const selectGroup = (assignments: readonly { meeting: ScheduleMeetingRecord; roomId: string }[]) => {
     if (!permitted || busy.current) return
-    if (scheduleCollection === 'schedules' && isProvidedScheduleRoom(meeting)) return
+    if (assignments.some(({ meeting }) => scheduleCollection === 'schedules' && isProvidedScheduleRoom(meeting))) return
     setError(''); setMessage('')
     setPending(previous => {
       const next = new Map(previous)
-      const id = key(meeting)
-      const existing = next.get(id)
-      const expectedRoomId = existing?.expectedRoomId ?? meeting.roomId ?? ''
-      if (roomId === expectedRoomId) next.delete(id)
-      else next.set(id, { scheduleId: String(meeting.sourceScheduleId || meeting.id), meetingKey: plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0]), roomId,
-        expectedRoomId, expectedRevision: existing?.expectedRevision ?? plotScheduleRevision(meeting) })
+      for (const { meeting, roomId } of assignments) {
+        const id = key(meeting)
+        const existing = next.get(id)
+        const expectedRoomId = existing?.expectedRoomId ?? meeting.roomId ?? ''
+        if (roomId === expectedRoomId) next.delete(id)
+        else next.set(id, { scheduleId: String(meeting.sourceScheduleId || meeting.id), meetingKey: plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0]), roomId,
+          expectedRoomId, expectedRevision: existing?.expectedRevision ?? plotScheduleRevision(meeting) })
+      }
       return next
     })
   }
+  const select = (meeting: ScheduleMeetingRecord, roomId: string) => selectGroup([{ meeting, roomId }])
   const marked = (meeting: ScheduleMeetingRecord) => assignedSchedulePlotStatus(pending, meeting) === 'Plot'
   const toggleMarked = (meeting: ScheduleMeetingRecord) => {
     if (!permitted || busy.current) return
@@ -86,5 +89,5 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
     pending, rooms, hasDraftChanges: [...pending.values()].some(assignment => assignment.targetStatus === 'Draft'),
     canUndo: history.past.length > 0, canRedo: history.future.length > 0,
     undo: () => changeHistory(false), redo: () => changeHistory(true),
-    roomOptions: ['', ...availableRooms.map(room => room.id)], selected, select, marked, toggleMarked, save }
+    roomOptions: ['', ...availableRooms.map(room => room.id)], selected, select, selectGroup, marked, toggleMarked, save }
 }
