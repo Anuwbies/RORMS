@@ -2,6 +2,9 @@ import type { DepartmentCourse, TemplateIssue } from './departmentScheduleTempla
 import type { DepartmentCourseSuggestion } from './departmentCourseSuggestions'
 import type { ScheduleRecord } from './excelScheduleTemplate'
 import type { ScheduleDirectory, WorkbookScheduleRow } from './excelScheduleRows.ts'
+import type { DepartmentWorkbookTerm } from './departmentWorkbookPaths.ts'
+import type { ScheduleMeetingRecord } from './scheduleMeetings.ts'
+import { scheduleMatchesTerm } from './roomSchedule.ts'
 
 export type FacultyMembershipStatus = 'valid' | 'missing' | 'tba' | 'invalid'
 
@@ -123,6 +126,50 @@ export function facultyScheduleInstructorConflict(a: FacultySubjectAssignment, b
   return Boolean(assigned(a.faculty) && assigned(b.faculty) && facultyScheduleOverlap(a, b)?.sameFaculty)
 }
 
+/** Only active saved room meetings from other departments in this exact term. */
+export function departmentExternalRoomAssignments(meetings: readonly ScheduleMeetingRecord[], term: DepartmentWorkbookTerm,
+  rooms: ScheduleDirectory['rooms']): FacultySubjectAssignment[] {
+  const text = (value: unknown) => typeof value === 'string' ? value.trim() : ''
+  const time = (value: unknown): number | undefined => {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(text(value))
+    return match && Number(match[1]) < 24 && Number(match[2]) < 60 ? Number(match[1]) * 60 + Number(match[2]) : undefined
+  }
+  return meetings.flatMap(meeting => {
+    const department = text(meeting.department)
+    if (!department || department.toUpperCase() === term.departmentCode.trim().toUpperCase() || meeting.departmentId === term.departmentId
+      || meeting.isActive === false || !/^(?:DRAFT(?:ED)?|PLOT(?:TED)?|REVISE[D]?)$/i.test(text(meeting.status) || 'Draft')) return []
+    if (!(text(meeting.academicYearId) || text(meeting.academicYear)) || !(text(meeting.semesterKey) || text(meeting.semester))
+      || !scheduleMatchesTerm(meeting, { id: term.academicYearId, academicYear: term.academicYear }, term.semester)) return []
+    const start = time(meeting.startTime), end = time(meeting.endTime)
+    const days = [...new Set((Array.isArray(meeting.days) ? meeting.days : []).flatMap(value => {
+      const day = DAY_ORDER.find(day => day.toUpperCase() === text(value).slice(0, 3).toUpperCase())
+      return day ? [day] : []
+    }))]
+    if (start === undefined || end === undefined || end <= start || !days.length) return []
+    const roomId = text(meeting.roomId), roomText = text(meeting.room) || text(meeting.roomName)
+    if (roomText && !assigned(roomText)) return []
+    const matches = roomId ? rooms.filter(room => room.id === roomId)
+      : rooms.filter(room => roomText && [room.name, room.code].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(roomText)))
+    const room = matches.length === 1 ? matches[0] : undefined
+    const label = roomText || room?.name || room?.code || ''
+    if (!assigned(label)) return []
+    return [{ location: meeting.id, code: '', section: '', departmentCode: department, room: label, roomId: roomId || room?.id,
+      days, start, end, timeText: `${clock(start)}–${clock(end)}` }]
+  })
+}
+
+export function validateOtherDepartmentRoomAssignments(assignments: readonly FacultySubjectAssignment[],
+  external: readonly FacultySubjectAssignment[]): TemplateIssue[] {
+  const issues = new Map<string, TemplateIssue>()
+  for (const assignment of assignments) for (const other of external) {
+    if (!other.departmentCode || !facultyScheduleRoomConflict(assignment, other)) continue
+    const overlap = facultyScheduleOverlap(assignment, other)!
+    const message = `${other.departmentCode} is using Room ${assignment.room} on ${overlap.days.map(day => day.toUpperCase()).join('/')} (${other.timeText}).`
+    issues.set(JSON.stringify([assignment.location, message]), { severity: 'warning', location: assignment.location, message })
+  }
+  return [...issues.values()]
+}
+
 /** Only instructor/room overlaps, duplicate subjects, department membership and room existence. */
 export function validateFacultyScheduleAssignments(
   assignments: readonly FacultySubjectAssignment[], _courses: readonly DepartmentCourse[] = [],
@@ -241,6 +288,9 @@ export function validateDepartmentFacultyScheduleRows(rows: readonly WorkbookSch
   const courseIssues = courses === undefined ? new Map<string, readonly string[]>() : validateDepartmentScheduleCourseRows(rows, courses)
   const messages = new Map<string, string[]>()
   for (const issue of validateFacultyScheduleAssignments(assignments, [], directory.rooms)) messages.set(issue.location, [...(messages.get(issue.location) ?? []), issue.message])
+  for (const issue of validateOtherDepartmentRoomAssignments(assignments, directory.externalRoomAssignments ?? [])) {
+    messages.set(issue.location, [...(messages.get(issue.location) ?? []), issue.message])
+  }
   for (const row of rows) {
     const location = facultyScheduleRowKey(row.sourceSheet, row.sourceRow)
     const issues = new Set(messages.get(location) ?? [])

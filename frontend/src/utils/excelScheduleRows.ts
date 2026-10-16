@@ -2,11 +2,13 @@ import * as XLSX from 'xlsx'
 import type { WorkbookEditSnapshot } from './excelWorkbookState'
 import { readAssignedScheduleRecords } from './excelScheduleTemplate.ts'
 import { excelScheduleFacultyKeys, excelScheduleRoomKey, isExcelScheduleTba, parseExcelScheduleDays, parseExcelScheduleTime, splitScheduleMeetings, splitScheduleResources, scheduleParallelGroups, validateDepartmentFacultyScheduleRows, facultyScheduleRowKey } from './ScheduleValidation.ts'
+import type { FacultySubjectAssignment } from './ScheduleValidation.ts'
 
 export interface ScheduleDirectory {
   departmentCode: string
   faculty: { id: string; fullName: string; department: string }[]
   rooms: { id: string; code: string; name: string; buildingId: string; floor?: number }[]
+  externalRoomAssignments?: readonly FacultySubjectAssignment[]
 }
 
 export interface WorkbookScheduleMeeting {

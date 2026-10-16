@@ -14,7 +14,6 @@ export type DashboardSection =
   | 'members'
   | 'departments'
   | 'departmentSchedules'
-  | 'testDepartmentSchedule'
   | 'myDepartment'
   | 'reports'
   | 'analytics'

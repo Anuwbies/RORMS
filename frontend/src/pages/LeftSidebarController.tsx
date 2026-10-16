@@ -30,18 +30,17 @@ import ReserveRoomPage from './tabs/ReserveRoomPage'
 import MyReservationsPage from './tabs/MyReservationsPage'
 import AcademicCalendarPage from './tabs/AcademicCalendarPage'
 import DepartmentSchedulesPage from './tabs/DepartmentSchedulesPage'
-import TestDepartmentSchedulePage from './tabs/TestDepartmentSchedulePage'
 
 export const ROLE_ALLOWED_TABS: Record<string, DashboardSection[]> = {
   'Admin': [
     'dashboard', 'academicCalendar', 'members', 'departments', 'buildingsRooms',
-    'departmentSchedules', 'testDepartmentSchedule', 'manageReservations', 'reserveRoom', 'myReservations', 'analytics', 'reports', 'logs'
+    'departmentSchedules', 'manageReservations', 'reserveRoom', 'myReservations', 'analytics', 'reports', 'logs'
   ],
   'University Administrator': [
     'dashboard', 'buildingsRooms', 'manageReservations', 'analytics', 'reports'
   ],
   'Registrar': [
-    'dashboard', 'academicCalendar', 'departmentSchedules', 'testDepartmentSchedule', 'buildingsRooms',
+    'dashboard', 'academicCalendar', 'departmentSchedules', 'buildingsRooms',
     'manageReservations', 'reserveRoom', 'analytics', 'reports'
   ],
   'Dean': [
@@ -115,13 +114,6 @@ const navItems: NavItem[] = [
     label: 'Department Schedules',
     eyebrow: 'Room Plotting',
     description: 'View department schedules and plot them into rooms.',
-    icon: CalendarIcon,
-  },
-  {
-    id: 'testDepartmentSchedule',
-    label: 'Test Department Schedule',
-    eyebrow: 'Test Department Schedule',
-    description: 'Test department schedule imports.',
     icon: CalendarIcon,
   },
   {
@@ -321,8 +313,6 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
         return <MyDepartmentPage />
       case 'departmentSchedules':
         return <DepartmentSchedulesPage />
-      case 'testDepartmentSchedule':
-        return <TestDepartmentSchedulePage />
       default:
         return <DashboardPage userRole={normRole} />
     }

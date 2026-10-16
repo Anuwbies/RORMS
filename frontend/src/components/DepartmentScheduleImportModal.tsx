@@ -19,7 +19,7 @@ import { Button } from './Button'
 import type { DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
 import { loadFirestoreDepartmentWorkbook, saveFirestoreDepartmentWorkbook, type LoadedFirestoreDepartmentWorkbook, type SavedFirestoreDepartmentWorkbook } from '../services/firestoreDepartmentWorkbooks'
 import { createDepartmentScheduleWorkbookState, readDepartmentScheduleWorkbookState, type DepartmentScheduleWorkbookState } from '../utils/departmentScheduleWorkbookState'
-import { loadDepartmentScheduleDirectory } from '../services/departmentScheduleRows'
+import { loadDepartmentScheduleDirectory, subscribeDepartmentRoomSchedules } from '../services/departmentScheduleRows'
 import type { ScheduleDirectory } from '../utils/excelScheduleRows'
 import { parseDepartmentScheduleImportRows, extractDepartmentScheduleImportRows } from '../utils/departmentScheduleImportRows'
 import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
@@ -128,17 +128,27 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
 
   useEffect(() => {
     let cancelled = false
+    let unsubscribe: (() => void) | undefined
     setValidationDirectory(null)
     roomAssignmentsRef.current = []
     setValidationMessages(new Map())
     setValidationError('')
-    void loadDepartmentScheduleDirectory(term?.departmentCode ?? '').then(directory => {
-      if (!cancelled) setValidationDirectory(directory)
+    void loadDepartmentScheduleDirectory(term?.departmentCode ?? '', term).then(directory => {
+      if (cancelled) return
+      setValidationDirectory(directory)
+      if (term) unsubscribe = subscribeDepartmentRoomSchedules(term, directory.rooms, externalRoomAssignments => {
+        if (!cancelled) {
+          setValidationDirectory(previous => previous ? { ...previous, externalRoomAssignments } : previous)
+          setValidationError('')
+        }
+      }, () => {
+        if (!cancelled) setValidationError('Validation could not load other departments’ room schedules. Reopen the workbook to retry.')
+      })
     }).catch(() => {
-      if (!cancelled) setValidationError('Validation could not load the instructor and room directories. Reopen the workbook to retry.')
+      if (!cancelled) setValidationError('Validation could not load the instructor directory, rooms, or other departments’ schedules. Reopen the workbook to retry.')
     })
-    return () => { cancelled = true }
-  }, [term?.departmentCode, term?.membershipId])
+    return () => { cancelled = true; unsubscribe?.() }
+  }, [term?.departmentId, term?.departmentCode, term?.membershipId, term?.academicYearId, term?.academicYear, term?.semester])
 
   useEffect(() => {
     if (!validationDirectory) return
@@ -557,7 +567,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     try {
       const state = createDepartmentScheduleWorkbookState(savingSheets, selectedSheet, columnWidths, storedStateRef.current)
       const [directory, courses] = await Promise.all([
-        loadDepartmentScheduleDirectory(term.departmentCode), loadDepartmentCourseSuggestions(term),
+        loadDepartmentScheduleDirectory(term.departmentCode, term), loadDepartmentCourseSuggestions(term),
       ])
       setValidationDirectory(directory)
       setValidationError('')
