@@ -56,12 +56,12 @@ export function recommendInstructorScheduleOptions(assignments: readonly Faculty
       : !parseExcelScheduleDays(value).length)) return null
     const usedDays = new Set(assignments.flatMap(assignment => (assignment.days ?? (assignment.day ? [assignment.day] : []))
       .flatMap(day => parseExcelScheduleDays(day).map(parsed => parsed.toUpperCase()))))
-    const departmentDays = DAYS.filter(day => usedDays.has(day))
+    const workbookDays = DAYS.filter(day => usedDays.has(day))
     const choices = original.map((day, index) => {
       const affected = positional ? [targets[index]] : targets
       const overlaps = affected.some(target => conflictsByTarget.get(target)!.some(other =>
         (other.days ?? (other.day ? [other.day] : [])).some(otherDay => otherDay.toUpperCase() === day)))
-      return alwaysRecommend ? DAYS : overlaps ? departmentDays : [day]
+      return alwaysRecommend || overlaps ? workbookDays : [day]
     })
     for (const days of combinations(choices)) {
       if (!positional && new Set(days).size !== days.length) continue

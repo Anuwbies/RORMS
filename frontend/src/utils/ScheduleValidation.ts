@@ -156,6 +156,16 @@ export function facultyScheduleInstructorConflict(a: FacultySubjectAssignment, b
   return Boolean(assigned(a.faculty) && assigned(b.faculty) && facultyScheduleOverlap(a, b)?.sameFaculty)
 }
 
+/** Recommendations are relevant only for an unassigned meeting slot or an actual overlap. */
+export function scheduleMeetingNeedsRecommendation(assignments: readonly FacultySubjectAssignment[], rowKey: string,
+  column: number, value: string): boolean {
+  if (!value.trim() || splitScheduleMeetings(value).some(isExcelScheduleTba)) return true
+  const roomColumn = column + (column === 15 || column === 16 ? 4 : 2)
+  return assignments.some(target => target.rowKey === rowKey && target.roomColumn === roomColumn
+    && assignments.some(other => other !== target && (facultyScheduleInstructorConflict(target, other)
+      || facultyScheduleRoomConflict(target, other))))
+}
+
 /** Only active saved room meetings from other departments in this exact term. */
 export function departmentExternalRoomAssignments(meetings: readonly ScheduleMeetingRecord[], term: DepartmentWorkbookTerm,
   rooms: ScheduleDirectory['rooms']): FacultySubjectAssignment[] {

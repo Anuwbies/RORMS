@@ -1,5 +1,5 @@
 import type { ScheduleDirectory } from './excelScheduleRows'
-import { areParallelFacultyMeetings, excelScheduleRoomKey, facultyScheduleRoomConflict, isExcelScheduleTba, parallelRoomConnectionIssue, parallelRoomPosition, scheduleRoomStatusIssue, type FacultySubjectAssignment } from './ScheduleValidation.ts'
+import { areParallelFacultyMeetings, excelScheduleRoomKey, facultyScheduleRoomConflict, isExcelScheduleTba, parallelRoomAssignmentIssue, parallelRoomConnectionIssue, parallelRoomPosition, scheduleRoomStatusIssue, type FacultySubjectAssignment } from './ScheduleValidation.ts'
 
 export interface ParallelRoomGroupRecommendation {
   label: string
@@ -115,6 +115,22 @@ function parallelRoomRecommendationCosts(assignments: readonly FacultySubjectAss
   return costs
 }
 
+/** Keep room and parallel-group recommendations tied to the edited entry's state. */
+export function needsScheduleRoomRecommendation(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
+  rowKey: string, column: number, entryIndex: number,
+  hasConflict?: (assignment: FacultySubjectAssignment) => boolean): boolean {
+  const targets = assignments.filter(assignment => assignment.rowKey === rowKey && assignment.roomColumn === column
+    && (entryIndex < 0 || assignment.roomEntryIndex === entryIndex))
+  return targets.some(target => !target.room?.trim() || isExcelScheduleTba(target.room)
+    || hasConflict?.(target)
+    || rooms.some(room => (target.roomId === room.id
+      || [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(target.room ?? '')))
+      && Boolean(scheduleRoomStatusIssue(room)))
+    || parallelRoomAssignmentIssue(assignments, rooms, target)
+    || parallelRoomConnectionIssue(assignments, rooms, target)
+    || assignments.some(other => other !== target && facultyScheduleRoomConflict(target, other)))
+}
+
 /** Recommend against every meeting affected by this room entry, across all sheets. */
 export function recommendScheduleRooms(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
   rowKey: string, column: number, entryIndex: number, options?: {
@@ -125,14 +141,7 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
   const targets = assignments.filter(assignment => assignment.rowKey === rowKey
     && assignment.roomColumn === column && (entryIndex < 0 || assignment.roomEntryIndex === entryIndex))
   if (!targets.length || targets.some(target => target.start === undefined || target.end === undefined || target.end <= target.start || !target.days?.length)) return []
-  if (!options?.alwaysRecommend && !targets.some(target => isExcelScheduleTba(target.room ?? '')
-    || options?.hasConflict?.(target)
-    || rooms.some(room => !isExcelScheduleTba(target.room ?? '') && (target.roomId === room.id
-      || [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(target.room ?? '')))
-      && Boolean(scheduleRoomStatusIssue(room)))
-    || (target.parallelGroup !== undefined && !target.room?.trim())
-    || parallelRoomConnectionIssue(assignments, rooms, target)
-    || assignments.some(other => other !== target && facultyScheduleRoomConflict(target, other)))) return []
+  if (!options?.alwaysRecommend && !needsScheduleRoomRecommendation(assignments, rooms, rowKey, column, entryIndex, options?.hasConflict)) return []
   const roomsById = new Map(rooms.map(room => [room.id, room]))
   const roomsByAlias = new Map<string, Set<ScheduleDirectory['rooms'][number]>>()
   for (const room of rooms) for (const value of [room.name, room.code]) {

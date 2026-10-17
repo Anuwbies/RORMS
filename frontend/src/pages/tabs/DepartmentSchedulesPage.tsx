@@ -527,6 +527,7 @@ export function DepartmentSchedulesPage() {
       {isAddScheduleModalOpen && selectedDepartment && selectedAcademicYear?.id && selectedAcademicYear.academicYear && selectedSemesterPhase && <DepartmentScheduleImportModal
         key={`${selectedDepartment.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
         onClose={() => setIsAddScheduleModalOpen(false)}
+        departmentName={selectedDepartment.name}
         term={{ departmentId: selectedDepartment.id, departmentCode: selectedDepartment.code,
           academicYearId: selectedAcademicYear.id, academicYear: selectedAcademicYear.academicYear,
           semester: semesterKey(selectedSemesterPhase.name), membershipId: workbookMembership?.id || '' }}

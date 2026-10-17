@@ -18,24 +18,25 @@ import { ScheduleRowCountModal } from './ScheduleRowCountModal'
 import { Button } from './Button'
 import type { DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
 import { loadFirestoreDepartmentWorkbook, saveFirestoreDepartmentWorkbook, type LoadedFirestoreDepartmentWorkbook, type SavedFirestoreDepartmentWorkbook } from '../services/firestoreDepartmentWorkbooks'
-import { createDepartmentScheduleWorkbookSnapshot, createDepartmentScheduleWorkbookState, readDepartmentScheduleWorkbookState, type DepartmentScheduleWorkbookState } from '../utils/departmentScheduleWorkbookState'
-import { createExcelExport } from '../utils/excelWorkbookExport'
+import { createDepartmentScheduleWorkbookState, readDepartmentScheduleWorkbookState, type DepartmentScheduleWorkbookState } from '../utils/departmentScheduleWorkbookState'
+import { createDepartmentScheduleExport } from '../utils/departmentScheduleExport'
 import { loadDepartmentScheduleDirectory, subscribeDepartmentRoomSchedules } from '../services/departmentScheduleRows'
 import type { ScheduleDirectory } from '../utils/excelScheduleRows'
 import { parseDepartmentScheduleImportRows, extractDepartmentScheduleImportRows } from '../utils/departmentScheduleImportRows'
-import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, scheduleValidationTone, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
+import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, scheduleMeetingNeedsRecommendation, scheduleValidationTone, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
 import { useExcelValidationTooltip } from './ExcelValidationTooltip'
 import { loadDepartmentCourseSuggestions } from '../services/firestoreDepartmentCourses'
 import type { DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
 import { hasDepartmentScheduleChanges, type DepartmentScheduleSaveBaseline } from '../utils/departmentScheduleSaveStatus'
 import { useLiveDepartmentWorkbook } from '../hooks/useLiveDepartmentWorkbook'
 import { mergeDepartmentSchedule } from '../utils/mergeDepartmentSchedule'
-import { recommendParallelRoomGroups, recommendScheduleRooms } from '../utils/scheduleRoomRecommendations'
+import { needsScheduleRoomRecommendation, recommendParallelRoomGroups, recommendScheduleRooms } from '../utils/scheduleRoomRecommendations'
 import { recommendInstructorScheduleOptions } from '../utils/instructorScheduleRecommendations'
 
 interface DepartmentScheduleImportModalProps {
   onClose: () => void
   term?: DepartmentWorkbookTerm
+  departmentName?: string
   readOnly?: boolean
 }
 
@@ -50,7 +51,7 @@ const DATA_COLUMN_LABELS = DISPLAY_HEADER_GROUPS.flatMap(group => group.children
   : [group.label])
 const EMPTY_ROWS: DepartmentScheduleImportRow[] = []
 
-export function DepartmentScheduleImportModal({ onClose, term, readOnly = false }: DepartmentScheduleImportModalProps) {
+export function DepartmentScheduleImportModal({ onClose, term, departmentName, readOnly = false }: DepartmentScheduleImportModalProps) {
   const titleId = useId()
   const [file, setFile] = useState<File | null>(null)
   const [initialWorkbook] = useState(() => {
@@ -140,20 +141,38 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     fileMenuRef.current?.querySelector<HTMLButtonElement>('[aria-haspopup="menu"]')?.focus()
   }
 
+  const downloadXlsx = (bytes: Uint8Array, filename: string) => {
+    const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  const downloadTemplate = async () => {
+    closeFileMenu()
+    setExportError('')
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}department-schedule-template.xlsx`)
+      if (!response.ok) throw new Error('The template could not be downloaded. Please try again.')
+      downloadXlsx(new Uint8Array(await response.arrayBuffer()), 'Department Schedule Template.xlsx')
+    } catch (caught) {
+      setExportError(caught instanceof Error ? caught.message : 'The template could not be downloaded. Please try again.')
+    }
+  }
+
   const exportWorkbook = () => {
     closeFileMenu()
     setExportError('')
     try {
-      const { snapshot, ownedNames } = createDepartmentScheduleWorkbookSnapshot(sheetsRef.current, selectedSheet, columnWidths, storedStateRef.current)
-      const bytes = createExcelExport(snapshot, ownedNames)
-      const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${(file?.name || storedFileName || 'Department Schedule').replace(/\.xlsx$/i, '')}.xlsx`
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      if (!statusesReady) throw new Error('Schedule statuses are still loading. Please try again when they appear.')
+      downloadXlsx(createDepartmentScheduleExport(sheetsRef.current, columnWidths, (sheet, row) =>
+        rowStatuses.get(facultyScheduleRowKey(sheet.name, row.rowNumber))
+          ?? (row.values.slice(1).some(value => value.trim()) ? 'Draft' : '')),
+      `${(file?.name || storedFileName || 'Department Schedule').replace(/\.xlsx$/i, '')}.xlsx`)
     } catch (caught) {
       setExportError(caught instanceof Error ? caught.message : 'This workbook could not be exported. Please try again.')
     }
@@ -690,13 +709,16 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   const recommendRooms = useCallback((cell: CellEditLocation, entryIndex: number) => {
     const name = sheetsRef.current[cell.sheet]?.name
     return name && validationDirectory ? recommendScheduleRooms(currentScheduleAssignments(), validationDirectory.rooms,
-      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex, { alwaysRecommend: true }) : []
+      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex) : []
   }, [currentScheduleAssignments, validationDirectory])
 
   const recommendParallelGroups = useCallback((cell: CellEditLocation, entryIndex: number) => {
     const name = sheetsRef.current[cell.sheet]?.name
-    return name && validationDirectory ? recommendParallelRoomGroups(currentScheduleAssignments(), validationDirectory.rooms,
-      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex, validationDirectory.externalRoomAssignments ?? []) : []
+    if (!name || !validationDirectory) return []
+    const assignments = currentScheduleAssignments(), rowKey = facultyScheduleRowKey(name, cell.row)
+    return needsScheduleRoomRecommendation(assignments, validationDirectory.rooms, rowKey, cell.column, entryIndex)
+      ? recommendParallelRoomGroups(assignments, validationDirectory.rooms, rowKey, cell.column, entryIndex,
+        validationDirectory.externalRoomAssignments ?? []) : []
   }, [currentScheduleAssignments, validationDirectory])
 
   const chooseParallelRoomGroup = useCallback((cell: CellEditLocation, entryIndex: number, label: string) => {
@@ -722,7 +744,9 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
   const recommendMeetingSlots = useCallback((cell: CellEditLocation) => {
     const name = sheetsRef.current[cell.sheet]?.name, value = readCellValue(cell)
     if (!name) return null
-    return recommendInstructorScheduleOptions(currentScheduleAssignments(), facultyScheduleRowKey(name, cell.row), cell.column, value, true)
+    const assignments = currentScheduleAssignments(), rowKey = facultyScheduleRowKey(name, cell.row)
+    return scheduleMeetingNeedsRecommendation(assignments, rowKey, cell.column, value)
+      ? recommendInstructorScheduleOptions(assignments, rowKey, cell.column, value, true) : null
   }, [currentScheduleAssignments, readCellValue])
 
   const cellActions = useMemo<ScheduleCellActions>(() => ({
@@ -1003,6 +1027,34 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     return widths
   }
 
+  const importedContentWidths = (widths: number[]): number[] => {
+    const dataCell = tableRef.current?.querySelector<HTMLTableCellElement>('tbody td[data-edit-cell]')
+    const context = document.createElement('canvas').getContext('2d')
+    if (!dataCell || !context) return widths
+    const style = getComputedStyle(dataCell)
+    context.font = `${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+    const spacing = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+      + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth) + 2
+    const fitted = [...widths]
+    for (const importedSheet of sheetsRef.current) for (const row of importedSheet.rows) {
+      row.values.forEach((value, column) => {
+        if (!value) return
+        fitted[column + 1] = Math.max(fitted[column + 1], Math.ceil(context.measureText(value.replace(/[\r\n]+/g, ' ')).width + spacing))
+      })
+    }
+    for (const constraint of headerConstraintsRef.current) {
+      if (constraint.count === 1) fitted[constraint.start] = Math.max(fitted[constraint.start], constraint.minimum)
+    }
+    for (const group of DISPLAY_HEADER_GROUPS) {
+      if (!group.children.length) continue
+      const start = group.offset + 1
+      const parentMinimum = headerConstraintsRef.current.find(constraint => constraint.start === start && constraint.count === group.width)?.minimum ?? 0
+      const childWidth = Math.max(Math.ceil(parentMinimum / group.width), ...fitted.slice(start, start + group.width))
+      for (let column = start; column < start + group.width; column++) fitted[column] = childWidth
+    }
+    return fitted
+  }
+
   const resizedWidths = (widths: number[], start: number, count: number, delta: number): number[] =>
     resizeHeaderColumns(widths, headerConstraintsRef.current, start, count, delta)
 
@@ -1012,7 +1064,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
     if (!columnWidths) {
       const minimum = headerConstraintsRef.current.find(constraint => constraint.start === 0 && constraint.count === 1)?.minimum
       if (minimum !== undefined) {
-        const defaults = defaultRowCounterWidth(widths, minimum)
+        const defaults = file ? importedContentWidths(defaultRowCounterWidth(widths, minimum)) : defaultRowCounterWidth(widths, minimum)
         setColumnWidths(defaults)
         setSaveBaseline(previous => previous.columnWidths === null && previous.sheets === sheetsRef.current
           ? { ...previous, columnWidths: defaults } : previous)
@@ -1182,8 +1234,8 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
       <div className="flex h-full flex-col">
         <div className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-4 bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] px-6 py-4 text-white">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-xl font-bold tracking-tight text-white">Department Schedule Workbook</h2>
-            <p className="mt-0.5 truncate text-xs font-medium text-white/80" title={file?.name ?? (storedFileName || 'New workbook')}>{file?.name ?? (storedFileName || 'New workbook')}</p>
+            <h2 id={titleId} className="text-xl font-bold tracking-tight text-white">{term ? `School Year ${term.academicYear} · ${term.semester === 'sem1' ? '1st' : '2nd'} Semester` : 'Department Schedule Workbook'}</h2>
+            <p className="mt-0.5 truncate text-xs font-medium text-white/80">{departmentName || term?.departmentCode || 'Department'}</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
             {sheets.length > 1 && (
@@ -1304,6 +1356,7 @@ export function DepartmentScheduleImportModal({ onClose, term, readOnly = false 
             {fileMenuOpen && <div id={fileMenuId} role="menu" aria-label="Import or export schedule" className="absolute bottom-full left-0 z-50 mb-2 w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
               <button type="button" role="menuitem" disabled={readOnly} onClick={() => { closeFileMenu(); fileInputRef.current?.click() }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><UploadIcon className="h-4 w-4" />Import XLSX</button>
               <button type="button" role="menuitem" disabled={!sheets.length} onClick={exportWorkbook} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><DownloadIcon className="h-4 w-4" />Export XLSX</button>
+              <button type="button" role="menuitem" onClick={downloadTemplate} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]"><DownloadIcon className="h-4 w-4" />DL Template</button>
             </div>}
           </div>
           <div className="min-w-0 flex-1 text-sm">

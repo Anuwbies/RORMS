@@ -725,6 +725,7 @@ function MyDepartmentPage() {
 
       {isImportScheduleModalOpen && departmentInfo && selectedAcademicYear?.id && selectedAcademicYear?.academicYear && selectedSemesterPhase && <DepartmentScheduleImportModal
         key={`${departmentInfo.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
+        departmentName={departmentInfo.name}
         term={{ departmentId: departmentInfo.id, departmentCode: departmentInfo.code,
           academicYearId: selectedAcademicYear.id, academicYear: selectedAcademicYear.academicYear,
           semester: semesterKey(selectedSemesterPhase.name), membershipId: currentUserMembership?.id || '' }}
