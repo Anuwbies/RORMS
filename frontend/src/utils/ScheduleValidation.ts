@@ -133,7 +133,7 @@ export function parallelRoomConnectionIssue(assignments: readonly FacultySubject
     && position.floor === first.floor && position.prefix === first.prefix && position.suffix === first.suffix)
   const numbers = positions.map(position => position?.number ?? NaN).sort((a, b) => a - b)
   if (sameLocation && numbers.every((number, index) => index === 0 || number === numbers[index - 1] + 1)) return
-  return `Parallel classes must use separate, consecutive rooms in the same building and floor. Assigned rooms: ${resolved.map(room => room.code || room.name).join(' / ')}.`
+  return 'Parallel classes must use separate, consecutive rooms in the same building and floor.'
 }
 
 export function facultyScheduleOverlap(a: FacultySubjectAssignment, b: FacultySubjectAssignment) {
@@ -383,6 +383,9 @@ export function validateDepartmentFacultyScheduleRows(rows: readonly WorkbookSch
   for (const issue of validateOtherDepartmentRoomAssignments(assignments, directory.externalRoomAssignments ?? [])) {
     messages.set(issue.location, [...(messages.get(issue.location) ?? []), issue.message])
   }
+  for (const issue of validateParallelMeetingSlots(rows)) {
+    messages.set(issue.location, [...(messages.get(issue.location) ?? []), issue.message])
+  }
   for (const row of rows) {
     const location = facultyScheduleRowKey(row.sourceSheet, row.sourceRow)
     const issues = new Set(messages.get(location) ?? [])
@@ -402,6 +405,47 @@ export function validateDepartmentFacultyScheduleRows(rows: readonly WorkbookSch
     if (issues.size) messages.set(location, [...issues])
   }
   return messages
+}
+
+/** Compare candidate parallel sections even when a changed time excludes them from room grouping. */
+function validateParallelMeetingSlots(rows: readonly WorkbookScheduleRow[]): TemplateIssue[] {
+  const issues: TemplateIssue[] = []
+  const bySheet = new Map<string, WorkbookScheduleRow[]>()
+  for (const row of rows) bySheet.set(row.sourceSheet, [...(bySheet.get(row.sourceSheet) ?? []), row])
+  for (const sheetRows of bySheet.values()) {
+    const candidates = scheduleParallelGroups(sheetRows.map(row => ({ row: row.sourceRow,
+      year: row.yearLevel >= 1 && row.yearLevel <= 4 ? row.yearLevel as ScheduleRecord['year'] : undefined,
+      values: row.rawValues })), false)
+    const groups = new Map<number, WorkbookScheduleRow[]>()
+    for (const row of sheetRows) {
+      const anchor = candidates.get(row.sourceRow)
+      if (anchor !== undefined) groups.set(anchor, [...(groups.get(anchor) ?? []), row])
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue
+      for (const format of ['Lec', 'Lab'] as const) {
+        const slots = group.map(row => row.meetings.filter(meeting => meeting.format === format).map(meeting => ({
+          time: meeting.startTime && meeting.endTime ? `${meeting.startTime}-${meeting.endTime}` : meeting.time.trim().toUpperCase().replace(/\s+/g, ''),
+          day: meeting.days.length ? meeting.days.join('/') : meeting.day.trim().toUpperCase().replace(/\s+/g, ''),
+        })))
+        const signatures = (field: 'time' | 'day') => slots.map(meetings => meetings.map(meeting => meeting[field]).sort().join('|'))
+        const times = signatures('time'), days = signatures('day')
+        const mismatchedTimes = times.some(value => value !== times[0])
+        const mismatchedDays = days.some(value => value !== days[0])
+        const pairs = slots.map(meetings => meetings.map(meeting => `${meeting.time}|${meeting.day}`).sort().join(';'))
+        const mismatchedPairs = pairs.some(value => value !== pairs[0])
+        const problems = [
+          ...(mismatchedTimes ? [`Parallel ${format} times must match across all sections.`] : []),
+          ...(mismatchedDays ? [`Parallel ${format} days must match across all sections.`] : []),
+          ...(!mismatchedTimes && !mismatchedDays && mismatchedPairs ? [`Parallel ${format} times and days must be paired the same way across all sections.`] : []),
+        ]
+        for (const row of group) for (const message of problems) {
+          issues.push({ severity: 'warning', location: facultyScheduleRowKey(row.sourceSheet, row.sourceRow), message })
+        }
+      }
+    }
+  }
+  return issues
 }
 
 export function departmentFacultyScheduleAssignments(rows: readonly WorkbookScheduleRow[], directory: ScheduleDirectory,
@@ -610,7 +654,7 @@ export function parseExcelScheduleDays(text: string): string[] {
   return DAY_ORDER.filter(day => days.includes(day))
 }
 
-export function scheduleParallelGroups(records: readonly ScheduleRecord[]): ReadonlyMap<number, number> {
+export function scheduleParallelGroups(records: readonly ScheduleRecord[], requireMatchingTimes = true): ReadonlyMap<number, number> {
   const parallelGroups = new Map<number, number>()
   let parallel: { id: number; year: ScheduleRecord['year']; subject: string; course: string; times: readonly (readonly ScheduleTimeEntry[])[] } | undefined
   let previousRow = -1
@@ -625,7 +669,7 @@ export function scheduleParallelGroups(records: readonly ScheduleRecord[]): Read
     const sameTimes = groupTimes && times.every((entries, offset) => entries.length === groupTimes[offset].length
       && entries.every(({ time }, index) => time?.start === groupTimes[offset][index].time?.start && time?.end === groupTimes[offset][index].time?.end))
     // A changed Lec or Lab time ends inheritance, even if a later row returns to the original time.
-    if (!record.year || !subject || record.row !== previousRow + 1 || parallel?.year !== record.year || parallel?.subject !== subject || course && parallel?.course && course !== parallel.course || !sameTimes) parallel = undefined
+    if (!record.year || !subject || record.row !== previousRow + 1 || parallel?.year !== record.year || parallel?.subject !== subject || course && parallel?.course && course !== parallel.course || requireMatchingTimes && !sameTimes) parallel = undefined
     previousRow = record.row
     if (!record.year) continue
     if (college === 'PARALLEL' && subject) {

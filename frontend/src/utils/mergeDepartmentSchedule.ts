@@ -21,12 +21,13 @@ function sameStructure(first: ScheduleContent, second: ScheduleContent): boolean
 export function mergeDepartmentSchedule(base: ScheduleContent, local: ScheduleContent, remote: ScheduleContent) {
   const changed = (value: ScheduleContent, before: ScheduleContent) => hasDepartmentScheduleChanges(
     { ...before, file: null, persisted: true }, value.sheets, value.columnWidths, null)
-  if (!changed(local, base)) return { ...remote, conflicts: 0, structuralConflict: false }
-  if (!changed(local, remote)) return { ...remote, conflicts: 0, structuralConflict: false }
-  if (!changed(remote, base)) return { ...local, conflicts: 0, structuralConflict: false }
-  if (!sameStructure(base, local) || !sameStructure(base, remote)) return { ...local, conflicts: 0, structuralConflict: true }
+  if (!changed(local, base)) return { ...remote, conflicts: 0, conflictingCells: [], structuralConflict: false }
+  if (!changed(local, remote)) return { ...remote, conflicts: 0, conflictingCells: [], structuralConflict: false }
+  if (!changed(remote, base)) return { ...local, conflicts: 0, conflictingCells: [], structuralConflict: false }
+  if (!sameStructure(base, local) || !sameStructure(base, remote)) return { ...local, conflicts: 0, conflictingCells: [], structuralConflict: true }
 
   let conflicts = 0
+  const conflictingCells: { sheet: number; row: number; column: number; remoteValue: string }[] = []
   const merge = <T>(before: T, ours: T, theirs: T): T => {
     if (Object.is(ours, before)) return theirs
     if (!Object.is(theirs, before) && !Object.is(ours, theirs)) conflicts++
@@ -36,7 +37,14 @@ export function mergeDepartmentSchedule(base: ScheduleContent, local: ScheduleCo
     const before = base.sheets[index], ours = local.sheets[index]
     return { ...sheet,
       rows: sheet.rows.map((row, rowIndex) => ({ ...row,
-        values: row.values.map((value, column) => merge(before.rows[rowIndex].values[column], ours.rows[rowIndex].values[column], value)),
+        values: row.values.map((value, column) => {
+          const original = before.rows[rowIndex].values[column]
+          const localValue = ours.rows[rowIndex].values[column]
+          if (localValue !== original && value !== original && localValue !== value) {
+            conflictingCells.push({ sheet: index, row: row.rowNumber, column, remoteValue: value })
+          }
+          return merge(original, localValue, value)
+        }),
       })),
       yearSections: sheet.yearSections?.map((section, sectionIndex) => ({ ...section,
         label: merge(before.yearSections![sectionIndex].label, ours.yearSections![sectionIndex].label, section.label),
@@ -54,5 +62,5 @@ export function mergeDepartmentSchedule(base: ScheduleContent, local: ScheduleCo
     && base.columnWidths.length === local.columnWidths.length && base.columnWidths.length === remote.columnWidths.length) {
     columnWidths = remote.columnWidths.map((value, index) => merge(base.columnWidths![index], local.columnWidths![index], value))
   } else { columnWidths = local.columnWidths; conflicts++ }
-  return { sheets, columnWidths, conflicts, structuralConflict: false }
+  return { sheets, columnWidths, conflicts, conflictingCells, structuralConflict: false }
 }

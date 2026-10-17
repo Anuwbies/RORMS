@@ -23,7 +23,7 @@ import { createDepartmentScheduleExport } from '../utils/departmentScheduleExpor
 import { loadDepartmentScheduleDirectory, subscribeDepartmentRoomSchedules } from '../services/departmentScheduleRows'
 import type { ScheduleDirectory } from '../utils/excelScheduleRows'
 import { parseDepartmentScheduleImportRows, extractDepartmentScheduleImportRows } from '../utils/departmentScheduleImportRows'
-import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, scheduleMeetingNeedsRecommendation, scheduleValidationTone, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
+import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, isScheduleTbaNotice, scheduleMeetingNeedsRecommendation, scheduleValidationTone, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
 import { useExcelValidationTooltip } from './ExcelValidationTooltip'
 import { loadDepartmentCourseSuggestions } from '../services/firestoreDepartmentCourses'
 import type { DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
@@ -50,9 +50,26 @@ const DATA_COLUMN_LABELS = DISPLAY_HEADER_GROUPS.flatMap(group => group.children
   ? group.children.map((label, index) => `${group.label} ${label} ${index + 1}`)
   : [group.label])
 const EMPTY_ROWS: DepartmentScheduleImportRow[] = []
+const VALIDATION_GROUPS = ['Duplicate subject', 'Instructor overlap', 'Room overlap', 'Parallel', 'TBA', 'Faculty', 'Room', 'Course', 'Invalid input', 'Other'] as const
+type ValidationGroup = typeof VALIDATION_GROUPS[number]
+
+function validationGroup(message: string): ValidationGroup {
+  if (isScheduleTbaNotice(message)) return 'TBA'
+  if (message.startsWith('Duplicate Subject ')) return 'Duplicate subject'
+  if (message.includes(' is also using Room ') || message.startsWith('Room ') && message.includes(' is also assigned on ')) return 'Room overlap'
+  if (message.includes(' is also assigned on ')) return 'Instructor overlap'
+  if (message.startsWith('Parallel ') || /^All \d+ parallel sections/.test(message)) return 'Parallel'
+  if (message.startsWith('Room ')) return 'Room'
+  if (message.includes(' is not an active member of ')) return 'Faculty'
+  if (message.startsWith('Code ') || message.startsWith('Descriptive title ')) return 'Course'
+  if (message.includes(' is not a valid ')) return 'Invalid input'
+  return 'Other'
+}
 
 export function DepartmentScheduleImportModal({ onClose, term, departmentName, readOnly = false }: DepartmentScheduleImportModalProps) {
   const titleId = useId()
+  const closeConfirmationTitleId = useId()
+  const closeConfirmationDescriptionId = useId()
   const [file, setFile] = useState<File | null>(null)
   const [initialWorkbook] = useState(() => {
     const sheets = [createEmptyDepartmentScheduleSheet()]
@@ -68,6 +85,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
   const scrollRef = useRef<HTMLDivElement>(null)
   const resizeFrameRef = useRef<number | null>(null)
   const historyRef = useRef(new CellTextHistory())
+  const mergedCellValuesRef = useRef(new Map<string, string>())
   const historyTimerRef = useRef<number | null>(null)
   const copiedCellsRef = useRef<{ cells: ScheduleCellClipboard; text: string } | null>(null)
   const copiedRowsRef = useRef<{ rows: ScheduleRowClipboard; text: string } | null>(null)
@@ -86,6 +104,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
   const [selection, setSelection] = useState<ColumnCellSelection | null>(null)
   const [loading, setLoading] = useState(Boolean(term))
   const [saving, setSaving] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
   const [cellEditing, setCellEditing] = useState(false)
   const [resizing, setResizing] = useState(false)
   const [mergeBlocked, setMergeBlocked] = useState(false)
@@ -98,6 +117,11 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     [saveBaseline, sheets, columnWidths, file])
   const hasLocalEdits = useMemo(() => hasDepartmentScheduleChanges({ ...saveBaseline, persisted: true }, sheets, columnWidths, file),
     [saveBaseline, sheets, columnWidths, file])
+  const requestClose = () => {
+    if (savingRef.current) return
+    if (hasUnsavedChanges) setConfirmClose(true)
+    else onClose()
+  }
   const savingRef = useRef(false)
   const savedRef = useRef<SavedFirestoreDepartmentWorkbook | null>(null)
   const storedStateRef = useRef<Pick<DepartmentScheduleWorkbookState, 'snapshot' | 'ownedNames'> | undefined>(undefined)
@@ -114,6 +138,13 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
   const [validationDirectory, setValidationDirectory] = useState<ScheduleDirectory | null>(null)
   const [validationError, setValidationError] = useState('')
   const [validationMessages, setValidationMessages] = useState<ReadonlyMap<string, readonly string[]>>(new Map())
+  const [highlightedValidationGroups, setHighlightedValidationGroups] = useState<ReadonlySet<ValidationGroup>>(new Set())
+  const validationCounts = useMemo(() => {
+    const counts = Object.fromEntries(VALIDATION_GROUPS.map(group => [group, 0])) as Record<ValidationGroup, number>
+    for (const messages of validationMessages.values()) for (const message of messages) counts[validationGroup(message)]++
+    return counts
+  }, [validationMessages])
+  const validationIssueCount = VALIDATION_GROUPS.reduce((count, group) => count + validationCounts[group], 0)
   const [rowStatuses, setRowStatuses] = useState<ReadonlyMap<string, string>>(new Map())
   const [statusesReady, setStatusesReady] = useState(!term)
   const roomAssignmentsRef = useRef<readonly FacultySubjectAssignment[]>([])
@@ -276,6 +307,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     setStorageError('')
     setStorageStatus('Opening saved workbook…')
     savedRef.current = null
+    mergedCellValuesRef.current.clear()
     roomAssignmentsRef.current = []
     storedStateRef.current = undefined
     setStoredFileName('')
@@ -337,6 +369,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     resizeRef.current = null
     headerConstraintsRef.current = []
     historyRef.current.reset()
+    mergedCellValuesRef.current.clear()
     if (historyTimerRef.current !== null) window.clearTimeout(historyTimerRef.current)
     historyTimerRef.current = null
     editSessionRef.current = null
@@ -378,6 +411,9 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     const messages = validationMessages.get(facultyScheduleRowKey(sheet?.name ?? '', row.rowNumber))
     return messages ? [[row.rowNumber, messages] as const] : []
   })), [visibleRows, sheet?.name, validationMessages])
+  const highlightedRows = useMemo(() => new Set([...rowIssues].filter(([, messages]) =>
+    messages.some(message => highlightedValidationGroups.has(validationGroup(message)))).map(([rowNumber]) => rowNumber)),
+  [rowIssues, highlightedValidationGroups])
   const { showValidationTooltip, hideValidationTooltip, validationTooltip } = useExcelValidationTooltip(
     range => rowIssues.get(visibleRows[range.s.r]?.rowNumber) ?? [],
     range => scheduleValidationTone(rowIssues.get(visibleRows[range.s.r]?.rowNumber) ?? []), dialogRef.current)
@@ -541,6 +577,20 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
         historyRef.current.recordMany(changes, value)
         applyCellValues(changes.map(change => ({ cell: change.cell, value })))
       }
+      if (session.hasTyped) {
+        const restored = [...session.originals, ...session.pairedOriginals].flatMap(original => {
+          const key = `${original.cell.sheet}:${original.cell.row}:${original.cell.column}`
+          const remoteValue = mergedCellValuesRef.current.get(key)
+          return remoteValue && !readCellValue(original.cell).trim()
+            ? [{ cell: original.cell, before: readCellValue(original.cell), after: remoteValue, key }]
+            : []
+        })
+        if (restored.length) {
+          historyRef.current.recordChanges(restored)
+          applyCellValues(restored.map(({ cell: target, after }) => ({ cell: target, value: after })))
+          restored.forEach(({ key }) => mergedCellValuesRef.current.delete(key))
+        }
+      }
     }
     editSessionRef.current = null
     setCellEditing(false)
@@ -559,6 +609,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     }
     if (resolution !== 'remote' && editSessionRef.current) finishCellEditing(editSessionRef.current.cell, true)
     let nextSheets = loaded.sheets, nextWidths = loaded.columnWidths, conflicts = 0
+    let conflictingCells: { sheet: number; row: number; column: number; remoteValue: string }[] = []
     if (resolution === 'merge') {
       const merged = mergeDepartmentSchedule({ sheets: [...saveBaseline.sheets], columnWidths: saveBaseline.columnWidths ? [...saveBaseline.columnWidths] : null },
         { sheets: sheetsRef.current, columnWidths }, loaded)
@@ -570,6 +621,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
       nextSheets = merged.sheets
       nextWidths = merged.columnWidths
       conflicts = merged.conflicts
+      conflictingCells = merged.conflictingCells
     } else if (resolution === 'local') {
       nextSheets = sheetsRef.current
       nextWidths = columnWidths
@@ -578,6 +630,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     const viewedIndex = nextSheets.findIndex(item => item.name === viewedName)
     flushTypingGroup()
     historyRef.current.reset()
+    mergedCellValuesRef.current = new Map(conflictingCells.map(cell => [`${cell.sheet}:${cell.row}:${cell.column}`, cell.remoteValue]))
     editSessionRef.current = null
     setCellEditing(false)
     selectionRef.current = null
@@ -653,6 +706,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
             : progress.stage === 'cleaning' ? 'Finishing save…' : 'Saving workbook…')
         } })
       savedRef.current = saved
+      mergedCellValuesRef.current.clear()
       storedStateRef.current = state
       setStoredFileName(saved.fileName)
       setSaveDuration(performance.now() - startedAt)
@@ -904,6 +958,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     const result = changeDepartmentScheduleRows(before, selection, action)
     const column = Math.max(0, selection.column)
     historyRef.current.recordStructure({ sheet: selection.sheet, row: result.sheet.rows[result.rowIndex].rowNumber, column }, before, result.sheet)
+    mergedCellValuesRef.current.clear()
     const next = [...sheetsRef.current]
     next[selection.sheet] = result.sheet
     sheetsRef.current = next
@@ -953,6 +1008,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     const result = changeDepartmentScheduleRows(before, { sheet: rowCountModal.sheet, column: -1, anchor: last, end: last }, 'add', count)
     flushTypingGroup()
     historyRef.current.recordStructure({ sheet: rowCountModal.sheet, row: result.sheet.rows[result.rowIndex].rowNumber, column: 0 }, before, result.sheet)
+    mergedCellValuesRef.current.clear()
     const next = [...sheetsRef.current]
     next[rowCountModal.sheet] = result.sheet
     sheetsRef.current = next
@@ -1191,7 +1247,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
-      onCancel={event => { event.preventDefault(); if (contextMenu) setContextMenu(null); else if (!savingRef.current) onClose() }}
+      onCancel={event => { event.preventDefault(); if (confirmClose) setConfirmClose(false); else if (contextMenu) setContextMenu(null); else requestClose() }}
       onScrollCapture={() => { if (contextMenu) setContextMenu(null) }}
       onContextMenu={event => {
         if (readOnly) { event.preventDefault(); return }
@@ -1231,13 +1287,37 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
       }}
       className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden rounded-none border-0 bg-white p-0 text-slate-900 backdrop:bg-black/50"
     >
-      <div className="flex h-full flex-col">
+      <div inert={confirmClose} className="flex h-full flex-col">
         <div className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-4 bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] px-6 py-4 text-white">
           <div className="min-w-0">
             <h2 id={titleId} className="text-xl font-bold tracking-tight text-white">{term ? `School Year ${term.academicYear} · ${term.semester === 'sem1' ? '1st' : '2nd'} Semester` : 'Department Schedule Workbook'}</h2>
             <p className="mt-0.5 truncate text-xs font-medium text-white/80">{departmentName || term?.departmentCode || 'Department'}</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
+            {validationDirectory ? <details className="relative">
+              <summary aria-live="polite" className="cursor-pointer list-none rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-sm font-semibold text-white">
+                {validationIssueCount} validation issue{validationIssueCount === 1 ? '' : 's'}
+              </summary>
+              <div className="absolute right-0 top-full z-50 mt-2 min-w-56 rounded-xl border border-slate-200 bg-white p-3 text-slate-900 shadow-lg">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">By type</p>
+                {validationIssueCount ? <ul className="space-y-1 text-sm">
+                  {VALIDATION_GROUPS.filter(group => validationCounts[group] > 0).map(group => <li key={group}>
+                    <button type="button" aria-pressed={highlightedValidationGroups.has(group)}
+                      onClick={() => setHighlightedValidationGroups(previous => {
+                        const next = new Set(previous)
+                        if (next.has(group)) next.delete(group)
+                        else next.add(group)
+                        return next
+                      })}
+                      className={`flex w-full items-center justify-between gap-6 rounded-md px-2 py-1 text-left hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-amber-500 ${highlightedValidationGroups.has(group) ? 'bg-amber-100 text-amber-950' : ''}`}>
+                      <span>{group}</span><span className="font-semibold tabular-nums">{validationCounts[group]}</span>
+                    </button>
+                  </li>)}
+                </ul> : <p className="text-sm text-slate-600">No validation issues.</p>}
+              </div>
+            </details> : <span role="status" className="rounded-lg border border-white/30 bg-white/15 px-3 py-2 text-sm font-semibold text-white">
+              {validationError ? 'Validation unavailable' : 'Checking validation…'}
+            </span>}
             {sheets.length > 1 && (
               <select aria-label="Worksheet" disabled={loading || saving} value={selectedSheet} onChange={event => { setSelectedSheet(Number(event.target.value)); changeSelection(null) }} className="min-w-0 max-w-40 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
                 {sheets.map((item, index) => <option key={item.name} value={index}>{item.name}</option>)}
@@ -1252,7 +1332,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
               onChange={event => {
                 const selected = event.target.files?.[0]
                 event.target.value = ''
-                if (selected) setFile(selected)
+                if (selected) { setHighlightedValidationGroups(new Set()); setFile(selected) }
               }}
             />
           </div>
@@ -1323,6 +1403,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
                   actions={cellActions}
                   hasSheet={Boolean(sheet)}
                   rowIssues={rowIssues}
+                  highlightedRows={highlightedRows}
                   rowStatuses={rowStatuses}
                   statusesReady={statusesReady}
                   sheetName={sheet?.name ?? ''}
@@ -1374,7 +1455,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
             {!loading && storageReady && <p role="status" aria-live="polite" className={`text-sm ${hasUnsavedChanges && !saving ? 'text-amber-700' : 'text-slate-500'}`}>
               {saving ? 'Saving…' : hasUnsavedChanges ? 'Unsaved changes' : saveDuration === null ? 'Saved' : `Saved in ${(saveDuration / 1000).toFixed(1)}s`}
             </p>}
-            <Button type="button" variant="outline" disabled={saving} onClick={onClose}>Close</Button>
+            <Button type="button" variant="outline" disabled={saving} onClick={requestClose}>Close</Button>
             <Button type="button" variant="brand" disabled={!term || readOnly || loading || saving || !storageReady || !sheets.length || Boolean(pendingLiveUpdate)} onClick={() => { void saveWorkbook() }}>{saving ? 'Saving…' : 'Save'}</Button>
           </div>
         </footer>
@@ -1421,6 +1502,29 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
         </div>
       )}
       {rowCountModal && <ScheduleRowCountModal yearLabel={rowCountModal.label} onClose={closeRowCountModal} onAdd={addYearRows} />}
+      {confirmClose && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            event.preventDefault()
+            event.stopPropagation()
+            setConfirmClose(false)
+          } else if (event.key === 'Tab') {
+            const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button'))
+            const current = buttons.indexOf(document.activeElement as HTMLButtonElement)
+            if (event.shiftKey && current === 0) { event.preventDefault(); buttons[buttons.length - 1]?.focus() }
+            else if (!event.shiftKey && current === buttons.length - 1) { event.preventDefault(); buttons[0]?.focus() }
+          }
+        }}>
+        <div role="alertdialog" aria-modal="true" aria-labelledby={closeConfirmationTitleId} aria-describedby={closeConfirmationDescriptionId}
+          className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl">
+          <h3 id={closeConfirmationTitleId} className="text-lg font-semibold">Discard unsaved changes?</h3>
+          <p id={closeConfirmationDescriptionId} className="mt-2 text-sm text-slate-600">Your changes to this workbook will be lost if you close it now.</p>
+          <div className="mt-6 flex gap-3">
+            <Button type="button" variant="outline" className="min-w-0 flex-1" autoFocus onClick={() => setConfirmClose(false)}>Keep editing</Button>
+            <Button type="button" variant="brand" className="min-w-0 flex-1" onClick={onClose}>Discard changes</Button>
+          </div>
+        </div>
+      </div>}
     </dialog>, document.body,
   )
 }

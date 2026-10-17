@@ -53,11 +53,14 @@ interface EditableScheduleCellProps extends ScheduleSuggestionProps {
   rowSelected: boolean
   selectionTop: boolean
   selectionBottom: boolean
+  issueHighlighted?: boolean
+  issueHighlightTop?: boolean
+  issueHighlightBottom?: boolean
   actions: WorkbookCellActions
   validationMessage?: string
 }
 
-export const EditableScheduleCell = memo(function EditableScheduleCell({ value, editable = true, label, sheetIndex, rowNumber, rowIndex, column, selected, rowSelected, selectionTop, selectionBottom, actions, validationMessage, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel = 0 }: EditableScheduleCellProps) {
+export const EditableScheduleCell = memo(function EditableScheduleCell({ value, editable = true, label, sheetIndex, rowNumber, rowIndex, column, selected, rowSelected, selectionTop, selectionBottom, issueHighlighted = false, issueHighlightTop = false, issueHighlightBottom = false, actions, validationMessage, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel = 0 }: EditableScheduleCellProps) {
   const cellRef = useRef<HTMLTableCellElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const activeRef = useRef(false)
@@ -159,6 +162,8 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
     finishEditing(true, true, value.slice(0, part.start) + name + value.slice(part.end))
   }
 
+  const outlineTop = issueHighlighted ? issueHighlightTop : selectionTop
+  const outlineBottom = issueHighlighted ? issueHighlightBottom : selectionBottom
   return (
     <td
       ref={cellRef}
@@ -170,8 +175,8 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
       data-row-index={rowIndex}
       aria-selected={selected}
       tabIndex={editing ? -1 : 0}
-      className={`relative max-w-0 border-r border-b border-slate-300 px-3 py-2 ${selected
-        ? `bg-[#62853e]/15 outline-none after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:-bottom-px ${rowSelected ? 'after:-right-px after:z-[1] last:after:right-0 last:after:border-r-2' : 'after:border-x-2'} after:border-[var(--brand-color)] ${selectionTop ? 'after:border-t-2' : ''} ${selectionBottom ? 'after:border-b-2' : ''}`
+      className={`relative max-w-0 border-r border-b border-slate-300 px-3 py-2 ${selected || issueHighlighted
+        ? `${selected ? 'bg-[#62853e]/15' : 'bg-amber-500/15'} outline-none after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:-bottom-px ${rowSelected || issueHighlighted ? 'after:-right-px after:z-[1] last:after:right-0 last:after:border-r-2' : 'after:border-x-2'} ${issueHighlighted ? 'after:border-amber-500' : 'after:border-[var(--brand-color)]'} ${outlineTop ? 'after:border-t-2' : ''} ${outlineBottom ? 'after:border-b-2' : ''}`
         : 'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--brand-color)] focus-within:outline-2 focus-within:-outline-offset-2 focus-within:outline-[var(--brand-color)]'}`}
       onPointerDown={event => { if (!editing) actions.startSelection(event, sheetIndex, column, rowIndex) }}
       onPointerMove={actions.moveSelection}
@@ -334,6 +339,9 @@ interface ScheduleRowProps extends ScheduleSuggestionProps {
   columnLabels: readonly string[]
   actions: ScheduleCellActions
   validationMessage?: string
+  highlighted: boolean
+  highlightTop: boolean
+  highlightBottom: boolean
   status: string
 }
 
@@ -418,14 +426,16 @@ const CollapsedYearRow = memo(function CollapsedYearRow({ label, start, sheetInd
   return <tr data-row-index={start}><EditableYearHeader initialLabel={label} rowSpan={1} endsTable collapsed renameRequest={renameRequest} onRename={renameYear} /></tr>
 })
 
-const ScheduleRow = memo(function ScheduleRow({ row, editableCollege, rowIndex, yearEndsTable, yearLabel, yearSourceLabel, yearRowSpan, displayRowNumber, renameRequest, sheetIndex, selectedColumn, selectionTop, selectionBottom, columnLabels, actions, validationMessage, status, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel }: ScheduleRowProps) {
+const ScheduleRow = memo(function ScheduleRow({ row, editableCollege, rowIndex, yearEndsTable, yearLabel, yearSourceLabel, yearRowSpan, displayRowNumber, renameRequest, sheetIndex, selectedColumn, selectionTop, selectionBottom, columnLabels, actions, validationMessage, highlighted, highlightTop, highlightBottom, status, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel }: ScheduleRowProps) {
   const renameYear = useCallback((label: string) => actions.renameYear(sheetIndex, rowIndex, label), [actions, sheetIndex, rowIndex])
   const tone = scheduleValidationTone(validationMessage?.split('\n') ?? [])
   const rowColor = tone === 'blue' ? 'bg-blue-100 text-blue-900' : tone === 'purple' ? 'bg-purple-100 text-purple-900' : 'bg-rose-100 text-rose-900'
   const counterText = tone === 'blue' ? 'text-blue-900' : tone === 'purple' ? 'text-purple-900' : 'text-rose-900'
   const counterBackground = tone === 'blue' ? 'bg-blue-100' : tone === 'purple' ? 'bg-purple-100' : 'bg-rose-100'
+  const rowOutlineTop = highlighted ? highlightTop : selectionTop
+  const rowOutlineBottom = highlighted ? highlightBottom : selectionBottom
   return (
-    <tr data-row-index={rowIndex} aria-invalid={validationMessage ? true : undefined} className={`${validationMessage ? rowColor : rowIndex % 2 === 1 ? 'bg-slate-50' : ''} ${rowIndex > 0 && yearLabel !== undefined ? '[&>th]:border-t [&>td]:border-t' : ''}`}>
+    <tr data-row-index={rowIndex} data-issue-highlighted={highlighted || undefined} aria-invalid={validationMessage ? true : undefined} className={`${validationMessage ? rowColor : rowIndex % 2 === 1 ? 'bg-slate-50' : ''} ${rowIndex > 0 && yearLabel !== undefined ? '[&>th]:border-t [&>td]:border-t' : ''}`}>
       {yearLabel !== undefined && yearLabel !== '' && (
         <EditableYearHeader initialLabel={yearLabel} sourceLabel={yearSourceLabel} rowSpan={yearRowSpan} endsTable={yearEndsTable} renameRequest={renameRequest} onRename={renameYear} />
       )}
@@ -438,8 +448,8 @@ const ScheduleRow = memo(function ScheduleRow({ row, editableCollege, rowIndex, 
         aria-label={`Select row ${displayRowNumber}${validationMessage ? `. ${validationMessage}` : ''}`}
         aria-invalid={validationMessage ? true : undefined}
         aria-selected={selectedColumn === -1}
-        className={`sticky left-[var(--schedule-year-width,3rem)] z-[4] whitespace-nowrap border-r border-b border-black px-3 py-2 font-normal ${validationMessage ? counterText : 'text-slate-500'} ${selectedColumn === -1
-          ? `bg-[#e7eddf] outline-none after:pointer-events-none after:absolute after:left-0 after:-right-px after:top-0 after:-bottom-px after:z-[1] after:border-l-2 after:border-[var(--brand-color)] ${selectionTop ? 'after:border-t-2' : ''} ${selectionBottom ? 'after:border-b-2' : ''}`
+        className={`sticky left-[var(--schedule-year-width,3rem)] z-[4] whitespace-nowrap border-r border-b border-black px-3 py-2 font-normal ${validationMessage ? counterText : 'text-slate-500'} ${selectedColumn === -1 || highlighted
+          ? `${selectedColumn === -1 ? 'bg-[#e7eddf]' : 'bg-amber-100'} outline-none after:pointer-events-none after:absolute after:left-0 after:-right-px after:top-0 after:-bottom-px after:z-[1] after:border-l-2 ${highlighted ? 'after:border-amber-500' : 'after:border-[var(--brand-color)]'} ${rowOutlineTop ? 'after:border-t-2' : ''} ${rowOutlineBottom ? 'after:border-b-2' : ''}`
           : `${validationMessage ? counterBackground : rowIndex % 2 === 1 ? 'bg-slate-50' : 'bg-white'} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand-color)]`}`}
         onPointerDown={event => actions.startSelection(event, sheetIndex, -1, rowIndex)}
         onPointerMove={actions.moveSelection}
@@ -465,6 +475,9 @@ const ScheduleRow = memo(function ScheduleRow({ row, editableCollege, rowIndex, 
           rowSelected={selectedColumn === -1}
           selectionTop={(selectedColumn === column || selectedColumn === -1) && selectionTop}
           selectionBottom={(selectedColumn === column || selectedColumn === -1) && selectionBottom}
+          issueHighlighted={highlighted}
+          issueHighlightTop={highlightTop}
+          issueHighlightBottom={highlightBottom}
           actions={actions}
           validationMessage={validationMessage}
           suggestionDirectory={suggestionDirectory}
@@ -481,8 +494,8 @@ const ScheduleRow = memo(function ScheduleRow({ row, editableCollege, rowIndex, 
         aria-label={`${status ? `Schedule status: ${status}` : 'No schedule status'}${validationMessage ? `. ${validationMessage}` : ''}`}
         aria-readonly="true"
         aria-selected={selectedColumn === 21 || selectedColumn === -1}
-        className={`relative max-w-0 border-r border-b border-slate-300 px-3 py-2 ${selectedColumn === 21 || selectedColumn === -1
-          ? `bg-[#62853e]/15 outline-none after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:-bottom-px ${selectedColumn === -1 ? 'after:-right-px after:z-[1] last:after:right-0 last:after:border-r-2' : 'after:border-x-2'} after:border-[var(--brand-color)] ${selectionTop ? 'after:border-t-2' : ''} ${selectionBottom ? 'after:border-b-2' : ''}`
+        className={`relative max-w-0 border-r border-b border-slate-300 px-3 py-2 ${selectedColumn === 21 || selectedColumn === -1 || highlighted
+          ? `${selectedColumn === 21 || selectedColumn === -1 ? 'bg-[#62853e]/15' : 'bg-amber-500/15'} outline-none after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:-bottom-px ${selectedColumn === -1 || highlighted ? 'after:-right-px after:z-[1] last:after:right-0 last:after:border-r-2' : 'after:border-x-2'} ${highlighted ? 'after:border-amber-500' : 'after:border-[var(--brand-color)]'} ${rowOutlineTop ? 'after:border-t-2' : ''} ${rowOutlineBottom ? 'after:border-b-2' : ''}`
           : 'focus:outline-2 focus:-outline-offset-2 focus:outline-[var(--brand-color)]'}`}
         onPointerDown={event => actions.startSelection(event, sheetIndex, 21, rowIndex)}
         onPointerMove={actions.moveSelection}
@@ -508,15 +521,19 @@ interface DepartmentScheduleImportTableBodyProps extends ScheduleSuggestionProps
   actions: ScheduleCellActions
   hasSheet: boolean
   rowIssues?: ReadonlyMap<number, readonly string[]>
+  highlightedRows?: ReadonlySet<number>
   rowStatuses?: ReadonlyMap<string, string>
   statusesReady: boolean
   sheetName: string
 }
 
-export const DepartmentScheduleImportTableBody = memo(function DepartmentScheduleImportTableBody({ rows, yearSections, yearRenameRequest, sheetIndex, selection, columnLabels, actions, hasSheet, rowIssues, rowStatuses, statusesReady, sheetName, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError }: DepartmentScheduleImportTableBodyProps) {
+export const DepartmentScheduleImportTableBody = memo(function DepartmentScheduleImportTableBody({ rows, yearSections, yearRenameRequest, sheetIndex, selection, columnLabels, actions, hasSheet, rowIssues, highlightedRows, rowStatuses, statusesReady, sheetName, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError }: DepartmentScheduleImportTableBodyProps) {
   const editableColleges = useMemo(() => scheduleEditableColleges(rows, yearSections), [rows, yearSections])
   const first = selection?.sheet === sheetIndex ? Math.min(selection.anchor, selection.end) : -1
   const last = selection?.sheet === sheetIndex ? Math.max(selection.anchor, selection.end) : -1
+  const isRowSelected = (index: number) => selection?.sheet === sheetIndex && selection.column === -1 && index >= first && index <= last
+  const hasIssueOutline = (index: number) => index >= 0 && index < rows.length
+    && Boolean(highlightedRows?.has(rows[index].rowNumber)) && !isRowSelected(index)
   let sectionIndex = 0
   return (
     <tbody>
@@ -525,6 +542,7 @@ export const DepartmentScheduleImportTableBody = memo(function DepartmentSchedul
         const section = yearSections?.[sectionIndex] ?? { label: '', start: 0, count: rows.length }
         if (section.hidden && index !== section.start) return null
         const selected = index >= first && index <= last
+        const highlighted = hasIssueOutline(index)
         return <Fragment key={row.rowNumber}>
           {index > 0 && index === section.start && (
             <tr aria-hidden="true"><td colSpan={24} className="h-[calc((1lh_+_1rem_+_1px)/2)] border-0 bg-white p-0" /></tr>
@@ -552,6 +570,9 @@ export const DepartmentScheduleImportTableBody = memo(function DepartmentSchedul
             columnLabels={columnLabels}
             actions={actions}
             validationMessage={rowIssues?.get(row.rowNumber)?.join('\n') || undefined}
+            highlighted={highlighted}
+            highlightTop={highlighted && (index === section.start || !hasIssueOutline(index - 1))}
+            highlightBottom={highlighted && (index === section.start + section.count - 1 || !hasIssueOutline(index + 1))}
             status={rowStatuses?.get(facultyScheduleRowKey(sheetName, row.rowNumber)) ?? (statusesReady && row.values.slice(1).some(value => value.trim()) ? 'Draft' : '')}
             suggestionDirectory={suggestionDirectory}
             suggestionError={suggestionError}
