@@ -8,6 +8,7 @@ import LeftSidebarController from './pages/LeftSidebarController'
 import EmailVerificationPage from './pages/EmailVerificationPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
+import { clearAuthSessionMode, hasExpiredAuthSession } from './utils/authSession'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -63,6 +64,17 @@ function App() {
       if (user) {
         setLoading(true)
         setSessionError(null)
+        if (hasExpiredAuthSession()) {
+          clearAuthSessionMode()
+          try {
+            await auth.signOut()
+          } catch (error) {
+            console.error('Error ending expired browser session:', error)
+            setSessionError('Unable to end your expired session. Please sign in again.')
+            setLoading(false)
+          }
+          return
+        }
         let blocked = false
         let profileReady = false
         const isCurrentSession = () => !disposed && generation === authGeneration && auth.currentUser?.uid === user.uid
@@ -81,7 +93,7 @@ function App() {
           window.history.replaceState({}, '', '/')
           unsubscribeProfile?.()
           unsubscribeProfile = undefined
-          void auth.signOut().catch(error => console.error('Error ending blocked session:', error))
+          void auth.signOut().then(clearAuthSessionMode).catch(error => console.error('Error ending blocked session:', error))
         }
 
         const userDocRef = doc(db, 'users', user.uid)
@@ -164,6 +176,7 @@ function App() {
       setIsResetPasswordMode(false)
       setJustSignedUp(false)
       await auth.signOut()
+      clearAuthSessionMode()
       setIsAuthenticated(false)
     } catch (error) {
       console.error('Error signing out:', error)

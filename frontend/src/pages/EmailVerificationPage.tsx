@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { auth, db } from '../firebase'
 import { sendEmailVerification, signOut, onAuthStateChanged } from 'firebase/auth'
+import { clearAuthSessionMode } from '../utils/authSession'
 import { LogOutIcon, CheckIcon, BellIcon, CheckCircleIcon, AlertCircleIcon } from '../components/Icons'
 import { Button } from '../components/Button'
 
@@ -102,6 +103,7 @@ export default function EmailVerificationPage({ onSignOut, isNewSignup = false }
       sessionStorage.removeItem('rorms_verification_cooldown')
       window.history.replaceState({}, '', '/')
       await signOut(auth)
+      clearAuthSessionMode()
       onSignOut()
     } catch (error) {
       console.error('Error signing out:', error)

@@ -3,10 +3,10 @@ import type { SyntheticEvent } from 'react'
 import { 
   signInWithEmailAndPassword, 
   setPersistence, 
-  browserLocalPersistence, 
-  browserSessionPersistence
+  browserLocalPersistence
 } from 'firebase/auth'
 import { auth } from '../firebase'
+import { clearAuthSessionMode, saveAuthSessionMode } from '../utils/authSession'
 import { Button } from '../components/Button'
 import { TextInput } from '../components/TextInput'
 import { ExclamationIcon } from '../components/Icons'
@@ -108,9 +108,9 @@ function SignInPage({ sessionError, onSignIn, onForgotPassword, currentSlide, on
     setError(null)
     
     try {
-      // Set persistence based on "Remember me" checkbox
-      const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence
-      await setPersistence(auth, persistence)
+      // Firebase's session persistence is tab-scoped; local persistence shares auth across tabs.
+      await setPersistence(auth, browserLocalPersistence)
+      saveAuthSessionMode(rememberMe)
 
       // App validates the profile before granting access and monitors it for deactivation.
       await signInWithEmailAndPassword(auth, email, password)
@@ -118,6 +118,7 @@ function SignInPage({ sessionError, onSignIn, onForgotPassword, currentSlide, on
       setAttempts(freshSignInAttempts())
       onSignIn()
     } catch (err: unknown) {
+      clearAuthSessionMode()
       console.error('Sign in error:', err)
       const code = err !== null && typeof err === 'object' && 'code' in err ? err.code : null
       if (['auth/invalid-email', 'auth/user-not-found', 'auth/wrong-password', 'auth/invalid-credential', 'auth/too-many-requests'].includes(String(code))) {
