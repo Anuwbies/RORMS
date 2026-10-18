@@ -122,18 +122,20 @@ test('four-room parallel recommendations fill distinct connected rooms and avoid
   const rooms = Array.from({ length: 8 }, (_, index) => ({
     id: `room-${index}`, code: `PTC ${401 + index}`, name: `PTC ${401 + index}`, buildingId: 'PTC', floor: 4,
   }))
-  const available = recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0)
+  const previous = [{ location: 'previous', rowKey: 'previous', code: '', section: '', roomId: 'room-0' }]
+  assert.equal(recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0).length, 0)
+  const available = recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0, [], rooms, previous)
   assert.ok(available.length > 0)
   assert.deepEqual(Array.from(available[0].rooms, entry => entry.room), ['PTC 401', 'PTC 402', 'PTC 403', 'PTC 404'])
   assert.deepEqual(Array.from(available[0].rooms, entry => entry.rowKey), assignments.map(assignment => assignment.rowKey))
   const occupied = [{ ...assignments[0], rowKey: 'outside', parallelGroup: undefined, room: 'PTC 402', roomId: 'room-1' }]
-  assert.ok(recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0, occupied)
+  assert.ok(recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0, occupied, rooms, previous)
     .every(option => option.rooms.every(entry => entry.room !== 'PTC 402')))
-  assert.ok(recommendParallelRoomGroups(assignments.slice(0, 3), rooms, 'row-2', 19, 0)
+  assert.ok(recommendParallelRoomGroups(assignments.slice(0, 3), rooms, 'row-2', 19, 0, [], rooms, previous)
     .every(option => option.rooms.length === 3))
   rooms[1].status = 'Maintenance'
   rooms[6].status = 'Unavailable'
-  const safe = recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0)
+  const safe = recommendParallelRoomGroups(assignments, rooms, 'row-2', 19, 0, [], rooms, previous)
   assert.ok(safe.length > 0)
   assert.ok(safe.every(option => option.rooms.every(entry => entry.room !== 'PTC 402' && entry.room !== 'PTC 407')))
 })

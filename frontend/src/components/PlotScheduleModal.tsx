@@ -3,7 +3,7 @@ import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightI
 import { db, auth } from '../firebase'
 import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../utils/scheduleMeetings'
 import { useScheduleRoomPlotting, type SchedulePlottingOptions } from '../hooks/useScheduleRoomPlotting'
-import { roomScheduleInstructor, roomScheduleLabel, roomScheduleRoom, roomScheduleSection, scheduleMatchesTerm } from '../utils/roomSchedule'
+import { previousScheduleTerm, roomScheduleInstructor, roomScheduleLabel, roomScheduleRoom, scheduleSectionLabel, scheduleMatchesTerm } from '../utils/roomSchedule'
 import { collection, query, onSnapshot } from 'firebase/firestore'
 import { Button } from './Button'
 import { ExtendedReservationBadge } from './ExtendedReservationBadge'
@@ -11,10 +11,10 @@ import { SingleSelectDropdown } from './SingleSelectDropdown'
 import { DatePicker } from './DatePicker'
 import { ExcelValidationTooltip } from './ExcelValidationTooltip'
 import { scheduleRoomOverlapMessages } from '../utils/scheduleRoomOverlaps'
-import { isProvidedScheduleRoom, schedulePlotSelectionKey } from '../utils/schedulePlotting'
+import { isProvidedScheduleRoom, plotSelectionDirectionLocked, schedulePlotSelectionKey } from '../utils/schedulePlotting'
 import { plotParallelRoomGroupRecommendations, plotRoomRecommendations, type PlotParallelRoomGroupOption } from '../utils/plotRoomRecommendations'
-import { parallelPlotCheckboxState, plotParallelGroup, plotParallelRoomMessages } from '../utils/plotParallelRooms'
-import { scheduleRoomStatusIssue } from '../utils/ScheduleValidation'
+import { parallelPlotCheckboxState, plotParallelGroup } from '../utils/plotParallelRooms'
+import { plotRoomValidationMessages } from '../utils/plotRoomValidation'
 import { toPng } from 'html-to-image'
 import jsPDF from 'jspdf'
 
@@ -161,14 +161,6 @@ const formatTime = (time: string) => {
   const suffix = hours >= 12 ? 'PM' : 'AM'
   const displayHours = hours % 12 || 12
   return `${displayHours}:${(m || '00').padStart(2, '0')} ${suffix}`
-}
-
-const scheduleSectionLabel = (schedule: { classSection?: string; course?: unknown; sourceKey?: unknown; yearLevel?: unknown }) => {
-  const section = roomScheduleSection(schedule)
-  const year = schedule.yearLevel
-  if (typeof schedule.sourceKey !== 'string' || typeof year !== 'number' || !Number.isInteger(year) || year <= 0) return section
-  const suffix = year % 100 >= 11 && year % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][year % 10] ?? 'th'
-  return `${year}${suffix} Year - ${section}`
 }
 
 const scheduleCardLabel = (schedule: Parameters<typeof roomScheduleLabel>[0] & { college?: unknown }) => {
@@ -417,41 +409,41 @@ export function PlotScheduleModal({
   const getMeetingStatus = (meeting: { status?: string }) => meeting.status || 'Draft'
 
   const proposedMeetings = useMemo<ScheduleMeetingRecord[]>(() => allSchedules.filter(meeting => scheduleMatchesTerm(meeting, selectedAcademicYear, selectedSemester))
-    .map(meeting => ({ ...meeting, roomId: roomPlot.pending.get(schedulePlotSelectionKey(meeting))?.roomId ?? meeting.roomId })),
-  [allSchedules, selectedAcademicYear, selectedSemester, roomPlot.pending])
-  const roomRecommendations = useMemo(() => roomPlot.enabled
-    ? plotRoomRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules) : new Map<string, readonly string[]>(),
-  [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled])
-  const parallelRoomRecommendations = useMemo(() => roomPlot.enabled
-    ? plotParallelRoomGroupRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules) : new Map<string, readonly PlotParallelRoomGroupOption[]>(),
-  [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled])
-  const parallelMessages = useMemo(() => plotParallelRoomMessages(proposedMeetings, roomPlot.rooms), [proposedMeetings, roomPlot.rooms])
-  const roomStatusMessages = useMemo(() => {
-    const rooms = new Map(roomPlot.rooms.map(room => [room.id, room]))
-    const messages = new Map<string, string[]>()
-    for (const meeting of proposedMeetings) {
-      const room = rooms.get(meeting.roomId ?? '')
-      const issue = room && scheduleRoomStatusIssue(room)
-      if (issue) messages.set(meeting.id, [issue])
-    }
-    return messages
-  }, [proposedMeetings, roomPlot.rooms])
+    .map(meeting => {
+      const pending = roomPlot.pending.get(schedulePlotSelectionKey(meeting))
+      return pending ? { ...meeting, roomId: pending.roomId,
+        room: pending.roomId ? roomPlot.labels.get(pending.roomId) || meeting.room : '' } : meeting
+    }),
+  [allSchedules, selectedAcademicYear, selectedSemester, roomPlot.pending, roomPlot.labels])
+  const previousTermMeetings = useMemo(() => {
+    const previous = previousScheduleTerm(selectedAcademicYear?.academicYear ?? '', selectedSemester)
+    if (!previous) return []
+    const year = academicYears.find(item => item.academicYear.replace(/\s/g, '').replace(/[–—]/g, '-')
+      === previous.academicYear.replace(/\s/g, '').replace(/[–—]/g, '-'))
+    return allSchedules.filter(meeting => {
+      const savedSemester = typeof meeting.semesterKey === 'string' && meeting.semesterKey ? meeting.semesterKey : meeting.semester
+      return Boolean((meeting.academicYearId || meeting.academicYear) && savedSemester && (meeting.roomId || meeting.room))
+        && scheduleMatchesTerm(meeting, year ?? { academicYear: previous.academicYear }, previous.semester)
+        && !['Return', 'Returned'].includes(meeting.status ?? '')
+    })
+  }, [allSchedules, academicYears, selectedAcademicYear, selectedSemester])
+  const roomValidationMessages = useMemo(() => roomPlot.enabled && roomPlot.ready
+    ? plotRoomValidationMessages(proposedMeetings, roomPlot.rooms, plotting?.departmentCode ?? '') : new Map<string, string[]>(),
+  [proposedMeetings, roomPlot.rooms, roomPlot.enabled, roomPlot.ready, plotting?.departmentCode])
+  const roomRecommendations = useMemo(() => roomPlot.enabled && roomPlot.ready
+    ? plotRoomRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules, roomValidationMessages, previousTermMeetings) : new Map<string, readonly string[]>(),
+  [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled, roomPlot.ready, roomValidationMessages, previousTermMeetings])
+  const parallelRoomRecommendations = useMemo(() => roomPlot.enabled && roomPlot.ready
+    ? plotParallelRoomGroupRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules, roomValidationMessages, previousTermMeetings) : new Map<string, readonly PlotParallelRoomGroupOption[]>(),
+  [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled, roomPlot.ready, roomValidationMessages, previousTermMeetings])
   const overlapMessages = useMemo(() => {
-    const messages = scheduleRoomOverlapMessages(proposedMeetings,
+    return roomPlot.enabled ? roomValidationMessages : scheduleRoomOverlapMessages(proposedMeetings,
       meeting => roomPlot.labels.get(meeting.roomId ?? '') || roomScheduleRoom(meeting, roomsMap))
-    for (const [id, issues] of parallelMessages) messages.set(id, [...(messages.get(id) ?? []), ...issues])
-    for (const [id, issues] of roomStatusMessages) messages.set(id, [...(messages.get(id) ?? []), ...issues])
-    return messages
-  }, [proposedMeetings, roomPlot.labels, roomsMap, parallelMessages, roomStatusMessages])
-  const parallelPlotError = proposedMeetings.find(meeting => parallelMessages.has(meeting.id)
+  }, [proposedMeetings, roomPlot.enabled, roomValidationMessages, roomPlot.labels, roomsMap])
+  const activePlotError = proposedMeetings.find(meeting => overlapMessages.has(meeting.id)
     && [...roomPlot.pending.values()].some(assignment => assignment.scheduleId === String(meeting.sourceScheduleId || meeting.id)
       && assignment.targetStatus !== 'Draft'))
-  const liveParallelError = parallelPlotError ? parallelMessages.get(parallelPlotError.id)?.[0] : undefined
-  const statusPlotError = proposedMeetings.find(meeting => roomStatusMessages.has(meeting.id)
-    && [...roomPlot.pending.values()].some(assignment => assignment.scheduleId === String(meeting.sourceScheduleId || meeting.id)
-      && assignment.targetStatus !== 'Draft'))
-  const liveRoomStatusError = statusPlotError ? roomStatusMessages.get(statusPlotError.id)?.[0] : undefined
-  const livePlotError = liveRoomStatusError || liveParallelError
+  const livePlotError = activePlotError ? overlapMessages.get(activePlotError.id)?.[0] : undefined
 
   useEffect(() => {
     const dismiss = () => setOverlapHover(null)
@@ -507,13 +499,17 @@ export function PlotScheduleModal({
     if (!roomPlot.enabled || meeting.source !== 'workbook' || meeting.schemaVersion !== 2) return null
     const termMeetings = allSchedules.filter(item => scheduleMatchesTerm(item, selectedAcademicYear, selectedSemester))
     const members = parallel ? plotParallelGroup(termMeetings, roomPlot.rooms, meeting)
-      : termMeetings.filter(item => String(item.sourceScheduleId || item.id) === String(meeting.sourceScheduleId || meeting.id))
+      : termMeetings.filter(item => schedulePlotSelectionKey(item) === schedulePlotSelectionKey(meeting))
     const state = parallel ? parallelPlotCheckboxState(members, roomPlot.rooms, roomPlot.pending) : null
     const hasRoom = Boolean(roomPlot.selected(meeting))
     const marked = state ? state.checked : hasRoom && roomPlot.marked(meeting)
     const errors = groupOverlapMessages(members)
-    const blocked = (state ? !state.valid : !hasRoom) || !marked && errors.length > 0
-    const label = blocked ? errors[0] || (parallel ? 'Assign complete, connected rooms before plotting this parallel group' : 'Assign a room before plotting this schedule')
+    const savedPlotted = members.length > 0 && members.every(item => item.status === 'Plot')
+    const directionLocked = plotSelectionDirectionLocked(roomPlot.actionMode, marked, savedPlotted)
+    const revertingUnplot = roomPlot.actionMode === 'unplot' && !marked && savedPlotted
+    const blocked = (state ? !state.valid : !hasRoom) || !marked && errors.length > 0 && !revertingUnplot || directionLocked
+    const label = directionLocked ? 'Save or undo the staged changes before switching between plotting and unplotting'
+      : blocked ? errors[0] || (parallel ? 'Assign complete, connected rooms before plotting this parallel group' : 'Assign a room before plotting this schedule')
       : `${marked ? 'Return' : 'Mark'} ${meeting.subjectCode || 'schedule'}${parallel ? ' parallel group' : ''} ${marked ? 'to Draft' : 'for plotting'}`
     return <button type="button" role="checkbox" aria-checked={marked} aria-label={label} title={label}
       disabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving || blocked}
@@ -546,7 +542,7 @@ export function PlotScheduleModal({
         recommendedOptions={[...groupOptions.map(option => option.id), ...recommended]}
         value={selected} getOptionLabel={id => groupById.get(id)?.label || (id ? roomPlot.labels.get(id) || (id === meeting.roomId ? getRoomName(meeting) : 'Unnamed room') : '')}
         onChange={id => { const group = groupById.get(id); if (group) roomPlot.selectGroup(group.assignments); else roomPlot.select(meeting, id) }}
-        isDisabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving}
+        isDisabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving || roomPlot.actionMode === 'unplot'}
         className="w-0 min-w-0 flex-1 [&>input]:!h-7 [&>input]:!px-2 [&>input]:!text-xs" />
     </div>
   }

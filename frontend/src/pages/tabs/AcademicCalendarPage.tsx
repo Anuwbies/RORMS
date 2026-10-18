@@ -9,9 +9,7 @@ import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { db } from '../../firebase'
 import { collection, doc, setDoc, deleteDoc, writeBatch, query, orderBy, onSnapshot, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { PlusIcon, CheckCircleIcon, CalendarIcon, LayersIcon, ClipboardIcon, DashboardIcon, TrashIcon, EditIcon, SpinnerIcon, CloseIcon, UserIcon, ClockIcon, BuildingIcon } from '../../components/Icons'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
+import { PlusIcon, CheckCircleIcon, CalendarIcon, LayersIcon, ClipboardIcon, DashboardIcon, TrashIcon, EditIcon, SpinnerIcon, CloseIcon, BuildingIcon } from '../../components/Icons'
 
 interface SemesterDetails {
   startDate?: string
@@ -458,50 +456,6 @@ function AcademicCalendarPage({ userRole }: AcademicCalendarPageProps) {
           title="Academic Calendar" 
           description="Manage academic years, historical records, and scheduling phases." 
         />
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
-          <SummaryCard
-            className="animate-in"
-            title="Academic Years"
-            subtitle={`${years.length} years on record`}
-            icon={<UserIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
-            gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
-            blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          >
-            <SummaryGraph variant="bar" total={years.length} points={[
-              { label: 'Early Start', value: years.filter(year => ['January', 'February', 'March', 'April', 'May', 'June'].includes(year.sem1?.startMonth)).length },
-              { label: 'Regular Start', value: years.filter(year => ['July', 'August', 'September'].includes(year.sem1?.startMonth)).length },
-              { label: 'Late Start', value: years.filter(year => ['October', 'November', 'December'].includes(year.sem1?.startMonth)).length },
-            ]} />
-          </SummaryCard>
-          <SummaryCard
-            className="animate-in"
-            title="First Semester"
-            subtitle={`${years.length} first-semester phases`}
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-amber-600" />}
-            gradientClasses="from-amber-400 to-orange-500"
-            blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          >
-            <SummaryGraph variant="pie" total={years.length} points={[
-              { label: 'Closed', value: years.filter(year => year.sem1?.phase === 'Closed').length },
-              { label: 'In progress', value: years.filter(year => !['Closed', 'Ended'].includes(year.sem1?.phase)).length },
-              { label: 'Ended', value: years.filter(year => year.sem1?.phase === 'Ended').length },
-            ]} tone="amber" />
-          </SummaryCard>
-          <SummaryCard
-            className="animate-in"
-            title="Second Semester"
-            subtitle={`${years.length} second-semester phases`}
-            icon={<ClockIcon className="w-4.5 h-4.5 text-blue-600" />}
-            gradientClasses="from-blue-400 to-indigo-500"
-            blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-          >
-            <SummaryGraph variant="pie" total={years.length} points={[
-              { label: 'Closed', value: years.filter(year => year.sem2?.phase === 'Closed').length },
-              { label: 'In progress', value: years.filter(year => !['Closed', 'Ended'].includes(year.sem2?.phase)).length },
-              { label: 'Ended', value: years.filter(year => year.sem2?.phase === 'Ended').length },
-            ]} tone="sky" />
-          </SummaryCard>
-        </div>
         <DataTable
           data={filteredYears}
           columns={canManageCalendar ? columns : columns.filter(column => column.header !== 'Actions')}

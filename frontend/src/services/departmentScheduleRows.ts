@@ -9,6 +9,7 @@ import type { DepartmentScheduleImportSheet } from '../utils/departmentScheduleI
 import type { WorkbookEditSnapshot } from '../utils/excelWorkbookState'
 import { workbookTermPaths, type DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
 import { scheduleMeetingRecords } from '../utils/scheduleMeetings'
+import { previousScheduleTerm, scheduleMatchesDepartment, scheduleMatchesTerm } from '../utils/roomSchedule'
 import { departmentExternalRoomAssignments, facultyScheduleRowKey, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
 
 function departmentRoomScheduleQueries(term: DepartmentWorkbookTerm) {
@@ -51,6 +52,28 @@ export function subscribeDepartmentRoomSchedules(term: DepartmentWorkbookTerm, r
   return () => unsubscribes.forEach(unsubscribe => unsubscribe())
 }
 
+/** Use the previous term only to rank buildings when this workbook has no room assignments. */
+export async function loadPreviousDepartmentRoomAssignments(term: DepartmentWorkbookTerm): Promise<FacultySubjectAssignment[]> {
+  const previous = previousScheduleTerm(term.academicYear, term.semester)
+  if (!previous) return []
+  const yearId = previous.academicYear === term.academicYear ? term.academicYearId : (await getDocs(collection(db, 'academicYears'))).docs
+    .find(document => String(document.data().academicYear ?? '').replace(/\s/g, '').replace(/[–—]/g, '-')
+      === previous.academicYear.replace(/\s/g, '').replace(/[–—]/g, '-'))?.id
+  const references = [query(collection(db, 'schedules'), where('academicYear', '==', previous.academicYear))]
+  if (yearId) references.push(query(collection(db, 'schedules'), where('academicYearId', '==', yearId)))
+  const snapshots = await Promise.all(references.map(reference => getDocs(reference)))
+  const documents = [...new Map(snapshots.flatMap(snapshot => snapshot.docs).map(document => [document.id, document])).values()]
+  return scheduleMeetingRecords(documents).filter(meeting => {
+    const savedSemester = typeof meeting.semesterKey === 'string' && meeting.semesterKey ? meeting.semesterKey : meeting.semester
+    return Boolean((meeting.academicYearId || meeting.academicYear) && savedSemester && (meeting.roomId || meeting.room))
+      && scheduleMatchesTerm(meeting, yearId ? { id: yearId, academicYear: previous.academicYear }
+        : { academicYear: previous.academicYear }, previous.semester)
+      && scheduleMatchesDepartment(meeting, term.departmentCode)
+      && !['Return', 'Returned'].includes(meeting.status ?? '')
+  }).map(meeting => ({ location: meeting.id, rowKey: String(meeting.sourceScheduleId || meeting.id), code: '', section: '',
+    roomId: meeting.roomId, room: typeof meeting.room === 'string' ? meeting.room : '' }))
+}
+
 export async function prepareDepartmentScheduleRows(editorState: string, departmentCode: string, semester: 'sem1' | 'sem2' = 'sem1'): Promise<WorkbookScheduleRow[]> {
   const snapshot = deserializeWorkbookState(editorState, {})
   const hasTemplates = Boolean(findDepartmentTemplateSheets(snapshot))
@@ -76,7 +99,8 @@ export async function loadDepartmentScheduleDirectory(departmentCode: string, te
       return fullName ? [{ id: item.id, fullName, department: departmentCode }] : []
     }),
     rooms: rooms.docs.map(item => { const data = item.data(); return { id: item.id, code: String(data.code ?? ''), name: String(data.name ?? ''), buildingId: String(data.buildingId ?? ''), status: String(data.status ?? ''),
-      floor: typeof data.floor === 'number' && Number.isFinite(data.floor) ? data.floor : undefined } }),
+      floor: typeof data.floor === 'number' && Number.isFinite(data.floor) ? data.floor : undefined,
+      capacity: typeof data.capacity === 'number' && Number.isFinite(data.capacity) ? data.capacity : undefined } }),
   }
   if (term) {
     const schedules = await Promise.all(departmentRoomScheduleQueries(term).map(reference => getDocs(reference)))

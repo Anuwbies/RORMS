@@ -48,21 +48,38 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
       && sourceRow.rawValues.length === 21 && Array.isArray(savedRow.rawValues) && savedRow.rawValues.length === 21
       && sameValue(sourceRow.rawValues, savedRow.rawValues)
       && sourceRow.yearLevel === savedRow.yearLevel && sourceRow.course === savedRow.course
-    const first = row.meetings[0]
-    return { ...row, id: rowId(row.sourceSheet, row.sourceRow, row.sourceKey), source: 'workbook', schemaVersion: 2, sourceWorkbook,
+    const savedMeetingStatuses = new Map<string, 'Draft' | 'Plot'>()
+    if (keepPlot && Array.isArray(savedRow?.meetings)) for (const value of savedRow.meetings) {
+      if (!value || typeof value !== 'object') continue
+      const meeting = value as Record<string, unknown>
+      savedMeetingStatuses.set(plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0]), meeting.status === 'Plot' ? 'Plot'
+        : meeting.status === 'Draft' ? 'Draft' : savedRow.status === 'Plot' ? 'Plot' : 'Draft')
+    }
+    const previousMeetings = Array.isArray(savedRow?.meetings) ? savedRow.meetings : []
+    const meetings = collectionName === 'schedules' ? row.meetings.map((meeting, meetingIndex) => {
+      const previousMeeting = previousMeetings.length === row.meetings.length ? previousMeetings[meetingIndex] : undefined
+      const previousStatus = previousMeeting && typeof previousMeeting === 'object' ? (previousMeeting as Record<string, unknown>).status : undefined
+      return { ...meeting, status: keepPlot
+        ? savedMeetingStatuses.get(plotMeetingKey(meeting))
+          ?? (previousStatus === 'Plot' || previousStatus === 'Draft' ? previousStatus : savedRow?.status === 'Plot' ? 'Plot' as const : 'Draft' as const)
+        : 'Draft' as const }
+    }) : row.meetings
+    const first = meetings[0]
+    return { ...row, meetings, id: rowId(row.sourceSheet, row.sourceRow, row.sourceKey), source: 'workbook', schemaVersion: 2, sourceWorkbook,
       // Explicit workbook room text, including TBA and unresolved room labels, is provided.
       // An empty room cell leaves assignment to the Registrar.
       ...(collectionName === 'schedules' ? { membershipId: term.membershipId,
         providedRoomKeys: [...new Set(sourceRow.meetings.filter(meeting => meeting.room.trim()).map(plotMeetingKey))] } : {}),
       departmentId: term.departmentId, department: term.departmentCode, academicYearId: term.academicYearId,
       academicYear: term.academicYear, semester: term.semester === 'sem1' ? '1st Semester' : '2nd Semester', semesterKey: term.semester,
-      orderIndex: index, status: keepPlot ? 'Plot' as const : statusOverride ?? row.status, type: row.sourceKey ? first?.format === 'Flexible' ? 'open lab' : 'normal' : row.parallelSourceRow !== null ? 'parallel' : row.college.toLowerCase() || 'normal',
+      orderIndex: index, status: keepPlot && meetings.some(meeting => meeting.status === 'Plot') ? 'Plot' as const : statusOverride ?? row.status,
+      type: row.sourceKey ? first?.format === 'Flexible' ? 'open lab' : 'normal' : row.parallelSourceRow !== null ? 'parallel' : row.college.toLowerCase() || 'normal',
       groupId: row.parallelSourceRow !== null ? rowId(row.sourceSheet, row.parallelSourceRow) : '',
-      isSplitSession: row.meetings.length > 1, parentId: '',
+      isSplitSession: meetings.length > 1, parentId: '',
       format: first?.format ?? '', startTime: first?.startTime ?? '', endTime: first?.endTime ?? '', days: first?.days ?? [],
       instructorId: first?.instructorId ?? '', roomId: first?.roomId ?? '', buildingId: first?.buildingId ?? '',
-      instructorIds: [...new Set(row.meetings.map(meeting => meeting.instructorId).filter(Boolean))],
-      roomIds: [...new Set(row.meetings.map(meeting => meeting.roomId).filter(Boolean))],
+      instructorIds: [...new Set(meetings.map(meeting => meeting.instructorId).filter(Boolean))],
+      roomIds: [...new Set(meetings.map(meeting => meeting.roomId).filter(Boolean))],
     }
   })
   const retained = new Set(documents.map(row => row.id))
@@ -89,7 +106,7 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
     if (samples.length < 80) samples.push({ kind: 'schedule', sheet: String(row.sourceSheet || '').slice(0, 500), location: `Row ${row.sourceRow}`, field: field.slice(0, 500), before: value(before), after: value(after) })
   }
   const fields = {
-    status: 'Status', yearLevel: 'Year level', subjectCode: 'Subject code', subjectTitle: 'Subject title',
+    status: 'Status', yearLevel: 'Year level', yearLevelLabel: 'Year level label', subjectCode: 'Subject code', subjectTitle: 'Subject title',
     course: 'Course', classSection: 'Section', faculty: 'Faculty', f2fRoom: 'Rooms', f2fTime: 'Meeting times', f2fDays: 'Meeting days',
     college: 'College', subjectArea: 'Subject area', credits: 'Credits', units: 'Units', hours: 'Hours', maxStudents: 'Maximum students',
   }

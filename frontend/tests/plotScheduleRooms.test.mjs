@@ -277,13 +277,32 @@ test('provided-room checkbox can return Plot to Draft and approve it again witho
   await h.plot([...staged.values()])
   const draft = h.documents.get('schedules/class1')
   assert.equal(draft.status, 'Draft')
-  assert.equal(JSON.stringify(draft.meetings), JSON.stringify(plotted.meetings))
+  assert.equal(draft.meetings[0].status, 'Draft')
+  assert.equal(draft.meetings[0].roomId, plotted.meetings[0].roomId)
   assert.equal(JSON.stringify(draft.f2fRoom), JSON.stringify(plotted.f2fRoom))
   assert.equal(JSON.stringify(draft.roomIds), JSON.stringify(plotted.roomIds))
   assert.equal(draft.roomId, 'room1')
   assert.equal(draft.registrarPlot.assignments[0].room, 'PTC 201')
   await h.plot([{ ...h.assignment(), targetStatus: 'Plot' }])
   assert.equal(h.documents.get('schedules/class1').status, 'Plot')
+})
+
+test('different times in one workbook row keep independent saved approvals, even in the same room', async () => {
+  const h = harness('schedules')
+  const assigned = { roomId: 'room1', room: 'Room 201', buildingId: 'ptc' }
+  h.documents.set('schedules/class1', h.schedule({ meetings: [h.meeting(assigned),
+    h.meeting({ ...assigned, time: '13:30-15:00', startTime: '13:30', endTime: '15:00' })] }))
+  await h.plot([h.assignment('class1', 0, 'room1')])
+  let saved = h.documents.get('schedules/class1')
+  assert.deepEqual(Array.from(saved.meetings, meeting => meeting.status), ['Plot', 'Draft'])
+  assert.equal(saved.status, 'Plot')
+  await h.plot([h.assignment('class1', 1, 'room1')])
+  saved = h.documents.get('schedules/class1')
+  assert.deepEqual(Array.from(saved.meetings, meeting => meeting.status), ['Plot', 'Plot'])
+  await h.plot([{ ...h.assignment('class1', 0, 'room1'), targetStatus: 'Draft' }])
+  saved = h.documents.get('schedules/class1')
+  assert.deepEqual(Array.from(saved.meetings, meeting => meeting.status), ['Draft', 'Plot'])
+  assert.equal(saved.status, 'Plot')
 })
 
 test('returning to Draft is allowed with existing conflicts or an unavailable room; approving again rechecks them', async () => {
@@ -348,7 +367,7 @@ test('combining an uncheck with a room change cannot bypass overlap validation',
     h.meeting({ days: ['Wed'], day: 'Wed' }),
   ] }))
   h.documents.set('schedules/other', h.schedule({ department: 'CAS', meetings: [h.meeting({ roomId: 'room2', days: ['Wed'], day: 'Wed' })] }))
-  await assert.rejects(h.plot([{ ...h.assignment(), targetStatus: 'Draft' }, { ...h.assignment('class1', 1, 'room2'), targetStatus: undefined }]), /overlaps/)
+  await assert.rejects(h.plot([{ ...h.assignment(), targetStatus: 'Draft' }, { ...h.assignment('class1', 1, 'room2'), targetStatus: 'Draft' }]), /overlaps/)
   assert.equal(h.documents.get('schedules/class1').status, 'Plot')
   assert.equal(h.documents.get('schedules/class1').meetings[1].roomId, '')
 })

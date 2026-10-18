@@ -5,7 +5,7 @@ import { schedulePlottingPhases } from '../utils/departmentWorkbookPermissions'
 import { semesterKey } from '../utils/departmentWorkbookPaths'
 import type { AcademicYearData } from '../utils/academicSemester'
 import type { ScheduleMeetingRecord } from '../utils/scheduleMeetings'
-import { assignedSchedulePlotStatus, isProvidedScheduleRoom, schedulePlotSelectionKey, toggleAssignedSchedulePlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
+import { assignedSchedulePlotStatus, isProvidedScheduleRoom, plotSelectionActionMode, plotSelectionDirectionLocked, schedulePlotSelectionKey, toggleAssignedSchedulePlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
 import { plotScheduleRooms, readPlotRoom } from '../services/plotScheduleRooms'
 import { createPlotSelectionHistory, movePlotSelectionHistory, recordPlotSelection } from '../utils/plotSelectionHistory'
 import { parallelPlotCheckboxState, stagePlotRoomSelections, toggleParallelSchedulePlot } from '../utils/plotParallelRooms'
@@ -18,6 +18,7 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   const [ready, setReady] = useState(false)
   const [history, setHistory] = useState(createPlotSelectionHistory)
   const pending = history.present
+  const actionMode = plotSelectionActionMode(pending)
   const setPending = (update: (previous: Map<string, PlotAssignment>) => Map<string, PlotAssignment>) => {
     setHistory(previous => recordPlotSelection(previous, update(previous.present)))
   }
@@ -46,7 +47,7 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   const key = schedulePlotSelectionKey
   const selected = (meeting: ScheduleMeetingRecord) => pending.get(key(meeting))?.roomId ?? meeting.roomId ?? ''
   const selectGroup = (assignments: readonly { meeting: ScheduleMeetingRecord; roomId: string }[]) => {
-    if (!permitted || busy.current) return
+    if (!permitted || busy.current || actionMode === 'unplot') return
     if (assignments.some(({ meeting }) => scheduleCollection === 'schedules' && isProvidedScheduleRoom(meeting))) return
     setError(''); setMessage('')
     setPending(previous => stagePlotRoomSelections(previous, assignments))
@@ -55,13 +56,21 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   const marked = (meeting: ScheduleMeetingRecord) => assignedSchedulePlotStatus(pending, meeting) === 'Plot'
   const toggleMarked = (meeting: ScheduleMeetingRecord, validationErrors: readonly string[] = []) => {
     if (!permitted || busy.current) return
-    if (validationErrors.length && !marked(meeting)) { setError(validationErrors[0]); return }
+    if (plotSelectionDirectionLocked(actionMode, marked(meeting), meeting.status === 'Plot')) return
+    if (validationErrors.length && !marked(meeting) && !(actionMode === 'unplot' && meeting.status === 'Plot')) {
+      setError(validationErrors[0]); return
+    }
     setError(''); setMessage('')
     setPending(previous => toggleAssignedSchedulePlot(previous, meeting))
   }
   const toggleMarkedGroup = (meetings: readonly ScheduleMeetingRecord[], validationErrors: readonly string[] = []) => {
     if (!permitted || !ready || busy.current) return
-    if (validationErrors.length && !parallelPlotCheckboxState(meetings, rooms, pending).checked) { setError(validationErrors[0]); return }
+    const checked = parallelPlotCheckboxState(meetings, rooms, pending).checked
+    const savedPlotted = meetings.every(meeting => meeting.status === 'Plot')
+    if (plotSelectionDirectionLocked(actionMode, checked, savedPlotted)) return
+    if (validationErrors.length && !checked && !(actionMode === 'unplot' && savedPlotted)) {
+      setError(validationErrors[0]); return
+    }
     setError(''); setMessage('')
     setPending(previous => toggleParallelSchedulePlot(previous, meetings, rooms))
   }
@@ -88,7 +97,7 @@ export function useScheduleRoomPlotting(options: SchedulePlottingOptions | undef
   }
   return { enabled: Boolean(options), permitted, ready, saving, error, message,
     pendingCount: new Set([...pending.values()].map(assignment => assignment.scheduleId)).size, labels,
-    pending, rooms, needsParallelApproval, needsPlotApproval, hasDraftChanges: [...pending.values()].some(assignment => assignment.targetStatus === 'Draft' || !assignment.roomId),
+    pending, rooms, actionMode, needsParallelApproval, needsPlotApproval, hasDraftChanges: [...pending.values()].some(assignment => assignment.targetStatus === 'Draft' || !assignment.roomId),
     canUndo: history.past.length > 0, canRedo: history.future.length > 0,
     undo: () => changeHistory(false), redo: () => changeHistory(true),
     roomOptions: [...roomChoices.map(room => room.id), ''], selected, select, selectGroup, marked, toggleMarked, toggleMarkedGroup, save }

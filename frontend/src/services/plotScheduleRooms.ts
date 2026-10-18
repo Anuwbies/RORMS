@@ -122,13 +122,16 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
       if (!['Draft', 'Plot'].includes(String(data.status))) throw new Error('Only Draft or Plot schedules can be assigned rooms.')
       const rowAssignments = assignments.filter(item => item.scheduleId === id)
       const keys = new Set<string>()
-      const meetings = workbookMeetings(data)
+      const meetings = workbookMeetings(data).map(meeting => scheduleCollection === 'schedules'
+        ? { ...meeting, status: meeting.status === 'Draft' || meeting.status === 'Plot' ? meeting.status
+          : data.status === 'Plot' ? 'Plot' as const : 'Draft' as const }
+        : meeting)
       const sourceProvidedRoomKeys = readProvidedRoomKeys(data)
       const providedRoomKeys = sourceProvidedRoomKeys ?? meetings.filter(meeting => meeting.room.trim()).map(plotMeetingKey)
       const legacyProvidedRoomKeys = readRegistrarPlot(data.registrarPlot)?.providedRoomKeys
       const requestedStatuses = new Set(rowAssignments.map(assignment => assignment.targetStatus).filter(Boolean))
       if (requestedStatuses.size > 1) throw new Error('Choose one status for this schedule before saving.')
-      if (scheduleCollection === 'schedules' && !requestedStatuses.size && rowAssignments.some(assignment => assignment.roomId)) {
+      if (scheduleCollection === 'schedules' && rowAssignments.some(assignment => assignment.roomId && !assignment.targetStatus)) {
         throw new Error('Check each schedule checkbox before clicking Plot.')
       }
       const parallel = Boolean((data.groupId || data.type === 'parallel') && candidateMeetings.some(candidate => candidate.sourceScheduleId === id
@@ -149,15 +152,20 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
         }
         if (assignment.targetStatus !== undefined && (!parallel && assignment.targetStatus === 'Plot' && !assignment.roomId
           || !['Draft', 'Plot'].includes(assignment.targetStatus))) throw new Error('Assign a room before changing status using a checkbox.')
+        if (scheduleCollection === 'schedules' && assignment.targetStatus) meetings[index] = { ...meetings[index], status: assignment.targetStatus }
         if (assignment.targetStatus === 'Draft' && assignment.roomId === meeting.roomId) continue
         if (assignment.roomId) {
           const room = roomMap.get(assignment.roomId)
           if (!room) throw new Error('A selected room was removed. Choose another room.')
           assertPlotRoom(meeting, room, typeof data.maxStudents === 'number' ? data.maxStudents : null)
-          if (assignment.roomId !== meeting.roomId) meetings[index] = { ...meeting, roomId: room.id, room: room.name.trim() || room.code, buildingId: room.buildingId }
-        } else meetings[index] = { ...meeting, roomId: '', room: scheduleCollection === 'schedules' ? '' : 'TBA', buildingId: '' }
+          if (assignment.roomId !== meeting.roomId) meetings[index] = { ...meetings[index], roomId: room.id, room: room.name.trim() || room.code, buildingId: room.buildingId }
+        } else meetings[index] = { ...meetings[index], roomId: '', room: scheduleCollection === 'schedules' ? '' : 'TBA', buildingId: '',
+          ...(scheduleCollection === 'schedules' ? { status: 'Draft' as const } : {}) }
       }
-      const fields = { ...plottedScheduleFields(meetings), ...(requestedStatuses.has('Draft') ? { status: 'Draft' } : {}) }
+      const plottedFields = plottedScheduleFields(meetings)
+      const fields = { ...plottedFields, status: scheduleCollection === 'schedules'
+        ? meetings.some(meeting => meeting.status === 'Plot') ? 'Plot' as const : 'Draft' as const
+        : requestedStatuses.has('Draft') ? 'Draft' as const : plottedFields.status }
       if (requestedStatuses.has('Draft') && rowAssignments.every(assignment => assignment.roomId === assignment.expectedRoomId)) statusOnlyDraftIds.add(id)
       changed.set(id, { ...data, ...fields, registrarPlot: { version: 1, revisionId, savedBy: user.uid,
         ...(legacyProvidedRoomKeys !== undefined ? { providedRoomKeys: legacyProvidedRoomKeys } : {}),

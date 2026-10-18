@@ -27,6 +27,18 @@ export interface PlotAssignment {
   parallelGroupKey?: string
 }
 
+/** Keep a save batch in one direction: approve/assign rooms or return plotted schedules to Draft. */
+export function plotSelectionActionMode(pending: ReadonlyMap<string, PlotAssignment>): 'plot' | 'unplot' | null {
+  if ([...pending.values()].some(assignment => assignment.targetStatus === 'Draft')) return 'unplot'
+  return pending.size ? 'plot' : null
+}
+
+/** A staged checkbox may cancel its own edit; only saved schedules are locked against the opposite action. */
+export function plotSelectionDirectionLocked(actionMode: 'plot' | 'unplot' | null, checked: boolean, savedPlotted: boolean): boolean {
+  return actionMode === 'plot' && checked && savedPlotted
+    || actionMode === 'unplot' && !checked && !savedPlotted
+}
+
 export const plotScheduleRevision = (schedule: Record<string, unknown>) => JSON.stringify([
   schedule.workbookRevisionId ?? '', readRegistrarPlot(schedule.registrarPlot)?.revisionId ?? '',
 ])
@@ -57,32 +69,27 @@ export function isProvidedScheduleRoom(meeting: ScheduleMeetingRecord): boolean 
 }
 
 export function assignedSchedulePlotStatus(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): 'Draft' | 'Plot' {
-  const id = String(meeting.sourceScheduleId || meeting.id)
-  const rowAssignments = [...pending.values()].filter(assignment => assignment.scheduleId === id)
-  return rowAssignments.find(assignment => assignment.targetStatus)?.targetStatus
-    ?? (rowAssignments.some(assignment => assignment.roomId !== assignment.expectedRoomId) ? 'Draft' : meeting.status === 'Plot' ? 'Plot' : 'Draft')
+  const selected = pending.get(schedulePlotSelectionKey(meeting))
+  return selected?.targetStatus
+    ?? (selected && selected.roomId !== selected.expectedRoomId ? 'Draft' : meeting.status === 'Plot' ? 'Plot' : 'Draft')
 }
 
-/** A checkbox stages a row status change, preserving its room and synchronizing calendar copies. */
+/** A checkbox stages one meeting status; identical calendar copies share its selection key. */
 export function toggleAssignedSchedulePlot(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): Map<string, PlotAssignment> {
   const next = new Map(pending)
   const key = schedulePlotSelectionKey(meeting)
   const selected = pending.get(key)
   const roomId = selected?.roomId ?? meeting.roomId ?? ''
   if (!roomId || !['Draft', 'Plot'].includes(meeting.status || 'Draft')) return next
-  const id = String(meeting.sourceScheduleId || meeting.id)
   const targetStatus = assignedSchedulePlotStatus(pending, meeting) === 'Plot' ? 'Draft' : 'Plot'
-  for (const [key, assignment] of next) if (assignment.scheduleId === id && assignment.targetStatus) {
-    if (assignment.roomId === assignment.expectedRoomId) next.delete(key)
-    else {
-      const { targetStatus: _status, ...roomChoice } = assignment
+  if (targetStatus === (meeting.status === 'Plot' ? 'Plot' : 'Draft')) {
+    if (selected?.roomId !== selected?.expectedRoomId) {
+      const { targetStatus: _status, ...roomChoice } = selected!
       next.set(key, roomChoice)
-    }
+    } else next.delete(key)
+    return next
   }
-  if (targetStatus === 'Draft' && (meeting.status || 'Draft') === 'Draft') return next
-  if (targetStatus === (meeting.status || 'Draft') && ![...next.values()].some(assignment => assignment.scheduleId === id)) return next
-  for (const [key, assignment] of next) if (assignment.scheduleId === id) next.set(key, { ...assignment, targetStatus })
-  next.set(key, { scheduleId: id, targetStatus,
+  next.set(key, { scheduleId: String(meeting.sourceScheduleId || meeting.id), targetStatus,
     meetingKey: plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>), roomId,
     expectedRoomId: selected?.expectedRoomId ?? meeting.roomId ?? '', expectedRevision: selected?.expectedRevision ?? plotScheduleRevision(meeting) })
   return next

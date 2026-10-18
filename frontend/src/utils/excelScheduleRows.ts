@@ -7,11 +7,12 @@ import type { FacultySubjectAssignment } from './ScheduleValidation.ts'
 export interface ScheduleDirectory {
   departmentCode: string
   faculty: { id: string; fullName: string; department: string }[]
-  rooms: { id: string; code: string; name: string; buildingId: string; floor?: number; status?: string }[]
+  rooms: { id: string; code: string; name: string; buildingId: string; floor?: number; status?: string; capacity?: number }[]
   externalRoomAssignments?: readonly FacultySubjectAssignment[]
 }
 
 export interface WorkbookScheduleMeeting {
+  status?: 'Draft' | 'Plot'
   format: 'Lec' | 'Lab' | 'Flexible' | 'Unspecified'
   modality?: 'F2F' | 'Remote Coaching' | 'Independent Learning' | 'Unspecified'
   faculty: string
@@ -37,6 +38,7 @@ export interface WorkbookScheduleRow {
   curriculumSemester?: number
   curriculumSession?: string
   yearLevel: number
+  yearLevelLabel?: string
   college: string
   subjectArea: string
   subjectCode: string

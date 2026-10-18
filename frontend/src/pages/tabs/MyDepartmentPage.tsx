@@ -1,19 +1,17 @@
 import { useState, useEffect, useMemo } from 'react'
 import { formatUserName } from '../../utils/userName'
 import { SectionHeader } from '../../components/SectionHeader';
-import { DepartmentIcon, PlusIcon, SearchIcon, UsersIcon, TrashIcon, EditIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon, BuildingIcon, DoorIcon, ClockIcon, BookIcon } from '../../components/Icons'
+import { DepartmentIcon, PlusIcon, SearchIcon, TrashIcon, EditIcon, CheckIcon, UserIcon, CalendarIcon, ChevronRightIcon, DoorIcon, ClockIcon, BookIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { PersonalScheduleModal } from '../../components/PersonalScheduleModal'
 import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
-import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
+import { resolveCurrentSemester, type AcademicYearData } from '../../utils/academicSemester'
 import { DepartmentCoursesImportModal } from '../../components/DepartmentCoursesImportModal'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -47,6 +45,15 @@ const statusClasses: Record<string, string> = {
   Pending: 'bg-amber-100 text-amber-700',
 }
 
+const phaseClasses: Record<string, string> = {
+  Closed: 'bg-slate-100 text-slate-600',
+  Drafting: 'bg-amber-100 text-amber-700',
+  Plotting: 'bg-blue-100 text-blue-700',
+  Revision: 'bg-purple-100 text-purple-700',
+  Final: 'bg-emerald-100 text-emerald-700',
+  Ended: 'bg-rose-100 text-rose-700',
+}
+
 function MyDepartmentPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
@@ -66,24 +73,21 @@ function MyDepartmentPage() {
   const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
   const [removeError, setRemoveError] = useState('')
 
-  const [rooms, setRooms] = useState<{ id: string, code: string, name: string, buildingId: string }[]>([])
-  const [buildings, setBuildings] = useState<{ id: string, name: string, code?: string }[]>([])
   const [isImportScheduleModalOpen, setIsImportScheduleModalOpen] = useState(false)
   const [isCoursesModalOpen, setIsCoursesModalOpen] = useState(false)
   // School Year and Semester Selection State
-  const [academicYears, setAcademicYears] = useState<any[]>([])
+  const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<any>(null)
   const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: string, phase: string } | null>(null)
 
-  const [deptSchedules, setDeptSchedules] = useState<ScheduleMeetingRecord[]>([])
 
   const [currentUserData, setCurrentUserData] = useState<any>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string>('')
   const [currentUserMembership, setCurrentUserMembership] = useState<{ id: string; status?: string; role?: string; department?: string; joinedAt?: any } | null>(null)
   const [isAcceptingInvite, setIsAcceptingInvite] = useState(false)
   const [isDecliningInvite, setIsDecliningInvite] = useState(false)
-  const [departmentInfo, setDepartmentInfo] = useState<{ id: string; name: string; code: string; logo: string } | null>(null)
+  const [departmentInfo, setDepartmentInfo] = useState<{ id: string; name: string; code: string; logo: string; dean: string } | null>(null)
   const [logoError, setLogoError] = useState(false)
   const [members, setMembers] = useState<Member[]>([])
   const [availableInstructors, setAvailableInstructors] = useState<Member[]>([])
@@ -91,6 +95,11 @@ function MyDepartmentPage() {
   const [isAdding, setIsAdding] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
   const areMemberActionsDisabled = currentUserRole === 'Program Head' || currentUserRole === 'Instructor'
+  const dean = members.find(member => member.role === 'Dean' && (member.id === departmentInfo?.dean || member.name === departmentInfo?.dean))
+  const programHeads = members.filter(member => member.role === 'Program Head' && member.status === 'Active')
+  const activeAcademicYear = academicYears.find(year => year.isActive)
+  const currentSemesterName = activeAcademicYear ? resolveCurrentSemester(activeAcademicYear) : ''
+  const currentSemesterPhase = currentSemesterName === '2nd Semester' ? activeAcademicYear?.sem2?.phase : activeAcademicYear?.sem1?.phase
 
   // Calculate new members (joined in last 7 days)
   const newMembersCount = members.filter(m => {
@@ -137,7 +146,8 @@ function MyDepartmentPage() {
                     id: deptSnap.docs[0].id,
                     name: deptData.name || '',
                     code: deptData.code || '',
-                    logo: deptData.logo || ''
+                    logo: deptData.logo || '',
+                    dean: deptData.dean || ''
                   })
                   setLogoError(false)
                 }
@@ -268,62 +278,20 @@ function MyDepartmentPage() {
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'academicYears'), (snapshot) => {
-      const fetchedYears = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-      fetchedYears.sort((a: any, b: any) => {
+      const fetchedYears = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as AcademicYearData))
+      fetchedYears.sort((a, b) => {
         if (a.isActive && !b.isActive) return -1
         if (!a.isActive && b.isActive) return 1
         return (b.academicYear || '').localeCompare(a.academicYear || '')
       })
       setAcademicYears(fetchedYears)
-      const active = fetchedYears.find((y: any) => y.isActive)
+      const active = fetchedYears.find(y => y.isActive)
       if (active) {
         setSelectedAcademicYear((prev: any) => prev || active)
       }
     })
     return () => unsubscribe()
   }, [])
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'rooms'), (snapshot) => {
-      const fetchedRooms = snapshot.docs.map(doc => ({
-        id: doc.id,
-        code: doc.data().code,
-        name: doc.data().name,
-        buildingId: doc.data().buildingId || ''
-      }))
-      setRooms(fetchedRooms)
-    })
-    return () => unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'buildings'), (snapshot) => {
-      const fetchedBuildings = snapshot.docs.map(doc => ({
-        id: doc.id,
-        name: doc.data().name,
-        code: doc.data().code || doc.data().name || ''
-      }))
-      setBuildings(fetchedBuildings)
-    })
-    return () => unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    if (!departmentInfo?.code) {
-      setDeptSchedules([])
-      return
-    }
-    const q = query(
-      collection(db, 'schedules'),
-      where('department', '==', departmentInfo.code)
-    )
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetched = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }) as ScheduleMeetingRecord)
-      setDeptSchedules(fetched)
-    })
-    return () => unsubscribe()
-  }, [departmentInfo?.code])
-
 
   const filteredMembers = members
     .filter((member) => {
@@ -531,11 +499,11 @@ function MyDepartmentPage() {
             <div className="flex flex-col">
               {member.name ? (
                 <>
-                  <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{member.name}</span>
-                  <span className="text-xs font-medium text-slate-500">{member.email}</span>
+                  <span className={`text-sm font-bold transition-colors ${member.id === currentUserData?.id ? 'text-[var(--brand-color)]' : 'text-slate-900 group-hover:text-[var(--brand-color)]'}`}>{member.name}</span>
+                  <span className={`text-xs font-medium ${member.id === currentUserData?.id ? 'text-[var(--brand-color)]' : 'text-slate-500'}`}>{member.email}</span>
                 </>
               ) : (
-                <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">{member.email}</span>
+                <span className={`text-sm font-bold transition-colors ${member.id === currentUserData?.id ? 'text-[var(--brand-color)]' : 'text-slate-900 group-hover:text-[var(--brand-color)]'}`}>{member.email}</span>
               )}
             </div>
           </div>
@@ -841,134 +809,6 @@ function MyDepartmentPage() {
           description="Overview of your department's members, rooms, and activity."
         />
 
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700 mb-6">
-          {(() => {
-            const activeCount = members.filter(m => m.status === 'Active').length;
-            const pendingCount = members.filter(m => m.status === 'Pending').length;
-            const memberStatusTotal = activeCount + pendingCount;
-            const activeAcademicYear = academicYears.find((year: any) => year.isActive);
-            const normalizeAcademicYear = (value: unknown) => String(value || '')
-              .replace(/[–—]/g, '-')
-              .replace(/\s+/g, '')
-              .toLowerCase();
-            const normalizedActiveYear = normalizeAcademicYear(activeAcademicYear?.academicYear);
-            const activeYearSchedules = activeAcademicYear
-              ? deptSchedules.filter(schedule => {
-                const scheduleYear = normalizeAcademicYear(schedule.academicYear || schedule.academicTerm);
-                return schedule.academicYearId === activeAcademicYear.id
-                  || Boolean(normalizedActiveYear && scheduleYear.includes(normalizedActiveYear));
-              })
-              : [];
-            const activeYearMeetings = scheduleMeetingRecords(activeYearSchedules.map(schedule => ({
-              id: schedule.id,
-              data: () => schedule
-            })));
-
-            const DAY_FULL_NAMES: Record<string, string> = {
-              Mon: 'Monday',
-              Tue: 'Tuesday',
-              Wed: 'Wednesday',
-              Thu: 'Thursday',
-              Fri: 'Friday',
-              Sat: 'Saturday',
-              Sun: 'Sunday'
-            };
-
-            const DAY_ORDER: Record<string, number> = {
-              Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7
-            };
-
-            const dayCounts: Record<string, number> = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
-            activeYearMeetings.forEach(meeting => {
-              if (Array.isArray(meeting.days)) {
-                meeting.days.forEach(day => {
-                  const shortDay = Object.keys(dayCounts).find(key => key.toLowerCase() === day.trim().slice(0, 3).toLowerCase());
-                  if (shortDay) {
-                    dayCounts[shortDay] += 1;
-                  }
-                });
-              }
-            });
-
-            const sortedDaysMonSun = Object.entries(dayCounts)
-              .filter(([_, count]) => count > 0)
-              .sort((a, b) => (DAY_ORDER[a[0]] || 99) - (DAY_ORDER[b[0]] || 99));
-
-            const topScheduleDays = sortedDaysMonSun.length > 0
-              ? sortedDaysMonSun.slice(0, 3).map(([day, count]) => ({
-                day,
-                count,
-                label: DAY_FULL_NAMES[day] || day
-              }))
-              : [
-                { day: 'Mon', count: 0, label: 'Monday' },
-                { day: 'Wed', count: 0, label: 'Wednesday' },
-                { day: 'Fri', count: 0, label: 'Friday' }
-              ];
-
-            const roomBuildings = new Map(rooms.map(room => [room.id, room.buildingId]));
-            const buildingUsage = new Map<string, number>();
-            activeYearSchedules.forEach(schedule => {
-              const meetings = scheduleMeetingRecords([{ id: schedule.id, data: () => schedule }]);
-              const buildingIds = new Set<string>();
-              meetings.forEach(meeting => {
-                const buildingId = roomBuildings.get(meeting.roomId || '') || meeting.buildingId;
-                if (buildingId) buildingIds.add(buildingId);
-              });
-              const secondaryRoomId = typeof schedule.roomId2 === 'string' ? schedule.roomId2 : '';
-              const secondaryBuildingId = roomBuildings.get(secondaryRoomId)
-                || (typeof schedule.buildingId2 === 'string' ? schedule.buildingId2 : '');
-              if (secondaryBuildingId) buildingIds.add(secondaryBuildingId);
-              buildingIds.forEach(buildingId => buildingUsage.set(buildingId, (buildingUsage.get(buildingId) || 0) + 1));
-            });
-
-            const deptBuildings = Array.from(buildingUsage.keys())
-              .map(bId => buildings.find(b => b.id === bId))
-              .filter(Boolean) as { id: string; name: string; code?: string }[]
-
-            return (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
-                <SummaryCard
-                  className="animate-in"
-                  title="Department Members"
-                  subtitle={`${activeCount} active · ${pendingCount} pending`}
-                  icon={<UsersIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
-                  gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
-                  blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-                >
-                  <SummaryGraph variant="pie" total={memberStatusTotal} points={[
-                    { label: 'Active', value: activeCount },
-                    { label: 'Pending', value: pendingCount },
-                  ]} />
-                </SummaryCard>
-                <SummaryCard
-                  className="animate-in"
-                  title="Schedule Activity"
-                  subtitle={`${activeYearSchedules.length} active-year department schedules`}
-                  icon={<CalendarIcon className="w-4.5 h-4.5 text-amber-600" />}
-                  gradientClasses="from-amber-400 to-orange-500"
-                  blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-                >
-                  <SummaryGraph variant="line" total={activeYearSchedules.length} points={Object.entries(dayCounts).map(([day, count]) => ({ label: day, value: count }))} tone="amber" />
-                </SummaryCard>
-                <SummaryCard
-                  className="animate-in"
-                  title="Buildings Used"
-                  subtitle={`${deptBuildings.length} buildings in active-year schedules`}
-                  icon={<BuildingIcon className="w-4.5 h-4.5 text-blue-600" />}
-                  gradientClasses="from-blue-400 to-indigo-500"
-                  blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-                >
-                  <SummaryGraph variant="bar" total={deptBuildings.length} points={deptBuildings.slice(0, 3).map(building => ({
-                    label: building.code || building.name,
-                    value: buildingUsage.get(building.id) || 0,
-                  }))} tone="sky" />
-                </SummaryCard>
-              </div>
-            );
-          })()}
-        </div>
-
         {/* Pending Department Invitation Banner */}
         {currentUserMembership?.status === 'pending' && (
           <div className="relative overflow-hidden rounded-2xl border-2 border-amber-300/80 bg-gradient-to-r from-amber-50/90 via-amber-50/50 to-emerald-50/60 p-6 shadow-lg shadow-amber-900/5 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -1014,6 +854,79 @@ function MyDepartmentPage() {
             </div>
           </div>
         )}
+
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+          {departmentInfo && (
+          <section aria-label="Department information" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex min-w-0 items-center gap-4">
+                {departmentInfo.logo && !logoError ? (
+                  <img
+                    src={departmentInfo.logo}
+                    alt={`${departmentInfo.name} logo`}
+                    className="h-11 w-11 shrink-0 rounded-full border border-slate-200 bg-white object-contain shadow-md"
+                    onError={() => setLogoError(true)}
+                  />
+                ) : (
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#f3f7ee] text-[#62853e] shadow-md">
+                    <DepartmentIcon className="h-6 w-6" />
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-3">
+                    <h2 className="text-3xl font-bold leading-10 text-slate-900">{departmentInfo.name || departmentInfo.code}</h2>
+                    {departmentInfo.name && <span className="text-base font-semibold text-slate-500">{departmentInfo.code}</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-baseline gap-2">
+                <span className="text-lg font-bold text-slate-900">{members.length}</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Members</span>
+              </div>
+            </div>
+            <dl className="mt-5 grid gap-5 border-t border-slate-100 pt-5 sm:grid-cols-2 sm:gap-8">
+              <div>
+                <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Dean</dt>
+                <dd className="mt-2 text-sm font-semibold text-slate-900">{dean?.name || 'Unassigned'}</dd>
+              </div>
+              <div className="text-right">
+                <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Program Heads</dt>
+                <dd className="mt-2 flex flex-wrap justify-end gap-2 text-sm font-semibold text-slate-900">
+                  {programHeads.length ? programHeads.map(member => (
+                    <span key={member.id} className="rounded-lg bg-[#f3f7ee] px-2.5 py-1 text-[#41572a]">{member.name}</span>
+                  )) : 'Unassigned'}
+                </dd>
+              </div>
+            </dl>
+          </section>
+          )}
+          <section aria-label="Current academic term" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Current Academic Term</h2>
+                <p className="text-xs font-medium text-slate-500">Active school year and semester</p>
+              </div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f3f7ee] text-[#62853e]">
+                <CalendarIcon className="h-6 w-6" />
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t border-slate-100 pt-5">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">School Year</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{activeAcademicYear?.academicYear || 'No active school year'}</p>
+              </div>
+              <div className="ml-auto text-right">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Current Semester</p>
+                <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
+                  <span className={`inline-flex rounded-lg px-2.5 py-1 text-xs font-bold ${phaseClasses[currentSemesterPhase || ''] || 'bg-slate-100 text-slate-600'}`}>
+                    {activeAcademicYear ? currentSemesterPhase || 'Not set' : '—'}
+                  </span>
+                  <span className="text-sm font-semibold text-slate-900">{currentSemesterName || '—'}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
 
         {/* Members DataTable (hidden while department membership is pending) */}
         {currentUserMembership?.status !== 'pending' && (

@@ -26,6 +26,19 @@ test('TBA recommendations exclude unavailable rooms, wrong days/hours, insuffici
   assert.deepEqual(recommend([target, meeting('busy')], rooms), ['PTC 301'])
 })
 
+test('a lone schedule with no current or previous room usage has no recommendations', () => {
+  const rooms = [room('PTC 300'), room('PTC 301')]
+  assert.deepEqual(recommend([meeting('target', { roomId: '', room: '' })], rooms), [])
+})
+
+test('an unassigned department uses only its previous term for building ranking', () => {
+  const rooms = [room('PTC 300'), room('ITS 200', { buildingId: 'ITS' }), room('ITS 201', { buildingId: 'ITS' })]
+  const target = meeting('target', { roomId: '', room: '' })
+  const previous = [meeting('old', { roomId: 'ITS 200' }), meeting('other', { department: 'CBA', roomId: 'PTC 300' })]
+  const choices = plotRoomRecommendations([target], rooms, [target], undefined, previous)
+  assert.deepEqual(choices.get(schedulePlotSelectionKey(target)), ['ITS 200', 'ITS 201'])
+})
+
 test('clear meetings and malformed time/day entries do not offer recommendations', () => {
   const rooms = [room('PTC 300'), room('PTC 301')]
   assert.deepEqual(recommend([meeting('target')], rooms), [])

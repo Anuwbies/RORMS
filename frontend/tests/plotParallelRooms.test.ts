@@ -18,8 +18,7 @@ test('BE 203/204/403/404 produces a shared connection error on every parallel sc
   const messages = plotParallelRoomMessages(group([203, 204, 403, 404]), rooms)
   assert.equal(messages.size, 4)
   for (const issues of messages.values()) {
-    assert.match(issues[0], /separate, consecutive rooms in the same building and floor/)
-    assert.match(issues[0], /BE 203 \/ BE 204 \/ BE 403 \/ BE 404/)
+    assert.equal(issues[0], 'Parallel classes must use separate, consecutive rooms in the same building and floor.')
   }
 })
 

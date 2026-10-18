@@ -88,6 +88,20 @@ test('TBA rooms still require valid days and times before recommending', () => {
   h.first.rows[0].values[17] = 'FRI'; h.first.rows[0].values[15] = ''; assert.deepEqual(h.recommendations(), [])
 })
 
+test('an empty current workbook uses previous-term buildings and stops when history is empty', () => {
+  const rooms = [
+    { id: 'A101', code: 'A101', name: 'A 101', buildingId: 'A' },
+    { id: 'B101', code: 'B101', name: 'B 101', buildingId: 'B' },
+  ]
+  const target: FacultySubjectAssignment = { location: 'current', rowKey: 'current', code: 'ITE 101', section: '1',
+    room: '', start: 450, end: 540, days: ['Mon'], roomColumn: 19, roomEntryIndex: 0 }
+  const previous: FacultySubjectAssignment = { location: 'previous', rowKey: 'previous', code: '', section: '', roomId: 'B101' }
+  assert.deepEqual(recommendScheduleRooms([target], rooms, 'current', 19, 0), [])
+  assert.deepEqual(recommendScheduleRooms([target], rooms, 'current', 19, 0, { previousTermAssignments: [previous] }), ['B 101'])
+  assert.deepEqual(recommendScheduleRooms([{ ...target, roomId: 'A101', room: 'A 101' }], rooms, 'current', 19, 0,
+    { alwaysRecommend: true, previousTermAssignments: [previous] }), [])
+})
+
 function buildingFixture(busy = false) {
   const rooms = ['PTC', 'ITS', 'MBA', 'BE'].flatMap(buildingId => [101, 102, 103].map(number => ({
     id: `${buildingId}${number}`, code: `${buildingId}${number}`, name: `${buildingId} ${number}`, buildingId,

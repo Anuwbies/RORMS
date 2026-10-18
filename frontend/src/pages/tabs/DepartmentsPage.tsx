@@ -14,8 +14,6 @@ import { collection, serverTimestamp, onSnapshot, query, orderBy, doc, writeBatc
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 import { CropModal } from '../../components/CropModal'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { Snackbar } from '../../components/Snackbar'
 import type { Member } from '../../types/member'
 import { ANOMALY_NAMES } from '../../visualizations/DeanBook'
@@ -241,22 +239,6 @@ function DepartmentsPage() {
       })
       .sort((a, b) => (b.memberCount || 0) - (a.memberCount || 0))
   }, [departments, allUsers, searchTerm, deanStatusFilters, deptSizeFilters])
-
-  const summaryStats = useMemo(() => {
-    const totalDepartments = departments.length;
-    const totalFacultyCount = allUsers.filter(u => u.department).length;
-    const assignedDeansCount = departments.filter(d => d.deanUID).length;
-    const avgDeptSize = totalDepartments ? Math.round(totalFacultyCount / totalDepartments) : 0;
-    const deansPercentage = totalDepartments > 0 ? Math.round((assignedDeansCount / totalDepartments) * 100) : 0;
-
-    return {
-      totalDepartments,
-      totalFacultyCount,
-      assignedDeansCount,
-      avgDeptSize,
-      deansPercentage
-    };
-  }, [departments, allUsers]);
 
   const deptMembers = selectedDept 
     ? allUsers
@@ -1045,105 +1027,6 @@ function DepartmentsPage() {
           description="Manage university departments, assign deans, and oversee faculty members." 
         />
 
-        {/* ══ Department Overview ══ */}
-        {(() => {
-          const { totalDepartments, totalFacultyCount, avgDeptSize, assignedDeansCount, deansPercentage } = summaryStats
-          const unassigned = totalDepartments - assignedDeansCount
-
-          const R = 28
-          const C = 2 * Math.PI * R
-          const filled = C * (deansPercentage / 100)
-
-          const facultyInDepts = allUsers.filter(u => u.department)
-          const roleCounts = {
-            Instructor: facultyInDepts.filter(u => u.role === 'Instructor').length,
-            Dean: facultyInDepts.filter(u => u.role === 'Dean').length,
-            'Program Head': facultyInDepts.filter(u => u.role === 'Program Head').length,
-            Registrar: facultyInDepts.filter(u => u.role === 'Registrar').length,
-            Admin: facultyInDepts.filter(u => u.role === 'Admin').length,
-          }
-
-          const roleRows = [
-            { role: 'Instructor', count: roleCounts.Instructor, bg: 'bg-emerald-500', text: 'text-emerald-600', light: 'bg-emerald-50' },
-            { role: 'Dean', count: roleCounts.Dean, bg: 'bg-amber-500', text: 'text-amber-600', light: 'bg-amber-50' },
-            { role: 'Program Head', count: roleCounts['Program Head'], bg: 'bg-rose-500', text: 'text-rose-600', light: 'bg-rose-50' },
-            { role: 'Registrar', count: roleCounts.Registrar, bg: 'bg-blue-500', text: 'text-blue-600', light: 'bg-blue-50' },
-          ]
-
-          const departmentMemberPoints = [...departments]
-            .sort((a, b) => a.code.localeCompare(b.code))
-            .map(department => ({
-              label: department.code,
-              tooltipLabel: department.name,
-              value: allUsers.filter(user => user.department === department.code).length,
-            }))
-          const departmentMemberTotal = departmentMemberPoints.reduce((total, department) => total + department.value, 0)
-
-          return (
-            <div className="mb-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-
-
-                {/* Card 0: Academic Departments */}
-                <SummaryCard
-                  className="animate-in"
-                  title="Department Members"
-                  subtitle={`${departmentMemberTotal} members across ${totalDepartments} departments`}
-                  icon={
-                    <div 
-                      onClick={() => setShowAmongUsButton(prev => !prev)} 
-                      className="cursor-default hover:opacity-80 transition-opacity" 
-                    >
-                      <DepartmentIcon className="h-4.5 w-4.5 text-[var(--brand-color)]" />
-                    </div>
-                  }
-                  gradientClasses="from-[var(--brand-color)]/20 to-[var(--brand-color)]/10"
-                  outlineClasses="bg-[var(--brand-color)]"
-                  blobClasses="bg-[var(--brand-color)]/5"
-                >
-                  <SummaryGraph variant="line" total={departmentMemberTotal} points={departmentMemberPoints} />
-                </SummaryCard>
-
-                {/* Card 1: Total Faculty */}
-                <SummaryCard
-                  className="animate-in"
-                  title="Total Members"
-                  subtitle={`${totalFacultyCount} Enrolled faculty members`}
-                  icon={<UsersIcon className="h-4.5 w-4.5 text-emerald-600" />}
-                  gradientClasses="from-emerald-700/20 to-emerald-800/30"
-                  outlineClasses="bg-emerald-600"
-                  blobClasses="bg-emerald-600/10"
-                >
-                  <SummaryGraph variant="bar" total={totalFacultyCount} points={[
-                    { label: 'Instructors', value: allUsers.filter(user => user.role === 'Instructor').length },
-                    { label: 'Program heads', value: allUsers.filter(user => user.role === 'Program Head').length },
-                    { label: 'Deans', value: allUsers.filter(user => user.role === 'Dean').length },
-                  ]} tone="emerald" />
-                </SummaryCard>
-
-                {/* Card 2: Dean Coverage */}
-                <SummaryCard
-                  className="animate-in"
-                  title="Dean Coverage"
-                  subtitle={`${departments.filter(d => d.deanUID).length}/${departments.length} Assigned deans`}
-                  icon={<UserIcon className="h-4.5 w-4.5 text-amber-600" />}
-                  onIconClick={() => setShowEasterEggControls(p => !p)}
-                  gradientClasses="from-amber-200 to-amber-100"
-                  outlineClasses="bg-amber-500"
-                  blobClasses="bg-amber-500/5"
-                >
-                  <SummaryGraph variant="pie" total={assignedDeansCount} points={[
-                    { label: 'Assigned', value: assignedDeansCount },
-                    { label: 'Vacant', value: totalDepartments - assignedDeansCount },
-                  ]} tone="amber" />
-                </SummaryCard>
-
-
-
-              </div>
-            </div>
-          )
-        })()}
 
         <DataTable
           data={filteredDepartments}

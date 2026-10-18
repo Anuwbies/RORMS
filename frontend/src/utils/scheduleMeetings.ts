@@ -15,6 +15,7 @@ export interface ScheduleMeetingRecord extends Record<string, unknown> {
   subjectCode?: string
   subjectTitle?: string
   classSection?: string
+  yearLevelLabel?: string
   academicYear?: string
   semester?: string
   status?: string

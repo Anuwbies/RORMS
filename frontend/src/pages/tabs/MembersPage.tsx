@@ -8,9 +8,6 @@ import { TextInput } from '../../components/TextInput'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 
 import { SectionHeader } from '../../components/SectionHeader'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
-import { getPrisonResidents } from '../../visualizations/MemberPrison'
 import type { MemberRole, MemberStatus, Department, Member } from '../../types/member'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -998,29 +995,6 @@ function MembersPage() {
     return [...filteredUsers, ...mergedInvites]
   }, [users, invites])
 
-  const departmentMemberStats = useMemo(() => {
-    const normalizeDepartment = (department?: string) => (department || '')
-      .trim()
-      .toLowerCase()
-      .replaceAll('’', "'")
-    const administrativeOffice = members.filter(member => normalizeDepartment(member.department) === 'administrative office').length
-    const registrarsOffice = members.filter(member => normalizeDepartment(member.department) === "registrar's office").length
-    const generalServiceDepartment = members.filter(member => normalizeDepartment(member.department) === 'general service department').length
-    const academic = members.filter(member => {
-      const department = normalizeDepartment(member.department)
-      return Boolean(department) && department !== 'administrative office' && department !== "registrar's office" && department !== 'general service department'
-    }).length
-    return {
-      administrativeOffice,
-      registrarsOffice,
-      generalServiceDepartment,
-      academic,
-      total: administrativeOffice + registrarsOffice + generalServiceDepartment + academic,
-    }
-  }, [members])
-
-  const prisonResidents = getPrisonResidents(members)
-
   const filteredMembers = members
     .filter((member) => {
       const matchesSearch = [member.name, member.email].some((val) =>
@@ -1698,59 +1672,6 @@ function MembersPage() {
           description="Manage system access, roles, and department assignments for all users in a centralized hub."
         />
 
-        <div className="animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <SummaryCard
-              className="animate-in"
-              title="Total Members"
-              subtitle={`${users.filter(u => u.status === 'Active').length} Active • ${invites.length} Pending`}
-              icon={<UsersIcon className="h-4.5 w-4.5 text-[var(--brand-color)]" />}
-              gradientClasses="from-[var(--brand-color)]/20 to-[var(--brand-color)]/10"
-              outlineClasses="bg-[var(--brand-color)]"
-              blobClasses="bg-[var(--brand-color)]/5"
-            >
-              <SummaryGraph variant="bar" total={users.length + invites.length} points={[
-                { label: 'Active', value: users.filter(user => user.status === 'Active').length },
-                { label: 'Pending', value: invites.length },
-                { label: 'Deact.', value: prisonResidents.prisoners.length },
-              ]} />
-            </SummaryCard>
-            <SummaryCard
-              className="animate-in"
-              title="Role Distribution"
-              subtitle={`${members.length} members across six roles`}
-              icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-4.5 w-4.5 text-[var(--brand-color)]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"><path d="m2 20 7-13 4 7 3-5 6 11ZM7 11l2 2 2-2" /></svg>}
-              gradientClasses="from-[#e3edda] to-[#f3f7ee]"
-              outlineClasses="bg-[var(--brand-color)]"
-              blobClasses="bg-[var(--brand-color)]/5"
-              >
-              <SummaryGraph variant="line" total={members.length} points={[
-                { label: 'Admin', value: members.filter(member => member.role === 'Admin').length },
-                { label: 'Reg.', value: members.filter(member => member.role === 'Registrar').length },
-                { label: 'Univ. Admin', value: members.filter(member => member.role === 'University Administrator').length },
-                { label: 'Dean', value: members.filter(member => member.role === 'Dean').length },
-                { label: 'Prog. Head', value: members.filter(member => member.role === 'Program Head').length },
-                { label: 'Instr.', value: members.filter(member => member.role === 'Instructor').length },
-              ]} tone="emerald" />
-            </SummaryCard>
-            <SummaryCard
-              className="animate-in"
-              title="Department Members"
-              subtitle={`${departmentMemberStats.total} members across four groups`}
-              icon={<svg aria-hidden="true" viewBox="0 0 24 24" className="h-4.5 w-4.5 text-sky-700" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 3h16v18H4ZM8 3v18M16 3v18M4 8h16M4 16h16" /></svg>}
-              gradientClasses="from-sky-200 to-sky-100"
-              outlineClasses="bg-sky-500"
-              blobClasses="bg-sky-500/5"
-            >
-              <SummaryGraph variant="pie" total={departmentMemberStats.total} points={[
-                { label: 'Administrative Office', value: departmentMemberStats.administrativeOffice },
-                { label: "Registrar's Office", value: departmentMemberStats.registrarsOffice },
-                { label: 'General Service Department', value: departmentMemberStats.generalServiceDepartment },
-                { label: 'Academic', value: departmentMemberStats.academic },
-              ]} tone="sky" />
-            </SummaryCard>
-          </div>
-        </div>        {/* Unified Table Container */}
         <div className="relative z-10">
           <DataTable
             isLoading={isLoading}

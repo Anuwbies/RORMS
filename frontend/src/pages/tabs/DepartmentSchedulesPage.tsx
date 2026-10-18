@@ -1,19 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { formatUserName } from '../../utils/userName'
-import {
-  CalendarIcon,
-  UserIcon,
-  UsersIcon,
-  DoorIcon,
-  CheckCircleIcon
-} from '../../components/Icons'
+import { CalendarIcon, UserIcon } from '../../components/Icons'
 import { Button } from '../../components/Button'
 import { SectionHeader } from '../../components/SectionHeader'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { PlotScheduleModal } from '../../components/PlotScheduleModal'
 import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
@@ -21,6 +13,7 @@ import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { canEditDepartmentWorkbook, workbookEditablePhases, type WorkbookMembership } from '../../utils/departmentWorkbookPermissions'
 import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
+import { resolveCurrentSemester } from '../../utils/academicSemester'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
 import {
   collection,
@@ -89,6 +82,8 @@ export function DepartmentSchedulesPage() {
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
   const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: string; phase: string } | null>(null)
+  const currentAcademicYear = academicYears.find(year => year.isActive) ?? academicYears[0]
+  const currentSemester = currentAcademicYear ? resolveCurrentSemester(currentAcademicYear) : ''
   const [workbookMembership, setWorkbookMembership] = useState<(WorkbookMembership & { id: string }) | null>(null)
 
   useEffect(() => {
@@ -124,7 +119,7 @@ export function DepartmentSchedulesPage() {
   const [deptSchedules, setDeptSchedules] = useState<DepartmentScheduleSummary[]>([])
 
   useEffect(() => {
-    if (!selectedDepartment?.code) {
+    if (!selectedDepartment?.code || !currentAcademicYear || !currentSemester) {
       setDeptSchedules([])
       return
     }
@@ -146,43 +141,39 @@ export function DepartmentSchedulesPage() {
           status: data.status === 'Plot' ? 'Plot' : 'Draft',
         }
       })
-      // Filter by selected academic year and semester if available
+      // The overview and member counters always describe the current term.
       const filtered = allDocs.filter(item => {
-        const matchesYear = !selectedAcademicYear?.academicYear || item.academicYear === selectedAcademicYear.academicYear
-        const matchesSem = !selectedSemesterPhase?.name || item.semester === selectedSemesterPhase.name
+        const matchesYear = item.academicYear === currentAcademicYear.academicYear
+          || item.academicYearId === currentAcademicYear.id
+        const matchesSem = item.semester === currentSemester || item.semester === semesterKey(currentSemester)
+          || item.semesterKey === semesterKey(currentSemester)
         return matchesYear && matchesSem
       })
       setDeptSchedules(filtered)
     })
 
     return () => unsub()
-  }, [selectedDepartment?.code, selectedAcademicYear?.academicYear, selectedSemesterPhase?.name])
+  }, [selectedDepartment?.code, currentAcademicYear?.id, currentAcademicYear?.academicYear, currentSemester])
 
-  const scheduleCounts = useMemo(() => {
-    const parentOrSingle = deptSchedules.filter(s => !s.parentId)
-    const plot = parentOrSingle.filter(s => s.status === 'Plot').length
-    const draft = parentOrSingle.filter(s => s.status === 'Draft').length
-    const total = parentOrSingle.length
-
-    return { plot, draft, total }
-  }, [deptSchedules])
-
-  const facultyCounts = useMemo(() => {
-    const points = ['Instructor', 'Program Head', 'Dean'].map(role => ({
-      label: role,
-      value: members.filter(member => member.role === role).length,
+  const memberScheduleCounts = useMemo(() => {
+    const schedulesByInstructor = new Map<string, Map<string, 'Draft' | 'Plot'>>()
+    const meetings = scheduleMeetingRecords(deptSchedules.map(schedule => ({ id: schedule.id, data: () => schedule })))
+    for (const meeting of meetings) {
+      const instructorId = meeting.instructorId?.trim()
+      if (!instructorId) continue
+      const scheduleId = String(meeting.sourceScheduleId || meeting.parentId || meeting.id)
+      const schedules = schedulesByInstructor.get(instructorId) ?? new Map<string, 'Draft' | 'Plot'>()
+      schedules.set(scheduleId, meeting.status === 'Plot' ? 'Plot' : 'Draft')
+      schedulesByInstructor.set(instructorId, schedules)
+    }
+    return new Map(members.map(member => {
+      const schedules = new Map<string, 'Draft' | 'Plot'>()
+      for (const id of [member.membershipId, member.id]) {
+        for (const [scheduleId, status] of schedulesByInstructor.get(id) ?? []) schedules.set(scheduleId, status)
+      }
+      return [member.membershipId, { plot: [...schedules.values()].filter(status => status === 'Plot').length, total: schedules.size }] as const
     }))
-    return { points, total: points.reduce((sum, point) => sum + point.value, 0) }
-  }, [members])
-
-  const roomAssignments = useMemo(() => {
-    // Workbook rows can contain several independent Lec/Lab room assignments.
-    const sessions = scheduleMeetingRecords(deptSchedules
-      .filter(row => row.source !== 'workbook' || row.schemaVersion !== 2 || (Array.isArray(row.meetings) && row.meetings.length > 0))
-      .map(row => ({ id: row.id, data: () => row })))
-    const assigned = sessions.filter(session => Boolean(session.roomId?.trim())).length
-    return { assigned, unassigned: sessions.length - assigned, total: sessions.length }
-  }, [deptSchedules])
+  }, [deptSchedules, members])
 
   // 1. Fetch Academic Years
   useEffect(() => {
@@ -325,7 +316,7 @@ export function DepartmentSchedulesPage() {
   const memberColumns: ColumnDef<Member>[] = useMemo(() => [
     {
       header: 'Member Info',
-      width: '30%',
+      width: '32%',
       render: (member) => (
         <div className="flex items-center gap-4">
           {member.avatar && !avatarErrors[member.avatar] ? (
@@ -359,7 +350,7 @@ export function DepartmentSchedulesPage() {
     },
     {
       header: 'Role',
-      width: '23%',
+      width: '20%',
       render: (member) => (
         <div className={`flex items-center gap-2 ${roleClasses[member.role]?.split(' ')[1] || 'text-gray-500'}`}>
           <div className="h-2 w-2 rounded-full bg-current" />
@@ -371,7 +362,7 @@ export function DepartmentSchedulesPage() {
     },
     {
       header: 'Status',
-      width: '23%',
+      width: '16%',
       render: (member) => (
         <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[0.65rem] font-black uppercase tracking-widest ${statusClasses[member.status] || 'bg-gray-100 text-gray-700'}`}>
           {member.status}
@@ -380,15 +371,26 @@ export function DepartmentSchedulesPage() {
     },
     {
       header: 'Joined Date',
-      width: '1%',
+      width: '16%',
       align: 'right',
       render: (member) => (
         <span className="text-sm font-semibold text-gray-600">
           {member.joinedDate}
         </span>
       )
+    },
+    {
+      header: 'Plotted / Total',
+      width: '16%',
+      align: 'right',
+      render: (member) => {
+        const counts = memberScheduleCounts.get(member.membershipId) ?? { plot: 0, total: 0 }
+        return <span className="text-sm font-semibold text-gray-600" title={`${counts.plot} plotted, ${counts.total - counts.plot} draft`}>
+          {counts.plot} / {counts.total}
+        </span>
+      }
     }
-  ], [avatarErrors])
+  ], [avatarErrors, memberScheduleCounts])
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
@@ -398,45 +400,6 @@ export function DepartmentSchedulesPage() {
           description="Overview of department members, schedules, and room allocations across colleges."
         />
 
-        {/* 3 Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
-          <SummaryCard
-            className="animate-in"
-            title="Plot Schedules"
-            subtitle={`${scheduleCounts.plot} of ${scheduleCounts.total} schedules plotted`}
-            icon={<CheckCircleIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
-            gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
-            blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          >
-            <SummaryGraph variant="bar" total={scheduleCounts.plot} points={[
-              { label: 'Plot', value: scheduleCounts.plot },
-              { label: 'Draft', value: scheduleCounts.draft },
-            ]} />
-          </SummaryCard>
-          <SummaryCard
-            className="animate-in"
-            title="Department Faculty"
-            subtitle={`${facultyCounts.total} faculty members in the department`}
-            icon={<UsersIcon className="w-4.5 h-4.5 text-blue-600" />}
-            gradientClasses="from-blue-500 to-indigo-600"
-            blobClasses="bg-blue-500/8 group-hover:bg-blue-500/14"
-          >
-            <SummaryGraph variant="pie" total={facultyCounts.total} points={facultyCounts.points} tone="sky" />
-          </SummaryCard>
-          <SummaryCard
-            className="animate-in"
-            title="Room Assignments"
-            subtitle={`${roomAssignments.assigned} of ${roomAssignments.total} sessions assigned a room`}
-            icon={<DoorIcon className="w-4.5 h-4.5 text-amber-600" />}
-            gradientClasses="from-amber-400 to-orange-500"
-            blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          >
-            <SummaryGraph variant="bar" total={roomAssignments.total} points={[
-              { label: 'Assigned', value: roomAssignments.assigned },
-              { label: 'Unassigned', value: roomAssignments.unassigned },
-            ]} tone="amber" />
-          </SummaryCard>
-        </div>
 
         {/* Members DataTable for Selected Department */}
         <div className="relative z-10">

@@ -39,6 +39,7 @@ export interface FacultySubjectAssignment {
   room?: string
   roomId?: string
   roomExists?: boolean
+  maxStudents?: number | null
   days?: readonly string[]
   rowKey?: string
   sectionScope?: string
@@ -241,6 +242,11 @@ export function validateFacultyScheduleAssignments(
       if (matches.length === 1) {
         const roomStatusIssue = scheduleRoomStatusIssue(matches[0])
         if (roomStatusIssue) warn(assignment, roomStatusIssue)
+        const capacity = matches[0].capacity
+        if (capacity !== undefined && assignment.maxStudents !== null && assignment.maxStudents !== undefined
+          && assignment.maxStudents > capacity) {
+          warn(assignment, `Room ${assignment.room} has a capacity of ${capacity}, below the Max No. of Stud. (${assignment.maxStudents}).`)
+        }
       }
     }
     for (const [field, subject] of [assignment.code, assignment.subjectTitle ?? ''].entries()) {
@@ -456,7 +462,7 @@ export function departmentFacultyScheduleAssignments(rows: readonly WorkbookSche
     const base = { location, rowKey: location, departmentCode: directory.departmentCode,
       parallelGroup: row.parallelSourceRow === null ? undefined : facultyScheduleRowKey(row.sourceSheet, row.parallelSourceRow),
       description: rowDescriptions.get(location) ?? `Year ${row.yearLevel} · Row ${row.sourceRow}`, code: row.subjectCode, subjectTitle: row.subjectTitle,
-      section: row.classSection, sectionScope: JSON.stringify([row.yearLevel, subjectKey(row.course)]) }
+       section: row.classSection, sectionScope: JSON.stringify([row.yearLevel, subjectKey(row.course)]), maxStudents: row.maxStudents }
     if (!row.meetings.length) return [base]
     const indexes = new Map<string, number>()
     return row.meetings.map(meeting => {

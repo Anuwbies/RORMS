@@ -29,6 +29,17 @@ const semesterKey = (value: string) => {
   return /^(?:sem1|1st semester)$/.test(text) ? 'sem1' : /^(?:sem2|2nd semester)$/.test(text) ? 'sem2' : text
 }
 
+/** The term immediately before the selected semester, retaining the stored year format. */
+export function previousScheduleTerm(academicYear: string, semester: string): { academicYear: string; semester: 'sem1' | 'sem2' } | undefined {
+  if (!academicYear.trim()) return
+  const selected = semesterKey(semester)
+  if (selected === 'sem2') return { academicYear, semester: 'sem1' }
+  if (selected !== 'sem1') return
+  const match = /^(\s*)(\d{4})(\s*[-–—]\s*)(\d{4})(\s*)$/.exec(academicYear)
+  if (!match) return
+  return { academicYear: `${match[1]}${Number(match[2]) - 1}${match[3]}${Number(match[4]) - 1}${match[5]}`, semester: 'sem2' }
+}
+
 export function scheduleMatchesTerm(meeting: ScheduleMeetingRecord, year: ScheduleTerm | null, semester: string): boolean {
   if (year?.id && typeof meeting.academicYearId === 'string' && meeting.academicYearId) {
     if (meeting.academicYearId !== year.id) return false
@@ -41,6 +52,16 @@ export function roomScheduleSection(meeting: { classSection?: string; course?: u
   const section = meeting.classSection?.trim().replace(/\s*·\s*/g, ' - ') || 'TBA'
   const course = typeof meeting.course === 'string' ? meeting.course.trim() : ''
   return course ? `${course} - ${section}` : section
+}
+
+export function scheduleSectionLabel(schedule: { classSection?: string; yearLevel?: unknown; yearLevelLabel?: unknown }): string {
+  const section = roomScheduleSection({ classSection: schedule.classSection })
+  const label = typeof schedule.yearLevelLabel === 'string' ? schedule.yearLevelLabel.split(':', 1)[0].trim() : ''
+  if (label) return `${label} - ${section}`
+  const year = schedule.yearLevel
+  if (typeof year !== 'number' || !Number.isInteger(year) || year <= 0) return section
+  const suffix = year % 100 >= 11 && year % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][year % 10] ?? 'th'
+  return `${year}${suffix} Year - ${section}`
 }
 
 export function roomScheduleLabel(meeting: { format?: string; subjectType?: unknown; type?: unknown }): string {

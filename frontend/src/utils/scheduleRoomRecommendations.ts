@@ -6,10 +6,23 @@ export interface ParallelRoomGroupRecommendation {
   rooms: readonly { rowKey: string; room: string }[]
 }
 
+/** Historical room use ranks buildings only when the current workbook has no assigned rooms. */
+function roomUsageAssignments(current: readonly FacultySubjectAssignment[], previous: readonly FacultySubjectAssignment[],
+  rooms: ScheduleDirectory['rooms']): readonly FacultySubjectAssignment[] {
+  const knownIds = new Set(rooms.map(room => room.id))
+  const aliases = new Map<string, number>()
+  for (const room of rooms) for (const alias of new Set([room.name, room.code].map(excelScheduleRoomKey).filter(Boolean))) {
+    aliases.set(alias, (aliases.get(alias) ?? 0) + 1)
+  }
+  const assigned = (entry: FacultySubjectAssignment) => knownIds.has(entry.roomId ?? '')
+    || aliases.get(excelScheduleRoomKey(entry.room ?? '')) === 1
+  return current.some(assigned) ? current : previous
+}
+
 /** Find complete room chains for the actual parallel group, in row order. */
 export function recommendParallelRoomGroups(assignments: readonly FacultySubjectAssignment[], rooms: ScheduleDirectory['rooms'],
   rowKey: string, column: number, entryIndex: number, externalAssignments: readonly FacultySubjectAssignment[] = [],
-  usageRooms: ScheduleDirectory['rooms'] = rooms): ParallelRoomGroupRecommendation[] {
+  usageRooms: ScheduleDirectory['rooms'] = rooms, previousTermAssignments: readonly FacultySubjectAssignment[] = []): ParallelRoomGroupRecommendation[] {
   const target = assignments.find(assignment => assignment.rowKey === rowKey && assignment.roomColumn === column
     && assignment.roomEntryIndex === entryIndex)
   if (!target?.parallelGroup || target.start === undefined || target.end === undefined || !target.days?.length) return []
@@ -29,7 +42,8 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
     roomsByAlias.set(key, matches)
   }
   const buildingUsage = new Map<string, Set<string>>()
-  for (const assignment of assignments) {
+  const currentUsage = target.departmentCode ? assignments.filter(assignment => assignment.departmentCode === target.departmentCode) : assignments
+  for (const assignment of roomUsageAssignments(currentUsage, previousTermAssignments, usageRooms)) {
     const matches = roomsByAlias.get(excelScheduleRoomKey(assignment.room ?? ''))
     const room = roomsById.get(assignment.roomId ?? '') ?? (matches?.size === 1 ? [...matches][0] : undefined)
     if (!room?.buildingId) continue
@@ -39,6 +53,7 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
   }
   const buildingRank = new Map([...buildingUsage].sort(([left, a], [right, b]) => b.size - a.size || left.localeCompare(right))
     .map(([building], index) => [building, index]))
+  if (!buildingRank.size) return []
   const locations = new Map<string, Map<number, ScheduleDirectory['rooms'][number]>>()
   for (const room of rooms) {
     if (scheduleRoomStatusIssue(room)) continue
@@ -56,7 +71,8 @@ export function recommendParallelRoomGroups(assignments: readonly FacultySubject
     for (const ordered of group.length === 1 ? [chain] : [chain, [...chain].reverse()]) {
       const available = ordered.every((room, index) => {
         const candidate = { ...group[index], roomId: room.id, room: room.code || room.name }
-        return !occupied.some(other => facultyScheduleRoomConflict(candidate, other))
+        return (group[index].maxStudents == null || room.capacity === undefined || group[index].maxStudents <= room.capacity)
+          && !occupied.some(other => facultyScheduleRoomConflict(candidate, other))
       })
       if (!available) continue
       const entries = ordered.map((room, index) => ({ rowKey: group[index].rowKey!, room: room.code.trim() || room.name.trim() }))
@@ -121,14 +137,17 @@ export function needsScheduleRoomRecommendation(assignments: readonly FacultySub
   hasConflict?: (assignment: FacultySubjectAssignment) => boolean): boolean {
   const targets = assignments.filter(assignment => assignment.rowKey === rowKey && assignment.roomColumn === column
     && (entryIndex < 0 || assignment.roomEntryIndex === entryIndex))
-  return targets.some(target => !target.room?.trim() || isExcelScheduleTba(target.room)
-    || hasConflict?.(target)
-    || rooms.some(room => (target.roomId === room.id
+  return targets.some(target => {
+    const matches = rooms.filter(room => target.roomId === room.id
       || [room.code, room.name].some(value => excelScheduleRoomKey(value) === excelScheduleRoomKey(target.room ?? '')))
-      && Boolean(scheduleRoomStatusIssue(room)))
-    || parallelRoomAssignmentIssue(assignments, rooms, target)
-    || parallelRoomConnectionIssue(assignments, rooms, target)
-    || assignments.some(other => other !== target && facultyScheduleRoomConflict(target, other)))
+    return !target.room?.trim() || isExcelScheduleTba(target.room) || Boolean(hasConflict?.(target))
+      || matches.length !== 1
+      || matches.some(room => Boolean(scheduleRoomStatusIssue(room)) || target.maxStudents != null
+        && room.capacity !== undefined && target.maxStudents > room.capacity)
+      || Boolean(parallelRoomAssignmentIssue(assignments, rooms, target))
+      || Boolean(parallelRoomConnectionIssue(assignments, rooms, target))
+      || assignments.some(other => other !== target && facultyScheduleRoomConflict(target, other))
+  })
 }
 
 /** Recommend against every meeting affected by this room entry, across all sheets. */
@@ -137,6 +156,7 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
     hasConflict?: (assignment: FacultySubjectAssignment) => boolean
     isRoomAvailable?: (room: ScheduleDirectory['rooms'][number]) => boolean
     alwaysRecommend?: boolean
+    previousTermAssignments?: readonly FacultySubjectAssignment[]
   }): string[] {
   const targets = assignments.filter(assignment => assignment.rowKey === rowKey
     && assignment.roomColumn === column && (entryIndex < 0 || assignment.roomEntryIndex === entryIndex))
@@ -153,7 +173,7 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
   }
   // Each schedule counts once per building, even when Lec/Lab share its rooms.
   const buildingUsage = new Map<string, Set<string>>()
-  for (const assignment of assignments) {
+  for (const assignment of roomUsageAssignments(assignments, options?.previousTermAssignments ?? [], rooms)) {
     const matches = roomsByAlias.get(excelScheduleRoomKey(assignment.room ?? ''))
     const room = roomsById.get(assignment.roomId ?? '') ?? (matches?.size === 1 ? [...matches][0] : undefined)
     if (!room?.buildingId) continue
@@ -163,16 +183,13 @@ export function recommendScheduleRooms(assignments: readonly FacultySubjectAssig
   }
   const buildingRank = new Map([...buildingUsage].sort(([left, a], [right, b]) => b.size - a.size || left.localeCompare(right))
     .slice(0, 3).map(([building], index) => [building, index]))
-  if (options?.alwaysRecommend && !buildingRank.size) {
-    for (const building of [...new Set(rooms.map(room => room.buildingId).filter(Boolean))].sort().slice(0, 3)) {
-      buildingRank.set(building, buildingRank.size)
-    }
-  }
+  if (!buildingRank.size) return []
   const targetSet = new Set(targets)
   const parallelCosts = new Map(targets.map(target => [target, parallelRoomRecommendationCosts(assignments, rooms, target)]))
   const changeCost = (roomId: string) => Math.max(0, ...targets.map(target => parallelCosts.get(target)?.get(roomId) ?? 0))
   const available = rooms.filter(room => {
     if (scheduleRoomStatusIssue(room)) return false
+    if (targets.some(target => target.maxStudents != null && room.capacity !== undefined && target.maxStudents > room.capacity)) return false
     if (!buildingRank.has(room.buildingId)) return false
     if (options?.isRoomAvailable && !options.isRoomAvailable(room)) return false
     if (options?.alwaysRecommend && targets.every(target => target.roomId === room.id

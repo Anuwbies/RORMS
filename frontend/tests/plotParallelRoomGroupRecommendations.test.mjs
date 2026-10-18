@@ -34,7 +34,13 @@ const meeting = (index, changes = {}) => ({ id: `class-${index}`, sourceSchedule
   status: 'Draft', maxStudents: 30, ...changes })
 const rooms = Array.from({ length: 6 }, (_, index) => room(300 + index))
 const parallel = Array.from({ length: 4 }, (_, index) => meeting(index))
-const recommendations = (entries, availableRooms = rooms) => plotParallelRoomGroupRecommendations(entries, availableRooms, parallel)
+const previous = [meeting('previous', { groupId: undefined, roomId: 'ptc-300', room: 'PTC 300' })]
+const recommendations = (entries, availableRooms = rooms) => plotParallelRoomGroupRecommendations(entries, availableRooms, parallel, undefined, previous)
+
+test('unassigned parallel rooms have no recommendations without current or previous room usage', () => {
+  const options = plotParallelRoomGroupRecommendations(parallel, rooms, parallel)
+  assert.deepEqual(Array.from(options.get(schedulePlotSelectionKey(parallel[0])) ?? []), [])
+})
 
 test('a parallel room choice fills four consecutive rooms and appears for each editable section', () => {
   const choices = recommendations(parallel)
@@ -69,7 +75,7 @@ test('provided rooms are never bulk-editable, while smaller actual parallel grou
   assert.equal(plotParallelRoomGroupRecommendations(withProvidedRoom, rooms, withProvidedRoom).size, 0)
   for (const count of [1, 2, 3]) {
     const members = parallel.slice(0, count)
-    const choices = plotParallelRoomGroupRecommendations(members, rooms, members)
+    const choices = plotParallelRoomGroupRecommendations(members, rooms, members, undefined, previous)
     assert.equal(choices.size, count)
     for (const member of members) {
       const options = choices.get(schedulePlotSelectionKey(member)) ?? []
@@ -79,11 +85,13 @@ test('provided rooms are never bulk-editable, while smaller actual parallel grou
   }
 })
 
-test('staged room values do not make a previously editable group look department-provided', () => {
+test('staged parallel conflicts still get recommendations, while a valid group does not', () => {
   const original = parallel.map(item => ({ ...item, room: '', providedRoomKeys: undefined }))
-  const staged = original.map((item, index) => ({ ...item, roomId: `ptc-${300 + index}` }))
+  const staged = original.map((item, index) => ({ ...item, roomId: `ptc-${index === 3 ? 305 : 300 + index}` }))
   const choices = plotParallelRoomGroupRecommendations(staged, rooms, original)
   assert.ok(choices.get(schedulePlotSelectionKey(original[0]))?.length)
+  const valid = original.map((item, index) => ({ ...item, roomId: `ptc-${300 + index}` }))
+  assert.equal(plotParallelRoomGroupRecommendations(valid, rooms, original).size, 0)
 })
 
 test('four-room groups prefer the most-used building, then fall back when it has no valid chain', () => {

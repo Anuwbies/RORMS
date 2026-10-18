@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { assignedSchedulePlotStatus, isProvidedScheduleRoom, plotMeetingKey, schedulePlotSelectionKey, toggleAssignedSchedulePlot, type PlotAssignment } from '../src/utils/schedulePlotting.ts'
+import { assignedSchedulePlotStatus, isProvidedScheduleRoom, plotMeetingKey, plotSelectionActionMode, plotSelectionDirectionLocked, schedulePlotSelectionKey, toggleAssignedSchedulePlot, type PlotAssignment } from '../src/utils/schedulePlotting.ts'
 import type { ScheduleMeetingRecord } from '../src/utils/scheduleMeetings.ts'
 
 function meeting(overrides: Partial<ScheduleMeetingRecord> = {}): ScheduleMeetingRecord {
@@ -30,18 +30,30 @@ test('unchecking cancels staging without clearing the assigned room', () => {
   assert.equal(saved.status, 'Draft')
 })
 
-test('calendar copies and Lec/Lab checkboxes share their schedule row status', () => {
+test('calendar copies share approval, while a different time in the same row stays independent', () => {
   const first = meeting()
   const repeated = meeting({ id: 'class1:meeting:1' })
   const lab = meeting({ id: 'class1:meeting:2', format: 'Lab', startTime: '09:00', endTime: '10:30' })
   assert.equal(schedulePlotSelectionKey(first), schedulePlotSelectionKey(repeated))
   let selected = toggleAssignedSchedulePlot(new Map(), first)
-  assert.equal(assignedSchedulePlotStatus(selected, lab), 'Plot')
+  assert.equal(assignedSchedulePlotStatus(selected, lab), 'Draft')
   assert.equal(assignedSchedulePlotStatus(selected, repeated), 'Plot')
   selected = toggleAssignedSchedulePlot(selected, repeated)
   assert.equal(selected.size, 0)
   selected = toggleAssignedSchedulePlot(selected, lab)
   assert.ok(selected.has(schedulePlotSelectionKey(lab)))
+})
+
+test('separate times using the same room can be checked independently', () => {
+  const morning = meeting()
+  const afternoon = meeting({ id: 'class1:meeting:1', startTime: '13:30', endTime: '15:00' })
+  let pending = toggleAssignedSchedulePlot(new Map(), morning)
+  assert.equal(assignedSchedulePlotStatus(pending, morning), 'Plot')
+  assert.equal(assignedSchedulePlotStatus(pending, afternoon), 'Draft')
+  pending = toggleAssignedSchedulePlot(pending, afternoon)
+  pending = toggleAssignedSchedulePlot(pending, morning)
+  assert.equal(assignedSchedulePlotStatus(pending, morning), 'Draft')
+  assert.equal(assignedSchedulePlotStatus(pending, afternoon), 'Plot')
 })
 
 test('unassigned and other statuses cannot stage current-room approval', () => {
@@ -59,6 +71,22 @@ test('provided Plot rooms keep their checkbox and unchecking stages Draft withou
   assert.equal(unchecked.get(schedulePlotSelectionKey(saved))?.targetStatus, 'Draft')
   assert.equal(toggleAssignedSchedulePlot(unchecked, saved).size, 0)
   assert.equal(saved.status, 'Plot')
+})
+
+test('staged checkbox changes lock plotting and unplotting to one direction until cleared', () => {
+  const saved = meeting({ status: 'Plot' })
+  const draft = meeting({ id: 'class2', sourceScheduleId: 'class2' })
+  assert.equal(plotSelectionActionMode(new Map()), null)
+  const unplot = toggleAssignedSchedulePlot(new Map(), saved)
+  assert.equal(plotSelectionActionMode(unplot), 'unplot')
+  assert.equal(plotSelectionDirectionLocked('unplot', false, true), false)
+  assert.equal(plotSelectionDirectionLocked('unplot', false, false), true)
+  assert.equal(plotSelectionActionMode(toggleAssignedSchedulePlot(unplot, saved)), null)
+  const plot = toggleAssignedSchedulePlot(new Map(), draft)
+  assert.equal(plotSelectionActionMode(plot), 'plot')
+  assert.equal(plotSelectionDirectionLocked('plot', true, false), false)
+  assert.equal(plotSelectionDirectionLocked('plot', true, true), true)
+  assert.equal(plotSelectionActionMode(toggleAssignedSchedulePlot(plot, draft)), null)
 })
 
 test('recorded provided-room provenance survives Plot while newly chosen rooms remain editable', () => {

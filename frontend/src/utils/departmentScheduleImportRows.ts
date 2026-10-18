@@ -50,7 +50,7 @@ export function extractDepartmentScheduleImportRows(snapshot: WorkbookEditSnapsh
     const curriculum = /^\s*([1-4]\s*[a-z][a-z0-9]*)\s*(?=:|\s|$)/i.exec(section?.sourceLabel ?? section?.label ?? '')
     rowDescriptions.set(facultyScheduleRowKey(row.sourceSheet, sheet.rows[row.sourceRow - 3].rowNumber),
       `${section?.label.split(':')[0].trim() || `Year ${row.yearLevel}`} · Row ${row.sourceRow - 2 - (section?.start ?? 0)}`)
-    return { ...row, status: 'Draft' as const,
+    return { ...row, status: 'Draft' as const, yearLevelLabel: section?.label ?? '',
       sourceRow: sheet.rows[row.sourceRow - 3].rowNumber,
       parallelSourceRow: row.parallelSourceRow === null ? null : sheet.rows[row.parallelSourceRow - 3].rowNumber,
       course: row.course || curriculum?.[1].replace(/\s/g, '').toUpperCase() || '',

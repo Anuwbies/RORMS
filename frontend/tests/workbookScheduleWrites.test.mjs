@@ -55,6 +55,18 @@ test('unchanged plotted row preserves its status, room and Registrar metadata on
   assert.equal(writes[0].data.createdAt, 'original')
 })
 
+test('workbook Save keeps separate Plot and Draft states for meetings in one unchanged row', async () => {
+  const afternoon = { ...meeting, time: '13:30-15:00', startTime: '13:30', endTime: '15:00' }
+  const source = { ...row, meetings: [meeting, afternoon] }
+  const previous = { ...source, id, status: 'Plot', meetings: [{ ...meeting, status: 'Plot' }, { ...afternoon, status: 'Draft' }] }
+  const { service } = harness(previous)
+  const prepared = await service.prepareWorkbookScheduleWrites(term, [source], sourceWorkbook, [sourceWorkbook], 'schedules', 'Draft')
+  const writes = []
+  prepared.apply({ set: (_path, data) => writes.push(data), delete: () => assert.fail('Should retain the row') }, 2, 'workbook2', 'dean')
+  assert.equal(writes[0].status, 'Plot')
+  assert.deepEqual(Array.from(writes[0].meetings, item => item.status), ['Plot', 'Draft'])
+})
+
 test('workbook Save preserves provided-room mode and a checkbox-returned Draft status', async () => {
   const initial = harness()
   const key = initial.plotting.plotMeetingKey(meeting)
@@ -175,6 +187,8 @@ test('saving an edited Plot row leaves other Plot and Draft rows unchanged; copi
   initial.apply({ set: (path, data) => baseline.push(data), delete: () => assert.fail() }, 1, 'workbook1', 'dean')
   baseline[0].status = 'Plot'
   baseline[1].status = 'Plot'
+  baseline[0].meetings[0].status = 'Plot'
+  baseline[1].meetings[0].status = 'Plot'
   const { service } = harness(baseline)
   const source = [{ ...rows[0], subjectTitle: 'Edited title', rawValues: row.rawValues.map((value, column) => column === 3 ? 'Edited title' : value) }, rows[1], rows[2], { ...row, sourceRow: 6 }]
   const prepared = await service.prepareWorkbookScheduleWrites(term, source, sourceWorkbook, [sourceWorkbook], 'schedules', 'Draft')

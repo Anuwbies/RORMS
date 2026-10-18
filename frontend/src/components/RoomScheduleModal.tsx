@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { formatUserName } from '../utils/userName'
 import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons'
 import { db, auth } from '../firebase'
-import { roomScheduleLabel, roomScheduleSection, scheduleMatchesTerm } from '../utils/roomSchedule'
+import { roomScheduleLabel, scheduleSectionLabel, scheduleMatchesTerm } from '../utils/roomSchedule'
 import { subscribeRoomTimetable } from '../services/roomTimetable'
 import { collection, onSnapshot } from 'firebase/firestore'
 import type { Room } from '../types/room'
@@ -186,14 +186,6 @@ const formatTime = (time: string) => {
   const suffix = hours >= 12 ? 'PM' : 'AM'
   const displayHours = hours % 12 || 12
   return `${displayHours}:${(m || '00').padStart(2, '0')} ${suffix}`
-}
-
-const scheduleSectionLabel = (schedule: { classSection?: string; course?: unknown; sourceKey?: unknown; yearLevel?: unknown }) => {
-  const section = roomScheduleSection(schedule)
-  const year = schedule.yearLevel
-  if (typeof schedule.sourceKey !== 'string' || typeof year !== 'number' || !Number.isInteger(year) || year <= 0) return section
-  const suffix = year % 100 >= 11 && year % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][year % 10] ?? 'th'
-  return `${year}${suffix} Year - ${section}`
 }
 
 const scheduleCardLabel = (schedule: Parameters<typeof roomScheduleLabel>[0] & { college?: unknown }) => {

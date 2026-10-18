@@ -1,7 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
  
 import { type TimeOfDay, type MoonPhaseKey, getAstronomicalMoonPhase } from '../../visualizations/WeatherOverlay'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
@@ -16,7 +14,7 @@ import { NumberInput } from '../../components/NumberInput'
 import { TextInput } from '../../components/TextInput'
 import { TextAreaInput } from '../../components/TextAreaInput'
 import { RoomAmenities } from '../../components/RoomAmenities'
-import { SettingsIcon, DoorIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, UsersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon, CalendarIcon } from '../../components/Icons'
+import { SettingsIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon, CalendarIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
 import { Snackbar } from '../../components/Snackbar'
@@ -1105,8 +1103,6 @@ function BuildingsRoomsPage() {
   const canManageBuildings = currentUserRole === 'Admin' || currentUserRole === 'Registrar' || currentUserRole === 'University Administrator'
 
 
-  const availableRoomsCount = rooms.filter(room => room.status === 'Available').length
-  const totalCapacity = buildings.reduce((sum, building) => sum + (building.capacity || 0), 0)
 
   return (
     <section
@@ -2047,47 +2043,6 @@ function BuildingsRoomsPage() {
           description="Manage campus facilities, view room capacities, and track utilization."
         />
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-6">
-          <SummaryCard
-            className="animate-in"
-            title="Available Rooms"
-            subtitle={`${availableRoomsCount} currently ready to book`}
-            icon={<DoorIcon className="w-5 h-5 text-emerald-600" />}
-            gradientClasses="from-emerald-200 to-emerald-100"
-            outlineClasses="bg-emerald-500"
-            blobClasses="bg-emerald-500/5"
-          >
-            <SummaryGraph variant="pie" total={availableRoomsCount} points={[
-              { label: 'Available', value: availableRoomsCount },
-              { label: 'Unavailable', value: rooms.filter(room => room.status === 'Unavailable').length },
-              { label: 'Maintenance', value: rooms.filter(room => room.status === 'Maintenance').length },
-            ]} tone="emerald" />
-          </SummaryCard>
-
-          <SummaryCard
-            className="animate-in"
-            title="Total Buildings"
-            subtitle={`${buildings.length} campus facilities managed`}
-            icon={<BuildingIcon className="w-5 h-5 text-amber-600" />}
-            gradientClasses="from-amber-200 to-amber-100"
-            outlineClasses="bg-amber-500"
-            blobClasses="bg-amber-500/5"
-          >
-            <SummaryGraph variant="bar" total={buildings.length} points={buildings.map(building => ({ label: building.code || building.name, value: building.rooms.length, tooltipLabel: 'Rooms' }))} unit="buildings" tone="amber" />
-          </SummaryCard>
-
-          <SummaryCard
-            className="animate-in"
-            title="Total Capacity"
-            subtitle={`${totalCapacity} maximum campus seats`}
-            icon={<UsersIcon className="w-5 h-5 text-sky-600" />}
-            gradientClasses="from-sky-200 to-sky-100"
-            outlineClasses="bg-sky-500"
-            blobClasses="bg-sky-500/5"
-          >
-            <SummaryGraph variant="line" total={totalCapacity} points={buildings.map(building => ({ label: building.code || building.name, value: building.capacity, tooltipLabel: 'Capacity' }))} unit="seats" tone="sky" />
-          </SummaryCard>
-        </div>
 
 
 

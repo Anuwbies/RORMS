@@ -2,10 +2,8 @@ import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } fr
 import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
 import { maxReservationDuration, reservationTimeMinutes, reservationTimeString, type ReservationRequestType } from '../../utils/reservationDuration'
 import { SectionHeader } from '../../components/SectionHeader'
-import { UserIcon, SearchIcon, CheckIcon, ClipboardIcon, BookIcon, BuildingIcon, DoorIcon, UsersIcon, CalendarIcon, ClockIcon } from '../../components/Icons'
+import { UserIcon, SearchIcon, CheckIcon, ClipboardIcon, BookIcon, DoorIcon, UsersIcon, CalendarIcon, ClockIcon } from '../../components/Icons'
 import { Button } from '../../components/Button'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
@@ -724,8 +722,6 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     const floors = new Set(selectedBuildingObj.rooms.map(r => r.floor))
     return Array.from(floors).sort((a, b) => a - b).map(String)
   }, [selectedBuildingObj])
-  const availableRoomsCount = allRooms.filter(room => room.status === 'Available').length
-  const totalCapacity = buildings.reduce((sum, building) => sum + building.capacity, 0)
   const totalFloors = buildings.reduce((sum, building) => sum + building.floor, 0)
 
   return (
@@ -1730,47 +1726,6 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
           </div>
         )}
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <SummaryCard
-            className="animate-in"
-            title="Available Rooms"
-            subtitle={`${availableRoomsCount} currently ready to book`}
-            icon={<DoorIcon className="w-5 h-5 text-emerald-600" />}
-            gradientClasses="from-emerald-200 to-emerald-100"
-            outlineClasses="bg-emerald-500"
-            blobClasses="bg-emerald-500/5"
-          >
-            <SummaryGraph variant="pie" total={availableRoomsCount} points={[
-              { label: 'Available', value: availableRoomsCount },
-              { label: 'Unavailable', value: allRooms.filter(room => room.status === 'Unavailable').length },
-              { label: 'Maintenance', value: allRooms.filter(room => room.status === 'Maintenance').length },
-            ]} tone="emerald" />
-          </SummaryCard>
-
-          <SummaryCard
-            className="animate-in"
-            title="Total Buildings"
-            subtitle={`${buildings.length} campus facilities managed`}
-            icon={<BuildingIcon className="w-5 h-5 text-amber-600" />}
-            gradientClasses="from-amber-200 to-amber-100"
-            outlineClasses="bg-amber-500"
-            blobClasses="bg-amber-500/5"
-          >
-            <SummaryGraph variant="bar" total={buildings.length} points={buildings.map(building => ({ label: building.code || building.name, value: building.rooms.length, tooltipLabel: 'Rooms' }))} unit="buildings" tone="amber" />
-          </SummaryCard>
-
-          <SummaryCard
-            className="animate-in"
-            title="Total Capacity"
-            subtitle={`${totalCapacity} maximum campus seats`}
-            icon={<UsersIcon className="w-5 h-5 text-sky-600" />}
-            gradientClasses="from-sky-200 to-sky-100"
-            outlineClasses="bg-sky-500"
-            blobClasses="bg-sky-500/5"
-          >
-            <SummaryGraph variant="line" total={totalCapacity} points={buildings.map(building => ({ label: building.code || building.name, value: building.capacity, tooltipLabel: 'Capacity' }))} unit="seats" tone="sky" />
-          </SummaryCard>
-        </div>
 
         <BuildingBrowser
           buildings={buildings}

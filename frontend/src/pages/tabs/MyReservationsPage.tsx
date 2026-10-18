@@ -5,8 +5,6 @@ import { IconButton } from '../../components/IconButton'
 import { Button } from '../../components/Button'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdown'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
@@ -86,15 +84,6 @@ const roomStatusClasses: Record<RoomStatus, string> = {
 }
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
-const STATUS_ORDER: ReservationStatus[] = ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed']
-const STATUS_SHORT_LABELS: Record<ReservationStatus, string> = {
-  Pending: 'Pend.',
-  Approved: 'Appr.',
-  Declined: 'Decl.',
-  Cancelled: 'Canc.',
-  Completed: 'Comp.',
-}
-
 function createRoomImage() {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
@@ -211,61 +200,6 @@ function MyReservationsPage() {
   const visibleReservations = useMemo(() => (
     reservations.filter(reservation => !reservation.isHidden)
   ), [reservations])
-
-  const reservationStatusPoints = useMemo(() => (
-    STATUS_ORDER.map(status => ({
-      label: STATUS_SHORT_LABELS[status],
-      value: visibleReservations.filter(reservation => reservation.status === status).length,
-    }))
-  ), [visibleReservations])
-
-  const topReservedRoomPoints = useMemo(() => {
-    const roomCounts = new Map<string, { label: string, value: number }>()
-
-    visibleReservations.forEach(reservation => {
-      const existing = roomCounts.get(reservation.roomId)
-      if (existing) {
-        existing.value += 1
-      } else {
-        roomCounts.set(reservation.roomId, {
-          label: rooms[reservation.roomId]?.name || 'Unknown Room',
-          value: 1,
-        })
-      }
-    })
-
-    return [...roomCounts.values()]
-      .sort((first, second) => second.value - first.value || first.label.localeCompare(second.label))
-      .slice(0, 5)
-  }, [visibleReservations, rooms])
-
-  const reservationDayPoints = useMemo(() => {
-    const requestsByDay = new Map(DAYS_OF_WEEK.map(day => [day, 0]))
-
-    visibleReservations.forEach(reservation => {
-      const reservationDate = new Date(`${reservation.date}T00:00:00`)
-      if (!Number.isNaN(reservationDate.getTime())) {
-        const day = DAYS_OF_WEEK[(reservationDate.getDay() + 6) % 7]
-        requestsByDay.set(day, (requestsByDay.get(day) || 0) + 1)
-      }
-    })
-
-    return DAYS_OF_WEEK.map(day => ({ label: day, value: requestsByDay.get(day) || 0 }))
-  }, [visibleReservations])
-
-  const mostRequestedDay = useMemo(() => (
-    reservationDayPoints.reduce((highest, day) => day.value > highest.value ? day : highest)
-  ), [reservationDayPoints])
-
-  const reservationDayPiePoints = useMemo(() => (
-    reservationDayPoints
-      .map((day, index) => ({ ...day, index }))
-      .filter(day => day.value > 0)
-      .sort((first, second) => second.value - first.value || first.index - second.index)
-      .slice(0, 4)
-      .sort((first, second) => first.index - second.index)
-      .map(day => ({ label: day.label, value: day.value }))
-  ), [reservationDayPoints])
 
   const filteredReservations = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase()
@@ -746,38 +680,6 @@ function MyReservationsPage() {
           description="Track your room bookings, check their status, and manage upcoming schedules." 
         />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
-          <SummaryCard
-            className="animate-in"
-            title="Reservation Status"
-            subtitle={`${visibleReservations.length} total requests`}
-            icon={<UserIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
-            gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
-            blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          >
-            <SummaryGraph variant="line" total={visibleReservations.length} points={reservationStatusPoints} />
-          </SummaryCard>
-          <SummaryCard
-            className="animate-in"
-            title="Most Reserved Rooms"
-            subtitle={`${topReservedRoomPoints.length} rooms with the most requests`}
-            icon={<DoorIcon className="w-4.5 h-4.5 text-amber-600" />}
-            gradientClasses="from-amber-400 to-orange-500"
-            blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          >
-            <SummaryGraph variant="bar" total={visibleReservations.length} points={topReservedRoomPoints} tone="amber" />
-          </SummaryCard>
-          <SummaryCard
-            className="animate-in"
-            title="Most Requested Day"
-            subtitle={mostRequestedDay.value > 0 ? `${mostRequestedDay.label} • ${mostRequestedDay.value} requests` : 'No requests yet'}
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-blue-600" />}
-            gradientClasses="from-blue-400 to-indigo-500"
-            blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-          >
-            <SummaryGraph variant="pie" total={visibleReservations.length} points={reservationDayPiePoints} tone="sky" showLegendValues={false} />
-          </SummaryCard>
-        </div>
 
         <div className="relative z-10">
           <DataTable

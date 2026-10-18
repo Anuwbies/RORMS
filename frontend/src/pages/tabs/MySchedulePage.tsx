@@ -2,10 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { formatUserName } from '../../utils/userName'
 import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
 import { scheduleMatchesDepartment } from '../../utils/roomSchedule'
-import { CalendarIcon, ClockIcon, LayersIcon, SpinnerIcon, DownloadIcon } from '../../components/Icons'
 import { SectionHeader } from '../../components/SectionHeader'
-import { SummaryCard } from '../../components/SummaryCard'
-import { SummaryGraph } from '../../summary-graphs/SummaryGraph'
 import { Button } from '../../components/Button'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { PersonalScheduleModal } from '../../components/PersonalScheduleModal'
@@ -254,46 +251,6 @@ function MySchedulePage() {
       return true
     })
   }, [schedules, currentMembership?.department, selectedAcademicYear?.academicYear, selectedSemester])
-
-  // Stats Calculation from filteredSchedules
-  const totalSessions = filteredSchedules.length
-  
-  const daysActive = useMemo(() => {
-    const days = new Set<string>()
-    filteredSchedules.forEach(schedule => {
-      if (schedule.days && Array.isArray(schedule.days)) {
-        schedule.days.forEach((day: string) => days.add(normalizeDay(day)))
-      }
-    })
-    return days
-  }, [filteredSchedules])
-
-  const totalWeeklyHours = useMemo(() => {
-    let totalMinutes = 0
-    filteredSchedules.forEach(schedule => {
-      if (schedule.startTime && schedule.endTime) {
-        const [startH, startM] = schedule.startTime.split(':').map(Number)
-        const [endH, endM] = schedule.endTime.split(':').map(Number)
-        
-        const startTotal = (startH || 0) * 60 + (startM || 0)
-        const endTotal = (endH || 0) * 60 + (endM || 0)
-        
-        if (endTotal > startTotal) {
-          const daysCount = schedule.days?.length || 1
-          totalMinutes += (endTotal - startTotal) * daysCount
-        }
-      }
-    })
-    return (totalMinutes / 60).toFixed(1)
-  }, [filteredSchedules])
-
-  const teachingHoursByDay = useMemo(() => ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => ({
-    label: day,
-    value: Math.round(filteredSchedules.reduce((hours, schedule) => {
-      if (!Array.isArray(schedule.days) || !schedule.days.some((scheduledDay: string) => normalizeDay(scheduledDay) === day)) return hours
-      return hours + Math.max(0, timeToMins(schedule.endTime) - timeToMins(schedule.startTime)) / 60
-    }, 0) * 10) / 10,
-  })), [filteredSchedules])
 
   // Build Time Slots
   const timeSlots = useMemo(() => {
@@ -562,48 +519,6 @@ function MySchedulePage() {
             : `View and manage your assigned classes, weekly timetable, and room schedule for ${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}.`}
         />
 
-        {userRole !== 'Dean' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 sm:gap-4 transition-all duration-300">
-          <SummaryCard
-            className="animate-in"
-            title="Total Assigned Classes"
-            subtitle={`${totalSessions} assigned classes`}
-            icon={<LayersIcon className="w-4.5 h-4.5 text-[var(--brand-color)]" />}
-            gradientClasses="from-[var(--brand-color)] to-[#7b9d4f]"
-            blobClasses="bg-[var(--brand-color)]/8 group-hover:bg-[var(--brand-color)]/14"
-          >
-            <SummaryGraph variant="pie" total={totalSessions} points={[
-              { label: 'Draft', value: filteredSchedules.filter(schedule => (schedule.status || 'Draft') === 'Draft').length },
-              { label: 'Plot', value: filteredSchedules.filter(schedule => schedule.status === 'Plot').length },
-            ]} />
-          </SummaryCard>
-          <SummaryCard
-            className="animate-in"
-            title="Active Teaching Days"
-            subtitle={`${daysActive.size} teaching days`}
-            icon={<CalendarIcon className="w-4.5 h-4.5 text-amber-600" />}
-            gradientClasses="from-amber-400 to-orange-500"
-            blobClasses="bg-amber-400/8 group-hover:bg-amber-400/14"
-          >
-            <SummaryGraph variant="bar" total={filteredSchedules.length} points={[
-              'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
-            ].map(day => ({
-              label: day,
-              value: filteredSchedules.filter(schedule => schedule.days?.some((scheduleDay: string) => scheduleDay.slice(0, 3) === day)).length,
-            }))} unit="classes" tone="amber" />
-          </SummaryCard>
-          <SummaryCard
-            className="animate-in"
-            title="Weekly Teaching Load"
-            subtitle={`${totalWeeklyHours} hours per week`}
-            icon={<ClockIcon className="w-4.5 h-4.5 text-blue-600" />}
-            gradientClasses="from-blue-400 to-indigo-500"
-            blobClasses="bg-blue-400/8 group-hover:bg-blue-400/14"
-          >
-            <SummaryGraph variant="line" total={Number(totalWeeklyHours)} points={teachingHoursByDay} unit="hours/week" tone="sky" />
-          </SummaryCard>
-        </div>
-        )}
 
         {/* Main Weekly Schedule Timetable Card */}
           <PersonalScheduleModal
