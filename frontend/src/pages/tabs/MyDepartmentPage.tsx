@@ -89,13 +89,18 @@ function MyDepartmentPage() {
   const [isDecliningInvite, setIsDecliningInvite] = useState(false)
   const [departmentInfo, setDepartmentInfo] = useState<{ id: string; name: string; code: string; logo: string; dean: string } | null>(null)
   const [logoError, setLogoError] = useState(false)
+  const [userNamesById, setUserNamesById] = useState<Record<string, string>>({})
   const [members, setMembers] = useState<Member[]>([])
   const [availableInstructors, setAvailableInstructors] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [isAdding, setIsAdding] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
   const areMemberActionsDisabled = currentUserRole === 'Program Head' || currentUserRole === 'Instructor'
-  const dean = members.find(member => member.role === 'Dean' && (member.id === departmentInfo?.dean || member.name === departmentInfo?.dean))
+  const dean = members.find(member => member.role === 'Dean' && member.id === departmentInfo?.dean)
+    ?? members.find(member => member.role === 'Dean' && member.status === 'Active')
+    ?? members.find(member => member.role === 'Dean')
+  const deanName = dean?.name || (departmentInfo?.dean ? userNamesById[departmentInfo.dean] : '')
+    || (departmentInfo?.dean && /[\s,]/.test(departmentInfo.dean) ? departmentInfo.dean : 'Unassigned')
   const programHeads = members.filter(member => member.role === 'Program Head' && member.status === 'Active')
   const activeAcademicYear = academicYears.find(year => year.isActive)
   const currentSemesterName = activeAcademicYear ? resolveCurrentSemester(activeAcademicYear) : ''
@@ -159,7 +164,12 @@ function MyDepartmentPage() {
               // 5. Fetch all users to join data
               unsubscribeAllUsers = onSnapshot(collection(db, 'users'), (usersSnap) => {
                 const usersMap = new Map()
-                usersSnap.forEach(uDoc => usersMap.set(uDoc.id, uDoc.data()))
+                const userNames: Record<string, string> = {}
+                usersSnap.forEach(uDoc => {
+                  usersMap.set(uDoc.id, uDoc.data())
+                  userNames[uDoc.id] = formatUserName(uDoc.data())
+                })
+                setUserNamesById(userNames)
 
                 onSnapshot(allMembershipsQuery, (deptMSnap) => {
                   const fetchedMembers = deptMSnap.docs
@@ -330,8 +340,8 @@ function MyDepartmentPage() {
 
       if (departmentInfo?.id) {
         const deptRef = doc(db, 'departments', departmentInfo.id)
-        if (currentUserRole === 'Dean') {
-          batch.update(deptRef, { dean: formatUserName(currentUserData) })
+        if (currentUserRole === 'Dean' && auth.currentUser?.uid) {
+          batch.update(deptRef, { dean: auth.currentUser.uid })
         }
       }
 
@@ -887,7 +897,7 @@ function MyDepartmentPage() {
             <dl className="mt-5 grid gap-5 border-t border-slate-100 pt-5 sm:grid-cols-2 sm:gap-8">
               <div>
                 <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Dean</dt>
-                <dd className="mt-2 text-sm font-semibold text-slate-900">{dean?.name || 'Unassigned'}</dd>
+                <dd className="mt-2 text-sm font-semibold text-slate-900">{deanName}</dd>
               </div>
               <div className="text-right">
                 <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Program Heads</dt>

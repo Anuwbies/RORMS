@@ -1477,22 +1477,24 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           description={isRegistrar ? 'Recommend pending requests before Dean review.' : isDepartmentReviewer ? 'View your department requests and review them after Registrar recommendation.' : isUniversityAdministrator ? 'Give final approval after Registrar and Dean recommendations.' : 'Manage reservation records.'}
         />
 
-        <section aria-label="Reservation review overview" className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,4fr)]">
+        <section aria-label="Reservation review overview" className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,4fr)]">
           {reviewSummaryGroups.map(group => (
-            <div key={group.title} className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
-              <div className="mb-3 flex items-baseline justify-between gap-2">
-                <h2 className="text-sm font-bold text-slate-900">{group.title}</h2>
-                <span className="text-xs text-slate-500">{isDepartmentReviewer ? 'Department' : 'Campus-wide'}</span>
+            <div key={group.title} className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-base font-bold text-slate-900">{group.title}</h2>
+                <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[0.6875rem] font-semibold text-slate-600">{isDepartmentReviewer ? 'Department' : 'Campus-wide'}</span>
               </div>
-              <div className={`grid flex-1 grid-cols-2 gap-2 ${group.columns}`}>
-                {group.items.map(item => (
-                  <div key={item.label} className={`min-h-24 min-w-0 rounded-xl border px-3 py-2 ${item.color}`}>
-                    <p className="text-2xl font-black tabular-nums" aria-label={`${group.title}, ${item.label}: ${reservationsLoaded ? item.count : 'loading'}`}>{reservationsLoaded ? item.count : '—'}</p>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <p className="text-[0.6875rem] font-bold leading-tight">{item.label}</p>
-                      {item.active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" title="Your review step" aria-label="Your review step" />}
+              <div className={`grid flex-1 grid-cols-2 gap-3 ${group.columns}`}>
+                {group.items.map((item, index) => (
+                  <div key={item.label} className={`flex min-h-28 min-w-0 flex-col justify-between rounded-xl border p-3.5 sm:p-4 ${item.color} ${group.title === 'Awaiting review' && index === 2 ? 'col-span-2 sm:col-span-1' : ''}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-3xl font-bold leading-none tabular-nums" aria-label={`${group.title}, ${item.label}: ${reservationsLoaded ? item.count : 'loading'}`}>{reservationsLoaded ? item.count : '—'}</p>
+                      {item.active && <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[0.625rem] font-bold">Your step</span>}
                     </div>
-                    {item.step && <p className="mt-0.5 text-[0.625rem] opacity-75">{item.step}</p>}
+                    <div className="mt-3">
+                      <p className="text-xs font-bold leading-tight sm:text-sm">{item.label}</p>
+                      {item.step && <p className="mt-1 text-xs font-medium opacity-75">{item.step}</p>}
+                    </div>
                   </div>
                 ))}
               </div>
