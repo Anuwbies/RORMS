@@ -613,6 +613,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
   const [department, setDepartment] = useState<string | null>(null)
   const [statusError, setStatusError] = useState('')
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [reservationsLoaded, setReservationsLoaded] = useState(false)
   const [buildings, setBuildings] = useState<Building[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -642,6 +643,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
 
   useEffect(() => {
     setReservations([])
+    setReservationsLoaded(false)
     if (isDepartmentReviewer && !department) return
     // Use a department-only query so no new composite index is needed.
     const reservationQuery = isDepartmentReviewer
@@ -650,7 +652,8 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     return onSnapshot(reservationQuery, snapshot => {
       const records = snapshot.docs.map(record => ({ id: record.id, ...record.data() })) as Reservation[]
       setReservations(records)
-    }, () => { setReservations([]); setStatusError('Could not load reservation requests. Please reload and try again.') })
+      setReservationsLoaded(true)
+    }, () => { setReservations([]); setReservationsLoaded(false); setStatusError('Could not load reservation requests. Please reload and try again.') })
   }, [department, isDepartmentReviewer, isRegistrar, isUniversityAdministrator])
 
   useEffect(() => {
@@ -787,6 +790,43 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         return new Date(b.date).getTime() - new Date(a.date).getTime()
       })
   }, [enrichedReservations, searchTerm, selectedStatuses, selectedReviewSteps, selectedBuildings, isRegistrar, isDepartmentReviewer, isUniversityAdministrator, userRole])
+
+  const reviewCounts = useMemo(() => {
+    const counts = { registrar: 0, dean: 0, administrator: 0, approved: 0, declined: 0, cancelled: 0, completed: 0 }
+    for (const reservation of reservations) {
+      if (reservation.status === 'Pending') {
+        if (reservation.registrarRecommend !== true) counts.registrar += 1
+        else if (reservation.deanRecommend !== true) counts.dean += 1
+        else counts.administrator += 1
+      } else if (reservation.status === 'Approved') counts.approved += 1
+      else if (reservation.status === 'Declined') counts.declined += 1
+      else if (reservation.status === 'Cancelled') counts.cancelled += 1
+      else if (reservation.status === 'Completed') counts.completed += 1
+    }
+    return counts
+  }, [reservations])
+
+  const reviewSummaryGroups = [
+    {
+      title: 'Awaiting review',
+      columns: 'sm:grid-cols-3',
+      items: [
+        { label: 'Registrar', step: 'Step 1', count: reviewCounts.registrar, active: isRegistrar, color: 'border-blue-200 bg-blue-50 text-blue-700' },
+        { label: 'Dean', step: 'Step 2', count: reviewCounts.dean, active: isDepartmentReviewer, color: 'border-amber-200 bg-amber-50 text-amber-700' },
+        { label: 'University Administrator', step: 'Final step', count: reviewCounts.administrator, active: isUniversityAdministrator, color: 'border-[#c6dbb6] bg-[#f3f7ee] text-[#41572a]' },
+      ],
+    },
+    {
+      title: 'Reservation outcomes',
+      columns: 'sm:grid-cols-4',
+      items: [
+        { label: 'Approved', step: '', count: reviewCounts.approved, active: false, color: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+        { label: 'Declined', step: '', count: reviewCounts.declined, active: false, color: 'border-rose-200 bg-rose-50 text-rose-700' },
+        { label: 'Cancelled', step: '', count: reviewCounts.cancelled, active: false, color: 'border-slate-200 bg-slate-50 text-slate-700' },
+        { label: 'Completed', step: '', count: reviewCounts.completed, active: false, color: 'border-sky-200 bg-sky-50 text-sky-700' },
+      ],
+    },
+  ]
 
   const handleStatusUpdate = async (id: string, newStatus: ReservationStatus, recommendation?: 'Registrar' | 'Dean', declinedReason?: string) => {
     setStatusError('')
@@ -1437,6 +1477,28 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           description={isRegistrar ? 'Recommend pending requests before Dean review.' : isDepartmentReviewer ? 'View your department requests and review them after Registrar recommendation.' : isUniversityAdministrator ? 'Give final approval after Registrar and Dean recommendations.' : 'Manage reservation records.'}
         />
 
+        <section aria-label="Reservation review overview" className="grid gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,4fr)]">
+          {reviewSummaryGroups.map(group => (
+            <div key={group.title} className="flex min-w-0 flex-col rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+              <div className="mb-3 flex items-baseline justify-between gap-2">
+                <h2 className="text-sm font-bold text-slate-900">{group.title}</h2>
+                <span className="text-xs text-slate-500">{isDepartmentReviewer ? 'Department' : 'Campus-wide'}</span>
+              </div>
+              <div className={`grid flex-1 grid-cols-2 gap-2 ${group.columns}`}>
+                {group.items.map(item => (
+                  <div key={item.label} className={`min-h-24 min-w-0 rounded-xl border px-3 py-2 ${item.color}`}>
+                    <p className="text-2xl font-black tabular-nums" aria-label={`${group.title}, ${item.label}: ${reservationsLoaded ? item.count : 'loading'}`}>{reservationsLoaded ? item.count : '—'}</p>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <p className="text-[0.6875rem] font-bold leading-tight">{item.label}</p>
+                      {item.active && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-current" title="Your review step" aria-label="Your review step" />}
+                    </div>
+                    {item.step && <p className="mt-0.5 text-[0.625rem] opacity-75">{item.step}</p>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
 
         <div className="relative z-10">
           {statusError && <p role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{statusError}</p>}

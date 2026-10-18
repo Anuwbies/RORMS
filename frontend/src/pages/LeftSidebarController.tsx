@@ -312,7 +312,7 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
       case 'myDepartment':
         return <MyDepartmentPage />
       case 'departmentSchedules':
-        return <DepartmentSchedulesPage />
+        return <DepartmentSchedulesPage userRole={normRole} />
       default:
         return <DashboardPage userRole={normRole} />
     }

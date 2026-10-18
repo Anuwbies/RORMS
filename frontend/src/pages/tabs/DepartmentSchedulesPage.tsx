@@ -17,10 +17,22 @@ import { resolveCurrentSemester } from '../../utils/academicSemester'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
 import {
   collection,
+  doc,
   onSnapshot,
   query,
+  runTransaction,
   where
 } from 'firebase/firestore'
+
+const SEMESTER_PHASES = ['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended'] as const
+
+const formatSemesterDate = (date?: string, month?: string, year?: number) => {
+  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [yearPart, monthPart, dayPart] = date.split('-').map(Number)
+    return new Date(yearPart, monthPart - 1, dayPart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+  return month && year ? `${month} ${year}` : ''
+}
 
 interface Department {
   id: string
@@ -34,8 +46,8 @@ interface AcademicYearData {
   id: string
   academicYear: string
   isActive?: boolean
-  sem1?: { name?: string; phase?: string; startMonth?: string; endMonth?: string }
-  sem2?: { name?: string; phase?: string; startMonth?: string; endMonth?: string }
+  sem1?: { name?: string; phase?: string; startDate?: string; endDate?: string; startMonth?: string; startYear?: number; endMonth?: string; endYear?: number }
+  sem2?: { name?: string; phase?: string; startDate?: string; endDate?: string; startMonth?: string; startYear?: number; endMonth?: string; endYear?: number }
 }
 
 interface DepartmentScheduleSummary extends ScheduleMeetingRecord {
@@ -71,7 +83,7 @@ const statusClasses: Record<string, string> = {
 }
 
 
-export function DepartmentSchedulesPage() {
+export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
   const [departments, setDepartments] = useState<Department[]>([])
   const [selectedDepartment, setSelectedDepartment] = useState<Department | null>(null)
   const departmentCodeOptions = useMemo(() => {
@@ -80,11 +92,60 @@ export function DepartmentSchedulesPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [loadingMembers, setLoadingMembers] = useState(true)
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
+  const [academicYearsLoading, setAcademicYearsLoading] = useState(true)
+  const [academicYearsError, setAcademicYearsError] = useState('')
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
   const [selectedSemesterPhase, setSelectedSemesterPhase] = useState<{ name: string; phase: string } | null>(null)
-  const currentAcademicYear = academicYears.find(year => year.isActive) ?? academicYears[0]
+  const activeAcademicYear = academicYears.find(year => year.isActive)
+  const currentAcademicYear = activeAcademicYear ?? academicYears[0]
   const currentSemester = currentAcademicYear ? resolveCurrentSemester(currentAcademicYear) : ''
+  const activeSemesterName = activeAcademicYear ? resolveCurrentSemester(activeAcademicYear) : ''
+  const activeSemesterKey = activeSemesterName === '2nd Semester' ? 'sem2' : 'sem1'
+  const activeSemester = activeAcademicYear?.[activeSemesterKey]
+  const currentPhase = activeSemester?.phase || 'Closed'
+  const [phaseDraft, setPhaseDraft] = useState<{ yearId: string; semester: 'sem1' | 'sem2'; basePhase: string; phase: string } | null>(null)
+  const selectedPhase = phaseDraft && phaseDraft.yearId === activeAcademicYear?.id && phaseDraft.semester === activeSemesterKey && phaseDraft.basePhase === currentPhase
+    ? phaseDraft.phase : currentPhase
+  const [isPhaseSaving, setIsPhaseSaving] = useState(false)
+  const [phaseError, setPhaseError] = useState('')
   const [workbookMembership, setWorkbookMembership] = useState<(WorkbookMembership & { id: string }) | null>(null)
+
+  const saveCurrentSemesterPhase = async () => {
+    const year = activeAcademicYear
+    const membership = workbookMembership
+    const uid = auth.currentUser?.uid
+    if (!year || !membership || membership.role !== 'Registrar' || !uid || selectedPhase === currentPhase || !SEMESTER_PHASES.includes(selectedPhase as typeof SEMESTER_PHASES[number])) return
+
+    setPhaseError('')
+    setIsPhaseSaving(true)
+    try {
+      await runTransaction(db, async transaction => {
+        const yearRef = doc(db, 'academicYears', year.id)
+        const membershipRef = doc(db, 'memberships', membership.id)
+        const profileRef = doc(db, 'users', uid)
+        const yearSnapshot = await transaction.get(yearRef)
+        const membershipSnapshot = await transaction.get(membershipRef)
+        const profileSnapshot = await transaction.get(profileRef)
+        const liveYear = yearSnapshot.exists() ? { ...yearSnapshot.data(), id: year.id } as AcademicYearData : null
+        const liveMember = membershipSnapshot.data()
+        if (!liveYear?.isActive || liveYear.academicYear !== year.academicYear) throw new Error('The active school year changed. Review the current term and try again.')
+        if (!liveMember || liveMember.userId !== uid || liveMember.role !== 'Registrar' || liveMember.status !== 'accepted' || !profileSnapshot.exists() || profileSnapshot.data().isActive === false) {
+          throw new Error('An active Registrar membership is required to change the semester phase.')
+        }
+        if ((resolveCurrentSemester(liveYear) === '2nd Semester' ? 'sem2' : 'sem1') !== activeSemesterKey) {
+          throw new Error('The current semester changed. Review the term and try again.')
+        }
+        if ((liveYear[activeSemesterKey]?.phase || 'Closed') !== currentPhase) {
+          throw new Error('The semester phase changed. Review the latest phase and try again.')
+        }
+        transaction.update(yearRef, { [`${activeSemesterKey}.phase`]: selectedPhase })
+      })
+    } catch (error) {
+      setPhaseError(error instanceof Error ? error.message : 'Could not update the semester phase. Please try again.')
+    } finally {
+      setIsPhaseSaving(false)
+    }
+  }
 
   useEffect(() => {
     let unsubscribeMembership: (() => void) | undefined
@@ -93,15 +154,16 @@ export function DepartmentSchedulesPage() {
       setWorkbookMembership(null)
       if (!user) return
       unsubscribeMembership = onSnapshot(query(collection(db, 'memberships'), where('userId', '==', user.uid)), snapshot => {
-        const manager = snapshot.docs.find(document => {
+        const eligibleManagers = snapshot.docs.filter(document => {
           const data = document.data()
           return data.status === 'accepted' && (data.role === 'Admin' || data.role === 'Registrar')
         })
+        const manager = eligibleManagers.find(document => document.data().role === userRole) ?? eligibleManagers[0]
         setWorkbookMembership(manager ? { id: manager.id, userId: user.uid, role: manager.data().role, status: 'accepted', department: manager.data().department } : null)
       }, () => setWorkbookMembership(null))
     })
     return () => { unsubscribeAuth(); unsubscribeMembership?.() }
-  }, [])
+  }, [userRole])
 
   // Modals & Navigation state
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
@@ -181,11 +243,16 @@ export function DepartmentSchedulesPage() {
       const fetched = snap.docs.map(d => ({ id: d.id, ...d.data() })) as AcademicYearData[]
       fetched.sort((a, b) => (b.academicYear || '').localeCompare(a.academicYear || ''))
       setAcademicYears(fetched)
+      setAcademicYearsLoading(false)
+      setAcademicYearsError('')
 
       if (fetched.length > 0 && !selectedAcademicYear) {
         const active = fetched.find(y => y.isActive) || fetched[0]
         setSelectedAcademicYear(active)
       }
+    }, () => {
+      setAcademicYearsLoading(false)
+      setAcademicYearsError('Could not load the active school year. Please reload and try again.')
     })
     return () => unsub()
   }, [])
@@ -399,6 +466,49 @@ export function DepartmentSchedulesPage() {
           title="Department Schedules"
           description="Overview of department members, schedules, and room allocations across colleges."
         />
+
+        {userRole === 'Registrar' && (
+          <section aria-label="Current semester phase" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Current semester phase</h2>
+                <p className="mt-1 text-xs text-slate-500">The phase controls schedule editing and room plotting for the active term.</p>
+              </div>
+              {activeAcademicYear && <span className="rounded-lg bg-[#e3edda] px-3 py-1 text-xs font-bold text-[#41572a]">Active school year</span>}
+            </div>
+            {academicYearsLoading ? (
+              <p className="mt-4 text-sm text-slate-500">Loading the active term...</p>
+            ) : academicYearsError || !activeAcademicYear ? (
+              <p role="alert" className="mt-4 text-sm text-amber-700">{academicYearsError || 'No active school year is set. Set one in Academic Calendar before changing its phase.'}</p>
+            ) : (
+              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div><p className="text-xs font-medium text-slate-500">School year</p><p className="mt-1 text-sm font-bold text-slate-900">{activeAcademicYear.academicYear}</p></div>
+                  <div><p className="text-xs font-medium text-slate-500">Current semester</p><p className="mt-1 text-sm font-bold text-slate-900">{activeSemesterName}</p></div>
+                  <div><p className="text-xs font-medium text-slate-500">Current phase</p><p className="mt-1 text-sm font-bold text-[#41572a]">{currentPhase}</p></div>
+                  {(activeSemester?.startDate || activeSemester?.startMonth) && (activeSemester?.endDate || activeSemester?.endMonth) && (
+                    <p className="col-span-2 text-xs text-slate-500 sm:col-span-3">
+                      {formatSemesterDate(activeSemester.startDate, activeSemester.startMonth, activeSemester.startYear)} – {formatSemesterDate(activeSemester.endDate, activeSemester.endMonth, activeSemester.endYear)}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+                  <div className="min-w-0 flex-1">
+                    <label className="mb-1.5 block text-xs font-bold text-slate-600">Change phase</label>
+                    <SingleSelectDropdown value={selectedPhase} options={SEMESTER_PHASES} onChange={phase => {
+                      setPhaseDraft({ yearId: activeAcademicYear.id, semester: activeSemesterKey, basePhase: currentPhase, phase })
+                      setPhaseError('')
+                    }} ariaLabel="New semester phase" isDisabled={isPhaseSaving} />
+                  </div>
+                  <Button type="button" variant="brand" disabled={isPhaseSaving || selectedPhase === currentPhase} onClick={saveCurrentSemesterPhase}>
+                    {isPhaseSaving ? 'Saving...' : 'Save phase'}
+                  </Button>
+                </div>
+              </div>
+            )}
+            {phaseError && <p role="alert" className="mt-3 text-sm text-rose-700">{phaseError}</p>}
+          </section>
+        )}
 
 
         {/* Members DataTable for Selected Department */}
