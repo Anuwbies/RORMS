@@ -102,9 +102,21 @@ function createRoomImage() {
 
 const DEFAULT_ROOM_IMAGE = createRoomImage()
 
+const reservationTimeInManila = (date: string, time: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}/.test(time)) return NaN
+  return Date.parse(`${date}T${time.slice(0, 5)}:00+08:00`)
+}
+
+const formatReservationDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', {
+  timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric'
+})
+
 function MyReservationsPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [reservations, setReservations] = useState<Reservation[]>([])
+  const [reservationsLoading, setReservationsLoading] = useState(true)
+  const [reservationsError, setReservationsError] = useState(false)
+  const [now, setNow] = useState(Date.now())
   const [rooms, setRooms] = useState<Record<string, Room>>({})
   const [buildings, setBuildings] = useState<Record<string, Building>>({})
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([])
@@ -139,6 +151,7 @@ function MyReservationsPage() {
   useEffect(() => {
     const userId = auth.currentUser?.uid
     if (!userId) {
+      setReservationsLoading(false)
       return
     }
 
@@ -168,6 +181,12 @@ function MyReservationsPage() {
         return a.startTime.localeCompare(b.startTime)
       })
       setReservations(list)
+      setReservationsLoading(false)
+      setReservationsError(false)
+    }, () => {
+      setReservations([])
+      setReservationsLoading(false)
+      setReservationsError(true)
     })
 
     const unsubscribeRooms = onSnapshot(collection(db, 'rooms'), (snapshot) => {
@@ -193,6 +212,11 @@ function MyReservationsPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
   const buildingOptions = useMemo(() => {
     return Array.from(new Set(Object.values(buildings).map(b => b.code).filter(Boolean))).sort()
   }, [buildings])
@@ -200,6 +224,17 @@ function MyReservationsPage() {
   const visibleReservations = useMemo(() => (
     reservations.filter(reservation => !reservation.isHidden)
   ), [reservations])
+
+  const pendingRequestCount = useMemo(() => (
+    visibleReservations.filter(reservation => reservation.status === 'Pending').length
+  ), [visibleReservations])
+
+  const upcomingReservations = useMemo(() => (
+    visibleReservations
+      .filter(reservation => reservation.status === 'Approved' && reservationTimeInManila(reservation.date, reservation.endTime) > now)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
+      .slice(0, 3)
+  ), [visibleReservations, now])
 
   const filteredReservations = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase()
@@ -679,6 +714,50 @@ function MyReservationsPage() {
           title="My Reservations" 
           description="Track your room bookings, check their status, and manage upcoming schedules." 
         />
+
+        <section aria-label="Upcoming reservations" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f3f7ee] text-[#62853e]"><CalendarIcon className="h-5 w-5" /></span>
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Upcoming Reservations</h2>
+                <p className="mt-1 text-xs text-slate-500">Your next three approved room bookings</p>
+              </div>
+            </div>
+            {!reservationsLoading && !reservationsError && <span className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">{pendingRequestCount} pending {pendingRequestCount === 1 ? 'request' : 'requests'}</span>}
+          </div>
+          {reservationsLoading ? (
+            <p className="mt-4 text-sm text-slate-500">Loading your reservations...</p>
+          ) : reservationsError ? (
+            <p role="alert" className="mt-4 text-sm text-rose-700">Could not load your reservations. Please reload and try again.</p>
+          ) : upcomingReservations.length === 0 ? (
+            <p className="mt-4 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">No current or upcoming approved reservations.</p>
+          ) : (
+            <div className="mt-4 grid gap-3 lg:grid-cols-3">
+              {upcomingReservations.map(reservation => {
+                const room = rooms[reservation.roomId]
+                const building = buildings[reservation.buildingId]
+                const inProgress = reservationTimeInManila(reservation.date, reservation.startTime) <= now
+                return (
+                  <button key={reservation.id} type="button" onClick={() => {
+                    setSelectedReservation(reservation)
+                    setIsReservationModalOpen(true)
+                  }} className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-left transition-colors hover:border-[#c6dbb6] hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#62853e]">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-xs font-bold text-[#41572a]">{formatReservationDate(reservation.date)}</span>
+                      <span className={`shrink-0 rounded-lg px-2 py-0.5 text-[0.625rem] font-bold ${inProgress ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>{inProgress ? 'In progress' : 'Approved'}</span>
+                    </div>
+                    <p className="mt-2 truncate text-sm font-bold text-slate-900">{room?.name || room?.code || 'Unknown room'}</p>
+                    <p className="mt-0.5 truncate text-xs text-slate-500">{building?.name || 'Unknown building'}</p>
+                    <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-slate-700"><ClockIcon className="h-3.5 w-3.5 shrink-0" />{reservation.startTime} – {reservation.endTime}</p>
+                    <p className="mt-1 truncate text-xs text-slate-500" title={reservation.purpose}>{reservation.purpose || 'No purpose provided'}</p>
+                    <ExtendedReservationBadge requestType={reservation.requestType} />
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </section>
 
 
         <div className="relative z-10">
