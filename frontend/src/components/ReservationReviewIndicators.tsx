@@ -17,6 +17,7 @@ export function ReservationReviewIndicators({
   declinedByRole,
   autoProcessed,
 }: ReservationReviewIndicatorsProps) {
+  const administratorApproved = universityAdministratorRecommend === true || status === 'Approved' || status === 'Completed'
   const declinedRole = status === 'Declined' && !autoProcessed
     ? declinedByRole || (registrarRecommend !== true && deanRecommend !== true ? 'Registrar'
       : registrarRecommend === true && deanRecommend !== true ? 'Dean'
@@ -25,7 +26,7 @@ export function ReservationReviewIndicators({
   const indicators = [
     { role: 'Registrar', label: 'Registrar', value: registrarRecommend },
     { role: 'Dean', label: 'Dean', value: deanRecommend },
-    { role: 'University Administrator', label: 'Univ. Admin', value: universityAdministratorRecommend },
+    { role: 'University Administrator', label: 'Univ. Admin', value: administratorApproved },
   ]
 
   return (

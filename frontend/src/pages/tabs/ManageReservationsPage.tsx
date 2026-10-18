@@ -45,7 +45,8 @@ const adminReviewStateFor = (role: ReviewRole, decision: ReviewDecision): AdminR
 const adminDecisionFor = (reservation: Reservation, role: ReviewRole): ReviewDecision => {
   if (reservation.status === 'Declined' && reservation.declinedByRole === role) return 'decline'
   const recommended = role === 'Registrar' ? reservation.registrarRecommend
-    : role === 'Dean' ? reservation.deanRecommend : reservation.universityAdministratorRecommend
+    : role === 'Dean' ? reservation.deanRecommend
+      : reservation.universityAdministratorRecommend === true || reservation.status === 'Approved' || reservation.status === 'Completed'
   return recommended === true ? 'approve' : 'pending'
 }
 const updateReservationStatus = httpsCallable<
@@ -182,7 +183,7 @@ interface StatusUpdateModalProps {
 
 function StatusUpdateModal({ reservation, allowedStatuses, reviewRole, adminReview, onClose, onUpdate, onReview, onAdminReview }: StatusUpdateModalProps) {
   const currentRecommendation = reviewRole === 'University Administrator'
-    ? reservation.universityAdministratorRecommend
+    ? reservation.universityAdministratorRecommend === true || reservation.status === 'Approved' || reservation.status === 'Completed'
     : reviewRole === 'Dean' ? reservation.deanRecommend : reservation.registrarRecommend
   const laterRecommendation = reviewRole === 'Registrar'
     ? reservation.deanRecommend === true || reservation.universityAdministratorRecommend === true
