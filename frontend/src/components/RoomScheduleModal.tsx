@@ -957,7 +957,9 @@ export function RoomScheduleModal({
                           timeToMins(daySchedules[0].endTime) >= slotEndMins;
 
                         const gridRowsStyle = daySchedules.length > 0
-                          ? daySchedules.some(item => item._itemType === 'reservation')
+                          ? daySchedules.some(item => item.type === 'parallel')
+                            ? `repeat(${numSubRows}, minmax(max-content, 1fr))`
+                            : daySchedules.some(item => item._itemType === 'reservation')
                             ? `repeat(${numSubRows}, minmax(${isSingleFullSlot ? '0' : '4rem'}, 1fr))`
                             : (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`)
                           : 'auto';
@@ -1015,7 +1017,7 @@ export function RoomScheduleModal({
                               }
 
                               return (
-                                <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${getScheduleStatusClasses(item)}`}>
+                                <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 ${item.type === 'parallel' ? 'min-h-max' : 'min-h-0'} overflow-hidden ${getScheduleStatusClasses(item)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate" title={item.subjectTitle}>{item.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">

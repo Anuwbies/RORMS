@@ -1054,7 +1054,9 @@ export function PersonalScheduleModal({
                           timeToMins(grouped[0].parent.endTime) >= slotEndMins;
 
                         const gridRowsStyle = grouped.length > 0
-                          ? grouped.some(group => group.parent._itemType === 'reservation')
+                          ? grouped.some(group => group.parent.type === 'parallel')
+                            ? `repeat(${numSubRows}, minmax(max-content, 1fr))`
+                            : grouped.some(group => group.parent._itemType === 'reservation')
                             ? `repeat(${numSubRows}, minmax(${isSingleFullSlot ? '0' : '4rem'}, 1fr))`
                             : (isSingleFullSlot ? `repeat(${numSubRows}, minmax(0, 1fr))` : `repeat(${numSubRows}, 4rem)`)
                           : 'auto';
@@ -1116,7 +1118,7 @@ export function PersonalScheduleModal({
                               }
 
                               return group.parent.type === 'parallel' ? (
-                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden  ${getScheduleStatusClasses(group.parent)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-max overflow-hidden  ${getScheduleStatusClasses(group.parent)}`}>
                                   <div className="flex flex-col focus:outline-none min-w-0">
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>

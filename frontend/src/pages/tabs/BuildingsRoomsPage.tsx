@@ -14,7 +14,7 @@ import { NumberInput } from '../../components/NumberInput'
 import { TextInput } from '../../components/TextInput'
 import { TextAreaInput } from '../../components/TextAreaInput'
 import { RoomAmenities } from '../../components/RoomAmenities'
-import { SettingsIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon, CalendarIcon } from '../../components/Icons'
+import { SettingsIcon, DotsVerticalIcon, EditIcon, TrashIcon, UserIcon, SearchIcon, BuildingIcon, LayersIcon, ChevronDownIcon, PlusIcon, CameraIcon, UploadIcon, CheckIcon, ClockIcon, CalendarIcon, DoorIcon, BellIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { TimePicker } from '../../components/TimePicker'
 import { Snackbar } from '../../components/Snackbar'
@@ -1101,6 +1101,13 @@ function BuildingsRoomsPage() {
   }
 
   const canManageBuildings = currentUserRole === 'Admin' || currentUserRole === 'Registrar' || currentUserRole === 'University Administrator'
+  const roomAvailability = rooms.reduce<Record<RoomStatus, number>>((counts, room) => {
+    if (room.status === 'Available' || room.status === 'Unavailable' || room.status === 'Maintenance') {
+      counts[room.status] += 1
+    }
+    return counts
+  }, { Available: 0, Unavailable: 0, Maintenance: 0 })
+  const roomsWithNewComments = rooms.filter(room => unreadRoomIds.has(room.id))
 
 
 
@@ -2045,6 +2052,69 @@ function BuildingsRoomsPage() {
 
 
 
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+          <section aria-label="Room availability" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Room Availability</h2>
+                <p className="text-sm text-slate-500">Current status of all registered rooms</p>
+              </div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f3f7ee] text-[#62853e]">
+                <DoorIcon className="h-6 w-6" />
+              </div>
+            </div>
+            <dl className="mt-5 grid grid-cols-3 gap-3">
+              <div className="rounded-xl bg-emerald-50 p-3 sm:p-4">
+                <dt className="text-xs font-bold text-emerald-700">Available</dt>
+                <dd className="mt-1 text-2xl font-bold text-emerald-800">{roomAvailability.Available}</dd>
+              </div>
+              <div className="rounded-xl bg-amber-50 p-3 sm:p-4">
+                <dt className="text-xs font-bold text-amber-700">Unavailable</dt>
+                <dd className="mt-1 text-2xl font-bold text-amber-800">{roomAvailability.Unavailable}</dd>
+              </div>
+              <div className="rounded-xl bg-rose-50 p-3 sm:p-4">
+                <dt className="text-xs font-bold text-rose-700">Maintenance</dt>
+                <dd className="mt-1 text-2xl font-bold text-rose-800">{roomAvailability.Maintenance}</dd>
+              </div>
+            </dl>
+          </section>
+
+          <section aria-label="New room comments" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">New Comments</h2>
+                <p className="text-sm text-slate-500">Rooms with unread comments</p>
+              </div>
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                <BellIcon className="h-6 w-6" />
+              </div>
+            </div>
+            <p className="mt-5 text-3xl font-bold text-slate-900" aria-label={`${roomsWithNewComments.length} rooms with new comments`}>
+              {roomsWithNewComments.length}
+            </p>
+            {roomsWithNewComments.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {roomsWithNewComments.slice(0, 3).map(room => (
+                  <button
+                    key={room.id}
+                    type="button"
+                    onClick={() => handleOpenRoomInfoModal(room)}
+                    className="max-w-full truncate rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 transition-colors hover:bg-amber-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+                    title={`Open ${room.name}`}
+                  >
+                    {room.name}
+                  </button>
+                ))}
+                {roomsWithNewComments.length > 3 && (
+                  <span className="self-center text-xs font-medium text-slate-500">+{roomsWithNewComments.length - 3} more</span>
+                )}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500">No new comments</p>
+            )}
+          </section>
+        </div>
 
         <BuildingBrowser
           buildings={buildings}
