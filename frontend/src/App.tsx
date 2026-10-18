@@ -210,6 +210,7 @@ function App() {
     )
   }
 
+  // Handles password reset
   if (isResetPasswordMode) {
     return (
       <ResetPasswordPage
