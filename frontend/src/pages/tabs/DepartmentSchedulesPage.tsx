@@ -26,14 +26,6 @@ import {
 
 const SEMESTER_PHASES = ['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended'] as const
 
-const formatSemesterDate = (date?: string, month?: string, year?: number) => {
-  if (date && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
-    const [yearPart, monthPart, dayPart] = date.split('-').map(Number)
-    return new Date(yearPart, monthPart - 1, dayPart).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-  }
-  return month && year ? `${month} ${year}` : ''
-}
-
 interface Department {
   id: string
   name: string
@@ -80,6 +72,15 @@ const statusClasses: Record<string, string> = {
   Active: 'bg-emerald-100 text-emerald-700',
   Deactivated: 'bg-rose-100 text-rose-700',
   Pending: 'bg-amber-100 text-amber-700',
+}
+
+const phaseClasses: Record<string, string> = {
+  Closed: 'bg-slate-100 text-slate-600',
+  Drafting: 'bg-amber-100 text-amber-700',
+  Plotting: 'bg-blue-100 text-blue-700',
+  Revision: 'bg-purple-100 text-purple-700',
+  Final: 'bg-emerald-100 text-emerald-700',
+  Ended: 'bg-rose-100 text-rose-700',
 }
 
 
@@ -468,41 +469,54 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
         />
 
         {userRole === 'Registrar' && (
-          <section aria-label="Current semester phase" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-slate-900">Current semester phase</h2>
-                <p className="mt-1 text-xs text-slate-500">The phase controls schedule editing and room plotting for the active term.</p>
+          <section aria-label="Current semester phase" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f3f7ee] text-[#62853e]">
+                  <CalendarIcon className="h-6 w-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Current semester phase</h2>
+                  <p className="text-sm text-slate-500">Controls schedule editing and room plotting for the active term.</p>
+                </div>
               </div>
-              {activeAcademicYear && <span className="rounded-lg bg-[#e3edda] px-3 py-1 text-xs font-bold text-[#41572a]">Active school year</span>}
+              {activeAcademicYear && <span className="rounded-full bg-[#e3edda] px-3 py-1 text-xs font-bold text-[#41572a]">Active school year</span>}
             </div>
             {academicYearsLoading ? (
               <p className="mt-4 text-sm text-slate-500">Loading the active term...</p>
             ) : academicYearsError || !activeAcademicYear ? (
               <p role="alert" className="mt-4 text-sm text-amber-700">{academicYearsError || 'No active school year is set. Set one in Academic Calendar before changing its phase.'}</p>
             ) : (
-              <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-end">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div><p className="text-xs font-medium text-slate-500">School year</p><p className="mt-1 text-sm font-bold text-slate-900">{activeAcademicYear.academicYear}</p></div>
-                  <div><p className="text-xs font-medium text-slate-500">Current semester</p><p className="mt-1 text-sm font-bold text-slate-900">{activeSemesterName}</p></div>
-                  <div><p className="text-xs font-medium text-slate-500">Current phase</p><p className="mt-1 text-sm font-bold text-[#41572a]">{currentPhase}</p></div>
-                  {(activeSemester?.startDate || activeSemester?.startMonth) && (activeSemester?.endDate || activeSemester?.endMonth) && (
-                    <p className="col-span-2 text-xs text-slate-500 sm:col-span-3">
-                      {formatSemesterDate(activeSemester.startDate, activeSemester.startMonth, activeSemester.startYear)} – {formatSemesterDate(activeSemester.endDate, activeSemester.endMonth, activeSemester.endYear)}
-                    </p>
-                  )}
+              <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(18rem,2fr)]">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)]">
+                  <div className="rounded-xl border border-slate-300 bg-slate-100/70 p-4 shadow-sm">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">School year</p>
+                    <p className="flex h-12 items-center text-2xl font-bold text-slate-900">{activeAcademicYear.academicYear}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-300 bg-slate-100/70 p-4 shadow-sm">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Current semester</p>
+                    <p className="flex h-12 items-center text-xl font-bold text-slate-900">{activeSemesterName}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-300 bg-slate-100/70 p-4 shadow-sm">
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">Current phase</p>
+                    <div className="flex h-12 items-center">
+                      <span className={`inline-flex rounded-lg px-2.5 py-1 text-lg font-bold ${phaseClasses[currentPhase] || phaseClasses.Closed}`}>{currentPhase}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-                  <div className="min-w-0 flex-1">
-                    <label className="mb-1.5 block text-xs font-bold text-slate-600">Change phase</label>
+                <div className="flex flex-col justify-center rounded-xl border border-slate-300 bg-slate-100/70 p-4 shadow-sm">
+                  <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-slate-600">Change phase</label>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="min-w-0 flex-1">
                     <SingleSelectDropdown value={selectedPhase} options={SEMESTER_PHASES} onChange={phase => {
                       setPhaseDraft({ yearId: activeAcademicYear.id, semester: activeSemesterKey, basePhase: currentPhase, phase })
                       setPhaseError('')
                     }} ariaLabel="New semester phase" isDisabled={isPhaseSaving} />
+                    </div>
+                    <Button type="button" variant="brand" disabled={isPhaseSaving || selectedPhase === currentPhase} onClick={saveCurrentSemesterPhase}>
+                      {isPhaseSaving ? 'Saving...' : 'Save phase'}
+                    </Button>
                   </div>
-                  <Button type="button" variant="brand" disabled={isPhaseSaving || selectedPhase === currentPhase} onClick={saveCurrentSemesterPhase}>
-                    {isPhaseSaving ? 'Saving...' : 'Save phase'}
-                  </Button>
                 </div>
               </div>
             )}
