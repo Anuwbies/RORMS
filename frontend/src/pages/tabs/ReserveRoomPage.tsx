@@ -24,7 +24,6 @@ import {
   query, 
   orderBy,
   where,
-  limit,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -40,27 +39,29 @@ function getLocalIsoDate(date: Date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
-interface RoomUsageRulesProps {
-  panel?: boolean
-}
-
-function RoomUsageRules({ panel = false }: RoomUsageRulesProps) {
+function RoomUsageRules({ accepted, onAcceptedChange }: { accepted: boolean; onAcceptedChange: (accepted: boolean) => void }) {
   return (
-    <section aria-labelledby={panel ? 'room-usage-rules-panel-title' : 'room-usage-rules-title'} className={`${panel ? 'w-full max-w-md rounded-2xl bg-white shadow-2xl' : 'rounded-xl bg-[#f3f7ee]'} border border-[#c6dbb6] p-4 text-sm text-slate-700`}>
+    <section aria-labelledby="room-usage-rules-title" className="rounded-xl border border-rose-300 bg-rose-50 p-4 text-sm text-rose-900">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 id={panel ? 'room-usage-rules-panel-title' : 'room-usage-rules-title'} className="font-bold text-[#41572a]">General Rules for Room Use</h3>
-        <span className="rounded-full border border-[#c6dbb6] bg-white px-2.5 py-1 text-xs font-semibold text-[#526f34]">Please read before booking</span>
+        <h3 id="room-usage-rules-title" className="font-bold text-rose-800">General Rules for Room Use</h3>
+        <span className="rounded-full border border-rose-200 bg-white px-2.5 py-1 text-xs font-semibold text-rose-700">Read before reserving</span>
       </div>
       <ol className="mt-3 list-none space-y-2 pl-0" role="list">
-        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">1.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2"><strong className="font-semibold text-slate-900">Do NOT use</strong> Air Conditioning Unit.</span></li>
-        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">2.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2"><strong className="font-semibold text-slate-900">CLAY-GO</strong> (Clean As You Go).</span></li>
-        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">3.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2"><strong className="font-semibold text-slate-900">ARRANGE chairs</strong> back into classroom-type set-up.</span></li>
-        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">4.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2">Provide cleanliness/orderliness <strong className="font-semibold text-slate-900">EVIDENCE</strong> (picture/video with time-stamp) after room usage.</span></li>
-        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-[#62853e]">5.</span><span className="flex-1 rounded-lg border border-[#e3edda] bg-white/80 px-3 py-2"><strong className="font-semibold text-slate-900">VACATE the room</strong> after your allowed time of stay.</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-rose-700">1.</span><span className="flex-1 rounded-lg border border-rose-200 bg-white/80 px-3 py-2"><strong className="font-semibold">Do NOT use</strong> Air Conditioning Unit.</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-rose-700">2.</span><span className="flex-1 rounded-lg border border-rose-200 bg-white/80 px-3 py-2"><strong className="font-semibold">CLAY-GO</strong> (Clean As You Go).</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-rose-700">3.</span><span className="flex-1 rounded-lg border border-rose-200 bg-white/80 px-3 py-2"><strong className="font-semibold">ARRANGE chairs</strong> back into classroom-type set-up.</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-rose-700">4.</span><span className="flex-1 rounded-lg border border-rose-200 bg-white/80 px-3 py-2">Provide cleanliness/orderliness <strong className="font-semibold">EVIDENCE</strong> (an after-use photo with its upload time recorded).</span></li>
+        <li className="flex items-start gap-3"><span aria-hidden="true" className="w-4 shrink-0 pt-2 text-center font-bold text-rose-700">5.</span><span className="flex-1 rounded-lg border border-rose-200 bg-white/80 px-3 py-2"><strong className="font-semibold">VACATE the room</strong> after your allowed time of stay.</span></li>
       </ol>
+      <label className="mt-4 flex cursor-pointer items-start gap-2 border-t border-rose-200 pt-3 font-semibold text-rose-900">
+        <input type="checkbox" checked={accepted} onChange={event => onAcceptedChange(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-rose-700" />
+        <span>I have read and understand the room use rules.</span>
+      </label>
     </section>
   )
 }
+
+const normalizeAttendeeName = (value: string) => value.trim().replace(/\s+/g, ' ')
 
 function formatTime12(timeStr: string) {
   if (!timeStr) return ''
@@ -181,6 +182,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     duration: 60,
     purpose: '',
     attendees: '',
+    attendeeNames: [] as string[],
     subjectCode: '',
     classSection: ''
   })
@@ -370,6 +372,11 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   }, [selectedRoomInfo])
 
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
+  const [isRoomRulesModalOpen, setIsRoomRulesModalOpen] = useState(false)
+  const [rulesAccepted, setRulesAccepted] = useState(false)
+  const attendeeFieldCount = Number.isInteger(Number(reservationData.attendees)) && Number(reservationData.attendees) > 0
+    ? Math.min(Number(reservationData.attendees), selectedRoomInfo?.capacity || 0)
+    : 0
   const firstAvailableStartTime = useMemo(() => {
     if (!selectedRoomInfo || !reservationData.date) return null
     return getFirstAvailableStartTime(reservationData.date, selectedRoomInfo)
@@ -591,10 +598,10 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       setIsMembershipLoading(Boolean(user))
       if (!user) return
 
-      const membershipQuery = query(collection(db, 'memberships'), where('userId', '==', user.uid), limit(1))
+      const membershipQuery = query(collection(db, 'memberships'), where('userId', '==', user.uid))
       unsubscribeMembership = onSnapshot(membershipQuery, snapshot => {
         if (auth.currentUser?.uid !== user.uid) return
-        const membershipDoc = snapshot.docs[0]
+        const membershipDoc = snapshot.docs.find(record => record.data().role === userRole && record.data().status === 'accepted')
         const department = membershipDoc?.data().department
         setReservationMembership(membershipDoc && typeof department === 'string' && department.trim()
           ? { id: membershipDoc.id, userId: user.uid, department: department.trim() }
@@ -614,7 +621,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       unsubscribeAuth()
       unsubscribeMembership?.()
     }
-  }, [])
+  }, [userRole])
 
   const toggleBuilding = (id: string) => {
     setExpandedBuildingIds((prev) =>
@@ -699,12 +706,15 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       duration: minBookingMins,
       purpose: '',
       attendees: '',
+      attendeeNames: [],
       subjectCode: '',
       classSection: ''
     })
   }
 
   const handleCloseModals = () => {
+    setIsRoomRulesModalOpen(false)
+    setRulesAccepted(false)
     setIsRoomInfoModalOpen(false)
     setIsReservationModalOpen(false)
     setIsFindRoomModalOpen(false)
@@ -939,7 +949,6 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
               </div>
             </div>
           </div>
-          <RoomUsageRules panel />
           </div>
           <div 
             className="absolute inset-0 -z-10" 
@@ -1129,7 +1138,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
               variant="brand"
               onClick={() => {
                 if (selectedRoomForSchedule) {
-                  handleOpenReservationModal(selectedRoomForSchedule)
+                  setRulesAccepted(false)
+                  setIsRoomRulesModalOpen(true)
                 }
               }}
               icon={<DoorIcon className="h-4 w-4" />}
@@ -1141,9 +1151,35 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
         }
       />
 
+      {/* Room-use rules before the reservation form */}
+      {isRoomRulesModalOpen && selectedRoomForSchedule && (
+        <div role="dialog" aria-modal="true" aria-labelledby="room-rules-dialog-title" className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl" onClick={event => event.stopPropagation()}>
+            <h3 id="room-rules-dialog-title" className="mb-4 text-lg font-bold text-slate-900">Before reserving {selectedRoomForSchedule.name}</h3>
+            <RoomUsageRules accepted={rulesAccepted} onAcceptedChange={setRulesAccepted} />
+            <div className="mt-5 flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setIsRoomRulesModalOpen(false)}>Back to Schedule</Button>
+              <Button
+                variant="brand"
+                className="flex-1"
+                disabled={!rulesAccepted}
+                onClick={() => {
+                  handleOpenReservationModal(selectedRoomForSchedule)
+                  setIsRoomRulesModalOpen(false)
+                }}
+              >
+                Continue to Reservation
+              </Button>
+            </div>
+          </div>
+          <div className="absolute inset-0 -z-10" onMouseDown={() => setIsRoomRulesModalOpen(false)} />
+        </div>
+      )}
+
       {/* Reservation Modal */}
       {canCreateReservation && isReservationModalOpen && selectedRoomInfo && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 lg:items-center">
+          <div className="my-auto flex w-full max-w-lg flex-col items-start justify-center gap-4 lg:max-w-[54rem] lg:flex-row">
           <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar rounded-2xl">
           <div 
             className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-visible"
@@ -1241,7 +1277,11 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                             finalVal = selectedRoomInfo.capacity.toString()
                           }
                         }
-                        setReservationData({ ...reservationData, attendees: finalVal })
+                        setReservationData(prev => ({
+                          ...prev,
+                          attendees: finalVal,
+                          attendeeNames: prev.attendeeNames.slice(0, Number(finalVal) || 0)
+                        }))
                         if (finalVal) setFormErrors(prev => ({ ...prev, attendees: false }))
                       }}
                       icon={<UserIcon className="h-4.5 w-4.5 text-gray-400" />}
@@ -1430,9 +1470,16 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
                     // 1. Attendees Capacity Validation
                     const attendeeCount = Number(reservationData.attendees)
-                    if (attendeeCount <= 0 || (selectedRoomInfo.capacity && attendeeCount > selectedRoomInfo.capacity)) {
+                    if (!Number.isInteger(attendeeCount) || attendeeCount <= 0 || (selectedRoomInfo.capacity && attendeeCount > selectedRoomInfo.capacity)) {
                       showNotification(`Number of attendees must be between 1 and ${selectedRoomInfo.capacity} pax for this room.`, 'warning', 'Invalid Attendees')
                       setFormErrors(prev => ({ ...prev, attendees: true }))
+                      return
+                    }
+
+                    const attendeeNames = Array.from({ length: attendeeCount }, (_, index) => normalizeAttendeeName(reservationData.attendeeNames[index] || ''))
+                    if (userRole === 'Instructor' && (attendeeNames.some(name => !name || name.length > 120))) {
+                      showNotification(`Enter the full name of all ${attendeeCount} attendees.`, 'warning', 'Attendee Names Required')
+                      setFormErrors(prev => ({ ...prev, attendeeNames: true }))
                       return
                     }
 
@@ -1548,6 +1595,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         if (!['Dean', 'Program Head', 'Instructor'].includes(membership.role)) {
                           throw new Error('RESERVATION_ROLE_UNAVAILABLE')
                         }
+                        if (membership.role === 'Instructor' && attendeeNames.some(name => !name || name.length > 120)) {
+                          throw new Error('ATTENDEE_NAMES_REQUIRED')
+                        }
 
                         if (reservationData.requestType === 'Extended') {
                           const currentRoomSnapshot = await transaction.get(doc(db, 'rooms', selectedRoomInfo.id))
@@ -1572,6 +1622,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           duration: reservationData.duration,
                           requestType: reservationData.requestType,
                           attendees: Number(reservationData.attendees),
+                          ...(membership.role === 'Instructor' ? { attendeeNames } : {}),
                           purpose: reservationData.purpose.trim(),
                           subjectCode: reservationData.subjectCode.trim().toUpperCase(),
                           classSection: reservationData.classSection.trim().toUpperCase(),
@@ -1609,6 +1660,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         showNotification('Your department is unavailable. Please refresh the page or contact an administrator.', 'error', 'Department Unavailable')
                       } else if (error instanceof Error && error.message === 'RESERVATION_ROLE_UNAVAILABLE') {
                         showNotification('Only Deans, Program Heads, and Instructors can reserve rooms.', 'error', 'Reservation Not Allowed')
+                      } else if (error instanceof Error && error.message === 'ATTENDEE_NAMES_REQUIRED') {
+                        showNotification('Enter the name of every attendee before submitting the reservation.', 'error', 'Attendee Names Required')
                       } else if (error instanceof Error && error.message === 'ROOM_AVAILABILITY_CHANGED') {
                         showNotification('The room availability or capacity changed. Please review the room and choose a valid time.', 'warning', 'Room Availability Changed')
                       } else {
@@ -1632,6 +1685,38 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
               </div>
             </div>
           </div>
+          </div>
+          {userRole === 'Instructor' && attendeeFieldCount > 0 && (
+            <aside aria-labelledby="reservation-attendee-heading" className="w-full shrink-0 rounded-2xl border border-gray-200 bg-white shadow-2xl lg:w-80" onClick={event => event.stopPropagation()}>
+              <div className="border-b border-slate-200 p-4">
+                <h4 id="reservation-attendee-heading" className="text-sm font-bold text-slate-900">Attendee names <span className="text-rose-500">*</span></h4>
+                <p className="mt-1 text-xs text-slate-500">Enter one full name per person, including yourself if you will use the room.</p>
+              </div>
+              <div className="max-h-[calc(100dvh-12rem)] space-y-3 overflow-y-auto p-4 custom-scrollbar">
+                {Array.from({ length: attendeeFieldCount }, (_, index) => (
+                  <div key={index} className="space-y-1.5">
+                    <label htmlFor={`reservation-attendee-${index}`} className="text-xs font-semibold text-slate-600">Attendee {index + 1}</label>
+                    <TextInput
+                      id={`reservation-attendee-${index}`}
+                      value={reservationData.attendeeNames[index] || ''}
+                      onChange={value => {
+                        setReservationData(prev => {
+                          const attendeeNames = [...prev.attendeeNames]
+                          attendeeNames[index] = value
+                          return { ...prev, attendeeNames }
+                        })
+                        setFormErrors(prev => ({ ...prev, attendeeNames: false }))
+                      }}
+                      placeholder={`Full name of attendee ${index + 1}`}
+                      error={formErrors.attendeeNames && !normalizeAttendeeName(reservationData.attendeeNames[index] || '')}
+                      maxLength={120}
+                    />
+                  </div>
+                ))}
+                <p className="text-xs text-slate-500">{reservationData.attendeeNames.slice(0, attendeeFieldCount).filter(name => normalizeAttendeeName(name || '')).length} of {attendeeFieldCount} names entered</p>
+              </div>
+            </aside>
+          )}
           </div>
           <div 
             className="absolute inset-0 -z-10" 
@@ -1726,8 +1811,6 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
             ? 'Find and book available rooms for classes, meetings, or special events.'
             : 'View available rooms and manage reservation availability.'}
         />
-
-        <RoomUsageRules />
 
         {!isReservationAvailabilityLoading && !isReservationEnabled && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">

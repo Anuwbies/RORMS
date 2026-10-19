@@ -11,14 +11,18 @@ import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/res
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { useSnackbar } from '../../components/Snackbar'
-import { db, auth } from '../../firebase'
+import { db, auth, storage } from '../../firebase'
+import { deleteObject, ref, uploadBytes } from 'firebase/storage'
 import { 
   collection, 
+  getDoc,
   onSnapshot, 
   query, 
   where,
   doc,
-  updateDoc
+  updateDoc,
+  runTransaction,
+  serverTimestamp,
 } from 'firebase/firestore'
 
 type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
@@ -33,6 +37,7 @@ interface Reservation {
   endTime: string
   duration: number
   attendees?: number
+  attendeeNames?: string[]
   purpose: string
   requestType?: 'Standard' | 'Extended'
   subjectCode?: string
@@ -47,6 +52,7 @@ interface Reservation {
   createdAt: any
   updatedAt: any
   isHidden?: boolean
+  afterUseEvidence?: { path: string; uploadedBy: string; uploadedAt?: { toDate?: () => Date }; contentType: string }
 }
 
 type RoomStatus = 'Available' | 'Unavailable' | 'Maintenance'
@@ -110,7 +116,7 @@ const formatReservationDate = (date: string) => new Date(`${date}T00:00:00Z`).to
   timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric'
 })
 
-function MyReservationsPage() {
+function MyReservationsPage({ userRole }: { userRole: string }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [reservationsLoading, setReservationsLoading] = useState(true)
@@ -180,6 +186,7 @@ function MyReservationsPage() {
         return a.startTime.localeCompare(b.startTime)
       })
       setReservations(list)
+      setSelectedReservation(previous => previous ? list.find(reservation => reservation.id === previous.id) ?? previous : null)
       setReservationsLoading(false)
       setReservationsError(false)
     }, () => {
@@ -234,6 +241,53 @@ function MyReservationsPage() {
       .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime))
       .slice(0, 3)
   ), [visibleReservations, now])
+
+  const canUploadAfterUsePhoto = (reservation: Reservation) => userRole === 'Instructor'
+    && (reservation.status === 'Approved' || reservation.status === 'Completed')
+    && !reservation.afterUseEvidence?.path
+    && reservationTimeInManila(reservation.date, reservation.endTime) <= now
+
+  const uploadAfterUsePhoto = async (reservationId: string, file: File) => {
+    const uid = auth.currentUser?.uid
+    if (!uid || userRole !== 'Instructor') throw new Error('Only the instructor who reserved the room can upload this photo.')
+    const fileTypes: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+    const extension = fileTypes[file.type]
+    if (!extension || file.size === 0 || file.size > 5 * 1024 * 1024) {
+      throw new Error('Choose a JPG, PNG, or WebP photo up to 5 MB.')
+    }
+
+    const reservationRef = doc(db, 'reservations', reservationId)
+    const isEligible = (reservation: Reservation) => reservation.userId === uid
+      && (reservation.status === 'Approved' || reservation.status === 'Completed')
+      && !reservation.afterUseEvidence?.path
+      && reservationTimeInManila(reservation.date, reservation.endTime) <= Date.now()
+    const currentSnapshot = await getDoc(reservationRef)
+    if (!currentSnapshot.exists() || !isEligible({ ...currentSnapshot.data(), id: currentSnapshot.id } as Reservation)) {
+      throw new Error('This reservation is not ready for an after-use photo, or one has already been uploaded.')
+    }
+
+    const path = `reservation-evidence/${reservationId}/${crypto.randomUUID()}.${extension}`
+    const photoRef = ref(storage, path)
+    let uploaded = false
+    try {
+      await uploadBytes(photoRef, file, { contentType: file.type })
+      uploaded = true
+      await runTransaction(db, async transaction => {
+        const snapshot = await transaction.get(reservationRef)
+        if (!snapshot.exists() || !isEligible({ ...snapshot.data(), id: snapshot.id } as Reservation)) {
+          throw new Error('The reservation changed before the photo could be saved. Please reload and try again.')
+        }
+        transaction.update(reservationRef, {
+          afterUseEvidence: { path, uploadedBy: uid, uploadedAt: serverTimestamp(), contentType: file.type },
+          updatedAt: serverTimestamp(),
+        })
+      })
+      showSnackbar({ message: 'After-use room photo uploaded successfully.', type: 'success' })
+    } catch (error) {
+      if (uploaded) await deleteObject(photoRef).catch(() => undefined)
+      throw error
+    }
+  }
 
   const filteredReservations = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase()
@@ -321,6 +375,7 @@ function MyReservationsPage() {
             {res.startTime} - {res.endTime}
             {res.requestType === 'Extended' && <span className="ml-2 text-[0.625rem] font-bold text-sky-700" title="Extended reservation">EXTD</span>}
           </span>
+          {canUploadAfterUsePhoto(res) && <span className="text-[0.625rem] font-bold text-amber-700">After-use photo needed</span>}
         </div>
       )
     },
@@ -703,6 +758,9 @@ function MyReservationsPage() {
         onDelete={handleDeleteReservation}
         isCanceling={isCanceling}
         reservation={selectedReservation as any}
+        showEvidenceUpload={userRole === 'Instructor' && !!selectedReservation && (selectedReservation.status === 'Approved' || selectedReservation.status === 'Completed')}
+        canUploadEvidence={!!selectedReservation && canUploadAfterUsePhoto(selectedReservation)}
+        onUploadEvidence={userRole === 'Instructor' ? uploadAfterUsePhoto : undefined}
         showReviewIndicators
         roomName={selectedReservation && rooms[selectedReservation.roomId] ? rooms[selectedReservation.roomId].name : 'Unknown Room'}
         roomType={(selectedReservation && rooms[selectedReservation.roomId]?.type) || 'Unknown Room Type'}

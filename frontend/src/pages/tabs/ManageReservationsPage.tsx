@@ -84,6 +84,8 @@ interface Reservation {
   endTime: string
   duration?: number
   attendees?: number
+  attendeeNames?: string[]
+  afterUseEvidence?: { path: string; uploadedBy?: string; uploadedAt?: { toDate?: () => Date }; contentType?: string }
   status: ReservationStatus
   deanRecommend?: boolean
   registrarRecommend?: boolean
@@ -1402,6 +1404,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
             {res.startTime} - {res.endTime}
             {res.requestType === 'Extended' && <span className="ml-2 whitespace-nowrap text-[0.625rem] font-bold text-sky-700" title="Extended reservation">EXTD</span>}
           </span>
+          {res.afterUseEvidence?.path && <span className="text-[0.625rem] font-bold text-emerald-700">After-use photo uploaded</span>}
         </div>
       )
     },
