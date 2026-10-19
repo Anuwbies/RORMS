@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { CloseIcon } from './Icons'
 
 interface RoomCommentsModalProps {
   id: string
@@ -7,19 +6,21 @@ interface RoomCommentsModalProps {
   roomName: string
   size: { width: number; height: number } | null
   onClose: () => void
+  isAnonymous: boolean
+  onAnonymousChange: (isAnonymous: boolean) => void
   children: ReactNode
 }
 
-export function RoomCommentsModal({ id, isOpen, roomName, size, onClose, children }: RoomCommentsModalProps) {
-  const closeButtonRef = useRef<HTMLButtonElement>(null)
+export function RoomCommentsModal({ id, isOpen, roomName, size, onClose, isAnonymous, onAnonymousChange, children }: RoomCommentsModalProps) {
+  const anonymousButtonRef = useRef<HTMLButtonElement>(null)
   const headerTextRef = useRef<HTMLDivElement>(null)
-  const [closeButtonSize, setCloseButtonSize] = useState<number | null>(null)
+  const [anonymousButtonSize, setAnonymousButtonSize] = useState<number | null>(null)
 
   useLayoutEffect(() => {
     const headerText = headerTextRef.current
     if (!isOpen || !headerText) return
 
-    const measure = () => setCloseButtonSize(headerText.getBoundingClientRect().height)
+    const measure = () => setAnonymousButtonSize(headerText.getBoundingClientRect().height)
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(headerText)
@@ -27,7 +28,7 @@ export function RoomCommentsModal({ id, isOpen, roomName, size, onClose, childre
   }, [isOpen])
 
   useEffect(() => {
-    if (isOpen) closeButtonRef.current?.focus()
+    if (isOpen) anonymousButtonRef.current?.focus()
   }, [isOpen])
 
   return (
@@ -52,14 +53,17 @@ export function RoomCommentsModal({ id, isOpen, roomName, size, onClose, childre
           <p className="mt-0.5 break-words text-xs font-medium text-white/80">{roomName}</p>
         </div>
         <button
-          ref={closeButtonRef}
+          ref={anonymousButtonRef}
           type="button"
-          onClick={onClose}
-          aria-label="Hide comments"
-          className="flex aspect-square shrink-0 cursor-pointer items-center justify-center self-stretch rounded-lg bg-white/15 text-white transition-colors hover:bg-white/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-          style={closeButtonSize !== null ? { width: closeButtonSize, height: closeButtonSize } : undefined}
+          onClick={() => onAnonymousChange(!isAnonymous)}
+          aria-label={`Anonymous posting ${isAnonymous ? 'on' : 'off'}`}
+          aria-pressed={isAnonymous}
+          title={`Anonymous posting is ${isAnonymous ? 'on' : 'off'}`}
+          className={`flex aspect-square shrink-0 cursor-pointer flex-col items-center justify-center self-stretch rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${isAnonymous ? 'bg-white text-[#41572a] hover:bg-[#f3f7ee]' : 'bg-white/15 text-white hover:bg-white/25'}`}
+          style={anonymousButtonSize !== null ? { width: anonymousButtonSize, height: anonymousButtonSize } : undefined}
         >
-          <CloseIcon className="h-4 w-4" />
+          <span aria-hidden="true" className="text-[10px] font-bold leading-none">ANON</span>
+          <span aria-hidden="true" className="mt-0.5 text-xs font-black leading-none">{isAnonymous ? 'ON' : 'OFF'}</span>
         </button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col p-6">

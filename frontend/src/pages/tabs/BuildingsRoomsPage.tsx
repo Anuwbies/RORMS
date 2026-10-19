@@ -1732,7 +1732,7 @@ function BuildingsRoomsPage() {
         room={selectedRoomInfo}
         onClose={handleCloseModals}
         hasUnreadComments={selectedRoomInfo ? unreadRoomIds.has(selectedRoomInfo.id) : false}
-        comments={selectedRoomInfo ? isVisible => <RoomComments key={selectedRoomInfo.id} roomId={selectedRoomInfo.id} isVisible={isVisible} onCommentsSeen={markCommentsSeen} onCommentSeen={markCommentSeen} isCommentUnread={isCommentUnread} canModerateComments={currentUserRole === 'Admin' || currentUserRole === 'Registrar' || currentUserRole === 'University Administrator'} /> : undefined}
+        comments={selectedRoomInfo ? (isVisible, isAnonymous) => <RoomComments key={selectedRoomInfo.id} roomId={selectedRoomInfo.id} isVisible={isVisible} isAnonymous={isAnonymous} onCommentsSeen={markCommentsSeen} onCommentSeen={markCommentSeen} isCommentUnread={isCommentUnread} canModerateComments={currentUserRole === 'Admin' || currentUserRole === 'Registrar' || currentUserRole === 'University Administrator'} /> : undefined}
         actionButton={
           <Button
             variant="brand"

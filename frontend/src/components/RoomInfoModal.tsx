@@ -12,12 +12,13 @@ interface RoomInfoModalProps {
   onClose: () => void
   onBack?: () => void
   actionButton?: React.ReactNode
-  comments?: React.ReactNode | ((isVisible: boolean) => React.ReactNode)
+  comments?: React.ReactNode | ((isVisible: boolean, isAnonymous: boolean) => React.ReactNode)
   hasUnreadComments?: boolean
 }
 
 export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton, comments, hasUnreadComments = false }: RoomInfoModalProps) {
   const [isCommentsVisible, setIsCommentsVisible] = useState(false)
+  const [isAnonymous, setIsAnonymous] = useState(false)
   const commentsToggleRef = useRef<HTMLButtonElement>(null)
   const roomModalRef = useRef<HTMLDivElement>(null)
   const [roomModalSize, setRoomModalSize] = useState<{ width: number; height: number } | null>(null)
@@ -25,6 +26,7 @@ export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton, com
 
   useEffect(() => {
     setIsCommentsVisible(false)
+    setIsAnonymous(false)
   }, [isOpen, room?.id])
 
   useLayoutEffect(() => {
@@ -199,8 +201,10 @@ export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton, com
         roomName={room.name}
         size={roomModalSize}
         onClose={hideComments}
+        isAnonymous={isAnonymous}
+        onAnonymousChange={setIsAnonymous}
       >
-        {typeof comments === 'function' ? comments(isCommentsVisible) : comments}
+        {typeof comments === 'function' ? comments(isCommentsVisible, isAnonymous) : comments}
       </RoomCommentsModal>}
       </div>
       <div 
