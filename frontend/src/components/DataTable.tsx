@@ -12,6 +12,7 @@ export interface ColumnDef<T> {
 
 export interface DataTableProps<T> {
   data: T[]
+  pageResetKey?: string
   columns: ColumnDef<T>[]
   
   // Controls
@@ -38,6 +39,7 @@ export interface DataTableProps<T> {
 
 export function DataTable<T>({
   data,
+  pageResetKey,
   columns,
   searchPlaceholder,
   searchValue,
@@ -56,9 +58,11 @@ export function DataTable<T>({
   const [isRowsDropdownOpen, setIsRowsDropdownOpen] = useState(false)
   const rowsDropdownRef = useRef<HTMLDivElement>(null)
 
+  const pageResetTrigger = pageResetKey ?? data
+
   useEffect(() => {
     setCurrentPage(1)
-  }, [data])
+  }, [pageResetTrigger])
 
   useEffect(() => {
     if (!isRowsDropdownOpen) return
@@ -73,6 +77,9 @@ export function DataTable<T>({
 
   const totalRows = data.length
   const totalPages = Math.ceil(totalRows / rowsPerPage) || 1
+  useEffect(() => {
+    setCurrentPage(page => Math.min(page, totalPages))
+  }, [totalPages])
   const startIndex = (currentPage - 1) * rowsPerPage
   const endIndex = Math.min(startIndex + rowsPerPage, totalRows)
   const currentData = data.slice(startIndex, endIndex)

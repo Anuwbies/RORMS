@@ -34,10 +34,10 @@ import DepartmentSchedulesPage from './tabs/DepartmentSchedulesPage'
 export const ROLE_ALLOWED_TABS: Record<string, DashboardSection[]> = {
   'Admin': [
     'dashboard', 'academicCalendar', 'members', 'departments', 'buildingsRooms',
-    'departmentSchedules', 'manageReservations', 'reserveRoom', 'myReservations', 'analytics', 'reports', 'logs'
+    'departmentSchedules', 'manageReservations', 'reserveRoom', 'analytics', 'reports', 'logs'
   ],
   'University Administrator': [
-    'dashboard', 'buildingsRooms', 'manageReservations', 'analytics', 'reports'
+    'dashboard', 'buildingsRooms', 'manageReservations', 'reserveRoom', 'analytics', 'reports'
   ],
   'Registrar': [
     'dashboard', 'academicCalendar', 'departmentSchedules', 'buildingsRooms',

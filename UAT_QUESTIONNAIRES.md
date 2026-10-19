@@ -2,7 +2,9 @@
 
 ## How to administer
 
-Ask each participant to complete **Section A** and the section for their assigned role. The role called **University Administrative** in the testing plan is labeled **University Administrator** in RORMS. Present each statement after the participant has tried the relevant task. Allow **N/A** when a task or feature was unavailable or not tested; do not treat N/A as a neutral response.
+Ask each participant to complete **Section A** and the section for their assigned role. This questionnaire covers the five roles in Sections B–F; it does not include a dedicated System Administrator section. The role called **University Administrative** in the testing plan is labeled **University Administrator** in RORMS. Present each statement after the participant has tried the relevant task. Allow **N/A** when a task or feature was unavailable or not tested; do not treat N/A as a neutral response.
+
+Use the current role navigation when assigning tasks. Program Heads and Instructors do not have **Manage Reservations**; they track their own requests in **My Reservations**. In **My Department**, Instructors can view the department schedule, but the separate **Manage Courses** action belongs to Deans and Program Heads. The Dean's **My Schedule** currently shows weekly room reservations; Dean class scheduling is not yet handled. Reservation availability can be turned on or off from **Reserve a Room** by Registrars and University Administrators, while only Deans, Program Heads, and Instructors can submit reservation requests.
 
 **Response scale:** 1 = Strongly disagree; 2 = Disagree; 3 = Neither agree nor disagree; 4 = Agree; 5 = Strongly agree; N/A = Not applicable or not tested.
 
@@ -114,9 +116,9 @@ Assesses the clarity and ease of the Registrar's recommendation step, including 
 | R27 | I could see the review progress after my decision. |
 | R28 | I could recognize an Extended reservation request and assess its details. |
 
-### Facilities, booking, analytics, and reports
+### Facilities, reservation availability, analytics, and reports
 
-Assesses the Registrar's ability to inspect and manage facilities, make room requests, interpret analytics, and retrieve report data.
+Assesses the Registrar's ability to inspect and manage facilities, control reservation availability, find rooms, interpret analytics, and retrieve report data.
 
 | ID | Statement |
 | --- | --- |
@@ -127,6 +129,7 @@ Assesses the Registrar's ability to inspect and manage facilities, make room req
 | R33 | Analytics helped me understand reservation or room usage patterns. |
 | R34 | Reports let me narrow the records to the period or criteria I needed. |
 | R35 | Exported report data matched the records I selected on screen. |
+| R36 | I could turn room reservations on or off from Reserve a Room. |
 
 ## Section C — University Administrative / University Administrator
 
@@ -186,6 +189,7 @@ Assesses whether reservation and facility data support oversight, whether report
 | U25 | I could apply report filters to find the records I needed. |
 | U26 | The exported reservation or facility report matched my on-screen selection. |
 | U27 | The system showed only the sections appropriate for the University Administrator role. |
+| U28 | I could turn room reservations on or off from Reserve a Room. |
 
 ## Section D — Dean
 
@@ -199,8 +203,8 @@ Assesses whether the Dean can find department members and carry out permitted me
 | --- | --- |
 | D01 | My Department showed the correct faculty and staff for my department. |
 | D02 | I could find a department member using search or filters. |
-| D03 | I could add an Instructor to my department when needed. |
-| D04 | I could update an eligible member's role or membership when needed. |
+| D03 | I could invite an available Instructor to join my department when needed. |
+| D04 | I could change an eligible Instructor to Program Head, or a Program Head to Instructor. |
 | D05 | The system made the result of a member action clear. |
 
 ### Courses and schedule planning
@@ -235,11 +239,11 @@ Assesses whether the Dean can find departmental requests, recognize when review 
 
 ### Personal schedule and room booking
 
-Assesses whether the Dean can view assigned classes, use the calendar, request suitable rooms, track decisions, and cancel eligible requests.
+Assesses whether the Dean can view weekly room reservations, use the calendar, request suitable rooms, track decisions, and cancel eligible requests.
 
 | ID | Statement |
 | --- | --- |
-| D22 | My Schedule showed my assigned classes for the selected semester. |
+| D22 | My Schedule showed my weekly room reservations. |
 | D23 | I could find a suitable room using the reservation filters. |
 | D24 | The reservation form made the date, time, capacity, and purpose requirements clear. |
 | D25 | The system warned me when a selected time conflicted with room availability or a class. |
@@ -248,6 +252,15 @@ Assesses whether the Dean can view assigned classes, use the calendar, request s
 | D28 | My Reservations showed the current status of my requests. |
 | D29 | I could cancel my own eligible request when plans changed. |
 | D30 | The Academic Calendar helped me understand the current semester and scheduling phase. |
+
+### Additional department and room tasks
+
+Assesses the Dean's room feedback and permitted department member removal actions.
+
+| ID | Statement |
+| --- | --- |
+| D31 | I could post a comment on a room in Buildings & Rooms. |
+| D32 | I could remove an eligible member from my department when needed. |
 
 ## Section E — Program Head
 
@@ -346,7 +359,7 @@ Assesses room search, form clarity, conflict prevention, request submission, sta
 | I15 | The system helped me avoid requesting a room during a conflicting class or booking. |
 | I16 | I could submit a Standard reservation request. |
 | I17 | I could submit an Extended reservation request when appropriate. |
-| I18 | My Reservations showed whether my request was Pending, Approved, Declined, or Cancelled. |
+| I18 | My Reservations showed whether my request was Pending, Approved, Declined, Cancelled, or Completed. |
 | I19 | A decline reason was understandable when a request was declined. |
 | I20 | I could cancel an eligible reservation that I no longer needed. |
 

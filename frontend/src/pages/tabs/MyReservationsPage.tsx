@@ -7,7 +7,6 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdown'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
-import { ExtendedReservationBadge } from '../../components/ExtendedReservationBadge'
 import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/reservationReviewStep'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
@@ -320,8 +319,8 @@ function MyReservationsPage() {
           </span>
           <span className="text-xs font-medium text-slate-500">
             {res.startTime} - {res.endTime}
+            {res.requestType === 'Extended' && <span className="ml-2 text-[0.625rem] font-bold text-sky-700" title="Extended reservation">EXTD</span>}
           </span>
-          <ExtendedReservationBadge requestType={res.requestType} />
         </div>
       )
     },
@@ -721,7 +720,7 @@ function MyReservationsPage() {
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f3f7ee] text-[#62853e]"><CalendarIcon className="h-5 w-5" /></span>
               <div>
                 <h2 className="text-base font-bold text-slate-900">Upcoming Reservations</h2>
-                <p className="mt-1 text-xs text-slate-500">Your next three approved room bookings</p>
+                <p className="text-xs text-slate-500">Your next three approved room bookings</p>
               </div>
             </div>
             {!reservationsLoading && !reservationsError && <span className="rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700">{pendingRequestCount} pending {pendingRequestCount === 1 ? 'request' : 'requests'}</span>}
@@ -749,9 +748,8 @@ function MyReservationsPage() {
                     </div>
                     <p className="mt-2 truncate text-sm font-bold text-slate-900">{room?.name || room?.code || 'Unknown room'}</p>
                     <p className="mt-0.5 truncate text-xs text-slate-500">{building?.name || 'Unknown building'}</p>
-                    <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-slate-700"><ClockIcon className="h-3.5 w-3.5 shrink-0" />{reservation.startTime} – {reservation.endTime}</p>
+                    <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-slate-700"><ClockIcon className="h-3.5 w-3.5 shrink-0" />{reservation.startTime} – {reservation.endTime}{reservation.requestType === 'Extended' && <span className="ml-1 text-[0.625rem] font-bold text-sky-700" title="Extended reservation">EXTD</span>}</p>
                     <p className="mt-1 truncate text-xs text-slate-500" title={reservation.purpose}>{reservation.purpose || 'No purpose provided'}</p>
-                    <ExtendedReservationBadge requestType={reservation.requestType} />
                   </button>
                 )
               })}

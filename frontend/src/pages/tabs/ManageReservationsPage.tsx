@@ -43,7 +43,8 @@ const adminReviewStateFor = (role: ReviewRole, decision: ReviewDecision): AdminR
   return decision === 'pending' ? 'deanApproved' : decision === 'approve' ? 'administratorApproved' : 'administratorDeclined'
 }
 const adminDecisionFor = (reservation: Reservation, role: ReviewRole): ReviewDecision => {
-  if (reservation.status === 'Declined' && reservation.declinedByRole === role) return 'decline'
+  if (reservation.status === 'Declined' && !reservation.autoProcessed) return 'decline'
+  if (role === 'University Administrator' && reservation.status === 'Pending') return 'pending'
   const recommended = role === 'Registrar' ? reservation.registrarRecommend
     : role === 'Dean' ? reservation.deanRecommend
       : reservation.universityAdministratorRecommend === true || reservation.status === 'Approved' || reservation.status === 'Completed'
@@ -190,7 +191,10 @@ function StatusUpdateModal({ reservation, allowedStatuses, reviewRole, adminRevi
     : reviewRole === 'Dean' && reservation.universityAdministratorRecommend === true
   const [selectedStatus, setSelectedStatus] = useState<ReservationStatus>(reservation.status)
   const [selectedReviewAction, setSelectedReviewAction] = useState<'pending' | 'approve' | 'decline' | null>(reviewRole && reservation.status === 'Declined' ? 'decline' : reviewRole && currentRecommendation === true ? 'approve' : reviewRole ? 'pending' : null)
-  const adminReviewRole: ReviewRole = reservation.registrarRecommend !== true ? 'Registrar' : reservation.deanRecommend !== true ? 'Dean' : 'University Administrator'
+  const adminReviewRole: ReviewRole = reservation.status === 'Declined' &&
+    (reservation.declinedByRole === 'Registrar' || reservation.declinedByRole === 'Dean' || reservation.declinedByRole === 'University Administrator')
+    ? reservation.declinedByRole
+    : reservation.registrarRecommend !== true ? 'Registrar' : reservation.deanRecommend !== true ? 'Dean' : 'University Administrator'
   const [selectedAdminDecision, setSelectedAdminDecision] = useState<ReviewDecision>(adminDecisionFor(reservation, adminReviewRole))
   const [declinedReason, setDeclinedReason] = useState(reservation.status === 'Declined' ? reservation.declinedReason || '' : '')
   const [isUpdating, setIsUpdating] = useState(false)
@@ -615,6 +619,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
   const [statusError, setStatusError] = useState('')
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [reservationsLoaded, setReservationsLoaded] = useState(false)
+  const [sessionOrder, setSessionOrder] = useState<string[] | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
   const [rooms, setRooms] = useState<Room[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -697,25 +702,8 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     })
   }, [reservations, users, rooms, buildings])
 
-  const filteredReservations = useMemo(() => {
-    return enrichedReservations
-      .filter((res) => {
-        const matchesSearch = [
-          res.requester?.name,
-          res.requester?.email,
-          res.roomName,
-          res.buildingName,
-          res.buildingCode,
-          res.status
-        ].some((val) => val?.toLowerCase().includes(searchTerm.toLowerCase()))
-
-        const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(res.status)
-        const matchesReviewStep = selectedReviewSteps.length === 0 || selectedReviewSteps.includes(reservationReviewStep(res))
-        const matchesBuilding = selectedBuildings.length === 0 || selectedBuildings.includes(res.buildingCode)
-
-        return matchesSearch && matchesStatus && matchesReviewStep && matchesBuilding
-      })
-      .sort((a, b) => {
+  const sortedReservations = useMemo(() => {
+    return [...enrichedReservations].sort((a, b) => {
         if (isRegistrar) {
           const registrarOrder = (reservation: Reservation) => {
             if (reservation.registrarRecommend === true) {
@@ -790,7 +778,46 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         // Secondary sort by date (descending)
         return new Date(b.date).getTime() - new Date(a.date).getTime()
       })
-  }, [enrichedReservations, searchTerm, selectedStatuses, selectedReviewSteps, selectedBuildings, isRegistrar, isDepartmentReviewer, isUniversityAdministrator, userRole])
+  }, [enrichedReservations, isRegistrar, isDepartmentReviewer, isUniversityAdministrator, userRole])
+
+  useEffect(() => {
+    if (!reservationsLoaded) return
+    const currentIds = sortedReservations.map(reservation => reservation.id)
+    setSessionOrder(previous => {
+      if (previous === null) return currentIds
+      const currentSet = new Set(currentIds)
+      const previousSet = new Set(previous)
+      const next = [...previous.filter(id => currentSet.has(id)), ...currentIds.filter(id => !previousSet.has(id))]
+      return next.length === previous.length && next.every((id, index) => id === previous[index]) ? previous : next
+    })
+  }, [reservationsLoaded, sortedReservations])
+
+  const filteredReservations = useMemo(() => {
+    const positions = new Map(sessionOrder?.map((id, index) => [id, index]) ?? [])
+    const ordered = sessionOrder === null ? sortedReservations : [...sortedReservations].sort((a, b) => {
+      const aIndex = positions.get(a.id)
+      const bIndex = positions.get(b.id)
+      if (aIndex === undefined) return bIndex === undefined ? 0 : 1
+      if (bIndex === undefined) return -1
+      return aIndex - bIndex
+    })
+    return ordered.filter((res) => {
+      const matchesSearch = [
+        res.requester?.name,
+        res.requester?.email,
+        res.roomName,
+        res.buildingName,
+        res.buildingCode,
+        res.status
+      ].some((val) => val?.toLowerCase().includes(searchTerm.toLowerCase()))
+
+      const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(res.status)
+      const matchesReviewStep = selectedReviewSteps.length === 0 || selectedReviewSteps.includes(reservationReviewStep(res))
+      const matchesBuilding = selectedBuildings.length === 0 || selectedBuildings.includes(res.buildingCode)
+
+      return matchesSearch && matchesStatus && matchesReviewStep && matchesBuilding
+    })
+  }, [sortedReservations, sessionOrder, searchTerm, selectedStatuses, selectedReviewSteps, selectedBuildings])
 
   const reviewCounts = useMemo(() => {
     const counts = { registrar: 0, dean: 0, administrator: 0, approved: 0, declined: 0, cancelled: 0, completed: 0 }
@@ -1384,7 +1411,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       render: (res) => (
         <div className="relative flex w-40 max-w-full flex-col items-start gap-1">
           <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={res.status} declinedByRole={res.declinedByRole} autoProcessed={res.autoProcessed} />
-          {!((isRegistrar || isDepartmentReviewer || isUniversityAdministrator) && canEditReservation(res)) && (res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
+          {!((isRegistrar || isDepartmentReviewer || isUniversityAdministrator) && canEditReservation(res)) && (res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
             <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? 'border-blue-600 text-blue-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{res.status}</span>
           </span>}
         </div>
@@ -1507,6 +1534,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           {statusError && <p role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{statusError}</p>}
           <DataTable
             data={filteredReservations}
+            pageResetKey={JSON.stringify([searchTerm, selectedStatuses, selectedReviewSteps, selectedBuildings])}
             columns={columns}
             searchPlaceholder="Search reservations..."
             searchValue={searchTerm}

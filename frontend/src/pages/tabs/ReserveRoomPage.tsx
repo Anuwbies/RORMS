@@ -141,7 +141,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const knownBuildingIds = useRef<Set<string>>(new Set())
   const [rooms, setRooms] = useState<Room[]>([])
   const reservationAvailabilityRef = useMemo(() => doc(db, 'settings', 'reservationAvailability'), [])
-  const canManageReservationAvailability = userRole === 'Admin' || userRole === 'Registrar'
+  const canManageReservationAvailability = userRole === 'Admin' || userRole === 'Registrar' || userRole === 'University Administrator'
+  const canCreateReservation = userRole === 'Dean' || userRole === 'Program Head' || userRole === 'Instructor'
   
   const maxAllowedDate = useMemo(() => {
     const today = new Date()
@@ -627,6 +628,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   }
 
   const handleOpenReservationModal = (room: Room) => {
+    if (!canCreateReservation) return
     if (isReservationAvailabilityLoading || !isReservationEnabled) {
       showNotification('Room reservations are currently unavailable. Please try again later.', 'warning', 'Reservations Unavailable')
       return
@@ -1121,7 +1123,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
           }
         }}
         actionButton={
-          selectedRoomForSchedule?.status === 'Available' && isReservationEnabled && !isReservationAvailabilityLoading ? (
+          canCreateReservation && selectedRoomForSchedule?.status === 'Available' && isReservationEnabled && !isReservationAvailabilityLoading ? (
             <Button
               type="button"
               variant="brand"
@@ -1140,7 +1142,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       />
 
       {/* Reservation Modal */}
-      {isReservationModalOpen && selectedRoomInfo && (
+      {canCreateReservation && isReservationModalOpen && selectedRoomInfo && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar rounded-2xl">
           <div 
@@ -1373,6 +1375,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                   disabled={isSubmitting || isReservationAvailabilityLoading || !isReservationEnabled || isDateFull || !reservationData.startTime || isMembershipLoading}
                   className="flex-1"
                   onClick={async () => {
+                    if (!canCreateReservation) return
                     if (isReservationAvailabilityLoading || !isReservationEnabled) {
                       showNotification('Room reservations are currently unavailable. Please try again later.', 'warning', 'Reservations Unavailable')
                       return
@@ -1542,6 +1545,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         if (!membershipSnapshot.exists() || membership?.userId !== userId || membership?.status !== 'accepted' || !department) {
                           throw new Error('MEMBERSHIP_DEPARTMENT_UNAVAILABLE')
                         }
+                        if (!['Dean', 'Program Head', 'Instructor'].includes(membership.role)) {
+                          throw new Error('RESERVATION_ROLE_UNAVAILABLE')
+                        }
 
                         if (reservationData.requestType === 'Extended') {
                           const currentRoomSnapshot = await transaction.get(doc(db, 'rooms', selectedRoomInfo.id))
@@ -1601,6 +1607,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         showNotification('Room reservations have been disabled. Your reservation was not submitted.', 'warning', 'Reservations Unavailable')
                       } else if (error instanceof Error && error.message === 'MEMBERSHIP_DEPARTMENT_UNAVAILABLE') {
                         showNotification('Your department is unavailable. Please refresh the page or contact an administrator.', 'error', 'Department Unavailable')
+                      } else if (error instanceof Error && error.message === 'RESERVATION_ROLE_UNAVAILABLE') {
+                        showNotification('Only Deans, Program Heads, and Instructors can reserve rooms.', 'error', 'Reservation Not Allowed')
                       } else if (error instanceof Error && error.message === 'ROOM_AVAILABILITY_CHANGED') {
                         showNotification('The room availability or capacity changed. Please review the room and choose a valid time.', 'warning', 'Room Availability Changed')
                       } else {
@@ -1714,7 +1722,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader 
           title="Reserve a Room" 
-          description="Find and book available rooms for classes, meetings, or special events." 
+          description={canCreateReservation
+            ? 'Find and book available rooms for classes, meetings, or special events.'
+            : 'View available rooms and manage reservation availability.'}
         />
 
         <RoomUsageRules />

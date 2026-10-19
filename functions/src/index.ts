@@ -437,7 +437,7 @@ type NotificationType =
   | "academic_year_changed"
   | "academic_phase_changed";
 
-type UserRole = "Admin" | "Registrar" | "Dean" | "Program Head" | "Instructor";
+type UserRole = "Admin" | "Registrar" | "Dean" | "Program Head" | "Instructor" | "University Administrator";
 
 interface NotificationPayload {
   title: string;
@@ -506,6 +506,17 @@ async function getUserIdsForRoles(roles: UserRole[]): Promise<string[]> {
     .map((membership) => membership.data())
     .filter((membership) => membership.status === "accepted")
     .map((membership) => stringValue(membership.userId))
+    .filter(Boolean))];
+}
+
+async function getReservationReviewerUserIds(role: "Dean" | "University Administrator", department: string): Promise<string[]> {
+  if (role === "Dean" && !department) return [];
+  const snapshot = await getDb().collection("memberships").where("role", "==", role).get();
+  return [...new Set(snapshot.docs
+    .map(membership => membership.data())
+    .filter(membership => membership.status === "accepted"
+      && (role !== "Dean" || stringValue(membership.department) === department))
+    .map(membership => stringValue(membership.userId))
     .filter(Boolean))];
 }
 
@@ -602,13 +613,17 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
     if (!statusChanged && !registrarRecommended && !deanRecommended) return;
 
     const userId = stringValue(after.userId);
-    if (!userId) return;
-
     const roomName = await getRoomName(stringValue(after.roomId));
     const status = stringValue(after.status);
     let notification: Pick<NotificationPayload, "title" | "message" | "type"> | null = null;
 
-    if (deanRecommended && status === "Pending") {
+    if (statusChanged && status === "Approved") {
+      notification = {
+        title: "Reservation approved",
+        message: `Your reservation for ${roomName} has been approved.`,
+        type: "booking_approved",
+      };
+    } else if (deanRecommended && status === "Pending") {
       notification = {
         title: "Dean recommended your reservation",
         message: `Your request for ${roomName} has been recommended by the Dean and is awaiting University Administrator approval.`,
@@ -619,12 +634,6 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
         title: "Registrar recommended your reservation",
         message: `Your request for ${roomName} has been recommended by the Registrar and is awaiting Dean review.`,
         type: "booking_recommended",
-      };
-    } else if (statusChanged && status === "Approved") {
-      notification = {
-        title: "Reservation approved",
-        message: `Your reservation for ${roomName} has been approved.`,
-        type: "booking_approved",
       };
     } else if (statusChanged && status === "Declined") {
       const reason = stringValue(after.declinedReason);
@@ -650,15 +659,35 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
       };
     }
 
-    if (!notification) return;
+    if (notification && userId) {
+      await createUserNotifications(
+        [userId],
+        {
+          ...notification,
+          sourceCollection: "reservations",
+          sourceId: event.params.reservationId,
+        },
+        `${event.id}_${status}`
+      );
+    }
+
+    const nextReviewer = status === "Pending" && deanRecommended && after.universityAdministratorRecommend !== true
+      ? "University Administrator"
+      : status === "Pending" && registrarRecommended && after.deanRecommend !== true
+        ? "Dean" : null;
+    if (!nextReviewer) return;
+
+    const reviewers = await getReservationReviewerUserIds(nextReviewer, stringValue(after.department));
     await createUserNotifications(
-      [userId],
+      reviewers,
       {
-        ...notification,
+        title: "Reservation ready for review",
+        message: `${nextReviewer === "Dean" ? "The Registrar" : "The Dean"} recommended a reservation for ${roomName}. Review it in Manage Reservations.`,
+        type: "booking_recommended",
         sourceCollection: "reservations",
         sourceId: event.params.reservationId,
       },
-      `${event.id}_${status}`
+      `${event.id}_${nextReviewer === "Dean" ? "dean" : "university_administrator"}_review`
     );
   }
 );
