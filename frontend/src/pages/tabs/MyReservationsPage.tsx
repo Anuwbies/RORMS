@@ -16,14 +16,14 @@ import { reservationDisplayStatus } from '../../utils/reservationEvidence'
 import { deleteObject, ref, uploadBytes } from 'firebase/storage'
 import { 
   collection, 
+  getDoc,
   onSnapshot, 
   query, 
   where,
   doc,
-  getDoc,
   updateDoc,
   runTransaction,
-  serverTimestamp
+  serverTimestamp,
 } from 'firebase/firestore'
 
 type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
@@ -38,6 +38,7 @@ interface Reservation {
   endTime: string
   duration: number
   attendees?: number
+  attendeeNames?: string[]
   purpose: string
   requestType?: 'Standard' | 'Extended'
   subjectCode?: string
@@ -129,7 +130,7 @@ const formatReservationDate = (date: string) => new Date(`${date}T00:00:00Z`).to
   timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric'
 })
 
-function MyReservationsPage() {
+function MyReservationsPage(_props: { userRole: string }) {
   const [searchTerm, setSearchTerm] = useState('')
   const [reservations, setReservations] = useState<Reservation[]>([])
   const [reservationsLoading, setReservationsLoading] = useState(true)
@@ -267,6 +268,7 @@ function MyReservationsPage() {
         return a.startTime.localeCompare(b.startTime)
       })
       setReservations(list)
+      setSelectedReservation(previous => previous ? list.find(reservation => reservation.id === previous.id) ?? previous : null)
       setReservationsLoading(false)
       setReservationsError(false)
     }, () => {

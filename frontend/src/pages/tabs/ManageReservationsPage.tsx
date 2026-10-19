@@ -85,6 +85,7 @@ interface Reservation {
   endTime: string
   duration?: number
   attendees?: number
+  attendeeNames?: string[]
   status: ReservationStatus
   deanRecommend?: boolean
   registrarRecommend?: boolean

@@ -26,6 +26,7 @@ interface ReservationInfoModalProps {
     endTime: string
     duration?: number
     attendees?: number
+    attendeeNames?: string[]
     purpose?: string
     requestType?: 'Standard' | 'Extended'
     subjectCode?: string
@@ -245,6 +246,15 @@ export function ReservationInfoModal({
                   {reservation.purpose || 'No purpose specified.'}
                 </p>
               </div>
+
+              {!!reservation.attendeeNames?.length && (
+                <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3">
+                  <h5 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-500">People using the room</h5>
+                  <ol className="list-inside list-decimal space-y-1 text-sm text-slate-700">
+                    {reservation.attendeeNames.map((name, index) => <li key={`${name}-${index}`} className="break-words">{name}</li>)}
+                  </ol>
+                </div>
+              )}
 
               {reservation.status === 'Declined' && reservation.declinedReason?.trim() && (
                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">

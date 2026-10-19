@@ -294,7 +294,7 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
       case 'reserveRoom':
         return <ReserveRoomPage userRole={normRole} />
       case 'myReservations':
-        return <MyReservationsPage />
+        return <MyReservationsPage userRole={normRole} />
       case 'manageReservations':
         return <ManageReservationsPage userRole={normRole} />
       case 'buildingsRooms':
