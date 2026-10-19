@@ -16,7 +16,7 @@ service firebase.storage {
         && request.resource.size > 0 && request.resource.size <= 100 * 1024 * 1024
         && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
       allow update: if false;
-      allow delete: if false;
+      allow delete: if requester() && reservation().status == 'Completed';
     }
 
     match /department-workbooks/{departmentId}/{yearId}/{semester}/revisions/{revisionId}/{fileName} {

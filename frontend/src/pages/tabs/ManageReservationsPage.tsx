@@ -1420,9 +1420,9 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       header: 'Status',
       width: '15%',
       render: (res) => (
-        <div className="relative flex w-40 max-w-full flex-col items-start gap-1">
+        <div className="relative isolate flex w-40 max-w-full flex-col items-start gap-1">
           <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={reservationDisplayStatus(res.status, res)} declinedByRole={res.declinedByRole} autoProcessed={res.autoProcessed} />
-          {!((isRegistrar || isDepartmentReviewer || isUniversityAdministrator) && canEditReservation(res)) && (res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
+          {(res.status === 'Completed' || !((isRegistrar || isDepartmentReviewer || isUniversityAdministrator) && canEditReservation(res))) && (res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
             <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? hasReservationEvidence(res) ? 'border-blue-600 text-blue-700' : 'border-amber-600 text-amber-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{reservationDisplayStatus(res.status, res)}</span>
           </span>}
         </div>

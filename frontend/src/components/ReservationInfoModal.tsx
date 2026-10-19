@@ -53,6 +53,9 @@ interface ReservationInfoModalProps {
   onDelete?: (reservationId: string) => void
   onViewRoom?: () => void
   onUploadEvidence?: () => void
+  onRemoveEvidence?: (file: ReservationEvidenceFile) => void
+  removingEvidence?: boolean
+  evidenceOpenRequest?: number
   isCanceling?: boolean
   showReviewIndicators?: boolean
 }
@@ -73,6 +76,9 @@ export function ReservationInfoModal({
   onDelete,
   onViewRoom,
   onUploadEvidence,
+  onRemoveEvidence,
+  removingEvidence = false,
+  evidenceOpenRequest = 0,
   isCanceling,
   reservation,
   roomName,
@@ -87,6 +93,10 @@ export function ReservationInfoModal({
     setAvatarError(false)
     setIsEvidenceModalOpen(false)
   }, [reservation?.id, requester?.avatar])
+
+  useEffect(() => {
+    if (evidenceOpenRequest > 0) setIsEvidenceModalOpen(true)
+  }, [evidenceOpenRequest])
 
   if (!isOpen || !reservation) return null
 
@@ -126,12 +136,14 @@ export function ReservationInfoModal({
           <p className="mt-1 text-sm text-white/80">{roomName} · {evidenceFiles.length} {evidenceFiles.length === 1 ? 'file' : 'files'}</p>
         </div>
         <div className="min-h-0 overflow-y-auto p-5">
-          <ReservationEvidenceGallery files={evidenceFiles} />
+          <div className="-mr-5 max-h-[27rem] overflow-y-auto pr-[calc(1.25rem-10px)] [scrollbar-gutter:stable] custom-scrollbar focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#62853e]" role="region" aria-label="Uploaded room evidence" tabIndex={evidenceFiles.length > 4 ? 0 : undefined}>
+            <ReservationEvidenceGallery files={evidenceFiles} twoColumns onRemove={onRemoveEvidence} removeDisabled={removingEvidence} />
+          </div>
         </div>
         <div className="flex shrink-0 gap-3 border-t border-slate-100 bg-white px-5 py-4">
           <Button type="button" variant="outline" onClick={() => setIsEvidenceModalOpen(false)} className="flex-1">Close</Button>
           {onUploadEvidence && reservation.status === 'Completed' && (
-            <Button type="button" variant="brand" onClick={() => { setIsEvidenceModalOpen(false); onUploadEvidence() }} className="flex-1">
+            <Button type="button" variant="brand" onClick={onUploadEvidence} className="flex-1">
               <UploadIcon className="h-4 w-4" />
               <span>Upload Evidence</span>
             </Button>
