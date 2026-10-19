@@ -9,7 +9,7 @@ import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdow
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/reservationReviewStep'
-import { reservationDisplayStatus } from '../../utils/reservationEvidence'
+import { hasReservationEvidence, reservationDisplayStatus, type ReservationEvidenceFile } from '../../utils/reservationEvidence'
 import { db, functions, auth } from '../../firebase'
 import { httpsCallable } from 'firebase/functions'
 import { 
@@ -97,6 +97,7 @@ interface Reservation {
   evidenceType?: 'image' | 'video'
   evidenceFileName?: string
   evidenceSubmittedAt?: { toDate: () => Date }
+  evidenceFiles?: ReservationEvidenceFile[]
   purpose?: string
   requestType?: 'Standard' | 'Extended'
   subjectCode?: string
@@ -814,10 +815,10 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         res.roomName,
         res.buildingName,
         res.buildingCode,
-        reservationDisplayStatus(res.status, res.evidencePath)
+        reservationDisplayStatus(res.status, res)
       ].some((val) => val?.toLowerCase().includes(searchTerm.toLowerCase()))
 
-      const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(reservationDisplayStatus(res.status, res.evidencePath))
+      const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(reservationDisplayStatus(res.status, res))
       const matchesReviewStep = selectedReviewSteps.length === 0 || selectedReviewSteps.includes(reservationReviewStep(res))
       const matchesBuilding = selectedBuildings.length === 0 || selectedBuildings.includes(res.buildingCode)
 
@@ -836,7 +837,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       else if (reservation.status === 'Declined') counts.declined += 1
       else if (reservation.status === 'Cancelled') counts.cancelled += 1
       else if (reservation.status === 'Completed') {
-        if (reservation.evidencePath) counts.completed += 1
+        if (hasReservationEvidence(reservation)) counts.completed += 1
         else counts.needsEvidence += 1
       }
     }
@@ -1420,9 +1421,9 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       width: '15%',
       render: (res) => (
         <div className="relative flex w-40 max-w-full flex-col items-start gap-1">
-          <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={reservationDisplayStatus(res.status, res.evidencePath)} declinedByRole={res.declinedByRole} autoProcessed={res.autoProcessed} />
+          <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={reservationDisplayStatus(res.status, res)} declinedByRole={res.declinedByRole} autoProcessed={res.autoProcessed} />
           {!((isRegistrar || isDepartmentReviewer || isUniversityAdministrator) && canEditReservation(res)) && (res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
-            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? res.evidencePath ? 'border-blue-600 text-blue-700' : 'border-amber-600 text-amber-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{reservationDisplayStatus(res.status, res.evidencePath)}</span>
+            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? hasReservationEvidence(res) ? 'border-blue-600 text-blue-700' : 'border-amber-600 text-amber-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{reservationDisplayStatus(res.status, res)}</span>
           </span>}
         </div>
       )
