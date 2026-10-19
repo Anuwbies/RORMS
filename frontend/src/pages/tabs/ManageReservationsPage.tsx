@@ -9,6 +9,7 @@ import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdow
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/reservationReviewStep'
+import { reservationDisplayStatus } from '../../utils/reservationEvidence'
 import { db, functions, auth } from '../../firebase'
 import { httpsCallable } from 'firebase/functions'
 import { 
@@ -91,6 +92,10 @@ interface Reservation {
   declinedReason?: string
   declinedByRole?: string
   autoProcessed?: boolean
+  evidencePath?: string
+  evidenceType?: 'image' | 'video'
+  evidenceFileName?: string
+  evidenceSubmittedAt?: { toDate: () => Date }
   purpose?: string
   requestType?: 'Standard' | 'Extended'
   subjectCode?: string
@@ -808,10 +813,10 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         res.roomName,
         res.buildingName,
         res.buildingCode,
-        res.status
+        reservationDisplayStatus(res.status, res.evidencePath)
       ].some((val) => val?.toLowerCase().includes(searchTerm.toLowerCase()))
 
-      const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(res.status)
+      const matchesStatus = selectedStatuses.length === 0 || selectedStatuses.includes(reservationDisplayStatus(res.status, res.evidencePath))
       const matchesReviewStep = selectedReviewSteps.length === 0 || selectedReviewSteps.includes(reservationReviewStep(res))
       const matchesBuilding = selectedBuildings.length === 0 || selectedBuildings.includes(res.buildingCode)
 
@@ -820,7 +825,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
   }, [sortedReservations, sessionOrder, searchTerm, selectedStatuses, selectedReviewSteps, selectedBuildings])
 
   const reviewCounts = useMemo(() => {
-    const counts = { registrar: 0, dean: 0, administrator: 0, approved: 0, declined: 0, cancelled: 0, completed: 0 }
+    const counts = { registrar: 0, dean: 0, administrator: 0, approved: 0, declined: 0, cancelled: 0, needsEvidence: 0, completed: 0 }
     for (const reservation of reservations) {
       if (reservation.status === 'Pending') {
         if (reservation.registrarRecommend !== true) counts.registrar += 1
@@ -829,7 +834,10 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       } else if (reservation.status === 'Approved') counts.approved += 1
       else if (reservation.status === 'Declined') counts.declined += 1
       else if (reservation.status === 'Cancelled') counts.cancelled += 1
-      else if (reservation.status === 'Completed') counts.completed += 1
+      else if (reservation.status === 'Completed') {
+        if (reservation.evidencePath) counts.completed += 1
+        else counts.needsEvidence += 1
+      }
     }
     return counts
   }, [reservations])
@@ -851,6 +859,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         { label: 'Approved', step: '', count: reviewCounts.approved, active: false, color: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
         { label: 'Declined', step: '', count: reviewCounts.declined, active: false, color: 'border-rose-200 bg-rose-50 text-rose-700' },
         { label: 'Cancelled', step: '', count: reviewCounts.cancelled, active: false, color: 'border-slate-200 bg-slate-50 text-slate-700' },
+        { label: 'Needs Evidence', step: '', count: reviewCounts.needsEvidence, active: false, color: 'border-amber-200 bg-amber-50 text-amber-700' },
         { label: 'Completed', step: '', count: reviewCounts.completed, active: false, color: 'border-sky-200 bg-sky-50 text-sky-700' },
       ],
     },
@@ -1410,9 +1419,9 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
       width: '15%',
       render: (res) => (
         <div className="relative flex w-40 max-w-full flex-col items-start gap-1">
-          <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={res.status} declinedByRole={res.declinedByRole} autoProcessed={res.autoProcessed} />
+          <ReservationReviewIndicators registrarRecommend={res.registrarRecommend} deanRecommend={res.deanRecommend} universityAdministratorRecommend={res.universityAdministratorRecommend} status={reservationDisplayStatus(res.status, res.evidencePath)} declinedByRole={res.declinedByRole} autoProcessed={res.autoProcessed} />
           {!((isRegistrar || isDepartmentReviewer || isUniversityAdministrator) && canEditReservation(res)) && (res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true">
-            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? 'border-blue-600 text-blue-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{res.status}</span>
+            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? res.evidencePath ? 'border-blue-600 text-blue-700' : 'border-amber-600 text-amber-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{reservationDisplayStatus(res.status, res.evidencePath)}</span>
           </span>}
         </div>
       )
@@ -1484,7 +1493,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     {
       id: 'status',
       title: 'Status',
-      options: STATUS_ORDER,
+      options: [...STATUS_ORDER.slice(0, -1), 'Needs Evidence', 'Completed'],
       selectedValues: selectedStatuses,
       onChange: setSelectedStatuses
     },
@@ -1551,7 +1560,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
         <ReservationInfoModal
           isOpen={!!viewingReservation}
           onClose={() => setViewingReservation(null)}
-          reservation={viewingReservation}
+          reservation={enrichedReservations.find(reservation => reservation.id === viewingReservation.id) || viewingReservation}
           roomName={viewingReservation.roomName || 'Unknown Room'}
           roomType={rooms.find(room => room.id === viewingReservation.roomId)?.type || 'Unknown Room Type'}
           requester={viewingReservation.requester}

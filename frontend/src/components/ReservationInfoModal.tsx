@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
-import { CalendarIcon, ClockIcon, UserIcon, HourglassIcon, DoorIcon } from './Icons'
+import { getDownloadURL, ref } from 'firebase/storage'
+import { storage } from '../firebase'
+import { reservationDisplayStatus } from '../utils/reservationEvidence'
+import { CalendarIcon, ClockIcon, UserIcon, HourglassIcon, DoorIcon, UploadIcon } from './Icons'
 import { Button } from './Button'
 import { ExtendedReservationBadge } from './ExtendedReservationBadge'
 import { ReservationReviewIndicators } from './ReservationReviewIndicators'
@@ -35,6 +38,10 @@ interface ReservationInfoModalProps {
     declinedReason?: string
     declinedByRole?: string
     autoProcessed?: boolean
+    evidencePath?: string
+    evidenceType?: 'image' | 'video'
+    evidenceFileName?: string
+    evidenceSubmittedAt?: { toDate: () => Date }
     createdAt?: any
     updatedAt?: any
   }
@@ -44,16 +51,18 @@ interface ReservationInfoModalProps {
   onCancel?: (reservationId: string) => void
   onDelete?: (reservationId: string) => void
   onViewRoom?: () => void
+  onUploadEvidence?: () => void
   isCanceling?: boolean
   showReviewIndicators?: boolean
 }
 
-const statusClasses: Record<ReservationStatus, string> = {
+const statusClasses: Record<ReservationStatus | 'Needs Evidence', string> = {
   Pending: 'bg-amber-100 text-amber-700',
   Approved: 'bg-emerald-100 text-emerald-700',
   Declined: 'bg-rose-100 text-rose-700',
   Cancelled: 'bg-slate-100 text-slate-700',
   Completed: 'bg-blue-100 text-blue-700',
+  'Needs Evidence': 'bg-amber-100 text-amber-700',
 }
 
 export function ReservationInfoModal({
@@ -62,6 +71,7 @@ export function ReservationInfoModal({
   onCancel,
   onDelete,
   onViewRoom,
+  onUploadEvidence,
   isCanceling,
   reservation,
   roomName,
@@ -70,15 +80,29 @@ export function ReservationInfoModal({
   showReviewIndicators,
 }: ReservationInfoModalProps) {
   const [avatarError, setAvatarError] = useState(false)
+  const [evidenceUrl, setEvidenceUrl] = useState('')
+  const [evidenceError, setEvidenceError] = useState(false)
 
   useEffect(() => {
     setAvatarError(false)
   }, [reservation?.id, requester?.avatar])
 
+  useEffect(() => {
+    setEvidenceUrl('')
+    setEvidenceError(false)
+    if (!isOpen || !reservation?.evidencePath) return
+    let active = true
+    getDownloadURL(ref(storage, reservation.evidencePath))
+      .then(url => { if (active) setEvidenceUrl(url) })
+      .catch(() => { if (active) setEvidenceError(true) })
+    return () => { active = false }
+  }, [isOpen, reservation?.evidencePath])
+
   if (!isOpen || !reservation) return null
 
   const canCancel = !!onCancel && (reservation.status === 'Pending' || reservation.status === 'Approved')
-  const canDelete = !!onDelete && (reservation.status === 'Cancelled' || reservation.status === 'Completed' || reservation.status === 'Declined')
+  const canDelete = !!onDelete && (reservation.status === 'Cancelled' || reservation.status === 'Declined' || (reservation.status === 'Completed' && !!reservation.evidencePath))
+  const displayStatus = reservationDisplayStatus(reservation.status, reservation.evidencePath) as ReservationStatus | 'Needs Evidence'
 
   const calculateDuration = () => {
     if (reservation.duration) return reservation.duration
@@ -125,8 +149,8 @@ export function ReservationInfoModal({
                   <p className="text-sm font-semibold text-slate-500">{roomType}</p>
                   <ExtendedReservationBadge requestType={reservation.requestType} />
                 </div>
-                <span className={`inline-flex shrink-0 items-center rounded-md px-2.5 py-1 text-xs font-black uppercase tracking-widest ${statusClasses[reservation.status]}`}>
-                  {reservation.status}
+                <span className={`inline-flex shrink-0 items-center rounded-md px-2.5 py-1 text-xs font-black uppercase tracking-widest ${statusClasses[displayStatus]}`}>
+                  {displayStatus}
                 </span>
               </div>
 
@@ -136,7 +160,7 @@ export function ReservationInfoModal({
                     registrarRecommend={reservation.registrarRecommend}
                     deanRecommend={reservation.deanRecommend}
                     universityAdministratorRecommend={reservation.universityAdministratorRecommend}
-                    status={reservation.status}
+                    status={displayStatus}
                     declinedByRole={reservation.declinedByRole}
                     autoProcessed={reservation.autoProcessed}
                   />
@@ -229,6 +253,22 @@ export function ReservationInfoModal({
                 </div>
               )}
 
+              {reservation.evidencePath && (
+                <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3">
+                  <h5 className="mb-1 text-xs font-bold uppercase tracking-widest text-slate-500">Cleanliness / orderliness evidence</h5>
+                  <p className="mb-2 text-xs text-slate-600">
+                    Uploaded {reservation.evidenceSubmittedAt?.toDate
+                      ? reservation.evidenceSubmittedAt.toDate().toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' }) + ' PHT'
+                      : 'time pending'}
+                  </p>
+                  {evidenceUrl && reservation.evidenceType === 'image' && <img src={evidenceUrl} alt="Room cleanliness evidence" className="max-h-64 w-full rounded-lg object-contain" />}
+                  {evidenceUrl && reservation.evidenceType === 'video' && <video controls src={evidenceUrl} className="max-h-64 w-full rounded-lg" aria-label="Room cleanliness evidence" />}
+                  {!evidenceUrl && !evidenceError && <p className="text-xs text-slate-500">Loading evidence...</p>}
+                  {evidenceError && <p className="text-xs text-rose-700">Could not load the evidence file.</p>}
+                  {evidenceUrl && <a href={evidenceUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block break-all text-xs font-semibold text-[#41572a] underline">Open {reservation.evidenceFileName || 'evidence file'}</a>}
+                </div>
+              )}
+
               <div className="flex flex-wrap justify-between items-center gap-2 text-[0.65rem] text-slate-400 font-bold uppercase tracking-widest">
                 <span>Requested {reservation.createdAt?.toDate ? reservation.createdAt.toDate().toLocaleDateString() : 'date unavailable'}</span>
                 <span>ID: {reservation.id.slice(0, 8)}</span>
@@ -256,6 +296,17 @@ export function ReservationInfoModal({
             >
               <DoorIcon className="h-4 w-4" />
               <span>Room Information</span>
+            </Button>
+          )}
+          {onUploadEvidence && displayStatus === 'Needs Evidence' && (
+            <Button
+              type="button"
+              variant="brand"
+              onClick={onUploadEvidence}
+              className="flex-1 h-12 text-sm sm:text-base flex items-center justify-center gap-2"
+            >
+              <UploadIcon className="h-4 w-4" />
+              <span>Upload Evidence</span>
             </Button>
           )}
           {canCancel && (

@@ -2,6 +2,27 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
+    match /reservation-evidence/{reservationId}/{fileName} {
+      function reservation() {
+        return firestore.get(/databases/(default)/documents/reservations/$(reservationId)).data;
+      }
+      function requester() {
+        return request.auth != null
+          && firestore.exists(/databases/(default)/documents/reservations/$(reservationId))
+          && reservation().userId == request.auth.uid;
+      }
+      function evidencePath() {
+        return 'reservation-evidence/' + reservationId + '/' + fileName;
+      }
+      allow read: if request.auth != null;
+      allow create: if requester() && reservation().status == 'Completed'
+        && !('evidencePath' in reservation())
+        && request.resource.size > 0 && request.resource.size <= 100 * 1024 * 1024
+        && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
+      allow update: if false;
+      allow delete: if requester() && reservation().get('evidencePath', '') != evidencePath();
+    }
+
     match /department-workbooks/{departmentId}/{yearId}/{semester}/revisions/{revisionId}/{fileName} {
       function ownUpload() {
         let grant = firestore.get(/databases/(default)/documents/departments/$(departmentId)/scheduleYears/$(yearId)/semesters/$(semester)/uploads/$(revisionId)).data;
@@ -92,7 +113,7 @@ service firebase.storage {
     // Preserve the currently deployed policy for other storage locations.
     // This exception must not match the private workbook namespace.
     match /{folder}/{otherPaths=**} {
-      allow read, write: if folder != 'department-workbooks';
+      allow read, write: if folder != 'department-workbooks' && folder != 'reservation-evidence';
     }
   }
 }

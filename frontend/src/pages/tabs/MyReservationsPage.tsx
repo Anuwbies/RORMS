@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
-import { ClockIcon, UserIcon, DoorIcon, SearchIcon, CalendarIcon, PlusIcon, HourglassIcon, TrashIcon } from '../../components/Icons'
+import { ClockIcon, UserIcon, DoorIcon, SearchIcon, CalendarIcon, PlusIcon, HourglassIcon, TrashIcon, UploadIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
 import { Button } from '../../components/Button'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
@@ -11,14 +11,19 @@ import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/res
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { useSnackbar } from '../../components/Snackbar'
-import { db, auth } from '../../firebase'
+import { db, auth, storage } from '../../firebase'
+import { reservationDisplayStatus } from '../../utils/reservationEvidence'
+import { deleteObject, ref, uploadBytes } from 'firebase/storage'
 import { 
   collection, 
   onSnapshot, 
   query, 
   where,
   doc,
-  updateDoc
+  getDoc,
+  updateDoc,
+  runTransaction,
+  serverTimestamp
 } from 'firebase/firestore'
 
 type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
@@ -44,6 +49,10 @@ interface Reservation {
   universityAdministratorRecommend?: boolean
   declinedByRole?: string
   autoProcessed?: boolean
+  evidencePath?: string
+  evidenceType?: 'image' | 'video'
+  evidenceFileName?: string
+  evidenceSubmittedAt?: { toDate: () => Date }
   createdAt: any
   updatedAt: any
   isHidden?: boolean
@@ -101,6 +110,16 @@ function createRoomImage() {
 
 const DEFAULT_ROOM_IMAGE = createRoomImage()
 
+const EVIDENCE_TYPES: Record<string, { kind: 'image' | 'video'; extension: string }> = {
+  'image/jpeg': { kind: 'image', extension: 'jpg' },
+  'image/png': { kind: 'image', extension: 'png' },
+  'image/webp': { kind: 'image', extension: 'webp' },
+  'video/mp4': { kind: 'video', extension: 'mp4' },
+  'video/webm': { kind: 'video', extension: 'webm' },
+  'video/quicktime': { kind: 'video', extension: 'mov' },
+}
+const MAX_EVIDENCE_BYTES = 100 * 1024 * 1024
+
 const reservationTimeInManila = (date: string, time: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}/.test(time)) return NaN
   return Date.parse(`${date}T${time.slice(0, 5)}:00+08:00`)
@@ -132,6 +151,74 @@ function MyReservationsPage() {
 
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
+  const [evidenceReservation, setEvidenceReservation] = useState<Reservation | null>(null)
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+  const [isUploadingEvidence, setIsUploadingEvidence] = useState(false)
+  const [evidenceUploadError, setEvidenceUploadError] = useState('')
+
+  const currentSelectedReservation = reservations.find(item => item.id === selectedReservation?.id) || selectedReservation
+
+  const openEvidenceUpload = (reservation: Reservation) => {
+    setIsReservationModalOpen(false)
+    setEvidenceReservation(reservation)
+    setEvidenceFile(null)
+    setEvidenceUploadError('')
+  }
+
+  const submitEvidence = async () => {
+    if (!evidenceReservation || !evidenceFile || isUploadingEvidence) return
+    const fileType = EVIDENCE_TYPES[evidenceFile.type]
+    if (!fileType || evidenceFile.size === 0 || evidenceFile.size > MAX_EVIDENCE_BYTES) {
+      setEvidenceUploadError('Choose a JPG, PNG, WebP, MP4, WebM, or MOV file up to 100 MB.')
+      return
+    }
+    const userId = auth.currentUser?.uid
+    if (!userId || userId !== evidenceReservation.userId) {
+      setEvidenceUploadError('Sign in as the requester to upload evidence.')
+      return
+    }
+
+    setIsUploadingEvidence(true)
+    setEvidenceUploadError('')
+    const evidencePath = `reservation-evidence/${evidenceReservation.id}/${crypto.randomUUID()}.${fileType.extension}`
+    const evidenceRef = ref(storage, evidencePath)
+    let uploaded = false
+    try {
+      await uploadBytes(evidenceRef, evidenceFile, { contentType: evidenceFile.type })
+      uploaded = true
+      await runTransaction(db, async transaction => {
+        const reservationRef = doc(db, 'reservations', evidenceReservation.id)
+        const snapshot = await transaction.get(reservationRef)
+        const record = snapshot.data()
+        if (!record || record.userId !== auth.currentUser?.uid || record.status !== 'Completed' || record.evidencePath) {
+          throw new Error('This reservation is no longer awaiting evidence. Reload and try again.')
+        }
+        transaction.update(reservationRef, {
+          evidencePath,
+          evidenceType: fileType.kind,
+          evidenceFileName: evidenceFile.name.slice(0, 255),
+          evidenceSubmittedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      })
+      setEvidenceReservation(null)
+      setEvidenceFile(null)
+      setSelectedReservation(null)
+      showSnackbar({ message: 'Room evidence uploaded. Reservation is complete.', type: 'success' })
+    } catch (error) {
+      if (uploaded) {
+        try {
+          const saved = await getDoc(doc(db, 'reservations', evidenceReservation.id))
+          if (saved.data()?.evidencePath !== evidencePath) await deleteObject(evidenceRef)
+        } catch {
+          // Keep the file if its database reference cannot be checked.
+        }
+      }
+      setEvidenceUploadError(error instanceof Error ? error.message : 'Could not upload evidence. Please try again.')
+    } finally {
+      setIsUploadingEvidence(false)
+    }
+  }
 
   const handleOpenRoomInfoModal = (room: Room) => {
     setSelectedRoomInfo(room)
@@ -243,7 +330,7 @@ function MyReservationsPage() {
       const building = buildings[res.buildingId]
       
       // 1. Filter by status
-      if (selectedStatuses.length > 0 && !selectedStatuses.includes(res.status)) {
+      if (selectedStatuses.length > 0 && !selectedStatuses.includes(reservationDisplayStatus(res.status, res.evidencePath))) {
         return false
       }
 
@@ -265,7 +352,7 @@ function MyReservationsPage() {
         building?.name || '',
         building?.code || '',
         res.purpose,
-        res.status,
+        reservationDisplayStatus(res.status, res.evidencePath),
         res.date
       ].some(val => val.toLowerCase().includes(normalizedSearch))
     })
@@ -344,12 +431,12 @@ function MyReservationsPage() {
             registrarRecommend={res.registrarRecommend}
             deanRecommend={res.deanRecommend}
             universityAdministratorRecommend={res.universityAdministratorRecommend}
-            status={res.status}
+            status={reservationDisplayStatus(res.status, res.evidencePath)}
             declinedByRole={res.declinedByRole}
             autoProcessed={res.autoProcessed}
           />
           {(res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
-            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? 'border-blue-600 text-blue-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{res.status}</span>
+            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? res.evidencePath ? 'border-blue-600 text-blue-700' : 'border-amber-600 text-amber-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{reservationDisplayStatus(res.status, res.evidencePath)}</span>
           </span>}
         </div>
       )
@@ -363,20 +450,21 @@ function MyReservationsPage() {
         return (
           <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
             <IconButton
-              label="View Room"
+              label={res.status === 'Completed' && !res.evidencePath ? 'Upload Evidence' : 'View Room'}
               onClick={() => {
-                if (room) handleOpenRoomInfoModal(room)
+                if (res.status === 'Completed' && !res.evidencePath) openEvidenceUpload(res)
+                else if (room) handleOpenRoomInfoModal(room)
               }}
               className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
             >
-              <DoorIcon className="h-4 w-4" />
+              {res.status === 'Completed' && !res.evidencePath ? <UploadIcon className="h-4 w-4" /> : <DoorIcon className="h-4 w-4" />}
             </IconButton>
             <IconButton
               label="Delete Record"
-              disabled={!['Cancelled', 'Completed', 'Declined'].includes(res.status)}
+              disabled={!(res.status === 'Cancelled' || res.status === 'Declined' || (res.status === 'Completed' && !!res.evidencePath))}
               onClick={() => handleDeleteReservation(res.id)}
               className={`h-8 w-8 rounded-lg bg-white transition-all border border-slate-200 ${
-                ['Cancelled', 'Completed', 'Declined'].includes(res.status)
+                (res.status === 'Cancelled' || res.status === 'Declined' || (res.status === 'Completed' && !!res.evidencePath))
                   ? 'text-rose-500 hover:border-rose-300 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
                   : 'opacity-30 text-slate-400'
               }`}
@@ -400,7 +488,7 @@ function MyReservationsPage() {
     {
       id: 'status',
       title: 'Status',
-      options: ['Pending', 'Approved', 'Declined', 'Cancelled', 'Completed'],
+      options: ['Pending', 'Approved', 'Declined', 'Cancelled', 'Needs Evidence', 'Completed'],
       selectedValues: selectedStatuses,
       onChange: setSelectedStatuses
     },
@@ -693,6 +781,43 @@ function MyReservationsPage() {
         isDestructive={true}
       />
 
+      {evidenceReservation && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="evidence-upload-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl">
+            <div className="rounded-t-2xl bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] px-5 py-4 text-white">
+              <h3 id="evidence-upload-title" className="text-xl font-bold">Upload Room Evidence</h3>
+              <p className="mt-1 text-sm text-white/80">Show that the room is clean and orderly after use.</p>
+            </div>
+            <div className="space-y-4 p-5">
+              <p className="text-sm text-slate-700">Upload a photo or video of the room after your reservation. The submission time will be recorded in Philippine time.</p>
+              <div>
+                <label htmlFor="reservation-evidence-file" className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Photo or video</label>
+                <input
+                  id="reservation-evidence-file"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
+                  disabled={isUploadingEvidence}
+                  onChange={event => {
+                    setEvidenceFile(event.target.files?.[0] || null)
+                    setEvidenceUploadError('')
+                  }}
+                  className="block w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-[#e3edda] file:px-3 file:py-1.5 file:font-bold file:text-[#41572a]"
+                />
+                <p className="mt-2 text-xs text-slate-500">JPG, PNG, WebP, MP4, WebM, or MOV. Maximum 100 MB.</p>
+              </div>
+              {evidenceFile && <p className="break-all text-sm font-semibold text-slate-700">Selected: {evidenceFile.name}</p>}
+              {evidenceUploadError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{evidenceUploadError}</p>}
+              <div className="flex gap-3">
+                <Button type="button" variant="outline" disabled={isUploadingEvidence} onClick={() => setEvidenceReservation(null)} className="flex-1">Cancel</Button>
+                <Button type="button" variant="brand" disabled={!evidenceFile || isUploadingEvidence} onClick={submitEvidence} className="flex-1">
+                  {isUploadingEvidence ? 'Uploading...' : 'Submit Evidence'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ReservationInfoModal
         isOpen={isReservationModalOpen}
         onClose={() => {
@@ -702,7 +827,9 @@ function MyReservationsPage() {
         onCancel={handleCancelReservation}
         onDelete={handleDeleteReservation}
         isCanceling={isCanceling}
-        reservation={selectedReservation as any}
+        reservation={currentSelectedReservation as Reservation}
+        onUploadEvidence={currentSelectedReservation?.status === 'Completed' && !currentSelectedReservation.evidencePath
+          ? () => openEvidenceUpload(currentSelectedReservation) : undefined}
         showReviewIndicators
         roomName={selectedReservation && rooms[selectedReservation.roomId] ? rooms[selectedReservation.roomId].name : 'Unknown Room'}
         roomType={(selectedReservation && rooms[selectedReservation.roomId]?.type) || 'Unknown Room Type'}

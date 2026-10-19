@@ -17,7 +17,7 @@ export function ReservationReviewIndicators({
   declinedByRole,
   autoProcessed,
 }: ReservationReviewIndicatorsProps) {
-  const fullyApproved = status === 'Approved' || status === 'Completed'
+  const fullyApproved = status === 'Approved' || status === 'Completed' || status === 'Needs Evidence'
   const declinedRole = status === 'Declined' && !autoProcessed
     ? declinedByRole || (registrarRecommend !== true && deanRecommend !== true ? 'Registrar'
       : registrarRecommend === true && deanRecommend !== true ? 'Dean'

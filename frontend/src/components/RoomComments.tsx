@@ -17,6 +17,7 @@ import type { CommentReadCandidate } from '../hooks/useRoomCommentNotices'
 interface RoomCommentsProps {
   roomId: string
   isVisible?: boolean
+  isAnonymous?: boolean
   onCommentsSeen?: (roomId: string, lastSeenAt: Timestamp) => Promise<void>
   onCommentSeen?: (roomId: string, comment: CommentReadCandidate) => Promise<void>
   isCommentUnread?: (roomId: string, comment: CommentReadCandidate) => boolean
@@ -34,7 +35,7 @@ interface RoomComment {
 const PAGE_SIZE = 20
 const MAX_COMMENT_LENGTH = 1000
 
-export function RoomComments({ roomId, isVisible = false, onCommentsSeen, onCommentSeen, isCommentUnread, canModerateComments = false }: RoomCommentsProps) {
+export function RoomComments({ roomId, isVisible = false, isAnonymous = false, onCommentsSeen, onCommentSeen, isCommentUnread, canModerateComments = false }: RoomCommentsProps) {
   const [user, setUser] = useState<User | null>(auth.currentUser)
   const [comments, setComments] = useState<RoomComment[]>([])
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
@@ -54,7 +55,7 @@ export function RoomComments({ roomId, isVisible = false, onCommentsSeen, onComm
   const lastLoadedRef = useRef<Timestamp | null>(null)
   const retryReadRef = useRef<(() => Promise<void>) | null>(null)
   lastLoadedRef.current = lastLoadedAt
-  const authorIdsKey = JSON.stringify([...new Set(comments.map(comment => comment.authorId).filter(Boolean))].sort())
+  const authorIdsKey = JSON.stringify([...new Set(comments.filter(comment => comment.authorName !== 'Anonymous').map(comment => comment.authorId).filter(Boolean))].sort())
   const posting = useRef(false)
   const deleting = useRef(false)
   const commentListRef = useRef<HTMLDivElement>(null)
@@ -179,8 +180,9 @@ export function RoomComments({ roomId, isVisible = false, onCommentsSeen, onComm
     setIsPosting(true)
     setActionError('')
     try {
-      const profile = await getDoc(doc(db, 'users', user.uid))
-      const authorName = (formatUserName(profile.data()) || user.displayName || 'Member').trim().slice(0, 200)
+      const authorName = isAnonymous
+        ? 'Anonymous'
+        : (formatUserName((await getDoc(doc(db, 'users', user.uid))).data()) || user.displayName || 'Member').trim().slice(0, 200)
       await addDoc(collection(db, 'comments'), {
         roomId,
         authorId: user.uid,
@@ -256,7 +258,7 @@ export function RoomComments({ roomId, isVisible = false, onCommentsSeen, onComm
             <div className="flex min-w-0 items-center gap-3">
               <div className="relative flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-slate-400 shadow-sm ring-1 ring-slate-300">
                 <UserIcon className="h-5 w-5" aria-hidden="true" />
-                {(authorPhotos[comment.authorId] || (comment.authorId === user?.uid ? user.photoURL : '')) && <img
+                {comment.authorName !== 'Anonymous' && (authorPhotos[comment.authorId] || (comment.authorId === user?.uid ? user.photoURL : '')) && <img
                   src={authorPhotos[comment.authorId] || user?.photoURL || ''}
                   alt={`${comment.authorName}'s profile`}
                   className="absolute inset-0 h-full w-full object-cover"

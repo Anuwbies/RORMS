@@ -233,8 +233,14 @@ The Registrar edit action is disabled once the Dean has recommended or declined;
   - `cancelledAt`: timestamp (Optional automatic cancellation timestamp)
   - `autoProcessed`: boolean (Optional flag for automatic status changes)
   - `completedAt`: timestamp (Optional timestamp when an approved reservation concludes)
+  - `evidencePath`: string (Firebase Storage path to one after-use room photo or video; absent until the requester submits proof)
+  - `evidenceType`: string (`image` or `video`)
+  - `evidenceFileName`: string (Original uploaded file name for display)
+  - `evidenceSubmittedAt`: timestamp (Server timestamp of the evidence submission; displayed in Philippine time)
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
+
+Completed reservations without `evidencePath` display **Needs Evidence** in My Reservations and Manage Reservations. The requester can upload one JPG, PNG, WebP, MP4, WebM, or MOV file (up to 100 MiB) after the reservation is marked Completed. The client uploads to `reservation-evidence/{reservationId}/{uuid}.{extension}`, then transactionally checks ownership, current status, and absence of evidence before saving the path and timestamp. The proof can be viewed in reservation details. Deploy `storage.rules` to enforce upload ownership, type, and size; the existing deployed permissive storage policy does not enforce these restrictions until then.
 
 Extended reservations cover one date within the room's operating hours and available days. The form uses start and end time pickers, bypassing only the standard maximum duration and 90-minute slot boundaries. Minimum duration, capacity, reservation date limits, the two-hour same-day submission lead time, and reservation/class conflicts remain enforced. Pending extended requests hold their selected interval just like standard requests. The room's current availability, hours, days, minimum duration, and capacity are read again during extended submission. Manage Reservations marks these bookings `EXTD` beside the time range; My Reservations, reservation details, and ScheduleModal (including its PDF output) label them Extended reservation. The calendar repeats the booking in each overlapping slot.
 
