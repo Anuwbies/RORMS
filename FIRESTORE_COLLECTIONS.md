@@ -215,6 +215,7 @@ The Registrar edit action is disabled once the Dean has recommended or declined;
   - `classSection`: string (Optional; trimmed and saved in uppercase, e.g., "3BSIT - 1", or an empty string when omitted. Reservation entries in ScheduleModal display N/A when empty.)
   - `department`: string (Required for new reservations; automatically copied from the reserving user's membership, including the administrative or registrar office for those roles; read again during the reservation transaction)
   - `attendees`: number (Expected number of attendees)
+  - `attendeeNames`: string[] (For new Instructor requests, one trimmed name per attendee, including the instructor if present; the list must match `attendees`. Older requests and other requester roles may omit it.)
   - `status`: string (`"Pending"`, `"Approved"`, `"Declined"`, `"Cancelled"`, or `"Completed"`) | **Default: "Pending"**
   - `registrarRecommend`: boolean (Whether a Registrar has recommended the reservation) | **Default: false for new reservations**
   - `deanRecommend`: boolean (Whether the department Dean has recommended the reservation after the Registrar) | **Default: false for new reservations**
@@ -233,6 +234,7 @@ The Registrar edit action is disabled once the Dean has recommended or declined;
   - `cancelledAt`: timestamp (Optional automatic cancellation timestamp)
   - `autoProcessed`: boolean (Optional flag for automatic status changes)
   - `completedAt`: timestamp (Optional timestamp when an approved reservation concludes)
+  - `afterUseEvidence`: optional map `{ path, uploadedBy, uploadedAt, contentType }` for one after-use room photo. `path` points to `reservation-evidence/{reservationId}/{uuid}.{jpg|png|webp}` in Firebase Storage. The requester can submit it after the booked end time for an Approved or Completed reservation; the photo and upload time appear in reservation details for reviewers. The UI accepts up to 5 MiB and does not replace a submitted photo. The local `storage.rules` restricts creates to the reservation owner and keeps referenced photos from being deleted; deploy it to enforce these restrictions in Storage.
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
 

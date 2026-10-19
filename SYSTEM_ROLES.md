@@ -44,6 +44,7 @@ The Dean acts as the primary academic planner for their specific department.
 
 ### 5. Instructor
 The Instructor is the end-user who utilizes the assigned resources to deliver education.
+*   **Room reservations:** An Instructor enters every attendee's name in a separate field generated from the attendee count. The attendee fields appear in their own panel beside the reservation form on large screens. After the reservation ends, the Instructor can upload one room-condition photo from My Reservations; the names and photo appear in reservation details for accountability. Clicking Reserve Room in the room schedule opens the red room-use rules; the requester must acknowledge them before the reservation form opens.
 *   **Schedule Viewing:** Access a personalized dashboard showing their assigned courses, rooms, and time slots.
 *   **Availability Submission:** Submit "Preferred Teaching Times" or personal constraints (e.g., research blocks) for consideration during the scheduling phase.
 *   **Change Requests:** Formally request a room or time change if the assigned resource does not meet the course's pedagogical needs.
