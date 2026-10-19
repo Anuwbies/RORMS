@@ -74,7 +74,7 @@ Assesses the Registrar's ability to monitor scheduling and reservations, find sc
 | ID | Statement |
 | --- | --- |
 | R01 | The dashboard made the current semester's scheduling progress clear. |
-| R02 | The dashboard helped me identify reservations requiring attention. |
+| R02 | The dashboard showed pending reservation requests and linked me to Manage Reservations. |
 | R03 | I could find a school year using the Academic Calendar search and filters. |
 | R04 | I could create or update a school year with the intended semester dates. |
 | R05 | I could select the active school year and update scheduling phases. |
@@ -178,9 +178,9 @@ Assesses whether the University Administrator can identify eligible requests, re
 | U21 | Extended reservation details were sufficient for me to assess the requested time. |
 | U22 | I understood why an Extended reservation could not be approved when it conflicted with current constraints. |
 
-### Analytics, reports, and role access
+### Analytics, reports, reservation availability, and role access
 
-Assesses whether reservation and facility data support oversight, whether reports can be filtered and exported, and whether access fits the role.
+Assesses whether reservation and facility data support oversight, reports can be filtered and exported, reservation availability can be controlled, and access fits the role.
 
 | ID | Statement |
 | --- | --- |
