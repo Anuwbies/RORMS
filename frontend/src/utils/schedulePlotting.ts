@@ -175,10 +175,6 @@ export function assertPlotRoom(meeting: Pick<WorkbookScheduleMeeting, 'startTime
   if (room.status !== 'Available') throw new Error(`${room.code || room.name} is not available for plotting.`)
   const start = minutes(meeting.startTime), end = minutes(meeting.endTime)
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !meeting.days.length) throw new Error('This meeting has invalid days or times.')
-  const available = room.availableDays.map(day => day.slice(0, 3).toLowerCase())
-  if (meeting.days.some(day => !available.includes(day.slice(0, 3).toLowerCase()))
-    || !Number.isFinite(minutes(room.startTime)) || !Number.isFinite(minutes(room.endTime))
-    || start < minutes(room.startTime) || end > minutes(room.endTime)) throw new Error(`${room.code || room.name} is outside its available days or hours for this meeting.`)
   if (maxStudents !== null && maxStudents > room.capacity) throw new Error(`${room.code || room.name} does not have enough capacity for this class.`)
 }
 

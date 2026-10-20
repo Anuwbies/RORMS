@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
+import type { CSSProperties } from 'react'
 import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
 import { maxReservationDuration, reservationTimeMinutes, reservationTimeString, type ReservationRequestType } from '../../utils/reservationDuration'
 import { SectionHeader } from '../../components/SectionHeader'
@@ -62,6 +63,7 @@ function RoomUsageRules({ accepted, onAcceptedChange }: { accepted: boolean; onA
 }
 
 const normalizeAttendeeName = (value: string) => value.trim().replace(/\s+/g, ' ')
+const capitalizeAttendeeWords = (value: string) => value.replace(/(^|[^\p{L}\p{M}])(\p{L})/gu, (_, separator: string, initial: string) => separator + initial.toLocaleUpperCase())
 
 function formatTime12(timeStr: string) {
   if (!timeStr) return ''
@@ -372,10 +374,24 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   }, [selectedRoomInfo])
 
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
+  const reservationFormRef = useRef<HTMLDivElement>(null)
+  const [reservationFormHeight, setReservationFormHeight] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (!isReservationModalOpen || userRole !== 'Instructor' || !selectedRoomInfo) return
+    const form = reservationFormRef.current
+    if (!form) return
+
+    const syncHeight = () => setReservationFormHeight(form.getBoundingClientRect().height)
+    syncHeight()
+    const observer = new ResizeObserver(syncHeight)
+    observer.observe(form)
+    return () => observer.disconnect()
+  }, [isReservationModalOpen, selectedRoomInfo, userRole])
   const [isRoomRulesModalOpen, setIsRoomRulesModalOpen] = useState(false)
   const [rulesAccepted, setRulesAccepted] = useState(false)
   const attendeeFieldCount = Number.isInteger(Number(reservationData.attendees)) && Number(reservationData.attendees) > 0
-    ? Math.min(Number(reservationData.attendees), selectedRoomInfo?.capacity || 0)
+    ? Math.max(0, Math.min(Number(reservationData.attendees), selectedRoomInfo?.capacity || 0) - 1)
     : 0
   const firstAvailableStartTime = useMemo(() => {
     if (!selectedRoomInfo || !reservationData.date) return null
@@ -1180,7 +1196,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       {canCreateReservation && isReservationModalOpen && selectedRoomInfo && (
         <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 lg:items-center">
           <div className="my-auto flex w-full max-w-lg flex-col items-start justify-center gap-4 lg:max-w-[54rem] lg:flex-row">
-          <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar rounded-2xl">
+          <div ref={reservationFormRef} className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar rounded-2xl">
           <div 
             className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
@@ -1280,7 +1296,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         setReservationData(prev => ({
                           ...prev,
                           attendees: finalVal,
-                          attendeeNames: prev.attendeeNames.slice(0, Number(finalVal) || 0)
+                          attendeeNames: prev.attendeeNames.slice(0, Math.max(0, (Number(finalVal) || 0) - 1))
                         }))
                         if (finalVal) setFormErrors(prev => ({ ...prev, attendees: false }))
                       }}
@@ -1476,9 +1492,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       return
                     }
 
-                    const attendeeNames = Array.from({ length: attendeeCount }, (_, index) => normalizeAttendeeName(reservationData.attendeeNames[index] || ''))
+                    const attendeeNames = Array.from({ length: attendeeCount - 1 }, (_, index) => normalizeAttendeeName(reservationData.attendeeNames[index] || ''))
                     if (userRole === 'Instructor' && (attendeeNames.some(name => !name || name.length > 120))) {
-                      showNotification(`Enter the full name of all ${attendeeCount} attendees.`, 'warning', 'Attendee Names Required')
+                      showNotification("Enter other attendees' full names.", 'warning', 'Attendee Names Required')
                       setFormErrors(prev => ({ ...prev, attendeeNames: true }))
                       return
                     }
@@ -1687,34 +1703,47 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
           </div>
           </div>
           {userRole === 'Instructor' && attendeeFieldCount > 0 && (
-            <aside aria-labelledby="reservation-attendee-heading" className="w-full shrink-0 rounded-2xl border border-gray-200 bg-white shadow-2xl lg:w-80" onClick={event => event.stopPropagation()}>
-              <div className="border-b border-slate-200 p-4">
-                <h4 id="reservation-attendee-heading" className="text-sm font-bold text-slate-900">Attendee names <span className="text-rose-500">*</span></h4>
-                <p className="mt-1 text-xs text-slate-500">Enter one full name per person, including yourself if you will use the room.</p>
+            <aside
+              aria-labelledby="reservation-attendee-heading"
+              className="w-full shrink-0 rounded-2xl border border-gray-200 bg-white shadow-2xl lg:flex lg:h-[var(--reservation-form-height,auto)] lg:max-h-[calc(100dvh-2rem)] lg:w-80 lg:flex-col lg:overflow-hidden"
+              style={reservationFormHeight === null ? undefined : { '--reservation-form-height': `${reservationFormHeight}px` } as CSSProperties}
+              onClick={event => event.stopPropagation()}
+            >
+              <div className="rounded-t-2xl bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+                <h4 id="reservation-attendee-heading" className="text-xl font-bold leading-tight">Attendee names <span className="text-rose-300">*</span></h4>
+                <p className="mt-0.5 text-xs font-medium text-white/80">Enter other attendees' full names.</p>
               </div>
-              <div className="max-h-[calc(100dvh-12rem)] space-y-3 overflow-y-auto p-4 custom-scrollbar">
+              <div className="max-h-[calc(100dvh-12rem)] space-y-3 overflow-y-auto px-4 pt-2 pb-0 custom-scrollbar lg:min-h-0 lg:flex-1 lg:max-h-none">
                 {Array.from({ length: attendeeFieldCount }, (_, index) => (
                   <div key={index} className="space-y-1.5">
-                    <label htmlFor={`reservation-attendee-${index}`} className="text-xs font-semibold text-slate-600">Attendee {index + 1}</label>
                     <TextInput
                       id={`reservation-attendee-${index}`}
+                      aria-label={`Attendee ${index + 1} full name`}
                       value={reservationData.attendeeNames[index] || ''}
                       onChange={value => {
                         setReservationData(prev => {
                           const attendeeNames = [...prev.attendeeNames]
-                          attendeeNames[index] = value
+                          attendeeNames[index] = capitalizeAttendeeWords(value)
                           return { ...prev, attendeeNames }
                         })
                         setFormErrors(prev => ({ ...prev, attendeeNames: false }))
                       }}
-                      placeholder={`Full name of attendee ${index + 1}`}
+                      onKeyDown={event => {
+                        if (event.key !== 'Enter') return
+                        event.preventDefault()
+                        if (index + 1 < attendeeFieldCount) {
+                          document.getElementById(`reservation-attendee-${index + 1}`)?.focus()
+                        }
+                      }}
+                      placeholder="Last Name, First Name"
+                      inputClassName="rounded-none! border-x-0! border-t-0! pt-1! shadow-none! focus:ring-0!"
                       error={formErrors.attendeeNames && !normalizeAttendeeName(reservationData.attendeeNames[index] || '')}
                       maxLength={120}
                     />
                   </div>
                 ))}
-                <p className="text-xs text-slate-500">{reservationData.attendeeNames.slice(0, attendeeFieldCount).filter(name => normalizeAttendeeName(name || '')).length} of {attendeeFieldCount} names entered</p>
               </div>
+              <p className="shrink-0 px-4 pt-1 pb-1 text-xs text-slate-500">{reservationData.attendeeNames.slice(0, attendeeFieldCount).filter(name => normalizeAttendeeName(name || '')).length} of {attendeeFieldCount} names entered</p>
             </aside>
           )}
           </div>

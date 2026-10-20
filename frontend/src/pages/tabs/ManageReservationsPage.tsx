@@ -856,7 +856,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
     },
     {
       title: 'Reservation outcomes',
-      columns: 'sm:grid-cols-4',
+      columns: 'sm:grid-cols-5',
       items: [
         { label: 'Approved', step: '', count: reviewCounts.approved, active: false, color: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
         { label: 'Declined', step: '', count: reviewCounts.declined, active: false, color: 'border-rose-200 bg-rose-50 text-rose-700' },

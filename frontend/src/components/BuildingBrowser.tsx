@@ -283,7 +283,7 @@ export function BuildingBrowser({
                               <div className="h-1 flex-1 bg-gray-200" />
                             </div>
 
-                            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))]">
+                            <div className="grid gap-6 grid-cols-[repeat(auto-fill,minmax(min(100%,240px),1fr))]">
                               {roomsByFloor[floor]
                                 ?.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
                                 .map((room) => (
