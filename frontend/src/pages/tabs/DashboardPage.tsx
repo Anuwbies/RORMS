@@ -4,14 +4,14 @@ import { collection, query, where, onSnapshot, limit, getDocs, doc, updateDoc } 
 import { onAuthStateChanged } from 'firebase/auth'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import AdminDashboardPage from './AdminDashboardPage'
-import FacultyDashboardPage from './FacultyDashboardPage'
 import UniversityAdministratorDashboardPage from './UniversityAdministratorDashboardPage'
+import DepartmentDashboardPage from './DepartmentDashboardPage'
 
 interface DashboardPageProps {
   userRole?: string | null
 }
 
-const ROLE_SWITCHER_EMAILS = ['llme.rodas.up@phinmaed.com', 'anal.pawig.up@phinmaed.com']
+const ROLE_SWITCHER_EMAILS = ['llme.rodas.up@phinmaed.com']
 const ROLE_OPTIONS = ['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor'] as const
 type DashboardRole = typeof ROLE_OPTIONS[number]
 
@@ -137,7 +137,7 @@ export function DashboardPage({ userRole }: DashboardPageProps = {}) {
     ? <UniversityAdministratorDashboardPage headerAction={headerAction} />
     : role === 'Admin' || role === 'Registrar'
       ? <AdminDashboardPage userRole={role} headerAction={headerAction} />
-      : <FacultyDashboardPage userRole={role || 'Instructor'} headerAction={headerAction} />
+      : <DepartmentDashboardPage userRole={role || 'Instructor'} headerAction={headerAction} />
 
   return dashboard
 }

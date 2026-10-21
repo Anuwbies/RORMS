@@ -776,6 +776,8 @@ function MyDepartmentPage() {
         department={{ departmentId: departmentInfo.id, departmentCode: departmentInfo.code, membershipId: currentUserMembership?.id || '' }}
         scheduleReadOnly={(currentUserRole !== 'Dean' && currentUserRole !== 'Program Head') || !['Drafting', 'Revision'].includes(selectedSemesterPhase.phase)}
         coursesReadOnly={currentUserRole !== 'Dean' && currentUserRole !== 'Program Head'}
+        summaryReadOnly={currentUserRole !== 'Dean' && currentUserRole !== 'Program Head'}
+        viewOnly={currentUserRole === 'Instructor'}
         onClose={() => setIsWorkbookOpen(false)}
       />}
 

@@ -620,6 +620,7 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
           semester: semesterKey(selectedSemesterPhase.name), membershipId: workbookMembership?.id || '' }}
         department={{ departmentId: selectedDepartment.id, departmentCode: selectedDepartment.code, membershipId: workbookMembership?.id || '' }}
         scheduleReadOnly
+        summaryReadOnly
         coursesReadOnly
         viewOnly
       />}

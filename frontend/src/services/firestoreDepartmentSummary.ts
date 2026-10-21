@@ -127,11 +127,9 @@ export async function saveDepartmentSummary(term: DepartmentWorkbookTerm, state:
       transaction.get(doc(db, 'academicYears', term.academicYearId)),
     ])
     const member = membership.data()
-    const phase = year.data()?.[term.semester]?.phase
-    const authorized = member?.userId === user.uid && member.status === 'accepted'
-      && (member.role === 'Admin' && ['Drafting', 'Plotting', 'Revision', 'Final'].includes(phase)
-        || ['Dean', 'Program Head'].includes(member.role) && member.department === department.data()?.code
-          && ['Drafting', 'Revision'].includes(phase))
+    const authorized = year.exists() && member?.userId === user.uid && member.status === 'accepted'
+      && (member.role === 'Admin'
+        || ['Dean', 'Program Head'].includes(member.role) && member.department === department.data()?.code)
     if (!authorized) throw new Error('You do not have permission to save Summary in this term.')
     if ((current.exists() ? current.data().revision : 0) !== previousRevision) {
       throw new Error('A newer Summary workbook was saved. Reopen it before saving your changes.')
