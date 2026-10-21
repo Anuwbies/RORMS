@@ -7,7 +7,7 @@ import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { PersonalScheduleModal } from '../../components/PersonalScheduleModal'
 import { SectionScheduleModal, type SectionScheduleSelection } from '../../components/SectionScheduleModal'
-import { Workbookodal } from '../../components/Workbookodal'
+import { WorkbookModal } from '../../components/WorkbookModal'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
 import { scheduleMatchesTerm, scheduleSectionLabel } from '../../utils/roomSchedule'
 import type { ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
@@ -767,7 +767,7 @@ function MyDepartmentPage() {
         editablePhases={currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? ['Drafting', 'Revision'] : []}
       />
 
-      {isWorkbookOpen && departmentInfo && selectedAcademicYear?.id && selectedAcademicYear?.academicYear && selectedSemesterPhase && <Workbookodal
+      {isWorkbookOpen && departmentInfo && selectedAcademicYear?.id && selectedAcademicYear?.academicYear && selectedSemesterPhase && <WorkbookModal
         key={`${departmentInfo.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
         departmentName={departmentInfo.name}
         term={{ departmentId: departmentInfo.id, departmentCode: departmentInfo.code,

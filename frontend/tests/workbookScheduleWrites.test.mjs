@@ -38,6 +38,19 @@ const row = { status: 'Draft', sourceSheet: 'Schedule', sourceRow: 3, yearLevel:
   faculty: { lec: ['Teacher'], lab: [] }, f2fTime: { lec: ['07:30-09:00'], lab: [] }, f2fDays: { lec: ['Mon'], lab: [] }, f2fRoom: { lec: ['PTC 201'], lab: [] },
   rawValues: ['CITE', '', 'ITE 101', 'Computing', 'BSIT', '2', '0', '2', '2', '0', '2', '40', '1', 'Teacher', '', '07:30-09:00', '', 'Mon', '', 'PTC 201', ''], meetings: [meeting], parallelSourceRow: null, validationIssues: [] }
 
+test('schedule projection writes decimal and zero Hours to the plural schedules collection', async () => {
+  const { service } = harness()
+  const source = { ...row, hours: { lec: 2.5, lab: 0, total: 2.5 },
+    rawValues: row.rawValues.map((value, index) => index === 8 ? '2.5' : index === 10 ? '2.5' : value) }
+  const prepared = await service.prepareWorkbookScheduleWrites(term, [source], sourceWorkbook, [sourceWorkbook], 'schedules', 'Draft')
+  const writes = []
+  prepared.apply({ set: (path, data) => writes.push({ path, data }), delete: () => assert.fail() }, 1, 'revision1', 'dean')
+  assert.equal(writes.length, 1)
+  assert.equal(writes[0].path, `schedules/${id}`)
+  assert.deepEqual(writes[0].data.hours, { lec: 2.5, lab: 0, total: 2.5 })
+  assert.deepEqual(writes[0].data.rawValues.slice(8, 11), ['2.5', '0', '2.5'])
+})
+
 test('unchanged plotted row preserves its status, room and Registrar metadata on workbook Save', async () => {
   const initial = harness()
   const previous = { ...row, id, status: 'Plot', createdAt: 'original',

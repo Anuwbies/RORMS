@@ -3,10 +3,11 @@ import type { DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
 import type { DepartmentCoursesContext } from '../utils/departmentCoursesWorkbookState'
 import { DepartmentCoursesWorkbook } from './DepartmentCoursesWorkbook'
 import { DepartmentScheduleWorkbook } from './DepartmentScheduleWorkbook'
+import { DepartmentSummaryWorkbook } from './DepartmentSummaryWorkbook'
 import { Button } from './Button'
 import type { WorkbookSaveHandle, WorkbookSaveState } from './workbookSaveTypes'
 
-interface WorkbookodalProps {
+interface WorkbookModalProps {
   onClose: () => void
   departmentName: string
   term: DepartmentWorkbookTerm
@@ -15,20 +16,23 @@ interface WorkbookodalProps {
   coursesReadOnly: boolean
 }
 
-type WorkbookTab = 'schedule' | 'courses'
+type WorkbookTab = 'schedule' | 'courses' | 'summary'
 
-export function Workbookodal({ onClose, departmentName, term, department, scheduleReadOnly, coursesReadOnly }: WorkbookodalProps) {
+export function WorkbookModal({ onClose, departmentName, term, department, scheduleReadOnly, coursesReadOnly }: WorkbookModalProps) {
   const headerTitle = `School Year ${term.academicYear.replace(/\s*[-–—]\s*/, ' - ')} · ${term.semester === 'sem1' ? '1st' : '2nd'} Semester`
   const dialogRef = useRef<HTMLDialogElement>(null)
   const scheduleRef = useRef<WorkbookSaveHandle>(null)
   const coursesRef = useRef<WorkbookSaveHandle>(null)
+  const summaryRef = useRef<WorkbookSaveHandle>(null)
   const [activeTab, setActiveTab] = useState<WorkbookTab>('schedule')
   const [headerHost, setHeaderHost] = useState<HTMLDivElement | null>(null)
   const [footerHost, setFooterHost] = useState<HTMLDivElement | null>(null)
   const [scheduleMenuHost, setScheduleMenuHost] = useState<HTMLSpanElement | null>(null)
   const [coursesMenuHost, setCoursesMenuHost] = useState<HTMLSpanElement | null>(null)
+  const [summaryMenuHost, setSummaryMenuHost] = useState<HTMLSpanElement | null>(null)
   const [scheduleSaveState, setScheduleSaveState] = useState<WorkbookSaveState>({ dirty: false, canSave: false, saving: false })
   const [coursesSaveState, setCoursesSaveState] = useState<WorkbookSaveState>({ dirty: false, canSave: false, saving: false })
+  const [summarySaveState, setSummarySaveState] = useState<WorkbookSaveState>({ dirty: false, canSave: false, saving: false })
   const [savingAll, setSavingAll] = useState(false)
   const [saveCompleted, setSaveCompleted] = useState(false)
   const [saveError, setSaveError] = useState('')
@@ -41,10 +45,13 @@ export function Workbookodal({ onClose, departmentName, term, department, schedu
   const updateCoursesSaveState = useCallback((next: WorkbookSaveState) => {
     setCoursesSaveState(previous => previous.dirty === next.dirty && previous.canSave === next.canSave && previous.saving === next.saving ? previous : next)
   }, [])
+  const updateSummarySaveState = useCallback((next: WorkbookSaveState) => {
+    setSummarySaveState(previous => previous.dirty === next.dirty && previous.canSave === next.canSave && previous.saving === next.saving ? previous : next)
+  }, [])
 
-  const hasChanges = scheduleSaveState.dirty || coursesSaveState.dirty
+  const hasChanges = scheduleSaveState.dirty || coursesSaveState.dirty || summarySaveState.dirty
   const canSaveAll = hasChanges && !savingAll && (!scheduleSaveState.dirty || scheduleSaveState.canSave)
-    && (!coursesSaveState.dirty || coursesSaveState.canSave)
+    && (!coursesSaveState.dirty || coursesSaveState.canSave) && (!summarySaveState.dirty || summarySaveState.canSave)
 
   const saveChangedWorkbooks = async () => {
     if (!canSaveAll) return
@@ -59,6 +66,10 @@ export function Workbookodal({ onClose, departmentName, term, department, schedu
         setSaveError('Schedule could not be saved. Review the Schedule tab and try again.')
         return
       }
+      if (summarySaveState.dirty && !await summaryRef.current?.saveIfChanged()) {
+        setSaveError('Summary could not be saved. Review the Summary tab and try again.')
+        return
+      }
       setSaveCompleted(true)
     } catch {
       setSaveError('The workbook could not be saved. Please try again.')
@@ -68,7 +79,7 @@ export function Workbookodal({ onClose, departmentName, term, department, schedu
   }
 
   const requestClose = () => {
-    if (savingAll || scheduleSaveState.saving || coursesSaveState.saving) return
+    if (savingAll || scheduleSaveState.saving || coursesSaveState.saving || summarySaveState.saving) return
     if (hasChanges) setConfirmClose(true)
     else onClose()
   }
@@ -129,6 +140,11 @@ export function Workbookodal({ onClose, departmentName, term, department, schedu
         </button>
         <span ref={setCoursesMenuHost} className="relative flex shrink-0" />
       </div>
+      <div className={`flex min-w-32 sm:min-w-40 ${activeTab === 'summary' ? 'bg-[#dce2e8] text-[#0b57d0]' : 'text-[#3c4043] hover:bg-[#e8ebf0]'}`}>
+        <button id="workbook-summary-tab" type="button" role="tab" aria-controls="workbook-summary-panel" aria-selected={activeTab === 'summary'}
+          onClick={() => setActiveTab('summary')} className="min-w-0 flex-1 px-3 text-left text-base font-medium focus-visible:outline-2 focus-visible:outline-[#0b57d0] sm:px-5">Summary</button>
+        <span ref={setSummaryMenuHost} className="relative flex shrink-0" />
+      </div>
     </nav>
   )
 
@@ -177,6 +193,11 @@ export function Workbookodal({ onClose, departmentName, term, department, schedu
               onClose={onClose}
             />
           </div>
+          <div id="workbook-summary-panel" role="tabpanel" aria-labelledby="workbook-summary-tab" aria-hidden={activeTab !== 'summary'} inert={activeTab !== 'summary'} className={`absolute inset-0 min-h-0 ${activeTab === 'summary' ? '' : 'invisible'}`}>
+            <DepartmentSummaryWorkbook ref={summaryRef} term={term} headerTitle={headerTitle} headerSubtitle={departmentName}
+              headerHost={headerHost} footerHost={footerHost} menuHost={summaryMenuHost} active={activeTab === 'summary'}
+              readOnly={scheduleReadOnly} onActivate={() => setActiveTab('summary')} onSaveStateChange={updateSummarySaveState} />
+          </div>
         </div>
         <footer className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">
           {tabs}
@@ -185,8 +206,8 @@ export function Workbookodal({ onClose, departmentName, term, department, schedu
           </p>
           <div ref={setFooterHost} className="min-w-0 flex-1" />
           {saveError && <p role="alert" className="text-sm text-rose-700">{saveError}</p>}
-          <Button type="button" variant="outline" disabled={savingAll || scheduleSaveState.saving || coursesSaveState.saving} onClick={requestClose} className="h-10! rounded-lg!">Close</Button>
-          <Button type="button" variant="brand" disabled={!canSaveAll} onClick={() => { void saveChangedWorkbooks() }} className="h-10! rounded-lg!">{savingAll || scheduleSaveState.saving || coursesSaveState.saving ? 'Saving…' : 'Save'}</Button>
+          <Button type="button" variant="outline" disabled={savingAll || scheduleSaveState.saving || coursesSaveState.saving || summarySaveState.saving} onClick={requestClose} className="h-10! rounded-lg!">Close</Button>
+          <Button type="button" variant="brand" disabled={!canSaveAll} onClick={() => { void saveChangedWorkbooks() }} className="h-10! rounded-lg!">{savingAll || scheduleSaveState.saving || coursesSaveState.saving || summarySaveState.saving ? 'Saving…' : 'Save'}</Button>
         </footer>
       </div>
       {confirmClose && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onKeyDown={event => {
@@ -198,7 +219,7 @@ export function Workbookodal({ onClose, departmentName, term, department, schedu
       }}>
         <div role="alertdialog" aria-modal="true" aria-labelledby="workbook-close-title" aria-describedby="workbook-close-description" className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 text-slate-900 shadow-2xl">
           <h3 id="workbook-close-title" className="text-lg font-semibold">Discard unsaved changes?</h3>
-          <p id="workbook-close-description" className="mt-2 text-sm text-slate-600">Changes in either workbook tab will be lost if you close it now.</p>
+          <p id="workbook-close-description" className="mt-2 text-sm text-slate-600">Changes in any workbook tab will be lost if you close it now.</p>
           <div className="mt-6 flex gap-3">
             <Button type="button" variant="outline" className="min-w-0 flex-1" autoFocus disabled={discarding} onClick={() => setConfirmClose(false)}>Keep editing</Button>
             <Button type="button" variant="brand" className="min-w-0 flex-1" disabled={discarding} onClick={() => { void discardAndClose() }}>{discarding ? 'Discarding…' : 'Discard'}</Button>

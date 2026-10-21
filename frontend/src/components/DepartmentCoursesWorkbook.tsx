@@ -488,7 +488,7 @@ export const DepartmentCoursesWorkbook = forwardRef<WorkbookSaveHandle, Departme
         </div> : <>
           {error && <p role="alert" className="bg-rose-50 px-6 py-4 text-sm text-rose-700">{error}</p>}
           <div ref={scrollRef} inert={saving || readOnly || !storageReady} className="schedule-import-scrollbar min-h-0 flex-1 overflow-auto">
-            <table ref={tableRef} className={`${columnWidths ? 'min-w-full' : 'w-full min-w-[1100px]'} table-fixed border-separate border-spacing-0 text-center text-sm [&_th]:align-middle [&_td]:align-middle [&_tr>:last-child]:border-r-0`} style={columnWidths ? { width: columnWidths.reduce((sum, width) => sum + width, 0) } : undefined}>
+            <table ref={tableRef} className={`${columnWidths ? 'min-w-full' : 'w-full min-w-[1100px]'} table-fixed border-separate border-spacing-0 text-center text-sm [&_th]:align-middle [&_td]:align-middle`} style={columnWidths ? { width: columnWidths.reduce((sum, width) => sum + width, 0) } : undefined}>
               <caption className="sr-only">{sheet ? `Department courses from ${sheet.name}` : 'Department courses'}</caption>
               <colgroup>
                 {COURSE_TABLE_HEADERS.map((header, column) => <col key={header} className={columnWidths ? undefined : COURSE_COLUMN_CLASSES[column]} style={columnWidths ? { width: columnWidths[column] } : undefined} />)}
