@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { SectionHeader } from '../../components/SectionHeader'
 import { ClockIcon, UserIcon, DoorIcon, SearchIcon, CalendarIcon, PlusIcon, HourglassIcon, TrashIcon, UploadIcon } from '../../components/Icons'
 import { IconButton } from '../../components/IconButton'
@@ -6,13 +6,14 @@ import { Button } from '../../components/Button'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdown'
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
+import { ReservationEvidenceGallery, forgetEvidenceUrl, type EvidenceGalleryItem } from '../../components/ReservationEvidenceGallery'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/reservationReviewStep'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { useSnackbar } from '../../components/Snackbar'
 import { db, auth, storage } from '../../firebase'
-import { reservationDisplayStatus } from '../../utils/reservationEvidence'
+import { hasReservationEvidence, reservationDisplayStatus, reservationEvidenceFiles, type ReservationEvidenceFile } from '../../utils/reservationEvidence'
 import { deleteObject, ref, uploadBytes } from 'firebase/storage'
 import { 
   collection, 
@@ -21,6 +22,7 @@ import {
   query, 
   where,
   doc,
+  deleteField,
   updateDoc,
   runTransaction,
   serverTimestamp,
@@ -54,6 +56,7 @@ interface Reservation {
   evidenceType?: 'image' | 'video'
   evidenceFileName?: string
   evidenceSubmittedAt?: { toDate: () => Date }
+  evidenceFiles?: ReservationEvidenceFile[]
   createdAt: any
   updatedAt: any
   isHidden?: boolean
@@ -120,6 +123,19 @@ const EVIDENCE_TYPES: Record<string, { kind: 'image' | 'video'; extension: strin
   'video/quicktime': { kind: 'video', extension: 'mov' },
 }
 const MAX_EVIDENCE_BYTES = 100 * 1024 * 1024
+const evidenceFileKey = (file: File) => `${file.name}\0${file.size}\0${file.lastModified}\0${file.type}`
+const uploadedEvidenceNameKey = (name: string) => name.slice(0, 255).normalize('NFC').toLocaleLowerCase()
+
+const withoutEvidencePath = (reservation: Reservation, path: string): Reservation => {
+  const next = { ...reservation, evidenceFiles: reservation.evidenceFiles?.filter(file => file.path !== path) }
+  if (next.evidencePath === path) {
+    delete next.evidencePath
+    delete next.evidenceType
+    delete next.evidenceFileName
+    delete next.evidenceSubmittedAt
+  }
+  return next
+}
 
 const reservationTimeInManila = (date: string, time: string) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}/.test(time)) return NaN
@@ -152,25 +168,110 @@ function MyReservationsPage(_props: { userRole: string }) {
 
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
   const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
+  const [evidenceOpenRequest, setEvidenceOpenRequest] = useState(0)
   const [evidenceReservation, setEvidenceReservation] = useState<Reservation | null>(null)
-  const [evidenceFile, setEvidenceFile] = useState<File | null>(null)
+  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([])
+  const [evidencePreviews, setEvidencePreviews] = useState<EvidenceGalleryItem[]>([])
+  const [evidenceInputKey, setEvidenceInputKey] = useState(0)
+  const evidenceInputRef = useRef<HTMLInputElement>(null)
   const [isUploadingEvidence, setIsUploadingEvidence] = useState(false)
   const [evidenceUploadError, setEvidenceUploadError] = useState('')
+  const [evidenceToRemove, setEvidenceToRemove] = useState<{ reservationId: string; file: ReservationEvidenceFile } | null>(null)
+  const [isRemovingEvidence, setIsRemovingEvidence] = useState(false)
+  const removingEvidenceRef = useRef(false)
 
-  const currentSelectedReservation = reservations.find(item => item.id === selectedReservation?.id) || selectedReservation
+  const latestSelectedReservation = reservations.find(item => item.id === selectedReservation?.id)
+  const currentSelectedReservation = selectedReservation && latestSelectedReservation
+    && reservationEvidenceFiles(latestSelectedReservation).length >= reservationEvidenceFiles(selectedReservation).length
+    ? latestSelectedReservation : selectedReservation
+
+  useEffect(() => {
+    const previews = evidenceFiles.map(file => ({
+      path: '',
+      previewUrl: URL.createObjectURL(file),
+      type: EVIDENCE_TYPES[file.type].kind,
+      fileName: file.name,
+    }))
+    setEvidencePreviews(previews)
+    return () => { previews.forEach(preview => URL.revokeObjectURL(preview.previewUrl)) }
+  }, [evidenceFiles])
 
   const openEvidenceUpload = (reservation: Reservation) => {
     setIsReservationModalOpen(false)
     setEvidenceReservation(reservation)
-    setEvidenceFile(null)
+    setEvidenceFiles([])
+    setEvidenceInputKey(key => key + 1)
     setEvidenceUploadError('')
   }
 
+  const removePendingEvidence = (index: number) => {
+    const remaining = evidenceFiles.filter((_, fileIndex) => fileIndex !== index)
+    setEvidenceFiles(remaining)
+    setEvidenceUploadError('')
+    const transfer = new DataTransfer()
+    remaining.forEach(file => transfer.items.add(file))
+    if (evidenceInputRef.current) evidenceInputRef.current.files = transfer.files
+  }
+
+  const removeUploadedEvidence = async () => {
+    if (!evidenceToRemove || removingEvidenceRef.current) return
+    removingEvidenceRef.current = true
+    setIsRemovingEvidence(true)
+    const { reservationId, file } = evidenceToRemove
+    try {
+      if (!file.path.startsWith(`reservation-evidence/${reservationId}/`)) {
+        throw new Error('This evidence file has an invalid storage path.')
+      }
+      const userId = auth.currentUser?.uid
+      if (!userId) throw new Error('Sign in as the requester to remove evidence.')
+      await runTransaction(db, async transaction => {
+        const reservationRef = doc(db, 'reservations', reservationId)
+        const snapshot = await transaction.get(reservationRef)
+        const record = snapshot.data()
+        if (!record || record.userId !== userId || record.status !== 'Completed') {
+          throw new Error('This reservation can no longer be changed. Reload and try again.')
+        }
+        if (!reservationEvidenceFiles(record).some(savedFile => savedFile.path === file.path)) {
+          throw new Error('This file is no longer attached to the reservation.')
+        }
+        const changes: Record<string, unknown> = { updatedAt: serverTimestamp() }
+        if (record.evidencePath === file.path) {
+          changes.evidencePath = deleteField()
+          changes.evidenceType = deleteField()
+          changes.evidenceFileName = deleteField()
+          changes.evidenceSubmittedAt = deleteField()
+        }
+        if (Array.isArray(record.evidenceFiles)) {
+          changes.evidenceFiles = record.evidenceFiles.filter((savedFile: ReservationEvidenceFile) => savedFile?.path !== file.path)
+        }
+        transaction.update(reservationRef, changes)
+      })
+      setSelectedReservation(previous => previous?.id === reservationId ? withoutEvidencePath(previous, file.path) : previous)
+      setReservations(previous => previous.map(reservation => reservation.id === reservationId ? withoutEvidencePath(reservation, file.path) : reservation))
+      setEvidenceToRemove(null)
+      forgetEvidenceUrl(file.path)
+      try {
+        await deleteObject(ref(storage, file.path))
+        showSnackbar({ message: 'Evidence file removed.', type: 'success' })
+      } catch (error) {
+        if ((error as { code?: string }).code === 'storage/object-not-found') {
+          showSnackbar({ message: 'Evidence file removed.', type: 'success' })
+        } else {
+          showSnackbar({ message: 'Removed from the reservation, but the stored file could not be deleted.', type: 'warning' })
+        }
+      }
+    } catch (error) {
+      showSnackbar({ message: error instanceof Error ? error.message : 'Could not remove evidence. Please try again.', type: 'error' })
+    } finally {
+      removingEvidenceRef.current = false
+      setIsRemovingEvidence(false)
+    }
+  }
+
   const submitEvidence = async () => {
-    if (!evidenceReservation || !evidenceFile || isUploadingEvidence) return
-    const fileType = EVIDENCE_TYPES[evidenceFile.type]
-    if (!fileType || evidenceFile.size === 0 || evidenceFile.size > MAX_EVIDENCE_BYTES) {
-      setEvidenceUploadError('Choose a JPG, PNG, WebP, MP4, WebM, or MOV file up to 100 MB.')
+    if (!evidenceReservation || evidenceFiles.length === 0 || isUploadingEvidence) return
+    if (evidenceFiles.length > 10 || evidenceFiles.some(file => !EVIDENCE_TYPES[file.type] || file.size === 0 || file.size > MAX_EVIDENCE_BYTES)) {
+      setEvidenceUploadError('Choose up to 10 JPG, PNG, WebP, MP4, WebM, or MOV files, each up to 100 MB.')
       return
     }
     const userId = auth.currentUser?.uid
@@ -181,38 +282,58 @@ function MyReservationsPage(_props: { userRole: string }) {
 
     setIsUploadingEvidence(true)
     setEvidenceUploadError('')
-    const evidencePath = `reservation-evidence/${evidenceReservation.id}/${crypto.randomUUID()}.${fileType.extension}`
-    const evidenceRef = ref(storage, evidencePath)
-    let uploaded = false
+    const uploadedFiles: ReservationEvidenceFile[] = []
     try {
-      await uploadBytes(evidenceRef, evidenceFile, { contentType: evidenceFile.type })
-      uploaded = true
+      const reservationRef = doc(db, 'reservations', evidenceReservation.id)
+      const currentRecord = (await getDoc(reservationRef)).data()
+      if (!currentRecord || currentRecord.userId !== userId || currentRecord.status !== 'Completed') {
+        throw new Error('This reservation can no longer accept evidence. Reload and try again.')
+      }
+      const existingNames = new Set(reservationEvidenceFiles(currentRecord).map(file => uploadedEvidenceNameKey(file.fileName)))
+      const filesToUpload = evidenceFiles.filter(file => !existingNames.has(uploadedEvidenceNameKey(file.name)))
+      const skippedCount = evidenceFiles.length - filesToUpload.length
+      if (skippedCount > 0) setEvidenceFiles(filesToUpload)
+      if (filesToUpload.length === 0) throw new Error('These files were already uploaded. Choose different files.')
+
+      for (const file of filesToUpload) {
+        const fileType = EVIDENCE_TYPES[file.type]
+        const path = `reservation-evidence/${evidenceReservation.id}/${crypto.randomUUID()}.${fileType.extension}`
+        const upload = await uploadBytes(ref(storage, path), file, { contentType: file.type })
+        uploadedFiles.push({ path, type: fileType.kind, fileName: file.name.slice(0, 255), uploadedAt: upload.metadata.timeCreated })
+      }
       await runTransaction(db, async transaction => {
-        const reservationRef = doc(db, 'reservations', evidenceReservation.id)
         const snapshot = await transaction.get(reservationRef)
         const record = snapshot.data()
-        if (!record || record.userId !== auth.currentUser?.uid || record.status !== 'Completed' || record.evidencePath) {
-          throw new Error('This reservation is no longer awaiting evidence. Reload and try again.')
+        if (!record || record.userId !== auth.currentUser?.uid || record.status !== 'Completed') {
+          throw new Error('This reservation can no longer accept evidence. Reload and try again.')
         }
+        const savedNames = new Set(reservationEvidenceFiles(record).map(file => uploadedEvidenceNameKey(file.fileName)))
+        if (uploadedFiles.some(file => savedNames.has(uploadedEvidenceNameKey(file.fileName)))) {
+          throw new Error('One of these files was already uploaded. Choose different files.')
+        }
+        const existingFiles = Array.isArray(record.evidenceFiles) ? record.evidenceFiles : []
         transaction.update(reservationRef, {
-          evidencePath,
-          evidenceType: fileType.kind,
-          evidenceFileName: evidenceFile.name.slice(0, 255),
-          evidenceSubmittedAt: serverTimestamp(),
+          evidenceFiles: [...existingFiles, ...uploadedFiles],
           updatedAt: serverTimestamp(),
         })
       })
+      setSelectedReservation(previous => previous?.id === evidenceReservation.id
+        ? { ...previous, evidenceFiles: [...(previous.evidenceFiles || []), ...uploadedFiles] }
+        : previous)
       setEvidenceReservation(null)
-      setEvidenceFile(null)
-      setSelectedReservation(null)
-      showSnackbar({ message: 'Room evidence uploaded. Reservation is complete.', type: 'success' })
+      setEvidenceFiles([])
+      setEvidenceInputKey(key => key + 1)
+      setEvidenceOpenRequest(request => request + 1)
+      setIsReservationModalOpen(true)
+      showSnackbar({ message: `${uploadedFiles.length} evidence ${uploadedFiles.length === 1 ? 'file' : 'files'} uploaded.${skippedCount > 0 ? ` ${skippedCount} already uploaded ${skippedCount === 1 ? 'file was' : 'files were'} skipped.` : ''}`, type: 'success' })
     } catch (error) {
-      if (uploaded) {
+      if (uploadedFiles.length > 0) {
         try {
           const saved = await getDoc(doc(db, 'reservations', evidenceReservation.id))
-          if (saved.data()?.evidencePath !== evidencePath) await deleteObject(evidenceRef)
+          const savedPaths = new Set(reservationEvidenceFiles(saved.data() || {}).map(file => file.path))
+          await Promise.all(uploadedFiles.filter(file => !savedPaths.has(file.path)).map(file => deleteObject(ref(storage, file.path)).catch(() => undefined)))
         } catch {
-          // Keep the file if its database reference cannot be checked.
+          // Keep uploaded files if their database references cannot be checked.
         }
       }
       setEvidenceUploadError(error instanceof Error ? error.message : 'Could not upload evidence. Please try again.')
@@ -332,7 +453,7 @@ function MyReservationsPage(_props: { userRole: string }) {
       const building = buildings[res.buildingId]
       
       // 1. Filter by status
-      if (selectedStatuses.length > 0 && !selectedStatuses.includes(reservationDisplayStatus(res.status, res.evidencePath))) {
+      if (selectedStatuses.length > 0 && !selectedStatuses.includes(reservationDisplayStatus(res.status, res))) {
         return false
       }
 
@@ -354,7 +475,7 @@ function MyReservationsPage(_props: { userRole: string }) {
         building?.name || '',
         building?.code || '',
         res.purpose,
-        reservationDisplayStatus(res.status, res.evidencePath),
+        reservationDisplayStatus(res.status, res),
         res.date
       ].some(val => val.toLowerCase().includes(normalizedSearch))
     })
@@ -428,17 +549,17 @@ function MyReservationsPage(_props: { userRole: string }) {
       header: 'Status',
       width: '20%',
       render: (res) => (
-        <div className="relative w-40 max-w-full">
+        <div className="relative isolate w-40 max-w-full">
           <ReservationReviewIndicators
             registrarRecommend={res.registrarRecommend}
             deanRecommend={res.deanRecommend}
             universityAdministratorRecommend={res.universityAdministratorRecommend}
-            status={reservationDisplayStatus(res.status, res.evidencePath)}
+            status={reservationDisplayStatus(res.status, res)}
             declinedByRole={res.declinedByRole}
             autoProcessed={res.autoProcessed}
           />
           {(res.status === 'Cancelled' || res.status === 'Completed' || res.status === 'Declined' || res.status === 'Approved' || res.status === 'Pending') && <span className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center" aria-hidden="true">
-            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? res.evidencePath ? 'border-blue-600 text-blue-700' : 'border-amber-600 text-amber-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{reservationDisplayStatus(res.status, res.evidencePath)}</span>
+            <span className={`-rotate-6 whitespace-nowrap border-2 bg-white/85 px-1.5 py-0.5 text-[0.625rem] font-black uppercase tracking-widest shadow-sm ${res.status === 'Approved' ? 'border-emerald-600 text-emerald-700' : res.status === 'Completed' ? hasReservationEvidence(res) ? 'border-blue-600 text-blue-700' : 'border-amber-600 text-amber-700' : res.status === 'Declined' ? 'border-rose-600 text-rose-700' : res.status === 'Pending' ? 'border-amber-600 text-amber-700' : 'border-slate-500 text-slate-600'}`}>{reservationDisplayStatus(res.status, res)}</span>
           </span>}
         </div>
       )
@@ -452,21 +573,21 @@ function MyReservationsPage(_props: { userRole: string }) {
         return (
           <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
             <IconButton
-              label={res.status === 'Completed' && !res.evidencePath ? 'Upload Evidence' : 'View Room'}
+              label={res.status === 'Completed' ? 'Upload Evidence' : 'View Room'}
               onClick={() => {
-                if (res.status === 'Completed' && !res.evidencePath) openEvidenceUpload(res)
+                if (res.status === 'Completed') openEvidenceUpload(res)
                 else if (room) handleOpenRoomInfoModal(room)
               }}
               className="h-8 w-8 rounded-lg bg-white text-slate-500 shadow-sm border border-slate-200 hover:border-slate-300 hover:text-slate-700 hover:shadow hover:-translate-y-0.5 transition-all"
             >
-              {res.status === 'Completed' && !res.evidencePath ? <UploadIcon className="h-4 w-4" /> : <DoorIcon className="h-4 w-4" />}
+              {res.status === 'Completed' ? <UploadIcon className="h-4 w-4" /> : <DoorIcon className="h-4 w-4" />}
             </IconButton>
             <IconButton
               label="Delete Record"
-              disabled={!(res.status === 'Cancelled' || res.status === 'Declined' || (res.status === 'Completed' && !!res.evidencePath))}
+              disabled={!(res.status === 'Cancelled' || res.status === 'Declined' || (res.status === 'Completed' && hasReservationEvidence(res)))}
               onClick={() => handleDeleteReservation(res.id)}
               className={`h-8 w-8 rounded-lg bg-white transition-all border border-slate-200 ${
-                (res.status === 'Cancelled' || res.status === 'Declined' || (res.status === 'Completed' && !!res.evidencePath))
+                (res.status === 'Cancelled' || res.status === 'Declined' || (res.status === 'Completed' && hasReservationEvidence(res)))
                   ? 'text-rose-500 hover:border-rose-300 hover:text-rose-600 hover:shadow hover:-translate-y-0.5'
                   : 'opacity-30 text-slate-400'
               }`}
@@ -783,6 +904,17 @@ function MyReservationsPage(_props: { userRole: string }) {
         isDestructive={true}
       />
 
+      <ConfirmModal
+        isOpen={!!evidenceToRemove}
+        title="Remove Evidence"
+        message="Remove this photo or video from the reservation?"
+        confirmText={isRemovingEvidence ? 'Removing...' : 'Remove File'}
+        cancelText="Keep File"
+        onConfirm={removeUploadedEvidence}
+        onCancel={() => { if (!isRemovingEvidence) setEvidenceToRemove(null) }}
+        isDestructive={true}
+      />
+
       {evidenceReservation && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-4">
           <div role="dialog" aria-modal="true" aria-labelledby="evidence-upload-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-100 bg-white shadow-2xl">
@@ -791,28 +923,62 @@ function MyReservationsPage(_props: { userRole: string }) {
               <p className="mt-1 text-sm text-white/80">Show that the room is clean and orderly after use.</p>
             </div>
             <div className="space-y-4 p-5">
-              <p className="text-sm text-slate-700">Upload a photo or video of the room after your reservation. The submission time will be recorded in Philippine time.</p>
               <div>
-                <label htmlFor="reservation-evidence-file" className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Photo or video</label>
+                <label htmlFor="reservation-evidence-file" className="mb-2 block text-xs font-bold uppercase tracking-widest text-slate-500">Add photos or videos</label>
                 <input
+                  key={evidenceInputKey}
+                  ref={evidenceInputRef}
                   id="reservation-evidence-file"
                   type="file"
+                  multiple
                   accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime"
                   disabled={isUploadingEvidence}
                   onChange={event => {
-                    setEvidenceFile(event.target.files?.[0] || null)
-                    setEvidenceUploadError('')
+                    const selected = Array.from(event.currentTarget.files || [])
+                    if (selected.length === 0) return
+                    const savedEvidence = [
+                      ...reservationEvidenceFiles(evidenceReservation),
+                      ...reservationEvidenceFiles(reservations.find(item => item.id === evidenceReservation.id) || evidenceReservation),
+                    ]
+                    const uploadedNames = new Set(savedEvidence.map(file => uploadedEvidenceNameKey(file.fileName)))
+                    const seen = new Set(evidenceFiles.map(evidenceFileKey))
+                    const skippedUploaded = selected.filter(file => uploadedNames.has(uploadedEvidenceNameKey(file.name)))
+                    const additions = selected.filter(file => {
+                      if (uploadedNames.has(uploadedEvidenceNameKey(file.name))) return false
+                      const key = evidenceFileKey(file)
+                      if (seen.has(key)) return false
+                      seen.add(key)
+                      return true
+                    })
+                    const combined = [...evidenceFiles, ...additions]
+                    const valid = combined.length <= 10 && selected.every(file => EVIDENCE_TYPES[file.type] && file.size > 0 && file.size <= MAX_EVIDENCE_BYTES)
+                    if (valid) {
+                      setEvidenceFiles(combined)
+                      setEvidenceUploadError(skippedUploaded.length > 0 ? `${skippedUploaded.length} already uploaded ${skippedUploaded.length === 1 ? 'file was' : 'files were'} skipped.` : '')
+                    } else {
+                      setEvidenceUploadError('Choose up to 10 JPG, PNG, WebP, MP4, WebM, or MOV files, each up to 100 MB.')
+                    }
+                    const transfer = new DataTransfer()
+                    for (const file of valid ? combined : evidenceFiles) transfer.items.add(file)
+                    event.currentTarget.files = transfer.files
                   }}
                   className="block w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700 file:mr-3 file:rounded-lg file:border-0 file:bg-[#e3edda] file:px-3 file:py-1.5 file:font-bold file:text-[#41572a]"
                 />
-                <p className="mt-2 text-xs text-slate-500">JPG, PNG, WebP, MP4, WebM, or MOV. Maximum 100 MB.</p>
+                <p className="mt-2 text-xs text-slate-500">JPG, PNG, WebP, MP4, WebM, MOV · Max 10 files · 100 MB each.</p>
               </div>
-              {evidenceFile && <p className="break-all text-sm font-semibold text-slate-700">Selected: {evidenceFile.name}</p>}
+              {evidencePreviews.length > 0 && (
+                <div>
+                  <h4 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-500">Ready to upload ({evidencePreviews.length})</h4>
+                  <div className="-mr-5 max-h-[23.5rem] overflow-y-auto pr-[calc(1.25rem-10px)] [scrollbar-gutter:stable] custom-scrollbar focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#62853e]" role="region" aria-label="Files ready to upload" tabIndex={evidencePreviews.length > 4 ? 0 : undefined}>
+                    <ReservationEvidenceGallery files={evidencePreviews} onRemove={(_, index) => removePendingEvidence(index)} removeDisabled={isUploadingEvidence} />
+                  </div>
+                </div>
+              )}
               {evidenceUploadError && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{evidenceUploadError}</p>}
               <div className="flex gap-3">
-                <Button type="button" variant="outline" disabled={isUploadingEvidence} onClick={() => setEvidenceReservation(null)} className="flex-1">Cancel</Button>
-                <Button type="button" variant="brand" disabled={!evidenceFile || isUploadingEvidence} onClick={submitEvidence} className="flex-1">
-                  {isUploadingEvidence ? 'Uploading...' : 'Submit Evidence'}
+                <Button type="button" variant="outline" disabled={isUploadingEvidence} onClick={() => { setEvidenceReservation(null); setEvidenceFiles([]); setIsReservationModalOpen(true) }} className="flex-1">Close</Button>
+                <Button type="button" variant="brand" disabled={evidenceFiles.length === 0 || isUploadingEvidence} onClick={submitEvidence} className="flex-1">
+                  {isUploadingEvidence ? 'Uploading...' : 'Upload Evidence'}
                 </Button>
               </div>
             </div>
@@ -830,8 +996,12 @@ function MyReservationsPage(_props: { userRole: string }) {
         onDelete={handleDeleteReservation}
         isCanceling={isCanceling}
         reservation={currentSelectedReservation as Reservation}
-        onUploadEvidence={currentSelectedReservation?.status === 'Completed' && !currentSelectedReservation.evidencePath
+        onUploadEvidence={currentSelectedReservation?.status === 'Completed'
           ? () => openEvidenceUpload(currentSelectedReservation) : undefined}
+        onRemoveEvidence={currentSelectedReservation?.status === 'Completed'
+          ? file => setEvidenceToRemove({ reservationId: currentSelectedReservation.id, file }) : undefined}
+        removingEvidence={isRemovingEvidence}
+        evidenceOpenRequest={evidenceOpenRequest}
         showReviewIndicators
         roomName={selectedReservation && rooms[selectedReservation.roomId] ? rooms[selectedReservation.roomId].name : 'Unknown Room'}
         roomType={(selectedReservation && rooms[selectedReservation.roomId]?.type) || 'Unknown Room Type'}

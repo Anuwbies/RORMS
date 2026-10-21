@@ -5,7 +5,7 @@ import { schedulePlotSelectionKey, type PlotRoom } from '../src/utils/schedulePl
 import type { ScheduleMeetingRecord } from '../src/utils/scheduleMeetings.ts'
 
 const room = (id: string, overrides: Partial<PlotRoom> = {}): PlotRoom => ({ id, code: id, name: id, buildingId: 'PTC', floor: 3,
-  status: 'Available', availableDays: ['Monday'], startTime: '07:30', endTime: '18:00', capacity: 40, ...overrides })
+  status: 'Available', type: 'Lecture', availableDays: ['Monday'], startTime: '07:30', endTime: '18:00', capacity: 40, ...overrides })
 const meeting = (id: string, overrides: Partial<ScheduleMeetingRecord> = {}): ScheduleMeetingRecord => ({ id, sourceScheduleId: id,
   department: 'CITE', subjectCode: 'ITE 101', classSection: id, faculty: 'Teacher', instructorId: 'teacher', format: 'Lec',
   startTime: '07:30', endTime: '09:00', days: ['Mon'], roomId: 'PTC 300', status: 'Plot', maxStudents: 30, ...overrides })
@@ -19,11 +19,11 @@ test('cross-department room overlaps trigger safe recommendations; other departm
   assert.deepEqual(recommend([target, other, ...external], rooms), ['PTC 301'])
 })
 
-test('TBA recommendations exclude unavailable rooms, wrong days/hours, insufficient capacity and occupied rooms', () => {
+test('TBA recommendations exclude unavailable, undersized and occupied rooms while ignoring reservation hours', () => {
   const rooms = [room('PTC 300'), room('PTC 301'), room('maintenance', { status: 'Maintenance' }), room('wrong-day', { availableDays: ['Tuesday'] }),
     room('wrong-hours', { startTime: '09:00' }), room('small', { capacity: 20 })]
   const target = meeting('target', { roomId: '' })
-  assert.deepEqual(recommend([target, meeting('busy')], rooms), ['PTC 301'])
+  assert.deepEqual(recommend([target, meeting('busy')], rooms), ['PTC 301', 'wrong-day', 'wrong-hours'])
 })
 
 test('a lone schedule with no current or previous room usage has no recommendations', () => {
@@ -35,7 +35,7 @@ test('an unassigned department uses only its previous term for building ranking'
   const rooms = [room('PTC 300'), room('ITS 200', { buildingId: 'ITS' }), room('ITS 201', { buildingId: 'ITS' })]
   const target = meeting('target', { roomId: '', room: '' })
   const previous = [meeting('old', { roomId: 'ITS 200' }), meeting('other', { department: 'CBA', roomId: 'PTC 300' })]
-  const choices = plotRoomRecommendations([target], rooms, [target], undefined, previous)
+  const choices = plotRoomRecommendations([target], rooms, [target], previous)
   assert.deepEqual(choices.get(schedulePlotSelectionKey(target)), ['ITS 200', 'ITS 201'])
 })
 
@@ -62,7 +62,7 @@ test('parallel recommendations preserve a consecutive room chain and Plot room e
   assert.deepEqual(recommend([...parallel, meeting('outside'), meeting('busy303', { roomId: 'PTC 303' })], rooms), [])
 })
 
-test('third-building cap counts only rooms that pass Plot constraints', () => {
+test('Plot includes every available room from every used building', () => {
   const rooms = ['A', 'B', 'C', 'D'].flatMap(building => Array.from({ length: 8 }, (_, i) => room(`${building}${i}`, {
     buildingId: building, ...(building === 'C' && i < 2 ? { capacity: 10 } : {}),
   })))
@@ -73,6 +73,7 @@ test('third-building cap counts only rooms that pass Plot constraints', () => {
   const result = recommend(entries, rooms)!
   assert.equal(result.filter(id => id.startsWith('A')).length, 8)
   assert.equal(result.filter(id => id.startsWith('B')).length, 8)
-  assert.deepEqual(result.filter(id => id.startsWith('C')), ['C2', 'C3', 'C4', 'C5', 'C6'])
-  assert.ok(result.every(id => !id.startsWith('D')))
+  assert.deepEqual(result.filter(id => id.startsWith('C')), ['C2', 'C3', 'C4', 'C5', 'C6', 'C7'])
+  assert.deepEqual(result.filter(id => id.startsWith('D')), ['D0', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7'])
+  assert.equal(result.length, 30)
 })

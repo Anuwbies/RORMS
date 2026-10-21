@@ -30,7 +30,7 @@ export interface WorkbookCellActions {
   beginEditing: (cell: CellEditLocation) => void
   updateCell: (cell: CellEditLocation, value: string) => void
   finishEditing: (cell: CellEditLocation, save: boolean) => void
-  chooseCourse?: (cell: CellEditLocation, course: Pick<DepartmentCourseSuggestion, 'code' | 'title'>) => void
+  chooseCourse?: (cell: CellEditLocation, course: DepartmentCourseSuggestion) => void
   recommendRooms?: (cell: CellEditLocation, entryIndex: number) => readonly string[]
   recommendParallelRoomGroups?: (cell: CellEditLocation, entryIndex: number) => readonly ParallelRoomGroupRecommendation[]
   chooseParallelRoomGroup?: (cell: CellEditLocation, entryIndex: number, label: string) => void

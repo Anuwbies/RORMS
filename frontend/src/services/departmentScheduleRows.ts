@@ -10,7 +10,7 @@ import type { WorkbookEditSnapshot } from '../utils/excelWorkbookState'
 import { workbookTermPaths, type DepartmentWorkbookTerm } from '../utils/departmentWorkbookPaths'
 import { scheduleMeetingRecords } from '../utils/scheduleMeetings'
 import { previousScheduleTerm, scheduleMatchesDepartment, scheduleMatchesTerm } from '../utils/roomSchedule'
-import { departmentExternalRoomAssignments, facultyScheduleRowKey, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
+import { departmentExternalRoomAssignments, facultyScheduleRowKey, isDraftOrPlotScheduleMeeting, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
 
 function departmentRoomScheduleQueries(term: DepartmentWorkbookTerm) {
   return [query(collection(db, 'schedules'), where('academicYearId', '==', term.academicYearId)),
@@ -69,7 +69,7 @@ export async function loadPreviousDepartmentRoomAssignments(term: DepartmentWork
       && scheduleMatchesTerm(meeting, yearId ? { id: yearId, academicYear: previous.academicYear }
         : { academicYear: previous.academicYear }, previous.semester)
       && scheduleMatchesDepartment(meeting, term.departmentCode)
-      && !['Return', 'Returned'].includes(meeting.status ?? '')
+      && isDraftOrPlotScheduleMeeting(meeting)
   }).map(meeting => ({ location: meeting.id, rowKey: String(meeting.sourceScheduleId || meeting.id), code: '', section: '',
     roomId: meeting.roomId, room: typeof meeting.room === 'string' ? meeting.room : '' }))
 }
@@ -98,7 +98,7 @@ export async function loadDepartmentScheduleDirectory(departmentCode: string, te
       const fullName = departmentFacultyNames([item.data()], profiles, departmentCode)[0]
       return fullName ? [{ id: item.id, fullName, department: departmentCode }] : []
     }),
-    rooms: rooms.docs.map(item => { const data = item.data(); return { id: item.id, code: String(data.code ?? ''), name: String(data.name ?? ''), buildingId: String(data.buildingId ?? ''), status: String(data.status ?? ''),
+    rooms: rooms.docs.map(item => { const data = item.data(); return { id: item.id, code: String(data.code ?? ''), name: String(data.name ?? ''), buildingId: String(data.buildingId ?? ''), status: String(data.status ?? ''), type: String(data.type ?? ''),
       floor: typeof data.floor === 'number' && Number.isFinite(data.floor) ? data.floor : undefined,
       capacity: typeof data.capacity === 'number' && Number.isFinite(data.capacity) ? data.capacity : undefined } }),
   }

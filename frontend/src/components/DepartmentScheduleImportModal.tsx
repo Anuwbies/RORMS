@@ -24,7 +24,7 @@ import { createDepartmentScheduleExport } from '../utils/departmentScheduleExpor
 import { loadDepartmentScheduleDirectory, loadPreviousDepartmentRoomAssignments, subscribeDepartmentRoomSchedules } from '../services/departmentScheduleRows'
 import type { ScheduleDirectory } from '../utils/excelScheduleRows'
 import { parseDepartmentScheduleImportRows, extractDepartmentScheduleImportRows } from '../utils/departmentScheduleImportRows'
-import { departmentFacultyScheduleAssignments, facultyScheduleRowKey, isScheduleTbaNotice, scheduleMeetingNeedsRecommendation, scheduleValidationTone, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
+import { departmentFacultyScheduleAssignments, facultyScheduleRoomConflict, facultyScheduleRowKey, isScheduleTbaNotice, scheduleMeetingNeedsRecommendation, scheduleValidationTone, type FacultySubjectAssignment } from '../utils/ScheduleValidation'
 import { useExcelValidationTooltip } from './ExcelValidationTooltip'
 import { loadDepartmentCourseSuggestions } from '../services/firestoreDepartmentCourses'
 import type { DepartmentCourseSuggestion } from '../utils/departmentCourseSuggestions'
@@ -690,10 +690,11 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
   const beginCellEditing = useCallback((cell: CellEditLocation) => {
     flushTypingGroup()
     const originals = selectedCellValues(cell)
-    const pairedOriginals = cell.column === 2 || cell.column === 3 ? originals.map(original => {
-      const paired = { ...original.cell, column: cell.column === 2 ? 3 : 2 }
-      return { cell: paired, value: readCellValue(paired) }
-    }) : []
+    const pairedOriginals = cell.column === 2 || cell.column === 3 ? originals.flatMap(original =>
+      [cell.column === 2 ? 3 : 2, 0].map(column => {
+        const paired = { ...original.cell, column }
+        return { cell: paired, value: readCellValue(paired) }
+      })) : []
     editSessionRef.current = { cell, originals, pairedOriginals, checkpoint: historyRef.current.checkpoint(), hasTyped: false }
     setCellEditing(true)
   }, [flushTypingGroup, selectedCellValues, readCellValue])
@@ -928,13 +929,15 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     setSheets(next)
   }, [flushTypingGroup])
 
-  const chooseCourse = useCallback((cell: CellEditLocation, course: Pick<DepartmentCourseSuggestion, 'code' | 'title'>) => {
+  const chooseCourse = useCallback((cell: CellEditLocation, course: DepartmentCourseSuggestion) => {
     const session = editSessionRef.current
     const targets = session && sameEditCell(cell, session.cell) ? session.originals : selectedCellValues(cell)
-    const changes = targets.flatMap(target => [
-      { cell: { ...target.cell, column: 2 }, before: readCellValue({ ...target.cell, column: 2 }), after: normalizeScheduleCellText(2, course.code) },
-      { cell: { ...target.cell, column: 3 }, before: readCellValue({ ...target.cell, column: 3 }), after: course.title },
-    ]).filter(change => change.before !== change.after)
+    const linked = linkScheduleCourseChanges(sheetsRef.current, rowIndexesRef.current, targets.flatMap(target => [
+      { cell: { ...target.cell, column: 2 }, value: course.code },
+      { cell: { ...target.cell, column: 3 }, value: course.title },
+    ]), [course])
+    const changes = linked.map(change => ({ cell: change.cell, before: readCellValue(change.cell), after: change.value }))
+      .filter(change => change.before !== change.after)
     if (!changes.length) return
     flushTypingGroup()
     historyRef.current.recordChanges(changes)
@@ -955,14 +958,18 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
   const recommendRooms = useCallback((cell: CellEditLocation, entryIndex: number) => {
     const name = sheetsRef.current[cell.sheet]?.name
     return name && validationDirectory ? recommendScheduleRooms(currentScheduleAssignments(), validationDirectory.rooms,
-      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex, { previousTermAssignments: previousRoomAssignments }) : []
+      facultyScheduleRowKey(name, cell.row), cell.column, entryIndex, {
+        externalRoomAssignments: validationDirectory.externalRoomAssignments,
+        previousTermAssignments: previousRoomAssignments,
+      }) : []
   }, [currentScheduleAssignments, validationDirectory, previousRoomAssignments])
 
   const recommendParallelGroups = useCallback((cell: CellEditLocation, entryIndex: number) => {
     const name = sheetsRef.current[cell.sheet]?.name
     if (!name || !validationDirectory) return []
     const assignments = currentScheduleAssignments(), rowKey = facultyScheduleRowKey(name, cell.row)
-    return needsScheduleRoomRecommendation(assignments, validationDirectory.rooms, rowKey, cell.column, entryIndex)
+    return needsScheduleRoomRecommendation(assignments, validationDirectory.rooms, rowKey, cell.column, entryIndex,
+      assignment => (validationDirectory.externalRoomAssignments ?? []).some(other => facultyScheduleRoomConflict(assignment, other)))
       ? recommendParallelRoomGroups(assignments, validationDirectory.rooms, rowKey, cell.column, entryIndex,
         validationDirectory.externalRoomAssignments ?? [], validationDirectory.rooms, previousRoomAssignments) : []
   }, [currentScheduleAssignments, validationDirectory, previousRoomAssignments])

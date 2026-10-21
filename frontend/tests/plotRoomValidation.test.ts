@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { plotRoomValidationMessages } from '../src/utils/plotRoomValidation.ts'
 import { plotRoomRecommendations } from '../src/utils/plotRoomRecommendations.ts'
-import { schedulePlotSelectionKey, type PlotRoom } from '../src/utils/schedulePlotting.ts'
+import { assertPlotRoom, schedulePlotSelectionKey, type PlotRoom } from '../src/utils/schedulePlotting.ts'
 import type { ScheduleMeetingRecord } from '../src/utils/scheduleMeetings.ts'
 
 const room = (number: number, overrides: Partial<PlotRoom> = {}): PlotRoom => ({
@@ -59,7 +59,29 @@ test('Plot warns above room capacity and recommends a room that fits', () => {
   const target = meeting('target', { maxStudents: 30 })
   const messages = issues([target], rooms)
   assert.ok(messages.get('target')?.includes('Room PTC 300 has a capacity of 20, below the Max No. of Stud. (30).'))
-  const recommendations = plotRoomRecommendations([target], rooms, [target], messages)
+  const recommendations = plotRoomRecommendations([target], rooms, [target])
   assert.deepEqual(recommendations.get(schedulePlotSelectionKey(target)), ['room-301'])
   assert.equal(issues([{ ...target, maxStudents: 20 }], rooms).has('target'), false)
+})
+
+test('Plot rejects a room whose type does not match the schedule college and recommends a matching room', () => {
+  const rooms = [room(300, { type: 'Laboratory' }), room(301, { type: 'Lecture' })]
+  const target = meeting('target', { college: 'LECTURE' })
+  const messages = issues([target], rooms)
+  const mismatch = 'Room PTC 300 is a Laboratory room. Lecture schedules require Lecture rooms.'
+  assert.ok(messages.get('target')?.includes(mismatch))
+  assert.deepEqual(plotRoomRecommendations([target], rooms, [target]).get(schedulePlotSelectionKey(target)), ['room-301'])
+  assert.throws(() => assertPlotRoom({ startTime: '07:30', endTime: '09:00', days: ['Mon'] }, rooms[0], 30, 'LECTURE'),
+    { message: mismatch })
+  assert.doesNotThrow(() => assertPlotRoom({ startTime: '07:30', endTime: '09:00', days: ['Mon'] }, rooms[1], 30, 'LECTURE'))
+})
+
+test('Plot treats Open Lab as Laboratory and blank parallel child college as Lecture', () => {
+  const rooms = [room(300, { type: 'Lecture' }), room(301, { type: 'Laboratory' })]
+  assert.ok(issues([meeting('open', { college: 'OPEN LAB' })], rooms).get('open')?.some(message =>
+    message.includes('Open Lab schedules require Laboratory rooms.')))
+  assert.equal(issues([meeting('parallel', { college: '', groupId: 'group' })], rooms).get('parallel')?.some(message =>
+    message.includes('Parallel schedules require Lecture rooms.')) ?? false, false)
+  assert.ok(issues([meeting('parallel', { college: '', groupId: 'group', roomId: 'room-301', room: 'PTC 301' })], rooms)
+    .get('parallel')?.some(message => message.includes('Parallel schedules require Lecture rooms.')))
 })

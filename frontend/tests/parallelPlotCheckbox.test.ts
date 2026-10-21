@@ -6,7 +6,7 @@ import { schedulePlotSelectionKey, type PlotAssignment, type PlotRoom } from '..
 import type { ScheduleMeetingRecord } from '../src/utils/scheduleMeetings.ts'
 
 const rooms: PlotRoom[] = [402, 403, 404, 405, 407].map(number => ({ id: String(number), code: `PTC ${number}`, name: `PTC ${number}`,
-  buildingId: 'ptc', floor: 4, status: 'Available', availableDays: ['Monday'], startTime: '07:30', endTime: '18:00', capacity: 40 }))
+  buildingId: 'ptc', floor: 4, status: 'Available', type: 'Lecture', availableDays: ['Monday'], startTime: '07:30', endTime: '18:00', capacity: 40 }))
 const group = (): ScheduleMeetingRecord[] => [402, 403, 404, 405].map((number, index) => ({ id: `row${index}`, sourceScheduleId: `row${index}`,
   source: 'workbook', schemaVersion: 2, department: 'CITE', sourceWorkbook: 'book', sourceSheet: 'sheet', groupId: 'parallel', subjectCode: 'ITE 083',
   classSection: String(index + 5), faculty: 'Teacher', instructorId: 'teacher', format: 'Lec', startTime: '07:30', endTime: '10:30', days: ['Mon'],

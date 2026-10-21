@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 
 interface RoomCommentsModalProps {
   id: string
@@ -13,19 +13,6 @@ interface RoomCommentsModalProps {
 
 export function RoomCommentsModal({ id, isOpen, roomName, size, onClose, isAnonymous, onAnonymousChange, children }: RoomCommentsModalProps) {
   const anonymousButtonRef = useRef<HTMLButtonElement>(null)
-  const headerTextRef = useRef<HTMLDivElement>(null)
-  const [anonymousButtonSize, setAnonymousButtonSize] = useState<number | null>(null)
-
-  useLayoutEffect(() => {
-    const headerText = headerTextRef.current
-    if (!isOpen || !headerText) return
-
-    const measure = () => setAnonymousButtonSize(headerText.getBoundingClientRect().height)
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(headerText)
-    return () => observer.disconnect()
-  }, [isOpen])
 
   useEffect(() => {
     if (isOpen) anonymousButtonRef.current?.focus()
@@ -48,7 +35,7 @@ export function RoomCommentsModal({ id, isOpen, roomName, size, onClose, isAnony
       }}
     >
       <div className="flex shrink-0 items-stretch justify-between gap-3 bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
-        <div ref={headerTextRef} className="min-w-0">
+        <div className="min-w-0">
           <h3 id={`${id}-title`} className="text-xl font-bold leading-tight">Room Comments</h3>
           <p className="mt-0.5 break-words text-xs font-medium text-white/80">{roomName}</p>
         </div>
@@ -59,11 +46,12 @@ export function RoomCommentsModal({ id, isOpen, roomName, size, onClose, isAnony
           aria-label={`Anonymous posting ${isAnonymous ? 'on' : 'off'}`}
           aria-pressed={isAnonymous}
           title={`Anonymous posting is ${isAnonymous ? 'on' : 'off'}`}
-          className={`flex aspect-square shrink-0 cursor-pointer flex-col items-center justify-center self-stretch rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${isAnonymous ? 'bg-white text-[#41572a] hover:bg-[#f3f7ee]' : 'bg-white/15 text-white hover:bg-white/25'}`}
-          style={anonymousButtonSize !== null ? { width: anonymousButtonSize, height: anonymousButtonSize } : undefined}
+          className={`inline-flex h-10 shrink-0 cursor-pointer items-center gap-2 self-start rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${isAnonymous ? 'border-white bg-white text-[#41572a] hover:bg-[#f3f7ee]' : 'border-white/30 bg-white/15 text-white hover:bg-white/25'}`}
         >
-          <span aria-hidden="true" className="text-[10px] font-bold leading-none">ANON</span>
-          <span aria-hidden="true" className="mt-0.5 text-xs font-black leading-none">{isAnonymous ? 'ON' : 'OFF'}</span>
+          <span aria-hidden="true">Anonymous</span>
+          <span aria-hidden="true" className={`rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none ${isAnonymous ? 'bg-[#e3edda]' : 'bg-white/20'}`}>
+            {isAnonymous ? 'On' : 'Off'}
+          </span>
         </button>
       </div>
       <div className="flex min-h-0 flex-1 flex-col p-6">

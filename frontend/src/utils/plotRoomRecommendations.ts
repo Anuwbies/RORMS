@@ -1,9 +1,24 @@
 import type { ScheduleMeetingRecord } from './scheduleMeetings'
-import { assertPlotRoom, isProvidedScheduleRoom, plotMeetingsOverlap, schedulePlotSelectionKey, type PlotRoom } from './schedulePlotting.ts'
+import { assertPlotRoom, isProvidedScheduleRoom, plotMeetingsOverlap, plotScheduleCollege, schedulePlotSelectionKey, type PlotRoom } from './schedulePlotting.ts'
+import { scheduleMatchesTerm } from './roomSchedule.ts'
 import { recommendParallelRoomGroups, recommendScheduleRooms } from './scheduleRoomRecommendations.ts'
 import { plotFacultyScheduleAssignments } from './plotParallelRooms.ts'
 import { plotRoomValidationMessages } from './plotRoomValidation.ts'
-import { areParallelFacultyMeetings } from './ScheduleValidation.ts'
+import { areParallelFacultyMeetings, isDraftOrPlotScheduleMeeting } from './ScheduleValidation.ts'
+
+const sameDepartment = (left: ScheduleMeetingRecord, right: ScheduleMeetingRecord) =>
+  left.department?.trim().toUpperCase() === right.department?.trim().toUpperCase()
+
+const availableInTargetTerm = (meeting: ScheduleMeetingRecord, target: ScheduleMeetingRecord) => {
+  if (sameDepartment(meeting, target)) return true
+  const value = (entry: unknown) => typeof entry === 'string' ? entry.trim() : ''
+  const yearId = value(target.academicYearId), year = value(target.academicYear)
+  const semester = value(target.semesterKey) || value(target.semester)
+  if (!(yearId || year) || !semester) return true
+  return Boolean((value(meeting.academicYearId) || value(meeting.academicYear))
+    && (value(meeting.semesterKey) || value(meeting.semester))
+    && scheduleMatchesTerm(meeting, { id: yearId, academicYear: year }, semester))
+}
 
 export interface PlotParallelRoomGroupOption {
   id: string
@@ -15,7 +30,7 @@ export interface PlotParallelRoomGroupOption {
 export function plotParallelRoomGroupRecommendations(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[],
   targets: readonly ScheduleMeetingRecord[], validationMessages?: ReadonlyMap<string, readonly string[]>,
   previousMeetings: readonly ScheduleMeetingRecord[] = []): ReadonlyMap<string, readonly PlotParallelRoomGroupOption[]> {
-  const active = meetings.filter(meeting => !['Return', 'Returned'].includes(meeting.status ?? ''))
+  const active = meetings.filter(meeting => isDraftOrPlotScheduleMeeting(meeting) && (!targets[0] || availableInTargetTerm(meeting, targets[0])))
   const assignments = plotFacultyScheduleAssignments(active, rooms)
   const targetByKey = new Map(targets.map(meeting => [schedulePlotSelectionKey(meeting), meeting]))
   const result = new Map<string, readonly PlotParallelRoomGroupOption[]>()
@@ -48,18 +63,19 @@ export function plotParallelRoomGroupRecommendations(meetings: readonly Schedule
     const representativeSet = new Set(representatives.values())
     // Duplicate calendar copies represent one editable meeting, so keep only one per selection key.
     const normalized = assignments.flatMap((assignment, index) => memberKeys.has(schedulePlotSelectionKey(active[index]))
-      ? representativeSet.has(index) ? [{ ...assignment, roomEntryIndex: 0 }] : [] : [assignment])
+      ? representativeSet.has(index) ? [assignment] : [] : [assignment])
     const members = [...representatives].map(([key, index]) => ({ key, meeting: active[index] }))
     const eligibleRooms = rooms.filter(room => members.every(member => active
       .filter(item => schedulePlotSelectionKey(item) === member.key).every(item => {
         try {
           assertPlotRoom({ startTime: item.startTime ?? '', endTime: item.endTime ?? '', days: item.days ?? [] }, room,
-            typeof item.maxStudents === 'number' ? item.maxStudents : null)
+            typeof item.maxStudents === 'number' ? item.maxStudents : null, plotScheduleCollege(item))
           return true
         } catch { return false }
       })))
     const previousAssignments = plotFacultyScheduleAssignments(previousMeetings.filter(meeting => meeting.department === target.department), rooms)
-    const candidateGroups = recommendParallelRoomGroups(normalized, eligibleRooms, assignments[targetIndex].rowKey!, 19, 0,
+    const candidateGroups = recommendParallelRoomGroups(normalized, eligibleRooms, assignments[targetIndex].rowKey!,
+      assignments[targetIndex].roomColumn!, assignments[targetIndex].roomEntryIndex!,
       [], [...rooms], previousAssignments)
     const options = candidateGroups.flatMap((candidate, index): PlotParallelRoomGroupOption[] => {
       const changes = candidate.rooms.flatMap(entry => {
@@ -75,7 +91,7 @@ export function plotParallelRoomGroupRecommendations(meetings: readonly Schedule
         return affected.every(item => {
           try {
             assertPlotRoom({ startTime: item.startTime ?? '', endTime: item.endTime ?? '', days: item.days ?? [] }, room,
-              typeof item.maxStudents === 'number' ? item.maxStudents : null)
+              typeof item.maxStudents === 'number' ? item.maxStudents : null, plotScheduleCollege(item))
           } catch { return false }
           return active.every(other => memberKeys.has(schedulePlotSelectionKey(other))
             || !plotMeetingsOverlap({ ...item, roomId }, other))
@@ -94,12 +110,9 @@ export function plotParallelRoomGroupRecommendations(meetings: readonly Schedule
 
 /** Use workbook recommendations for this department, with Plot's campus-wide availability checks. */
 export function plotRoomRecommendations(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[],
-  targets: readonly ScheduleMeetingRecord[], validationMessages?: ReadonlyMap<string, readonly string[]>,
-  previousMeetings: readonly ScheduleMeetingRecord[] = []): ReadonlyMap<string, readonly string[]> {
-  const active = meetings.filter(meeting => !['Return', 'Returned'].includes(meeting.status ?? ''))
-  const roomMap = new Map(rooms.map(room => [room.id, room]))
+  targets: readonly ScheduleMeetingRecord[], previousMeetings: readonly ScheduleMeetingRecord[] = []): ReadonlyMap<string, readonly string[]> {
+  const active = meetings.filter(isDraftOrPlotScheduleMeeting)
   const assignments = plotFacultyScheduleAssignments(active, rooms)
-  const issues = validationMessages ?? plotRoomValidationMessages(active, rooms, targets[0]?.department ?? '')
   const result = new Map<string, readonly string[]>()
   for (const target of targets) {
     const index = active.findIndex(meeting => meeting.id === target.id)
@@ -107,31 +120,18 @@ export function plotRoomRecommendations(meetings: readonly ScheduleMeetingRecord
     const meeting = active[index], assignment = assignments[index]
     const key = schedulePlotSelectionKey(meeting)
     if (result.has(key)) continue
-    // A calendar selection can represent multiple identical meeting keys in the same row.
-    const affected = active.filter(item => schedulePlotSelectionKey(item) === key)
-    const affectedIds = new Set(affected.map(item => item.id))
-    const local = assignments.filter((_, i) => active[i].department === meeting.department)
-    const previousAssignments = plotFacultyScheduleAssignments(previousMeetings.filter(item => item.department === meeting.department), rooms)
-    const names = recommendScheduleRooms(local, [...rooms], assignment.rowKey!, 19, assignment.roomEntryIndex!, {
+    const scoped = assignments.flatMap((entry, i) => availableInTargetTerm(active[i], meeting) ? [{ entry, meeting: active[i] }] : [])
+    const local = scoped.filter(item => sameDepartment(item.meeting, meeting)).map(item => item.entry)
+    const external = scoped.filter(item => !sameDepartment(item.meeting, meeting)).map(item => item.entry)
+    const previousAssignments = plotFacultyScheduleAssignments(previousMeetings.filter(item => sameDepartment(item, meeting)), rooms)
+    const names = recommendScheduleRooms(local, [...rooms], assignment.rowKey!, assignment.roomColumn!, assignment.roomEntryIndex!, {
       previousTermAssignments: previousAssignments,
-      hasConflict: () => affected.some(item => issues.has(item.id)),
-      isRoomAvailable: room => {
-        const candidate = roomMap.get(room.id)
-        if (!candidate) return false
-        return affected.every(item => {
-          try {
-            assertPlotRoom({ startTime: item.startTime ?? '', endTime: item.endTime ?? '', days: item.days ?? [] }, candidate,
-              typeof item.maxStudents === 'number' ? item.maxStudents : null)
-          } catch { return false }
-          return active.every(other => other.id === item.id || !plotMeetingsOverlap({ ...item, roomId: candidate.id },
-            affectedIds.has(other.id) ? { ...other, roomId: candidate.id } : other))
-        })
-      },
+      externalRoomAssignments: external,
     })
     // Names are the workbook API; resolve only unique names back to room IDs.
     result.set(key, names.flatMap(name => {
-      const matches = rooms.filter(room => (room.name.trim() || room.code.trim()) === name)
-      return matches.length === 1 ? [matches[0].id] : []
+      const matches = new Map(rooms.filter(room => (room.name.trim() || room.code.trim()) === name).map(room => [room.id, room]))
+      return matches.size === 1 ? [[...matches.keys()][0]] : []
     }))
   }
   return result

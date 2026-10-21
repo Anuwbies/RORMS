@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from 'react'
+import type { CSSProperties } from 'react'
 import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
 import { maxReservationDuration, reservationTimeMinutes, reservationTimeString, type ReservationRequestType } from '../../utils/reservationDuration'
 import { SectionHeader } from '../../components/SectionHeader'
@@ -62,6 +63,7 @@ function RoomUsageRules({ accepted, onAcceptedChange }: { accepted: boolean; onA
 }
 
 const normalizeAttendeeName = (value: string) => value.trim().replace(/\s+/g, ' ')
+const capitalizeAttendeeWords = (value: string) => value.replace(/(^|[^\p{L}\p{M}])(\p{L})/gu, (_, separator: string, initial: string) => separator + initial.toLocaleUpperCase())
 
 function formatTime12(timeStr: string) {
   if (!timeStr) return ''
@@ -113,6 +115,12 @@ const normalizeDay = (day: string): string => {
   return trimmed
 }
 
+function longestStandardDuration(room: Room, startTime: string, busy: readonly { start: number; end: number }[]): number {
+  const min = Math.max(30, room.minBookingMins || 30)
+  const max = maxReservationDuration(room, startTime, 'Standard', busy)
+  return max < min ? min : min + Math.floor((max - min) / 30) * 30
+}
+
 interface ReserveRoomPageProps {
   userRole: string
 }
@@ -121,6 +129,11 @@ interface ReservationMembership {
   id: string
   userId: string
   department: string
+}
+
+interface ScheduleSlotSelection {
+  date: string
+  startTime: string
 }
 
 function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
@@ -174,6 +187,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
   const [isRoomScheduleModalOpen, setIsRoomScheduleModalOpen] = useState(false)
   const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<Room | null>(null)
+  const [scheduleSlotSelection, setScheduleSlotSelection] = useState<ScheduleSlotSelection | null>(null)
 
   const [reservationData, setReservationData] = useState({
     requestType: 'Standard' as ReservationRequestType,
@@ -372,10 +386,24 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   }, [selectedRoomInfo])
 
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
+  const reservationFormRef = useRef<HTMLDivElement>(null)
+  const [reservationFormHeight, setReservationFormHeight] = useState<number | null>(null)
+
+  useLayoutEffect(() => {
+    if (!isReservationModalOpen || userRole !== 'Instructor' || !selectedRoomInfo) return
+    const form = reservationFormRef.current
+    if (!form) return
+
+    const syncHeight = () => setReservationFormHeight(form.getBoundingClientRect().height)
+    syncHeight()
+    const observer = new ResizeObserver(syncHeight)
+    observer.observe(form)
+    return () => observer.disconnect()
+  }, [isReservationModalOpen, selectedRoomInfo, userRole])
   const [isRoomRulesModalOpen, setIsRoomRulesModalOpen] = useState(false)
   const [rulesAccepted, setRulesAccepted] = useState(false)
   const attendeeFieldCount = Number.isInteger(Number(reservationData.attendees)) && Number(reservationData.attendees) > 0
-    ? Math.min(Number(reservationData.attendees), selectedRoomInfo?.capacity || 0)
+    ? Math.max(0, Math.min(Number(reservationData.attendees), selectedRoomInfo?.capacity || 0) - 1)
     : 0
   const firstAvailableStartTime = useMemo(() => {
     if (!selectedRoomInfo || !reservationData.date) return null
@@ -393,9 +421,11 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
           ? firstAvailableStartTime
           : prev.startTime
       if (nextStartTime === prev.startTime) return prev
-      return { ...prev, startTime: nextStartTime, duration: Math.max(30, selectedRoomInfo.minBookingMins || 30) }
+      return { ...prev, startTime: nextStartTime, duration: prev.requestType === 'Standard'
+        ? longestStandardDuration(selectedRoomInfo, nextStartTime, busyIntervals)
+        : Math.max(30, selectedRoomInfo.minBookingMins || 30) }
     })
-  }, [isReservationModalOpen, selectedRoomInfo, firstAvailableStartTime, computedMinStartTime, computedMaxStartTime, isStartTimeDisabled])
+  }, [isReservationModalOpen, selectedRoomInfo, firstAvailableStartTime, computedMinStartTime, computedMaxStartTime, isStartTimeDisabled, busyIntervals])
 
   const [successDetails, setSuccessDetails] = useState<{
     roomName: string
@@ -495,7 +525,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   useEffect(() => {
     if (isReservationModalOpen && reservationData.requestType === 'Standard' && durationOptions.length > 0) {
       if (!durationOptions.includes(reservationData.duration.toString())) {
-        setReservationData(prev => ({ ...prev, duration: parseInt(durationOptions[0], 10) }))
+        setReservationData(prev => ({ ...prev, duration: parseInt(durationOptions[durationOptions.length - 1], 10) }))
       }
     }
   }, [isReservationModalOpen, durationOptions, reservationData.duration, reservationData.requestType])
@@ -634,7 +664,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     setIsRoomInfoModalOpen(true)
   }
 
-  const handleOpenReservationModal = (room: Room) => {
+  const handleOpenReservationModal = (room: Room, selectedSlot?: ScheduleSlotSelection) => {
     if (!canCreateReservation) return
     if (isReservationAvailabilityLoading || !isReservationEnabled) {
       showNotification('Room reservations are currently unavailable. Please try again later.', 'warning', 'Reservations Unavailable')
@@ -665,7 +695,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     const todayMinStartMins = Math.max(startMins, Math.ceil((nowMins + 120) / 30) * 30)
     const isTodayPastCutoff = todayMinStartMins > maxStartMins
 
-    const initialDate = getEarliestAvailableDate(room.availableDays, isTodayPastCutoff)
+    const initialDate = selectedSlot?.date || getEarliestAvailableDate(room.availableDays, isTodayPastCutoff)
 
     const initialBusy: { start: number; end: number }[] = []
     reservations.forEach((r: any) => {
@@ -697,13 +727,13 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     })
 
     const firstValid = getFirstAvailableStartTime(initialDate, room, initialBusy)
-    const initialStart = firstValid ?? ''
+    const initialStart = selectedSlot?.startTime || firstValid || ''
 
     setReservationData({
       requestType: 'Standard',
       date: initialDate,
       startTime: initialStart,
-      duration: minBookingMins,
+      duration: longestStandardDuration(room, initialStart, initialBusy),
       purpose: '',
       attendees: '',
       attendeeNames: [],
@@ -722,10 +752,10 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     setIsRoomScheduleModalOpen(false)
     setSelectedRoomInfo(null)
     setSelectedRoomForSchedule(null)
+    setScheduleSlotSelection(null)
   }
 
   const allRooms = buildings.flatMap((building) => building.rooms)
-  const roomTypes = useMemo(() => Array.from(new Set(allRooms.map(r => r.type))).sort(), [allRooms])
   const allAmenities = useMemo(() => Array.from(new Set(allRooms.flatMap(r => r.amenities))).sort(), [allRooms])
   
   const selectedBuildingObj = useMemo(() => buildings.find(b => b.code === findRoomData.building), [buildings, findRoomData.building])
@@ -783,7 +813,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Room Type</label>
                     <SingleSelectDropdown
-                      options={['Any Type', ...roomTypes]}
+                      options={['Any Type', 'Lecture', 'Laboratory']}
                       value={findRoomData.roomType || 'Any Type'}
                       onChange={(val) => setFindRoomData({ ...findRoomData, roomType: val === 'Any Type' ? '' : val })}
                     />
@@ -1123,6 +1153,15 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
         hideFilters={true}
         showWeekCalendar={true}
         showStatusColors={false}
+        onReserveFreeSlot={
+          canCreateReservation && selectedRoomForSchedule?.status === 'Available' && isReservationEnabled && !isReservationAvailabilityLoading
+            ? slot => {
+              setScheduleSlotSelection(slot)
+              setRulesAccepted(false)
+              setIsRoomRulesModalOpen(true)
+            }
+            : undefined
+        }
         onClose={handleCloseModals}
         onBack={() => {
           setIsRoomScheduleModalOpen(false)
@@ -1138,6 +1177,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
               variant="brand"
               onClick={() => {
                 if (selectedRoomForSchedule) {
+                  setScheduleSlotSelection(null)
                   setRulesAccepted(false)
                   setIsRoomRulesModalOpen(true)
                 }
@@ -1164,7 +1204,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 className="flex-1"
                 disabled={!rulesAccepted}
                 onClick={() => {
-                  handleOpenReservationModal(selectedRoomForSchedule)
+                  handleOpenReservationModal(selectedRoomForSchedule, scheduleSlotSelection || undefined)
+                  setScheduleSlotSelection(null)
                   setIsRoomRulesModalOpen(false)
                 }}
               >
@@ -1180,7 +1221,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       {canCreateReservation && isReservationModalOpen && selectedRoomInfo && (
         <div className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-black/50 p-4 lg:items-center">
           <div className="my-auto flex w-full max-w-lg flex-col items-start justify-center gap-4 lg:max-w-[54rem] lg:flex-row">
-          <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar rounded-2xl">
+          <div ref={reservationFormRef} className="w-full max-w-lg max-h-[calc(100dvh-2rem)] overflow-y-auto custom-scrollbar rounded-2xl">
           <div 
             className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl overflow-visible"
             onClick={(e) => e.stopPropagation()}
@@ -1203,7 +1244,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     }}
                   />
                   {reservationData.requestType === 'Extended' && (
-                    <p className="text-xs text-slate-500">Longer bookings require Admin/Registrar approval and must fit within the room's available hours, without conflicts.</p>
+                    <p className="text-xs text-slate-500">Longer bookings require Dean and Registrar recommendations, then University Administrator approval, and must fit within the room's available hours without conflicts.</p>
                   )}
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -1214,6 +1255,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       value={reservationData.date}
                       onChange={(date) => {
                         let newStartTime = ''
+                        let newDuration = reservationData.duration
                         if (selectedRoomInfo) {
                           const newBusy: { start: number; end: number }[] = []
                           const timeToMins = (t: string) => {
@@ -1250,8 +1292,11 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
                           const firstValid = getFirstAvailableStartTime(date, selectedRoomInfo, newBusy)
                           newStartTime = firstValid ?? ''
+                          if (reservationData.requestType === 'Standard') {
+                            newDuration = longestStandardDuration(selectedRoomInfo, newStartTime, newBusy)
+                          }
                         }
-                        setReservationData({ ...reservationData, date, startTime: newStartTime })
+                        setReservationData({ ...reservationData, date, startTime: newStartTime, duration: newDuration })
                         if (date) setFormErrors(prev => ({ ...prev, date: false }))
                       }}
                       minDate={minReservationDate}
@@ -1280,7 +1325,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         setReservationData(prev => ({
                           ...prev,
                           attendees: finalVal,
-                          attendeeNames: prev.attendeeNames.slice(0, Number(finalVal) || 0)
+                          attendeeNames: prev.attendeeNames.slice(0, Math.max(0, (Number(finalVal) || 0) - 1))
                         }))
                         if (finalVal) setFormErrors(prev => ({ ...prev, attendees: false }))
                       }}
@@ -1298,8 +1343,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     <TimePicker 
                       value={reservationData.startTime}
                       onChange={(time) => {
-                        const maxDuration = maxReservationDuration(selectedRoomInfo, time, reservationData.requestType, busyIntervals)
-                        const newDuration = Math.min(reservationData.duration, maxDuration)
+                        const newDuration = reservationData.requestType === 'Standard'
+                          ? longestStandardDuration(selectedRoomInfo, time, busyIntervals)
+                          : Math.min(reservationData.duration, maxReservationDuration(selectedRoomInfo, time, 'Extended', busyIntervals))
                         setReservationData({ ...reservationData, startTime: time, duration: newDuration })
                         if (time) setFormErrors(prev => ({ ...prev, startTime: false }))
                       }}
@@ -1476,9 +1522,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       return
                     }
 
-                    const attendeeNames = Array.from({ length: attendeeCount }, (_, index) => normalizeAttendeeName(reservationData.attendeeNames[index] || ''))
+                    const attendeeNames = Array.from({ length: attendeeCount - 1 }, (_, index) => normalizeAttendeeName(reservationData.attendeeNames[index] || ''))
                     if (userRole === 'Instructor' && (attendeeNames.some(name => !name || name.length > 120))) {
-                      showNotification(`Enter the full name of all ${attendeeCount} attendees.`, 'warning', 'Attendee Names Required')
+                      showNotification("Enter other attendees' full names.", 'warning', 'Attendee Names Required')
                       setFormErrors(prev => ({ ...prev, attendeeNames: true }))
                       return
                     }
@@ -1687,34 +1733,47 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
           </div>
           </div>
           {userRole === 'Instructor' && attendeeFieldCount > 0 && (
-            <aside aria-labelledby="reservation-attendee-heading" className="w-full shrink-0 rounded-2xl border border-gray-200 bg-white shadow-2xl lg:w-80" onClick={event => event.stopPropagation()}>
-              <div className="border-b border-slate-200 p-4">
-                <h4 id="reservation-attendee-heading" className="text-sm font-bold text-slate-900">Attendee names <span className="text-rose-500">*</span></h4>
-                <p className="mt-1 text-xs text-slate-500">Enter one full name per person, including yourself if you will use the room.</p>
+            <aside
+              aria-labelledby="reservation-attendee-heading"
+              className="w-full shrink-0 rounded-2xl border border-gray-200 bg-white shadow-2xl lg:flex lg:h-[var(--reservation-form-height,auto)] lg:max-h-[calc(100dvh-2rem)] lg:w-80 lg:flex-col lg:overflow-hidden"
+              style={reservationFormHeight === null ? undefined : { '--reservation-form-height': `${reservationFormHeight}px` } as CSSProperties}
+              onClick={event => event.stopPropagation()}
+            >
+              <div className="rounded-t-2xl bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] p-6 text-white">
+                <h4 id="reservation-attendee-heading" className="text-xl font-bold leading-tight">Attendee names <span className="text-rose-300">*</span></h4>
+                <p className="mt-0.5 text-xs font-medium text-white/80">Enter other attendees' full names.</p>
               </div>
-              <div className="max-h-[calc(100dvh-12rem)] space-y-3 overflow-y-auto p-4 custom-scrollbar">
+              <div className="max-h-[calc(100dvh-12rem)] space-y-3 overflow-y-auto px-4 pt-2 pb-0 custom-scrollbar lg:min-h-0 lg:flex-1 lg:max-h-none">
                 {Array.from({ length: attendeeFieldCount }, (_, index) => (
                   <div key={index} className="space-y-1.5">
-                    <label htmlFor={`reservation-attendee-${index}`} className="text-xs font-semibold text-slate-600">Attendee {index + 1}</label>
                     <TextInput
                       id={`reservation-attendee-${index}`}
+                      aria-label={`Attendee ${index + 1} full name`}
                       value={reservationData.attendeeNames[index] || ''}
                       onChange={value => {
                         setReservationData(prev => {
                           const attendeeNames = [...prev.attendeeNames]
-                          attendeeNames[index] = value
+                          attendeeNames[index] = capitalizeAttendeeWords(value)
                           return { ...prev, attendeeNames }
                         })
                         setFormErrors(prev => ({ ...prev, attendeeNames: false }))
                       }}
-                      placeholder={`Full name of attendee ${index + 1}`}
+                      onKeyDown={event => {
+                        if (event.key !== 'Enter') return
+                        event.preventDefault()
+                        if (index + 1 < attendeeFieldCount) {
+                          document.getElementById(`reservation-attendee-${index + 1}`)?.focus()
+                        }
+                      }}
+                      placeholder="Last Name, First Name"
+                      inputClassName="rounded-none! border-x-0! border-t-0! pt-1! shadow-none! focus:ring-0!"
                       error={formErrors.attendeeNames && !normalizeAttendeeName(reservationData.attendeeNames[index] || '')}
                       maxLength={120}
                     />
                   </div>
                 ))}
-                <p className="text-xs text-slate-500">{reservationData.attendeeNames.slice(0, attendeeFieldCount).filter(name => normalizeAttendeeName(name || '')).length} of {attendeeFieldCount} names entered</p>
               </div>
+              <p className="shrink-0 px-4 pt-1 pb-1 text-xs text-slate-500">{reservationData.attendeeNames.slice(0, attendeeFieldCount).filter(name => normalizeAttendeeName(name || '')).length} of {attendeeFieldCount} names entered</p>
             </aside>
           )}
           </div>
@@ -1743,7 +1802,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                 <h3 className="text-xl font-bold text-gray-900 leading-snug">
                   Request Sent Successfully
                 </h3>
-                <p className="text-xs font-semibold text-amber-700">{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}Pending Registrar recommendation</p>
+                <p className="text-xs font-semibold text-amber-700">{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}Pending Dean recommendation</p>
                 <p className="text-sm text-gray-600 font-medium mt-0.5 whitespace-nowrap">
                   Your reservation for <span className="font-bold text-gray-900">{successDetails.roomName}</span> has been submitted.
                 </p>

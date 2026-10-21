@@ -3,6 +3,8 @@ import { SectionHeader } from '../../components/SectionHeader'
  
 import { type TimeOfDay, type MoonPhaseKey, getAstronomicalMoonPhase } from '../../visualizations/WeatherOverlay'
 import { BuildingBrowser } from '../../components/BuildingBrowser'
+import { BuildingScheduleUsage } from '../../components/BuildingScheduleUsage'
+import { RoomScheduleUsage } from '../../components/RoomScheduleUsage'
 import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { RoomComments } from '../../components/RoomComments'
 import { useRoomCommentNotices } from '../../hooks/useRoomCommentNotices'
@@ -33,6 +35,11 @@ import {
   limit
 } from 'firebase/firestore'
 import { CropModal } from '../../components/CropModal'
+import { resolveCurrentSemester, type AcademicYearData } from '../../utils/academicSemester'
+import { buildingScheduleUsage } from '../../utils/buildingScheduleUsage'
+import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
+import { reportingScheduleMeetings } from '../../utils/scheduleReporting'
+import type { ScheduleReportRecord } from '../../utils/reportingData'
 
 type EntranceSide = 'top' | 'bottom' | 'left' | 'right'
 
@@ -75,6 +82,7 @@ function createRoomImage() {
 const DEFAULT_ROOM_IMAGE = createRoomImage()
 
 const BOOKING_MINUTES_OPTIONS = ['30', '60', '90'] as const;
+const ROOM_TYPE_OPTIONS = ['Lecture', 'Laboratory'] as const;
 
 const LIQUID_OPTIONS = ['Water', 'Coffee', 'Blood', 'Mud', 'Slime', 'Random'] as const;
 type DropdownLiquidType = typeof LIQUID_OPTIONS[number];
@@ -156,6 +164,26 @@ function BuildingsRoomsPage() {
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
+  const [academicYearsLoaded, setAcademicYearsLoaded] = useState(false)
+  const [scheduleRows, setScheduleRows] = useState<ScheduleReportRecord[]>([])
+  const [legacyScheduleRows, setLegacyScheduleRows] = useState<ScheduleReportRecord[]>([])
+  const [scheduleSourcesLoaded, setScheduleSourcesLoaded] = useState(0)
+  const [scheduleLoadFailed, setScheduleLoadFailed] = useState(false)
+  const activeYear = useMemo(() => academicYears.find(year => year.isActive)
+    || [...academicYears].sort((a, b) => b.academicYear.localeCompare(a.academicYear))[0] || null, [academicYears])
+  const activeSemester = useMemo(() => resolveCurrentSemester(activeYear), [activeYear])
+  const buildingUsage = useMemo(() => buildingScheduleUsage(
+    buildings,
+    reportingScheduleMeetings([...scheduleRows, ...legacyScheduleRows]) as unknown as ReturnType<typeof scheduleMeetingRecords>,
+    activeYear,
+    activeSemester,
+  ), [buildings, scheduleRows, legacyScheduleRows, activeYear, activeSemester])
+  const scheduleUsageColorIndexes = useMemo(() => Object.fromEntries(
+    [...new Set(Object.values(buildingUsage.buildings).flatMap(usage => usage.departments.map(department => department.name)))]
+      .sort().map((name, index) => [name, index]),
+  ) as Record<string, number>, [buildingUsage])
+  const scheduleUsageLoading = !scheduleLoadFailed && (!academicYearsLoaded || scheduleSourcesLoaded !== 3)
   const { unreadRoomIds, markCommentsSeen, markCommentSeen, isCommentUnread } = useRoomCommentNotices(buildings.flatMap(building => building.rooms.map(room => room.id)))
   const [waterKey, setWaterKey] = useState(0)
   const [dismissedJars, setDismissedJars] = useState<Set<number>>(new Set())
@@ -474,6 +502,35 @@ function BuildingsRoomsPage() {
     }
   }, [])
 
+  useEffect(() => {
+    const unsubscribeYears = onSnapshot(collection(db, 'academicYears'), snapshot => {
+      setAcademicYears(snapshot.docs.map(document => ({ id: document.id, ...document.data() } as AcademicYearData)))
+      setAcademicYearsLoaded(true)
+    }, error => {
+      console.error('Unable to load academic years for schedule usage:', error)
+      setScheduleLoadFailed(true)
+    })
+    const unsubscribeSchedules = onSnapshot(collection(db, 'schedules'), snapshot => {
+      setScheduleRows(scheduleMeetingRecords(snapshot.docs) as ScheduleReportRecord[])
+      setScheduleSourcesLoaded(count => count | 1)
+    }, error => {
+      console.error('Unable to load schedules for building usage:', error)
+      setScheduleLoadFailed(true)
+    })
+    const unsubscribeLegacySchedules = onSnapshot(collection(db, 'schedule'), snapshot => {
+      setLegacyScheduleRows(scheduleMeetingRecords(snapshot.docs) as ScheduleReportRecord[])
+      setScheduleSourcesLoaded(count => count | 2)
+    }, error => {
+      console.error('Unable to load legacy schedules for building usage:', error)
+      setScheduleLoadFailed(true)
+    })
+    return () => {
+      unsubscribeYears()
+      unsubscribeSchedules()
+      unsubscribeLegacySchedules()
+    }
+  }, [])
+
   const [isBuildingModalOpen, setIsBuildingModalOpen] = useState(false)
   const [editingBuilding, setEditingBuilding] = useState<Building | null>(null)
   const [newBuildingName, setNewBuildingName] = useState('')
@@ -660,7 +717,7 @@ function BuildingsRoomsPage() {
       setIsMultipleRooms(false)
       setNewRoomName(room.name)
       setNewRoomCode(room.code)
-      setNewRoomType(room.type)
+      setNewRoomType(ROOM_TYPE_OPTIONS.some(type => type === room.type) ? room.type : '')
       setNewRoomFloor(String(room.floor))
       setNewRoomCapacity(String(room.capacity))
       setNewRoomStatus(room.status)
@@ -949,6 +1006,11 @@ function BuildingsRoomsPage() {
           return
         }
       }
+    }
+
+    if (!ROOM_TYPE_OPTIONS.some(type => type === newRoomType)) {
+      showNotification('Choose Lecture or Laboratory for the room type.', 'error', 'Room Type Required')
+      return
     }
 
     if (roomModalStep < 3) {
@@ -1433,9 +1495,10 @@ function BuildingsRoomsPage() {
                         Type
                       </label>
                       <SingleSelectDropdown
-                        options={['Lecture', 'Laboratory', 'Meeting Room', 'Studio', 'Administrative']}
+                        options={ROOM_TYPE_OPTIONS}
                         value={newRoomType}
                         onChange={setNewRoomType}
+                        placeholder="Select type"
                         onToggle={handleDropdownToggle}
                         className="w-full"
                       />
@@ -2118,6 +2181,24 @@ function BuildingsRoomsPage() {
 
         <BuildingBrowser
           buildings={buildings}
+          renderBuildingScheduleUsage={building => (
+            <BuildingScheduleUsage
+              usage={buildingUsage.buildings[building.id]}
+              term={activeYear ? `${activeYear.academicYear} · ${activeSemester}` : 'No academic year'}
+              isLoading={scheduleUsageLoading}
+              hasError={scheduleLoadFailed}
+              colorIndexes={scheduleUsageColorIndexes}
+            />
+          )}
+          renderRoomScheduleUsage={room => (
+            <RoomScheduleUsage
+              room={room}
+              usage={buildingUsage.rooms[room.id]}
+              isLoading={scheduleUsageLoading}
+              hasError={scheduleLoadFailed}
+              colorIndexes={scheduleUsageColorIndexes}
+            />
+          )}
           unreadCommentRoomIds={unreadRoomIds}
           buildingOptions={Array.from(new Set(buildings.map(b => b.code).filter(Boolean))).sort()}
           expandedBuildingIds={expandedBuildingIds}

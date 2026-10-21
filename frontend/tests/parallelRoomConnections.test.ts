@@ -11,6 +11,7 @@ function setup(codes = ['PTC 301', 'PTC 300', 'PTC 302', 'PTC 303']) {
     departmentCode: 'CITE', faculty: [{ id: 'teacher', fullName: 'Cruz, Engelbert', department: 'CITE' }],
     rooms: ['PTC', 'ITS'].flatMap(buildingId => [200, 201, 202, 203, 299, 300, 301, 302, 303, 304, 305, 398, 399, 400, 401].map(number => ({
       id: `${buildingId}${number}`, code: `${buildingId} ${number}`, name: `${buildingId} Room ${number}`, buildingId, floor: Math.floor(number / 100),
+      type: 'Lecture',
     }))),
   }
   const sheet = createEmptyDepartmentScheduleSheet()
@@ -128,7 +129,7 @@ test('three connected rooms and an outlier offer recommendations for the connect
 test('BE 201/202 and PTC 405/406 offer rooms leading to a complete chain in either building', () => {
   const h = setup(['BE 201', 'BE 202', 'PTC 405', 'PTC 406'])
   h.directory.rooms = ['BE', 'PTC'].flatMap(buildingId => [201, 202, 203, 204, 403, 404, 405, 406, 407, 408].map(number => ({
-    id: `${buildingId}${number}`, code: `${buildingId} ${number}`, name: `${buildingId} ${number}`, buildingId, floor: Math.floor(number / 100),
+    id: `${buildingId}${number}`, code: `${buildingId} ${number}`, name: `${buildingId} ${number}`, buildingId, floor: Math.floor(number / 100), type: 'Lecture',
   })))
   for (let index = 0; index < 4; index++) assert.ok(h.recommend(index).length > 0)
   assert.ok(h.recommend(3).includes('BE 203'))
@@ -138,8 +139,8 @@ test('BE 201/202 and PTC 405/406 offer rooms leading to a complete chain in eith
 test('replacing PTC 404 joins existing rooms immediately instead of skipping over its vacated room', () => {
   const h = setup(['BE 201', 'PTC 402', 'PTC 403', 'PTC 404'])
   h.directory.rooms = [
-    ...[201, 202, 203, 204].map(number => ({ id: `BE${number}`, code: `BE ${number}`, name: `BE ${number}`, buildingId: 'BE', floor: 2 })),
-    ...[401, 402, 403, 404, 405, 406, 407].map(number => ({ id: `PTC${number}`, code: `PTC ${number}`, name: `PTC ${number}`, buildingId: 'PTC', floor: 4 })),
+    ...[201, 202, 203, 204].map(number => ({ id: `BE${number}`, code: `BE ${number}`, name: `BE ${number}`, buildingId: 'BE', floor: 2, type: 'Lecture' })),
+    ...[401, 402, 403, 404, 405, 406, 407].map(number => ({ id: `PTC${number}`, code: `PTC ${number}`, name: `PTC ${number}`, buildingId: 'PTC', floor: 4, type: 'Lecture' })),
   ]
   assert.deepEqual(h.recommend(3), ['PTC 401', 'BE 202'])
   assert.ok(h.recommend(0).includes('PTC 401') && h.recommend(0).includes('PTC 405'))

@@ -39,6 +39,7 @@ interface ReservationItem {
   endTime: string
   purpose: string
   status: 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Completed'
+  deanRecommend?: boolean
   registrarRecommend?: boolean
   roomName?: string
   buildingName?: string
@@ -299,7 +300,7 @@ export function RegistrarDashboardPage({ headerAction }: RegistrarDashboardPageP
 
   // Requests awaiting the Registrar's recommendation
   const pendingReservationsCount = useMemo(() => {
-    return weeklyReservations.filter(r => r.status === 'Pending' && r.registrarRecommend !== true).length
+    return weeklyReservations.filter(r => r.status === 'Pending' && r.deanRecommend === true && r.registrarRecommend !== true).length
   }, [weeklyReservations])
 
   const formatReservationDate = (dateStr: string) => {

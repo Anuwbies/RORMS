@@ -39,6 +39,7 @@ export interface FacultySubjectAssignment {
   room?: string
   roomId?: string
   roomExists?: boolean
+  college?: string
   maxStudents?: number | null
   days?: readonly string[]
   rowKey?: string
@@ -70,6 +71,20 @@ export function scheduleRoomStatusIssue(room: Pick<ScheduleDirectory['rooms'][nu
   const name = room.name.trim() || room.code.trim()
   if (status === 'unavailable') return `Room ${name} is unavailable. Choose an available room.`
   if (status === 'maintenance') return `Room ${name} is under maintenance. Choose an available room.`
+}
+
+export function scheduleRoomTypeIssue(room: Pick<ScheduleDirectory['rooms'][number], 'name' | 'code' | 'type'>,
+  college: string): string | undefined {
+  const scheduleType = college.trim().replace(/\s+/g, ' ').toUpperCase()
+  const expected = scheduleType === 'OPEN LAB' || scheduleType === 'LABORATORY' ? 'LABORATORY'
+    : scheduleType === 'LECTURE' || scheduleType === 'PARALLEL' ? 'LECTURE' : ''
+  const actual = room.type?.trim() ?? ''
+  if (!expected || actual.toUpperCase() === expected) return
+  const name = room.name.trim() || room.code.trim()
+  const roomType = actual.toUpperCase() === 'LECTURE' ? 'Lecture' : actual.toUpperCase() === 'LABORATORY' ? 'Laboratory' : actual || 'Unspecified'
+  const label = scheduleType === 'OPEN LAB' ? 'Open Lab' : scheduleType === 'LABORATORY' ? 'Laboratory'
+    : scheduleType === 'PARALLEL' ? 'Parallel' : 'Lecture'
+  return `Room ${name} is ${/^[AEIOU]/i.test(roomType) ? 'an' : 'a'} ${roomType} room. ${label} schedules require ${expected === 'LABORATORY' ? 'Laboratory' : 'Lecture'} rooms.`
 }
 
 export function areParallelFacultyMeetings(a: FacultySubjectAssignment, b: FacultySubjectAssignment): boolean {
@@ -167,7 +182,7 @@ export function scheduleMeetingNeedsRecommendation(assignments: readonly Faculty
       || facultyScheduleRoomConflict(target, other))))
 }
 
-/** Only active saved room meetings from other departments in this exact term. */
+/** Only Draft or Plot room meetings from other departments in this exact term. */
 export function departmentExternalRoomAssignments(meetings: readonly ScheduleMeetingRecord[], term: DepartmentWorkbookTerm,
   rooms: ScheduleDirectory['rooms']): FacultySubjectAssignment[] {
   const text = (value: unknown) => typeof value === 'string' ? value.trim() : ''
@@ -178,7 +193,7 @@ export function departmentExternalRoomAssignments(meetings: readonly ScheduleMee
   return meetings.flatMap(meeting => {
     const department = text(meeting.department)
     if (!department || department.toUpperCase() === term.departmentCode.trim().toUpperCase() || meeting.departmentId === term.departmentId
-      || meeting.isActive === false || !/^(?:DRAFT(?:ED)?|PLOT(?:TED)?|REVISE[D]?)$/i.test(text(meeting.status) || 'Draft')) return []
+      || !isDraftOrPlotScheduleMeeting(meeting)) return []
     if (!(text(meeting.academicYearId) || text(meeting.academicYear)) || !(text(meeting.semesterKey) || text(meeting.semester))
       || !scheduleMatchesTerm(meeting, { id: term.academicYearId, academicYear: term.academicYear }, term.semester)) return []
     const start = time(meeting.startTime), end = time(meeting.endTime)
@@ -197,6 +212,10 @@ export function departmentExternalRoomAssignments(meetings: readonly ScheduleMee
     return [{ location: meeting.id, code: '', section: '', departmentCode: department, room: label, roomId: roomId || room?.id,
       days, start, end, timeText: `${clock(start)}–${clock(end)}` }]
   })
+}
+
+export function isDraftOrPlotScheduleMeeting(meeting: ScheduleMeetingRecord): boolean {
+  return meeting.status === 'Draft' || meeting.status === 'Plot'
 }
 
 export function validateOtherDepartmentRoomAssignments(assignments: readonly FacultySubjectAssignment[],
@@ -242,6 +261,8 @@ export function validateFacultyScheduleAssignments(
       if (matches.length === 1) {
         const roomStatusIssue = scheduleRoomStatusIssue(matches[0])
         if (roomStatusIssue) warn(assignment, roomStatusIssue)
+        const roomTypeIssue = scheduleRoomTypeIssue(matches[0], assignment.college ?? '')
+        if (roomTypeIssue) warn(assignment, roomTypeIssue)
         const capacity = matches[0].capacity
         if (capacity !== undefined && assignment.maxStudents !== null && assignment.maxStudents !== undefined
           && assignment.maxStudents > capacity) {
@@ -460,6 +481,7 @@ export function departmentFacultyScheduleAssignments(rows: readonly WorkbookSche
   return rows.flatMap(row => {
     const location = facultyScheduleRowKey(row.sourceSheet, row.sourceRow)
     const base = { location, rowKey: location, departmentCode: directory.departmentCode,
+      college: row.college || (row.parallelSourceRow !== null ? 'PARALLEL' : ''),
       parallelGroup: row.parallelSourceRow === null ? undefined : facultyScheduleRowKey(row.sourceSheet, row.parallelSourceRow),
       description: rowDescriptions.get(location) ?? `Year ${row.yearLevel} · Row ${row.sourceRow}`, code: row.subjectCode, subjectTitle: row.subjectTitle,
        section: row.classSection, sectionScope: JSON.stringify([row.yearLevel, subjectKey(row.course)]), maxStudents: row.maxStudents }

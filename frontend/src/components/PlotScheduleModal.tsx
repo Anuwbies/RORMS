@@ -431,7 +431,7 @@ export function PlotScheduleModal({
     ? plotRoomValidationMessages(proposedMeetings, roomPlot.rooms, plotting?.departmentCode ?? '') : new Map<string, string[]>(),
   [proposedMeetings, roomPlot.rooms, roomPlot.enabled, roomPlot.ready, plotting?.departmentCode])
   const roomRecommendations = useMemo(() => roomPlot.enabled && roomPlot.ready
-    ? plotRoomRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules, roomValidationMessages, previousTermMeetings) : new Map<string, readonly string[]>(),
+    ? plotRoomRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules, previousTermMeetings) : new Map<string, readonly string[]>(),
   [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled, roomPlot.ready, roomValidationMessages, previousTermMeetings])
   const parallelRoomRecommendations = useMemo(() => roomPlot.enabled && roomPlot.ready
     ? plotParallelRoomGroupRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules, roomValidationMessages, previousTermMeetings) : new Map<string, readonly PlotParallelRoomGroupOption[]>(),

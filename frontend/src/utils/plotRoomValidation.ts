@@ -1,11 +1,11 @@
 import type { ScheduleMeetingRecord } from './scheduleMeetings.ts'
 import type { PlotRoom } from './schedulePlotting.ts'
-import { excelScheduleRoomKey, validateFacultyScheduleAssignments, validateOtherDepartmentRoomAssignments } from './ScheduleValidation.ts'
+import { excelScheduleRoomKey, isDraftOrPlotScheduleMeeting, validateFacultyScheduleAssignments, validateOtherDepartmentRoomAssignments } from './ScheduleValidation.ts'
 import { plotFacultyScheduleAssignments } from './plotParallelRooms.ts'
 
 /** Show the department workbook's room warnings for the current staged Plot selection. */
 export function plotRoomValidationMessages(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[], departmentCode: string) {
-  const active = meetings.filter(meeting => !['Return', 'Returned'].includes(meeting.status ?? ''))
+  const active = meetings.filter(isDraftOrPlotScheduleMeeting)
   const assignments = plotFacultyScheduleAssignments(active, rooms)
   const department = departmentCode.trim().toUpperCase()
   const own = assignments.filter(assignment => !department || assignment.departmentCode?.trim().toUpperCase() === department)

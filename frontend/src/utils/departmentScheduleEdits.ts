@@ -1,8 +1,8 @@
 import type { CellEditLocation } from './cellTextHistory'
 import type { DepartmentScheduleImportSheet } from './departmentScheduleImport'
-import { resolveScheduleCourse, scheduleCourseYear, type DepartmentCourseSuggestion } from './departmentCourseSuggestions'
-import { titleCaseName } from './userName'
-import { isScheduleColumnEditable, scheduleEditableColleges } from './ScheduleValidation'
+import { resolveScheduleCourse, scheduleCourseYear, type DepartmentCourseSuggestion } from './departmentCourseSuggestions.ts'
+import { titleCaseName } from './userName.ts'
+import { isScheduleColumnEditable, scheduleEditableColleges } from './ScheduleValidation.ts'
 
 export interface ScheduleCellValueChange {
   cell: CellEditLocation
@@ -93,6 +93,14 @@ export function indexScheduleRows(sheets: readonly DepartmentScheduleImportSheet
   return sheets.map(sheet => new Map(sheet.rows.map((row, index) => [row.rowNumber, index])))
 }
 
+export function scheduleCollegeForCourseType(type: string): string {
+  const normalized = type.trim().replace(/\s+/g, ' ').toUpperCase()
+  if (normalized === 'LECTURE') return 'LECTURE'
+  if (normalized === 'LABORATORY') return 'LABORATORY'
+  if (normalized === 'LECTURE AND LABORATORY' || normalized === 'LABORATORY AND LECTURE') return 'OPEN LAB'
+  return ''
+}
+
 /** Check user edits before recording history; row pastes use their incoming College. */
 export function filterScheduleEditableChanges(sheets: readonly DepartmentScheduleImportSheet[], indexes: readonly ReadonlyMap<number, number>[],
   changes: readonly ScheduleCellValueChange[]): ScheduleCellValueChange[] {
@@ -139,13 +147,42 @@ export function linkScheduleCourseChanges(sheets: readonly DepartmentScheduleImp
       const target = { ...cell, column }
       result.set(cellKey(target), { cell: target, value: normalizeScheduleCellText(column, value) })
     }
-    if (!entries.length) { set(2, ''); set(3, ''); continue }
+    const valueAt = (index: number, column: number) => {
+      const target = { sheet: cell.sheet, row: sheet.rows[index].rowNumber, column }
+      return result.get(cellKey(target))?.value ?? sheet.rows[index].values[column] ?? ''
+    }
+    const sameCourse = (index: number, code: string, title: string) => {
+      const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toUpperCase()
+      const previousCode = normalize(valueAt(index, 2)), previousTitle = normalize(valueAt(index, 3))
+      return code && previousCode ? code === previousCode : Boolean(title && previousTitle && title === previousTitle)
+    }
+    const belowParallel = (code: string, title: string) => {
+      if (valueAt(rowIndex, 0).trim().toUpperCase() === 'PARALLEL') return true
+      const sectionStart = sheet.yearSections?.find(section => rowIndex >= section.start && rowIndex < section.start + section.count)?.start ?? 0
+      for (let index = rowIndex - 1; index >= Math.max(sectionStart, rowIndex - 3); index--) {
+        if (!sameCourse(index, code, title)) break
+        const college = valueAt(index, 0).trim().toUpperCase()
+        if (college === 'PARALLEL') return true
+        if (college) break
+      }
+      return false
+    }
+    if (!entries.length) {
+      set(0, '')
+      set(2, ''); set(3, '')
+      continue
+    }
     if (!complete) continue
     const sectionIndex = Math.max(0, sheet.yearSections?.findIndex(section => rowIndex >= section.start && rowIndex < section.start + section.count) ?? 0)
     const section = sheet.yearSections?.[sectionIndex]
     const year = scheduleCourseYear(section?.label ?? '', section?.sourceLabel, sectionIndex)
     const course = entries.map(([column, value]) => resolveScheduleCourse(courses, value, column, year)).find(Boolean)
-    if (course?.code && course.title) { set(2, course.code); set(3, course.title) }
+    if (course?.code && course.title) {
+      if (!belowParallel(course.code.trim().replace(/\s+/g, ' ').toUpperCase(), course.title.trim().replace(/\s+/g, ' ').toUpperCase())) {
+        set(0, scheduleCollegeForCourseType(course.type))
+      }
+      set(2, course.code); set(3, course.title)
+    }
   }
   return [...result.values()]
 }

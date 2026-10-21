@@ -30,6 +30,7 @@ export interface RoomScheduleModalProps {
   hideReturnedSchedules?: boolean
   scheduleStatuses?: readonly ('Draft' | 'Plot')[]
   hideReservationIdentity?: boolean
+  onReserveFreeSlot?: (slot: { date: string; startTime: string }) => void
 }
 
 import {
@@ -208,7 +209,8 @@ export function RoomScheduleModal({
   isInline = false,
   hideReturnedSchedules = false,
   scheduleStatuses,
-  hideReservationIdentity = false
+  hideReservationIdentity = false,
+  onReserveFreeSlot,
 }: RoomScheduleModalProps) {
   const isRoomMode = Boolean(room)
   const scheduleRoomId = room?.id
@@ -226,13 +228,19 @@ export function RoomScheduleModal({
   const printRef = useRef<HTMLDivElement>(null)
 
   const [selectedWeekDate, setSelectedWeekDate] = useState<string>(() => getLocalIsoDate())
+  const [selectedFreeSlot, setSelectedFreeSlot] = useState<{ date: string; startTime: string } | null>(null)
 
   // Reset to today when modal opens
   useEffect(() => {
     if (isOpen) {
       setSelectedWeekDate(getLocalIsoDate())
+      setSelectedFreeSlot(null)
     }
   }, [isOpen])
+
+  useEffect(() => {
+    setSelectedFreeSlot(null)
+  }, [selectedWeekDate, scheduleRoomId])
 
   const weekInfo = useMemo(() => {
     return computeWeekInfo(selectedWeekDate)
@@ -539,6 +547,37 @@ export function RoomScheduleModal({
 
     return grid
   }, [timeSlots, filteredSchedules, activeWeekReservations, showWeekCalendar, weekInfo.weekDays])
+
+  const busyIntervalsByDay = useMemo(() => {
+    const intervals: Record<string, { start: number; end: number }[]> = {}
+    DAYS.forEach(day => {
+      intervals[day] = timeSlots.flatMap(slot => (scheduleGrid[slot]?.[day] || [])
+        .filter(item => item.startTime && item.endTime)
+        .map(item => ({ start: timeToMins(item.startTime), end: timeToMins(item.endTime) })))
+    })
+    return intervals
+  }, [scheduleGrid, timeSlots])
+
+  const renderFreeSlotButton = (date: string, startTime: string, dateLabel: string, gridRow?: number) => {
+    const isSelected = selectedFreeSlot?.date === date && selectedFreeSlot.startTime === startTime
+    return (
+      <button
+        key={startTime}
+        type="button"
+        style={gridRow ? { gridRow } : undefined}
+        className="flex h-full w-full flex-1 items-center justify-center cursor-pointer hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]"
+        aria-label={isSelected
+          ? `Reserve room on ${dateLabel} at ${formatTime(startTime)}`
+          : `Select free time on ${dateLabel} at ${formatTime(startTime)}`}
+        onClick={() => {
+          if (isSelected) onReserveFreeSlot?.({ date, startTime })
+          else setSelectedFreeSlot({ date, startTime })
+        }}
+      >
+        {isSelected && <span className="rounded-lg bg-[var(--brand-color)] px-3 py-2 text-xs font-semibold text-white shadow-sm">Reserve Room</span>}
+      </button>
+    )
+  }
 
   const academicYearOptions = useMemo(() => {
     return academicYears.map(y => y.academicYear)
@@ -931,7 +970,32 @@ export function RoomScheduleModal({
                       </td>
                       {DAYS.map(day => {
                         const daySchedules = scheduleGrid[slot]?.[day] || []
-                        const isSelected = false
+                        const weekDay = weekInfo.weekDays.find(candidate => candidate.dayName === day)
+                        const slotDate = weekDay?.isoString || ''
+                        const slotStartMins = timeToMins(start)
+                        const slotEndMins = timeToMins(end)
+                        const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
+                        const minBookingMins = Math.max(30, room.minBookingMins || 30)
+                        const now = new Date()
+                        const earliestTodayStart = Math.ceil((now.getHours() * 60 + now.getMinutes() + 120) / 30) * 30
+                        const canReserveOnDay = Boolean(onReserveFreeSlot && showWeekCalendar && slotDate
+                          && slotDate >= getLocalIsoDate(now) && slotDate <= maxDate
+                          && room.availableDays.some(availableDay => normalizeDay(availableDay) === day))
+                        const freeStarts: { time: string; row: number }[] = []
+                        if (canReserveOnDay) {
+                          for (let minute = Math.ceil(slotStartMins / 30) * 30; minute < slotEndMins; minute += 30) {
+                            const bookingEnd = minute + minBookingMins
+                            if (minute < timeToMins(room.startTime || '07:30')
+                              || bookingEnd > timeToMins(room.endTime || '18:00')
+                              || (slotDate === getLocalIsoDate(now) && minute < earliestTodayStart)
+                              || busyIntervalsByDay[day].some(interval => interval.start < bookingEnd && interval.end > minute)) continue
+                            freeStarts.push({
+                              time: `${Math.floor(minute / 60).toString().padStart(2, '0')}:${(minute % 60).toString().padStart(2, '0')}`,
+                              row: Math.floor((minute - slotStartMins) / 30) + 1,
+                            })
+                          }
+                        }
+                        const isSelected = freeStarts.some(candidate => selectedFreeSlot?.date === slotDate && selectedFreeSlot.startTime === candidate.time)
 
                         if (daySchedules.length === 0) {
                           return (
@@ -942,16 +1006,14 @@ export function RoomScheduleModal({
                                   : 'bg-white group-hover:bg-gray-50/50'
                                 }`}
                             >
-                              <div className="flex-1 h-full" />
+                              {freeStarts.length > 0
+                                ? renderFreeSlotButton(slotDate, freeStarts[0].time, weekDay?.formattedShort || slotDate)
+                                : <div className="flex-1 h-full" />}
                             </td>
                           )
                         }
 
                         
-                        const slotStartMins = timeToMins(start)
-                        const slotEndMins = timeToMins(end)
-                        const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
-
                         const isSingleFullSlot = daySchedules.length === 1 &&
                           timeToMins(daySchedules[0].startTime) <= slotStartMins &&
                           timeToMins(daySchedules[0].endTime) >= slotEndMins;
@@ -973,6 +1035,7 @@ export function RoomScheduleModal({
                               }`}
                             style={{ gridTemplateRows: gridRowsStyle }}
                           >
+                            {freeStarts.map(candidate => renderFreeSlotButton(slotDate, candidate.time, weekDay?.formattedShort || slotDate, candidate.row))}
                             {daySchedules.map((item, idx) => {
                               const itemStartMins = Math.max(slotStartMins, timeToMins(item.startTime))
                               const itemEndMins = Math.min(slotEndMins, timeToMins(item.endTime))

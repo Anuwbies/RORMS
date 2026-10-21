@@ -19,19 +19,19 @@ export function ReservationReviewIndicators({
 }: ReservationReviewIndicatorsProps) {
   const fullyApproved = status === 'Approved' || status === 'Completed' || status === 'Needs Evidence'
   const declinedRole = status === 'Declined' && !autoProcessed
-    ? declinedByRole || (registrarRecommend !== true && deanRecommend !== true ? 'Registrar'
-      : registrarRecommend === true && deanRecommend !== true ? 'Dean'
-      : registrarRecommend === true && deanRecommend === true ? 'University Administrator' : '')
+    ? declinedByRole || (deanRecommend !== true && registrarRecommend !== true ? 'Dean'
+      : deanRecommend === true && registrarRecommend !== true ? 'Registrar'
+      : deanRecommend === true && registrarRecommend === true ? 'University Administrator' : '')
     : ''
-  const registrarApproved = fullyApproved || declinedRole === 'Dean' || declinedRole === 'University Administrator'
-    || (registrarRecommend === true && declinedRole !== 'Registrar')
-  const deanApproved = fullyApproved || declinedRole === 'University Administrator'
-    || (registrarApproved && deanRecommend === true && declinedRole !== 'Dean')
+  const deanApproved = fullyApproved || declinedRole === 'Registrar' || declinedRole === 'University Administrator'
+    || (deanRecommend === true && declinedRole !== 'Dean')
+  const registrarApproved = fullyApproved || declinedRole === 'University Administrator'
+    || (deanApproved && registrarRecommend === true && declinedRole !== 'Registrar')
   const administratorApproved = fullyApproved || (status !== 'Pending' && status !== 'Declined'
-    && deanApproved && universityAdministratorRecommend === true)
+    && registrarApproved && universityAdministratorRecommend === true)
   const indicators = [
-    { role: 'Registrar', label: 'Registrar', value: registrarRecommend === undefined && !fullyApproved && !declinedRole ? undefined : registrarApproved },
     { role: 'Dean', label: 'Dean', value: deanRecommend === undefined && !fullyApproved && !declinedRole ? undefined : deanApproved },
+    { role: 'Registrar', label: 'Registrar', value: registrarRecommend === undefined && !fullyApproved && !declinedRole ? undefined : registrarApproved },
     { role: 'University Administrator', label: 'Univ. Admin', value: administratorApproved },
   ]
 
