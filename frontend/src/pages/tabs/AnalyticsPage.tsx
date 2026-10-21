@@ -258,10 +258,12 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
   const { activeAcademicYear, currentSemester, isLoading: isAcademicYearLoading } = useAcademicSemester()
   const isRegistrar = userRole.trim().toLowerCase() === 'registrar'
   const isUniversityAdministrator = userRole.trim().toLowerCase() === 'university administrator'
+  const isDepartmentLeader = ['dean', 'program head'].includes(userRole.trim().toLowerCase())
   const [analyticsKind, setAnalyticsKind] = useState<AnalyticsKind>(() => {
     const storedAnalyticsKind = getStoredAnalyticsKind()
     return (isUniversityAdministrator && storedAnalyticsKind !== 'reservations' && storedAnalyticsKind !== 'rooms')
-      || (isRegistrar && storedAnalyticsKind === 'members') ? 'reservations' : storedAnalyticsKind
+      || (isRegistrar && storedAnalyticsKind === 'members')
+      || (isDepartmentLeader && storedAnalyticsKind !== 'reservations' && storedAnalyticsKind !== 'schedules') ? 'reservations' : storedAnalyticsKind
   })
   const [searchQuery, setSearchQuery] = useState('')
   const [dateRangeFilters, setDateRangeFilters] = useState<string[]>([])
@@ -269,16 +271,19 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
 
   const availableAnalyticsOptions = isUniversityAdministrator
     ? ANALYTICS_OPTIONS.filter(option => option.id === 'reservations' || option.id === 'rooms')
+    : isDepartmentLeader
+    ? ANALYTICS_OPTIONS.filter(option => option.id === 'reservations' || option.id === 'schedules')
     : isRegistrar
     ? ANALYTICS_OPTIONS.filter(option => option.id !== 'members')
     : ANALYTICS_OPTIONS
 
   useEffect(() => {
     if ((isUniversityAdministrator && analyticsKind !== 'reservations' && analyticsKind !== 'rooms')
-      || (isRegistrar && analyticsKind === 'members')) {
+      || (isRegistrar && analyticsKind === 'members')
+      || (isDepartmentLeader && analyticsKind !== 'reservations' && analyticsKind !== 'schedules')) {
       setAnalyticsKind('reservations')
     }
-  }, [analyticsKind, isRegistrar, isUniversityAdministrator])
+  }, [analyticsKind, isRegistrar, isUniversityAdministrator, isDepartmentLeader])
 
   const selectAnalyticsKind = (nextAnalyticsKind: AnalyticsKind) => {
     setAnalyticsKind(nextAnalyticsKind)

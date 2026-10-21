@@ -235,10 +235,12 @@ function ReportsPage({ userRole }: ReportsPageProps) {
   const { reservations, rooms, buildings, memberships, invitations, users, departments, schedules, errors, isLoading } = useReportingData()
   const isRegistrar = userRole.trim().toLowerCase() === 'registrar'
   const isUniversityAdministrator = userRole.trim().toLowerCase() === 'university administrator'
+  const isDepartmentLeader = ['dean', 'program head'].includes(userRole.trim().toLowerCase())
   const [reportKind, setReportKind] = useState<ReportKind>(() => {
     const storedReportKind = getStoredReportKind()
     return (isUniversityAdministrator && storedReportKind !== 'reservations' && storedReportKind !== 'rooms')
-      || (isRegistrar && storedReportKind === 'members') ? 'reservations' : storedReportKind
+      || (isRegistrar && storedReportKind === 'members')
+      || (isDepartmentLeader && storedReportKind !== 'reservations' && storedReportKind !== 'schedules') ? 'reservations' : storedReportKind
   })
   const [dateRanges, setDateRanges] = useState<DateRange[]>([])
   const [statusFilters, setStatusFilters] = useState<string[]>([])
@@ -256,13 +258,16 @@ function ReportsPage({ userRole }: ReportsPageProps) {
   const { records: currentScheduleRecords, isLoading: isCurrentSchedulesLoading, error: currentSchedulesError } = useFacilityScheduleRecords()
   const availableReportOptions = isUniversityAdministrator
     ? REPORT_OPTIONS.filter(option => option.id === 'reservations' || option.id === 'rooms')
+    : isDepartmentLeader
+    ? REPORT_OPTIONS.filter(option => option.id === 'reservations' || option.id === 'schedules')
     : isRegistrar
     ? REPORT_OPTIONS.filter(option => option.id !== 'members')
     : REPORT_OPTIONS
 
   useEffect(() => {
     if ((isUniversityAdministrator && reportKind !== 'reservations' && reportKind !== 'rooms')
-      || (isRegistrar && reportKind === 'members')) {
+      || (isRegistrar && reportKind === 'members')
+      || (isDepartmentLeader && reportKind !== 'reservations' && reportKind !== 'schedules')) {
       setReportKind('reservations')
       setStatusFilters([])
       setReservationTypeFilters([])
@@ -275,7 +280,7 @@ function ReportsPage({ userRole }: ReportsPageProps) {
       setAcademicYearFilters([])
       setSemesterFilters([])
     }
-  }, [reportKind, isRegistrar, isUniversityAdministrator])
+  }, [reportKind, isRegistrar, isUniversityAdministrator, isDepartmentLeader])
 
   const roomById = useMemo(() => new Map(rooms.map(room => [room.id, room])), [rooms])
   const buildingById = useMemo(() => new Map(buildings.map(building => [building.id, building])), [buildings])

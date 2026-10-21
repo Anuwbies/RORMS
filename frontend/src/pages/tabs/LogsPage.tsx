@@ -65,6 +65,10 @@ const LOG_CATEGORIES = [
   { id: 'Accounts', description: 'Members, invitations, and access', icon: UsersIcon },
 ] as const
 
+interface LogsPageProps {
+  userRole: string
+}
+
 const LOG_CATEGORY_STORAGE_KEY = 'rorms-logs-selected-category'
 const DATE_RANGE_OPTIONS = [
   { value: '7', label: 'Last 7 days' },
@@ -325,8 +329,22 @@ const logColumns = (onViewSource: (row: LogEntry) => void, loadingSourceId: stri
     : <span className="text-sm text-slate-400">—</span> },
 ]
 
-function LogsPage() {
-  const [category, setCategory] = useState<LogCategory>(getStoredLogCategory)
+function LogsPage({ userRole }: LogsPageProps) {
+  const isRegistrar = userRole.trim().toLowerCase() === 'registrar'
+  const isUniversityAdministrator = userRole.trim().toLowerCase() === 'university administrator'
+  const isDepartmentLeader = ['dean', 'program head'].includes(userRole.trim().toLowerCase())
+  const availableLogCategories = isUniversityAdministrator
+    ? LOG_CATEGORIES.filter(option => option.id === 'Reservations' || option.id === 'Facilities')
+    : isDepartmentLeader
+    ? LOG_CATEGORIES.filter(option => option.id === 'Reservations' || option.id === 'Scheduling')
+    : isRegistrar
+    ? LOG_CATEGORIES.filter(option => option.id !== 'Accounts')
+    : LOG_CATEGORIES
+  const [selectedCategory, setSelectedCategory] = useState<LogCategory>(() => {
+    const storedCategory = getStoredLogCategory()
+    return availableLogCategories.some(option => option.id === storedCategory) ? storedCategory : 'Reservations'
+  })
+  const category: LogCategory = availableLogCategories.some(option => option.id === selectedCategory) ? selectedCategory : 'Reservations'
   const [searchQuery, setSearchQuery] = useState('')
   const [outcomes, setOutcomes] = useState<string[]>([])
   const [roles, setRoles] = useState<string[]>([])
@@ -348,6 +366,28 @@ function LogsPage() {
   const isFacilities = category === 'Facilities'
   const isScheduling = category === 'Scheduling'
   const isLive = true
+
+  useEffect(() => {
+    if (selectedCategory === category) return
+    ++sourceRequest.current
+    setSelectedCategory(category)
+    setLoadingSourceId('')
+    setSourceError('')
+    setSearchQuery('')
+    setOutcomes([])
+    setRoles([])
+    setDateRanges([])
+    setReservationSource(null)
+    setReservationLog(null)
+    setMemberLog(null)
+    setFacilityLog(null)
+    setScheduleLog(null)
+    try {
+      window.sessionStorage.setItem(LOG_CATEGORY_STORAGE_KEY, category)
+    } catch {
+      // The role restriction still applies when browser storage is unavailable.
+    }
+  }, [category, selectedCategory])
 
   useEffect(() => () => { ++sourceRequest.current }, [])
 
@@ -496,6 +536,7 @@ function LogsPage() {
   const categoryLogs = useMemo(() => liveLogs.filter(log => log.category === category), [liveLogs, category])
 
   const selectCategory = (nextCategory: (typeof LOG_CATEGORIES)[number]['id']) => {
+    if (!availableLogCategories.some(option => option.id === nextCategory)) return
     ++sourceRequest.current
     setLoadingSourceId('')
     setSourceError('')
@@ -504,7 +545,7 @@ function LogsPage() {
     setMemberLog(null)
     setFacilityLog(null)
     setScheduleLog(null)
-    setCategory(nextCategory)
+    setSelectedCategory(nextCategory)
     try {
       window.sessionStorage.setItem(LOG_CATEGORY_STORAGE_KEY, nextCategory)
     } catch {
@@ -586,8 +627,8 @@ function LogsPage() {
         {isLive && loadError && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><p className="flex-1">{loadError}</p><Button type="button" variant="outline" onClick={() => setRetryCount(count => count + 1)}>Retry</Button></div>}
         {sourceError && !reservationLog && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700"><p className="flex-1">{sourceError}</p><Button type="button" variant="outline" onClick={() => setSourceError('')}>Dismiss</Button></div>}
 
-        <div className="animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm lg:grid-cols-4" role="group" aria-label="Log categories">
-          {LOG_CATEGORIES.map(option => {
+        <div className={`animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableLogCategories.length === 2 ? 'lg:grid-cols-2' : availableLogCategories.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="group" aria-label="Log categories">
+          {availableLogCategories.map(option => {
             const CategoryIcon = option.icon
             const isActive = category === option.id
             return (
@@ -620,9 +661,9 @@ function LogsPage() {
         </div>
       </div>
       {reservationLog && <ReservationLogDetailsModal event={reservationLog} source={reservationSource} isLoading={Boolean(loadingSourceId)} sourceNotice={sourceError} onClose={() => { ++sourceRequest.current; setReservationLog(null); setReservationSource(null); setLoadingSourceId(''); setSourceError('') }} />}
-      {memberLog && <MemberLogDetailsModal event={memberLog} onClose={() => setMemberLog(null)} />}
-      {facilityLog && <FacilityLogDetailsModal event={facilityLog} onClose={() => setFacilityLog(null)} />}
-      {scheduleLog && <ScheduleLogDetailsModal event={scheduleLog} onClose={() => setScheduleLog(null)} />}
+      {memberLog && category === 'Accounts' && <MemberLogDetailsModal event={memberLog} onClose={() => setMemberLog(null)} />}
+      {facilityLog && category === 'Facilities' && <FacilityLogDetailsModal event={facilityLog} onClose={() => setFacilityLog(null)} />}
+      {scheduleLog && category === 'Scheduling' && <ScheduleLogDetailsModal event={scheduleLog} onClose={() => setScheduleLog(null)} />}
     </section>
   )
 }

@@ -37,17 +37,17 @@ export const ROLE_ALLOWED_TABS: Record<string, DashboardSection[]> = {
     'departmentSchedules', 'manageReservations', 'reserveRoom', 'analytics', 'reports', 'logs'
   ],
   'University Administrator': [
-    'dashboard', 'buildingsRooms', 'manageReservations', 'reserveRoom', 'analytics', 'reports'
+    'dashboard', 'buildingsRooms', 'manageReservations', 'reserveRoom', 'analytics', 'reports', 'logs'
   ],
   'Registrar': [
     'dashboard', 'academicCalendar', 'departmentSchedules', 'buildingsRooms',
-    'manageReservations', 'reserveRoom', 'analytics', 'reports'
+    'manageReservations', 'reserveRoom', 'analytics', 'reports', 'logs'
   ],
   'Dean': [
-    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'manageReservations', 'reserveRoom', 'myReservations', 'buildingsRooms'
+    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'manageReservations', 'reserveRoom', 'myReservations', 'buildingsRooms', 'analytics', 'reports', 'logs'
   ],
   'Program Head': [
-    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
+    'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms', 'analytics', 'reports', 'logs'
   ],
   'Instructor': [
     'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'reserveRoom', 'myReservations', 'buildingsRooms'
@@ -308,7 +308,7 @@ function LeftSidebarController({ onSignOut }: LeftSidebarControllerProps) {
       case 'analytics':
         return <AnalyticsPage userRole={normRole} />
       case 'logs':
-        return <LogsPage />
+        return <LogsPage userRole={normRole} />
       case 'myDepartment':
         return <MyDepartmentPage />
       case 'departmentSchedules':
