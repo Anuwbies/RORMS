@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { collection, doc, getDoc, limit, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore'
 import { Button } from '../../components/Button'
 import { IconButton } from '../../components/IconButton'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
@@ -11,10 +11,13 @@ import { db } from '../../firebase'
 import { ReservationLogDetailsModal, type ReservationLogSource } from '../../components/ReservationLogDetailsModal'
 import { MemberLogDetailsModal } from '../../components/MemberLogDetailsModal'
 import { FacilityLogDetailsModal } from '../../components/FacilityLogDetailsModal'
-import { FACILITY_ACTIONS, facilityActivity } from '../../utils/facilityLog'
+import { FACILITY_ACTIONS, FACILITY_FIELD_LABELS, facilityActivity, facilityValue } from '../../utils/facilityLog'
 import { ScheduleLogDetailsModal } from '../../components/ScheduleLogDetailsModal'
 import { scheduleActivity, type ScheduleLogSnapshot } from '../../utils/scheduleLog'
 import { formatUserName } from '../../utils/userName'
+import { reservationDisplayStatus, reservationEvidenceFiles } from '../../utils/reservationEvidence'
+import { reservationReviewStep } from '../../utils/reservationReviewStep'
+import { reservationDurationMinutes } from '../../utils/reportingData'
 
 type LogCategory = 'Reservations' | 'Scheduling' | 'Facilities' | 'Accounts'
 type LogOutcome = 'Success' | 'Warning' | 'Failed'
@@ -22,6 +25,7 @@ type LogRole = 'Admin' | 'University Administrator' | 'Registrar' | 'Dean' | 'Pr
 
 interface LogEntry {
   id: string
+  createdAt: Date | null
   date: string
   time: string
   actor: string
@@ -35,6 +39,7 @@ interface LogEntry {
   newStatus?: string
   reviewStage?: 'Registrar' | 'Dean'
   reservationSnapshot?: { date: string; department: string; beforeStatus: string; afterStatus: string }
+  reservationChanges?: Array<{ field: string; label: string; before: string; after: string }>
   sourceId?: string
   sourcePath?: string
   sourceTitle?: string
@@ -44,7 +49,7 @@ interface LogEntry {
   requesterName?: string
   roomName?: string
   targetDetail?: string
-  memberSnapshot?: { email: string; role: string; department: string }
+  memberSnapshot?: { email: string; role: string; department: string; isReactivation?: boolean }
   memberChanges?: Array<{ field: string; label: string; before: string; after: string }>
   facilitySnapshot?: Record<string, unknown>
   facilityChanges?: Record<string, unknown>
@@ -56,11 +61,25 @@ interface LogEntry {
 const LOG_CATEGORIES = [
   { id: 'Reservations', description: 'Reservation reviews and status history', icon: ClockIcon },
   { id: 'Facilities', description: 'Buildings, rooms, and comments', icon: BuildingIcon },
-  { id: 'Scheduling', description: 'Schedule updates and room plotting', icon: CalendarIcon },
+  { id: 'Scheduling', description: 'Saved schedule workbook changes', icon: CalendarIcon },
   { id: 'Accounts', description: 'Members, invitations, and access', icon: UsersIcon },
 ] as const
 
 const LOG_CATEGORY_STORAGE_KEY = 'rorms-logs-selected-category'
+const DATE_RANGE_OPTIONS = [
+  { value: '7', label: 'Last 7 days' },
+  { value: '30', label: 'Last 30 days' },
+  { value: '90', label: 'Last 90 days' },
+  { value: '365', label: 'Last 12 months' },
+]
+
+function manilaDayStart(daysAgo: number): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila', year: 'numeric', month: 'numeric', day: 'numeric',
+  }).formatToParts(new Date())
+  const part = (type: string) => Number(parts.find(value => value.type === type)?.value)
+  return Date.UTC(part('year'), part('month') - 1, part('day') - daysAgo) - 8 * 60 * 60 * 1000
+}
 
 function getStoredLogCategory(): LogCategory {
   try {
@@ -107,13 +126,33 @@ function reservationDateLabel(value: unknown): string {
 
 function reservationLogEntry(id: string, data: Record<string, unknown>): LogEntry {
   const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : null
-  const status = logRecord(logRecord(data.changes).status)
+  const changes = logRecord(data.changes)
+  const status = logRecord(changes.status)
   const actorRole = logText(data.actorRole)
   const role = Object.prototype.hasOwnProperty.call(ROLE_CLASSES, actorRole) ? actorRole as LogRole : 'Unknown'
   const reference = logText(data.targetId) || 'Unknown reservation'
   const before = logText(status.before) || 'Unknown'
   const after = logText(status.after) || 'Unknown'
   const reviewStage = data.reviewStage === 'Registrar' || data.reviewStage === 'Dean' ? data.reviewStage : undefined
+  const valueLabel = (field: string, value: unknown) => {
+    if (['deanRecommend', 'registrarRecommend', 'universityAdministratorRecommend'].includes(field)) return value === true ? 'Recommended' : 'Not recommended'
+    return logText(value) || 'Not set'
+  }
+  const labels: Record<string, string> = {
+    status: 'Status', deanRecommend: 'Dean recommendation', registrarRecommend: 'Registrar recommendation',
+    universityAdministratorRecommend: 'Final approval', declinedByRole: 'Declined by', declinedReason: 'Decline reason',
+  }
+  const recordedChanges = Object.entries(changes).map(([field, value]) => {
+    const change = logRecord(value)
+    return { field, label: labels[field] || field, before: valueLabel(field, change.before), after: valueLabel(field, change.after) }
+  })
+  const deanChange = logRecord(changes.deanRecommend)
+  const registrarChange = logRecord(changes.registrarRecommend)
+  const finalChange = logRecord(changes.universityAdministratorRecommend)
+  const reviewAction = reviewStage ? `${reviewStage} recommended reservation`
+    : after === 'Pending' && deanChange.after === true && deanChange.before !== true ? 'Recorded Dean recommendation'
+      : after === 'Pending' && registrarChange.after === true && registrarChange.before !== true ? 'Recorded Registrar recommendation'
+        : before === after && finalChange.after === true ? 'Recorded final approval' : ''
   const actions: Record<string, string> = {
     Approved: 'Approved reservation',
     Declined: 'Declined reservation',
@@ -123,17 +162,19 @@ function reservationLogEntry(id: string, data: Record<string, unknown>): LogEntr
   }
   return {
     id,
+    createdAt,
     date: createdAt?.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) || 'Date unavailable',
     time: createdAt?.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) || 'Time unavailable',
     actor: logText(data.actorName) || logText(data.actorId) || 'Unknown member',
     actorId: logText(data.actorId),
     role,
     category: 'Reservations',
-    action: reviewStage ? `${reviewStage} recommended reservation` : actions[after] || 'Changed reservation status',
-    detail: reviewStage ? `${reviewStage} recommendation recorded${before === after ? ` while status remained ${after}` : `; status changed from ${before} to ${after}`}.` : `Changed status from ${before} to ${after}.`,
+    action: reviewAction || (before === after ? 'Updated reservation review' : actions[after]) || 'Changed reservation review',
+    detail: recordedChanges.map(change => `${change.label}: ${change.before} → ${change.after}`).join('\n') || `Changed status from ${before} to ${after}.`,
     newStatus: logText(status.after),
     reviewStage,
     reservationSnapshot: { date: logText(data.reservationDate), department: logText(data.department), beforeStatus: before, afterStatus: after },
+    reservationChanges: recordedChanges,
     sourceId: logText(data.targetId),
     sourcePath: logText(data.targetId) ? `reservations/${reference}` : '',
     requesterId: logText(data.requesterId),
@@ -147,21 +188,6 @@ const ACCOUNT_ACTIONS = [
   'account.invited', 'account.reinvited', 'account.member_updated', 'account.invitation_updated',
   'account.deactivated', 'account.invitation_cancelled', 'account.reinvitation_cancelled',
 ]
-
-const MEMBER_ACTIVITY_LABELS: Record<string, string> = {
-  'Invited member': 'Invited',
-  'Re-invited deactivated member': 'Re-invited',
-  'Deactivated member account': 'Deactivated',
-  'Changed member role': 'Role changed',
-  'Changed member department': 'Department changed',
-  'Changed role and department': 'Role & dept. changed',
-  'Updated member assignment': 'Assignment updated',
-  'Edited pending invitation': 'Invite edited',
-  'Edited pending re-invitation': 'Re-invite edited',
-  'Cancelled invitation': 'Invite cancelled',
-  'Cancelled re-invitation': 'Re-invite cancelled',
-  'Updated member': 'Member updated',
-}
 
 function accountLogEntry(id: string, data: Record<string, unknown>): LogEntry {
   const createdAt = data.createdAt instanceof Timestamp ? data.createdAt.toDate() : null
@@ -188,7 +214,7 @@ function accountLogEntry(id: string, data: Record<string, unknown>): LogEntry {
   const path = [logText(data.targetCollection), logText(data.targetId)].filter(Boolean).join('/')
   const action = logText(data.action)
   return {
-    id, category: 'Accounts', outcome: 'Success',
+    id, createdAt, category: 'Accounts', outcome: 'Success',
     date: createdAt?.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) || 'Date unavailable',
     time: createdAt?.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) || 'Time unavailable',
     actor: logText(data.actorName) || logText(data.actorId) || 'Unknown member', actorId: logText(data.actorId),
@@ -201,7 +227,7 @@ function accountLogEntry(id: string, data: Record<string, unknown>): LogEntry {
       return `${labels[field] || field}: ${valueLabel(field, change.before)} → ${valueLabel(field, change.after)}`
     }).join('\n'),
     target: logText(data.memberName) || logText(data.memberEmail) || 'Member unavailable',
-    memberSnapshot: { email: logText(data.memberEmail), role: logText(data.memberRole), department: logText(data.department) },
+    memberSnapshot: { email: logText(data.memberEmail), role: logText(data.memberRole), department: logText(data.department), isReactivation: data.isReactivation === true },
     memberChanges: ['account.invited', 'account.reinvited'].includes(action) ? [] : Object.entries(changes).map(([field, value]) => {
       const change = logRecord(value)
       return { field, label: labels[field] || field, before: valueLabel(field, change.before), after: valueLabel(field, change.after) }
@@ -223,7 +249,7 @@ function facilityLogEntry(id: string, data: Record<string, unknown>): LogEntry {
   const roomSource = comment || data.targetCollection === 'rooms'
   const roomName = comment ? logText(data.roomName) || logText(data.roomCode) : logText(snapshot.name) || logText(snapshot.code)
   return {
-    id, category: 'Facilities', outcome: 'Success',
+    id, createdAt, category: 'Facilities', outcome: 'Success',
     date: createdAt?.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) || 'Date unavailable',
     time: createdAt?.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) || 'Time unavailable',
     actor: logText(data.actorName) || logText(data.actorId) || 'Unknown member', actorId: logText(data.actorId),
@@ -244,7 +270,7 @@ function scheduleLogEntry(id: string, data: Record<string, unknown>): LogEntry {
   const actorRole = logText(data.actorRole)
   const counts = Object.fromEntries(Object.entries(logRecord(data.counts)).filter((entry): entry is [string, number] => typeof entry[1] === 'number'))
   return {
-    id, category: 'Scheduling', outcome: 'Success',
+    id, createdAt, category: 'Scheduling', outcome: 'Success',
     date: createdAt?.toLocaleDateString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) || 'Date unavailable',
     time: createdAt?.toLocaleTimeString('en-US', { timeZone: 'Asia/Manila', hour: '2-digit', minute: '2-digit' }) || 'Time unavailable',
     actor: logText(data.actorName) || logText(data.actorId) || 'Unknown member', actorId: logText(data.actorId),
@@ -271,9 +297,28 @@ const logColumns = (onViewSource: (row: LogEntry) => void, loadingSourceId: stri
   { header: 'Date & time', render: row => <div className="whitespace-nowrap"><p className="text-sm font-bold text-slate-900">{row.date}</p><p className="mt-1 text-xs text-slate-400">{row.time} · PHT</p></div> },
   { header: 'Changed by', render: row => <div className="whitespace-nowrap"><p className="text-sm font-bold text-slate-900">{row.actor}</p><span className={`mt-1 inline-flex rounded-lg px-2 py-0.5 text-[0.65rem] font-bold ${ROLE_CLASSES[row.role]}`}>{row.role}</span></div> },
   { header: 'Activity', render: row => <div className="min-w-64"><p className="text-sm font-bold text-slate-900">{row.action}</p><p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-slate-500">{row.detail}</p></div> },
-  { header: 'Source record', render: row => row.sourceId
-    ? <div className="min-w-44"><p className="text-sm font-bold text-slate-700">{row.requesterName || (row.requesterId ? 'Loading requester…' : 'Requester unavailable')}</p><p className="mt-1 text-xs text-slate-400">{row.roomName || (row.roomId ? 'Loading room…' : 'Room unavailable')}</p></div>
-    : <div className="min-w-44" title={row.sourcePath}><p className="text-sm font-bold text-slate-700">{row.sourceTitle || row.target}</p>{(row.sourceDetail || row.targetDetail) && <p className="mt-1 text-xs text-slate-400">{row.memberSnapshot ? [row.memberSnapshot.role, row.memberSnapshot.department || 'Unassigned'].filter(Boolean).join(' · ') : row.sourceDetail || row.targetDetail}</p>}</div> },
+  { header: 'Source record', render: row => {
+    if (row.category === 'Reservations') return <div className="min-w-44" title={row.sourcePath}>
+      <p className="text-sm font-bold text-slate-700">{row.requesterName || (row.requesterId ? 'Loading requester…' : 'Requester unavailable')}</p>
+      <p className="mt-1 text-xs text-slate-400">{row.roomName || (row.roomId ? 'Loading room…' : 'Room unavailable')}</p>
+      <p className="mt-1 text-xs font-semibold text-slate-500">{[reservationDateLabel(row.reservationSnapshot?.date), row.reservationSnapshot?.afterStatus].filter(Boolean).join(' · ')}</p>
+    </div>
+    if (row.category === 'Scheduling') return <div className="min-w-44" title={row.sourcePath}>
+      <p className="text-sm font-bold text-slate-700">{row.target}</p>
+      <p className="mt-1 text-xs text-slate-400">{row.targetDetail}</p>
+      {row.scheduleSnapshot && <p className="mt-1 text-xs font-semibold text-slate-500">{row.scheduleSnapshot.fileName || 'Workbook'} · revision {row.scheduleSnapshot.revision}</p>}
+    </div>
+    if (row.category === 'Facilities') return <div className="min-w-44" title={row.sourcePath}>
+      <p className="text-sm font-bold text-slate-700">{row.sourceTitle || row.target}</p>
+      <p className="mt-1 text-xs text-slate-400">{row.sourceDetail || row.targetDetail}</p>
+      {Boolean(logText(row.facilitySnapshot?.status)) && <p className="mt-1 text-xs font-semibold text-slate-500">{logText(row.facilitySnapshot?.status)} · {facilityValue(row.facilitySnapshot?.capacity)} seats</p>}
+    </div>
+    return <div className="min-w-44" title={row.sourcePath}>
+      <p className="text-sm font-bold text-slate-700">{row.target}</p>
+      <p className="mt-1 text-xs text-slate-400">{[row.memberSnapshot?.role, row.memberSnapshot?.department || 'Unassigned'].filter(Boolean).join(' · ')}</p>
+      {row.action.toLowerCase().includes('invit') && <p className="mt-1 text-xs font-semibold text-slate-500">{row.memberSnapshot?.isReactivation ? 'Re-invitation' : 'Invitation'} · {row.memberSnapshot?.email || 'Email unavailable'}</p>}
+    </div>
+  } },
   { header: 'Outcome', render: row => <span className={`text-xs font-bold ${OUTCOME_CLASSES[row.outcome]}`}>{row.outcome}</span> },
   { header: 'Details', align: 'right', width: '1%', render: row => row.sourceId || row.category === 'Accounts' || row.category === 'Facilities' || row.category === 'Scheduling'
     ? <IconButton label={row.category === 'Scheduling' ? `View schedule changes for ${row.target}` : row.category === 'Facilities' ? `View facility details for ${row.target}` : row.category === 'Accounts' ? `View member details for ${row.target}` : `View reservation details for ${row.requesterName || 'this reservation'}`} className="h-8 w-8 rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm transition-all hover:-translate-y-0.5 hover:border-slate-300 hover:text-slate-700 hover:shadow" disabled={Boolean(loadingSourceId)} onClick={() => onViewSource(row)}>{loadingSourceId === row.id ? <SpinnerIcon className="h-4 w-4 animate-spin" aria-hidden="true" /> : <EyeIcon className="h-4 w-4" aria-hidden="true" />}</IconButton>
@@ -285,12 +330,10 @@ function LogsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [outcomes, setOutcomes] = useState<string[]>([])
   const [roles, setRoles] = useState<string[]>([])
-  const [dates, setDates] = useState<string[]>([])
+  const [dateRanges, setDateRanges] = useState<string[]>([])
   const [liveLogs, setLiveLogs] = useState<LogEntry[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
-  const [logLimit, setLogLimit] = useState(100)
-  const [hasOlderLogs, setHasOlderLogs] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [reservationSource, setReservationSource] = useState<ReservationLogSource | null>(null)
   const [reservationLog, setReservationLog] = useState<LogEntry | null>(null)
@@ -347,14 +390,31 @@ function LogsPage() {
         readRelated('rooms', data.roomId), readRelated('users', data.userId),
       ])
       if (sourceRequest.current !== request) return
+      const evidenceRecord = {
+        evidencePath: logText(data.evidencePath),
+        evidenceFiles: Array.isArray(data.evidenceFiles) ? data.evidenceFiles.map(value => {
+          const file = logRecord(value)
+          return { path: logText(file.path), type: file.type === 'video' ? 'video' as const : 'image' as const,
+            fileName: logText(file.fileName) || 'Evidence file' }
+        }) : [],
+      }
       setReservationSource({
         reservation: {
           id: snapshot.id,
           date: logText(data.date), startTime: logText(data.startTime), endTime: logText(data.endTime),
-          status,
+          status: reservationDisplayStatus(status, evidenceRecord),
+          requestType: data.requestType === 'Extended' ? 'Extended' : 'Standard',
+          reviewStep: reservationReviewStep({ status, deanRecommend: data.deanRecommend === true,
+            registrarRecommend: data.registrarRecommend === true, declinedByRole: logText(data.declinedByRole) }),
+          deanRecommend: data.deanRecommend === true,
+          registrarRecommend: data.registrarRecommend === true,
+          universityAdministratorRecommend: data.universityAdministratorRecommend === true,
+          declinedByRole: logText(data.declinedByRole), declinedReason: logText(data.declinedReason),
+          cancellationReason: logText(data.cancellationReason), evidenceCount: reservationEvidenceFiles(evidenceRecord).length,
           purpose: logText(data.purpose), subjectCode: logText(data.subjectCode),
           classSection: logText(data.classSection), department: logText(data.department),
-          duration: typeof data.duration === 'number' ? data.duration : undefined,
+          duration: reservationDurationMinutes({ id: snapshot.id, startTime: logText(data.startTime), endTime: logText(data.endTime),
+            duration: typeof data.duration === 'number' ? data.duration : undefined }),
           attendees: typeof data.attendees === 'number' ? data.attendees : undefined,
           createdAt: data.createdAt instanceof Timestamp ? data.createdAt.toDate() : undefined,
         },
@@ -394,14 +454,12 @@ function LogsPage() {
     setIsLoading(true)
     setLoadError('')
     setLiveLogs([])
-    setHasOlderLogs(false)
-    const logsQuery = query(collection(db, 'logs'), isScheduling ? where('action', '==', 'schedule.workbook_saved') : isFacilities ? where('action', 'in', FACILITY_ACTIONS) : isAccounts ? where('action', 'in', ACCOUNT_ACTIONS) : where('action', '==', 'reservation.status_changed'), orderBy('createdAt', 'desc'), limit(logLimit))
+    const logsQuery = query(collection(db, 'logs'), isScheduling ? where('action', '==', 'schedule.workbook_saved') : isFacilities ? where('action', 'in', FACILITY_ACTIONS) : isAccounts ? where('action', 'in', ACCOUNT_ACTIONS) : where('action', '==', 'reservation.status_changed'), orderBy('createdAt', 'desc'))
     const unsubscribe = onSnapshot(logsQuery, snapshot => {
       if (!active) return
       const currentRevision = ++revision
       const entries = snapshot.docs.map(document => isScheduling ? scheduleLogEntry(document.id, document.data()) : isFacilities ? facilityLogEntry(document.id, document.data()) : isAccounts ? accountLogEntry(document.id, document.data()) : reservationLogEntry(document.id, document.data()))
       setLiveLogs(entries)
-      setHasOlderLogs(snapshot.size === logLimit)
       setIsLoading(false)
       if (!isReservations) return
       void Promise.all(entries.map(async entry => {
@@ -422,7 +480,6 @@ function LogsPage() {
       ++revision
       console.error(`Error loading ${category.toLowerCase()} logs:`, error)
       setLiveLogs([])
-      setHasOlderLogs(false)
       setIsLoading(false)
       setLoadError(error.code === 'permission-denied'
         ? `You do not have permission to read ${category.toLowerCase()} logs. Check the deployed Firestore rules.`
@@ -434,7 +491,7 @@ function LogsPage() {
       active = false
       unsubscribe()
     }
-  }, [category, isAccounts, isFacilities, isScheduling, isReservations, isLive, logLimit, retryCount])
+  }, [category, isAccounts, isFacilities, isScheduling, isReservations, isLive, retryCount])
 
   const categoryLogs = useMemo(() => liveLogs.filter(log => log.category === category), [liveLogs, category])
 
@@ -456,49 +513,69 @@ function LogsPage() {
     setSearchQuery('')
     setOutcomes([])
     setRoles([])
-    setDates([])
+    setDateRanges([])
   }
 
+  const dateRangeDays = Number(dateRanges[0]) || 0
+  const dateRangeStart = dateRangeDays ? manilaDayStart(dateRangeDays - 1) : null
+  const dateRangeEnd = dateRangeDays ? manilaDayStart(-1) : null
+  const selectedDateRangeLabel = DATE_RANGE_OPTIONS.find(option => option.value === dateRanges[0])?.label || 'All dates'
   const filteredLogs = useMemo(() => {
     const search = searchQuery.trim().toLowerCase()
     return categoryLogs.filter(log => (
       (outcomes.length === 0 || outcomes.includes(log.outcome))
       && (roles.length === 0 || roles.includes(log.role))
-      && (dates.length === 0 || dates.includes(log.date))
+      && (dateRangeStart === null || (log.createdAt !== null && log.createdAt.getTime() >= dateRangeStart && log.createdAt.getTime() < dateRangeEnd!))
       && (!search || Object.values(log).join(' ').toLowerCase().includes(search))
     ))
-  }, [categoryLogs, searchQuery, outcomes, roles, dates])
-
-  const metrics = [
-    { label: 'Total events', value: filteredLogs.length, detail: 'Matching activity records' },
-    { label: 'Successful', value: filteredLogs.filter(log => log.outcome === 'Success').length, detail: 'Actions completed successfully' },
-    { label: 'Needs attention', value: filteredLogs.filter(log => log.outcome !== 'Success').length, detail: 'Warnings and failed actions' },
-    { label: 'Active members', value: new Set(filteredLogs.map(log => log.actorId || log.actor)).size, detail: 'Members in these results' },
-  ]
+  }, [categoryLogs, searchQuery, outcomes, roles, dateRangeStart, dateRangeEnd])
 
   const filterGroups: FilterGroup[] = [
-    { id: 'outcome', title: 'Outcome', options: Object.keys(OUTCOME_CLASSES), selectedValues: outcomes, onChange: setOutcomes },
+    { id: 'date-range', title: 'Date range', options: DATE_RANGE_OPTIONS, selectedValues: dateRanges, onChange: nextRanges => {
+      const addedRange = nextRanges.find(range => !dateRanges.includes(range))
+      setDateRanges(addedRange ? [addedRange] : nextRanges)
+    } },
+    { id: 'outcome', title: 'Outcome', options: [...new Set(categoryLogs.map(log => log.outcome))], selectedValues: outcomes, onChange: setOutcomes },
     { id: 'role', title: 'Role', options: [...new Set(categoryLogs.map(log => log.role))], selectedValues: roles, onChange: setRoles },
-    { id: 'date', title: 'Date', options: [...new Set(categoryLogs.map(log => log.date))], selectedValues: dates, onChange: setDates },
   ]
-
-  const activityBreakdown = [...new Set(filteredLogs.map(log => log.action))]
-    .map(action => ({ id: action, count: filteredLogs.filter(log => log.action === action).length }))
 
   const exportCsv = () => {
     if (isScheduling) {
-      downloadReportCsv('rorms-schedule-logs.csv', ['Reference', 'Date', 'Time (PHT)', 'Changed by', 'Role', 'Activity', 'Summary', 'Department', 'Term', 'Workbook', 'Revision', 'Recorded changes', 'Omitted descriptions', 'Source document', 'Outcome'], filteredLogs.map(log => [log.id, log.date, log.time, log.actor, log.role, log.action, log.detail, log.target, log.targetDetail || '', log.scheduleSnapshot?.fileName || '', String(log.scheduleSnapshot?.revision || 0), JSON.stringify(log.scheduleSnapshot?.samples || []), String(log.scheduleSnapshot?.omittedSamples || 0), log.sourcePath || '', log.outcome]))
+      downloadReportCsv('rorms-schedule-logs.csv', ['Reference', 'Date', 'Time (PHT)', 'Changed by', 'Role', 'Activity', 'Summary', 'Department', 'Term', 'Workbook', 'Revision', 'Sheets', 'Schedules added', 'Schedules updated', 'Schedules removed', 'Cells changed', 'Change counts', 'Recorded changes', 'Omitted descriptions', 'Comparison baseline available', 'Source document', 'Outcome'], filteredLogs.map(log => {
+        const snapshot = log.scheduleSnapshot
+        return [log.id, log.date, log.time, log.actor, log.role, log.action, log.detail, log.target, log.targetDetail || '',
+          snapshot?.fileName || '', String(snapshot?.revision ?? ''), snapshot?.sheetNames.join(', ') || '',
+          String(snapshot?.counts.schedulesAdded ?? 0), String(snapshot?.counts.schedulesUpdated ?? 0), String(snapshot?.counts.schedulesRemoved ?? 0),
+          String(snapshot?.counts.cellsChanged ?? 0), JSON.stringify(snapshot?.counts || {}), JSON.stringify(snapshot?.samples || []),
+          String(snapshot?.omittedSamples ?? 0), snapshot?.baselineAvailable ? 'Yes' : 'No', log.sourcePath || '', log.outcome]
+      }))
       return
     }
     if (isFacilities) {
-      downloadReportCsv('rorms-facility-logs.csv', ['Reference', 'Date', 'Time (PHT)', 'Changed by', 'Role', 'Activity', 'Changes', 'Source record', 'Record details', 'Source document', 'Outcome'], filteredLogs.map(log => [log.id, log.date, log.time, log.actor, log.role, log.action, log.detail, log.target, log.targetDetail || '', log.sourcePath || '', log.outcome]))
+      downloadReportCsv('rorms-facility-logs.csv', ['Reference', 'Date', 'Time (PHT)', 'Changed by', 'Role', 'Activity', 'Changes', 'Record type', 'Source record', 'Building', 'Code', 'Room type', 'Floor', 'Capacity', 'Status', 'Available days', 'Opening time', 'Closing time', 'Minimum booking (minutes)', 'Maximum booking (minutes)', 'Amenities', 'Deleted comment', 'Rooms removed with building', 'Recorded field changes', 'Source document', 'Outcome'], filteredLogs.map(log => {
+        const snapshot = log.facilitySnapshot || {}
+        const recordType = log.sourcePath?.startsWith('rooms/') ? 'Room' : log.sourcePath?.startsWith('comments/') ? 'Comment' : 'Building'
+        return [log.id, log.date, log.time, log.actor, log.role, log.action, log.detail, recordType, log.target,
+          log.buildingName || '', logText(snapshot.code), logText(snapshot.type), facilityValue(snapshot.floor), facilityValue(snapshot.capacity),
+          logText(snapshot.status), facilityValue(snapshot.availableDays), logText(snapshot.startTime), logText(snapshot.endTime),
+          facilityValue(snapshot.minBookingMins), facilityValue(snapshot.maxBookingMins), facilityValue(snapshot.amenities), logText(snapshot.text),
+          (log.deletedRooms || []).map(room => room.code || room.name || room.id).join(', '),
+          JSON.stringify(Object.entries(log.facilityChanges || {}).map(([field, value]) => ({ field: FACILITY_FIELD_LABELS[field] || field, ...logRecord(value) }))),
+          log.sourcePath || '', log.outcome]
+      }))
       return
     }
     if (isAccounts) {
-      downloadReportCsv('rorms-account-logs.csv', ['Reference', 'Date', 'Time (PHT)', 'Changed by', 'Role', 'Activity', 'Changes', 'Affected member', 'Member details', 'Source document', 'Outcome'], filteredLogs.map(log => [log.id, log.date, log.time, log.actor, log.role, log.action, log.detail, log.target, log.targetDetail || '', log.sourcePath || '', log.outcome]))
+      downloadReportCsv('rorms-account-logs.csv', ['Reference', 'Date', 'Time (PHT)', 'Changed by', 'Role', 'Activity', 'Changes', 'Affected member', 'Email', 'Member role', 'Department', 'Invitation type', 'Recorded field changes', 'Source document', 'Outcome'], filteredLogs.map(log => [log.id, log.date, log.time, log.actor, log.role, log.action, log.detail, log.target,
+        log.memberSnapshot?.email || '', log.memberSnapshot?.role || '', log.memberSnapshot?.department || '',
+        log.action.toLowerCase().includes('invit') ? log.memberSnapshot?.isReactivation ? 'Re-invitation' : 'Invitation' : '',
+        JSON.stringify(log.memberChanges || []), log.sourcePath || '', log.outcome]))
       return
     }
-    downloadReportCsv(isReservations ? 'rorms-reservation-logs.csv' : 'rorms-sample-logs.csv', ['Reference', 'Date', 'Time (PHT)', 'Changed by', 'Role', 'Activity', 'Changes', 'Reserved by', 'Room', 'Reservation details', 'Source document', 'Outcome'], filteredLogs.map(log => [log.id, log.date, log.time, log.actor, log.role, log.action, log.detail, log.requesterName || '', log.roomName || '', log.target, log.sourcePath || '', log.outcome]))
+    downloadReportCsv('rorms-reservation-logs.csv', ['Reference', 'Date', 'Time (PHT)', 'Changed by', 'Role', 'Activity', 'Changes', 'Review stage', 'Before status', 'After status', 'Booking date', 'Department', 'Reserved by', 'Requester ID', 'Room', 'Room ID', 'Recorded review changes', 'Source document', 'Outcome'], filteredLogs.map(log => [log.id, log.date, log.time, log.actor, log.role, log.action, log.detail,
+      log.reviewStage || '', log.reservationSnapshot?.beforeStatus || '', log.reservationSnapshot?.afterStatus || '',
+      log.reservationSnapshot?.date || '', log.reservationSnapshot?.department || '', log.requesterName || '', log.requesterId || '', log.roomName || '', log.roomId || '',
+      JSON.stringify(log.reservationChanges || []), log.sourcePath || '', log.outcome]))
   }
 
   return (
@@ -523,41 +600,22 @@ function LogsPage() {
           })}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {metrics.map(metric => (
-            <article key={metric.label} className="animate-in relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex items-center justify-between gap-4"><div className="min-w-0"><p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">{metric.label}</p><p className="mt-1 truncate text-xs text-slate-500">{metric.detail}</p></div><p className="shrink-0 text-3xl font-black tracking-tight text-slate-900">{isLive && isLoading ? '—' : metric.value}</p></div>
-            </article>
-          ))}
-        </div>
-
         <div className="grid grid-cols-1 gap-x-4 gap-y-6 xl:grid-cols-12">
-          <aside className="animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-9">
-            <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-700"><ClockIcon className="h-5 w-5" /></span><div><h2 className="font-black text-slate-900">Activity breakdown</h2><p className="text-xs text-slate-400">Within the current results</p></div></div>
-            <div className="mt-5 flex gap-3 overflow-x-auto custom-scrollbar pb-1">
-              {activityBreakdown.map(option => {
-                const count = option.count
-                const share = filteredLogs.length ? Math.round(count / filteredLogs.length * 100) : 0
-                const activityLabel = isAccounts ? MEMBER_ACTIVITY_LABELS[option.id] || option.id : option.id
-                return <div key={option.id} className={`${isAccounts ? 'min-w-80' : 'min-w-40'} flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm`}><div className="mb-1.5 flex items-center justify-between gap-3"><span className="truncate text-sm font-black text-slate-700">{activityLabel}</span><span className="text-sm font-black text-slate-900">{count} · {share}%</span></div><progress aria-label={`${option.id} share of activity`} value={share} max={100} className="block h-2.5 w-full overflow-hidden rounded-full [&::-webkit-progress-bar]:bg-slate-200 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-[var(--brand-color)] [&::-moz-progress-bar]:bg-[var(--brand-color)]" /></div>
-              })}
+          <aside className="animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-12">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-8">
+              <p className="shrink-0 text-sm font-bold text-slate-700">Log scope</p>
+              <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                {[['Category', category === 'Accounts' ? 'Members' : category === 'Facilities' ? 'Buildings and Rooms' : category === 'Scheduling' ? 'Schedules' : category], ['Date range', selectedDateRangeLabel], ['Outcome', outcomes.length ? outcomes.join(', ') : 'All'], ['Role', roles.length ? roles.join(', ') : 'All']].map(([label, value]) => <div key={label} className="flex min-w-0 items-baseline gap-2"><dt className="shrink-0 font-bold text-slate-600">{label}</dt><dd className="min-w-0 break-words font-black text-slate-900" title={value}>{value}</dd></div>)}
+              </dl>
             </div>
           </aside>
 
-          <aside className="animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:col-span-3">
-            <p className="text-sm font-bold text-slate-700">Log scope</p>
-            <dl className="mt-3 space-y-2 text-sm">
-              {[['Category', category], ['Date', dates.length ? dates.join(', ') : isLive ? 'All loaded dates' : 'All sample dates'], ['Outcome', outcomes.length ? outcomes.join(', ') : 'All'], ['Role', roles.length ? roles.join(', ') : 'All']].map(([label, value]) => <div key={label} className="flex justify-between gap-3"><dt className="font-bold text-slate-600">{label}</dt><dd className="max-w-36 truncate text-right font-black text-slate-900" title={value}>{value}</dd></div>)}
-            </dl>
-          </aside>
-
           <section className="min-w-0 overflow-visible xl:col-span-12" aria-label="Activity records">
-            <DataTable data={filteredLogs} columns={logColumns(viewSource, loadingSourceId)} searchPlaceholder="Search members, activities, or records..." searchValue={searchQuery} onSearchChange={setSearchQuery}
+            <DataTable data={filteredLogs} pageResetKey={JSON.stringify([category, searchQuery, outcomes, roles, dateRanges])} columns={logColumns(viewSource, loadingSourceId)} searchPlaceholder={`Search ${isAccounts ? 'members' : isFacilities ? 'buildings and rooms' : isScheduling ? 'schedules' : 'reservations'}, activities, or records...`} searchValue={searchQuery} onSearchChange={setSearchQuery}
               isLoading={isLive && isLoading}
               filters={<FilterDropdown groups={filterGroups} buttonClassName="!h-11 px-4" />}
               primaryAction={<Button type="button" variant="brand" icon={<DownloadIcon className="h-4 w-4" />} onClick={exportCsv} disabled={filteredLogs.length === 0 || (isLive && isLoading)} className="!h-11 px-4">Export CSV</Button>}
               emptyTitle={isLive && loadError ? `${category} logs unavailable` : isLive && categoryLogs.length === 0 ? `No ${isScheduling ? 'schedule' : isFacilities ? 'facility' : isAccounts ? 'account' : 'reservation'} logs yet` : 'No matching activity'} emptyDescription={isLive && loadError ? 'Resolve the loading error above and retry.' : isLive && categoryLogs.length === 0 ? isScheduling ? 'Saved department workbook changes will appear here after schedule logging is deployed.' : isFacilities ? 'Building, room, and comment deletion actions will appear here after logging is enabled.' : isAccounts ? 'Member actions made after logging is enabled will appear here.' : 'Status changes made through Manage Reservations will appear here.' : 'Try changing the category, filters, or search terms.'} emptyIcon={<ClockIcon className="h-12 w-12" />} />
-            {isLive && hasOlderLogs && <div className="mt-4 flex justify-center"><Button type="button" variant="outline" disabled={isLoading} onClick={() => setLogLimit(count => count + 100)}>{isLoading ? 'Loading...' : 'Load older logs'}</Button></div>}
           </section>
         </div>
       </div>

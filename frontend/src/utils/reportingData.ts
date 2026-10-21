@@ -12,13 +12,22 @@ export interface ReservationReportRecord {
   startTime?: string
   endTime?: string
   duration?: number
+  requestType?: 'Standard' | 'Extended'
   purpose?: string
   subjectCode?: string
   classSection?: string
   department?: string
   attendees?: number
   status?: string
+  deanRecommend?: boolean
+  registrarRecommend?: boolean
+  universityAdministratorRecommend?: boolean
+  declinedByRole?: string
   declinedReason?: string
+  cancellationReason?: string
+  autoProcessed?: boolean
+  evidencePath?: string
+  evidenceFiles?: Array<{ path: string; type: 'image' | 'video'; fileName: string; uploadedAt?: string }>
   createdAt?: unknown
   updatedAt?: unknown
   completedAt?: unknown
@@ -37,6 +46,9 @@ export interface RoomReportRecord {
   availableDays?: string[]
   startTime?: string
   endTime?: string
+  minBookingMins?: number
+  maxBookingMins?: number
+  description?: string
   createdAt?: unknown
   updatedAt?: unknown
 }
@@ -66,6 +78,9 @@ export interface InvitationReportRecord {
   id: string
   membershipId?: string
   email?: string
+  role?: string
+  department?: string
+  isReactivation?: boolean
   status?: string
   createdAt?: unknown
   expiresAt?: unknown
@@ -99,6 +114,17 @@ export interface ScheduleReportRecord {
   parentId?: string
   course?: string
   college?: string
+  subjectArea?: string
+  yearLevel?: number
+  yearLevelLabel?: string
+  units?: { lec?: number | null; lab?: number | null; total?: number | null }
+  credits?: number | null
+  hours?: { lec?: number | null; lab?: number | null; total?: number | null }
+  maxStudents?: number | null
+  f2fTime?: { lec?: string[]; lab?: string[] }
+  f2fDays?: { lec?: string[]; lab?: string[] }
+  f2fRoom?: { lec?: string[]; lab?: string[] }
+  rawValues?: string[]
   faculty?: unknown
   room?: string
   time?: string
@@ -139,7 +165,7 @@ function useRealtimeCollection<T extends { id: string }>(collectionName: string)
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, collectionName), snapshot => {
-      setRecords(collectionName === 'schedule' ? scheduleMeetingRecords(snapshot.docs) as unknown as T[] : snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as T))
+      setRecords(collectionName === 'schedule' || collectionName === 'schedules' ? scheduleMeetingRecords(snapshot.docs) as unknown as T[] : snapshot.docs.map(item => ({ id: item.id, ...item.data() }) as T))
       setError(null)
       setIsLoading(false)
     }, snapshotError => {
@@ -152,6 +178,10 @@ function useRealtimeCollection<T extends { id: string }>(collectionName: string)
   }, [collectionName])
 
   return { records, isLoading, error }
+}
+
+export function useFacilityScheduleRecords() {
+  return useRealtimeCollection<ScheduleReportRecord>('schedules')
 }
 
 export function timestampToDate(value: unknown): Date | null {

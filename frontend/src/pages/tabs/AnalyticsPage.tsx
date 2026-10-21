@@ -31,15 +31,25 @@ import {
 } from '../../components/Icons'
 import {
   dateStringToDate,
+  formatReportDate,
   reservationDurationMinutes,
   timeToMinutes,
   timestampToDate,
+  useFacilityScheduleRecords,
   useReportingData,
   type ReservationReportRecord,
+  type ScheduleReportRecord,
 } from '../../utils/reportingData'
 import { downloadReportCsv } from '../../utils/reportCsv'
-import { roomScheduleSection } from '../../utils/roomSchedule'
+import { scheduleMatchesTerm } from '../../utils/roomSchedule'
+import { useAcademicSemester } from '../../utils/academicSemester'
+import { buildingScheduleUsage } from '../../utils/buildingScheduleUsage'
+import type { Building, RoomStatus } from '../../types/room'
+import type { ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
+import { reservationDisplayStatus, reservationEvidenceFiles } from '../../utils/reservationEvidence'
+import { reservationReviewStep } from '../../utils/reservationReviewStep'
 import {
+  isWorkbookSchedule,
   reportingScheduleConflicts,
   reportingScheduleDays,
   reportingScheduleDayText,
@@ -48,18 +58,13 @@ import {
   reportingScheduleResource,
   reportingScheduleTimeText,
   reportingScheduleWeeklyMinutes,
+  scheduleReportRowId,
 } from '../../utils/scheduleReporting'
 
 type AnalyticsKind = 'reservations' | 'rooms' | 'schedules' | 'members'
 
 interface AnalyticsPageProps {
   userRole: string
-}
-
-interface AnalyticsMetric {
-  label: string
-  value: string
-  detail: string
 }
 
 interface ChartDatum {
@@ -70,6 +75,7 @@ interface ChartDatum {
 
 interface RankedDatum extends ChartDatum {
   detail: string
+  suffix?: string
 }
 
 interface OperationalInsight {
@@ -91,6 +97,21 @@ interface AnalyticsActionItem {
   color: string
 }
 
+interface AnalyticsMemberRecord {
+  id: string
+  name: string
+  email: string
+  department: string
+  role: string
+  status: 'Active' | 'Pending' | 'Deactivated'
+  joinedAt?: unknown
+  activityAt?: unknown
+  isVerified: boolean
+  isReactivation: boolean
+}
+
+type AnalyticsScheduleRecord = ScheduleReportRecord & { reportCollection: 'schedule' | 'schedules' }
+
 const ANALYTICS_OPTIONS: Array<{
   id: AnalyticsKind
   label: string
@@ -106,7 +127,6 @@ const ANALYTICS_OPTIONS: Array<{
 const ANALYTICS_KIND_STORAGE_KEY = 'rorms-analytics-selected-kind'
 const MEMBER_STATUS_OPTIONS = ['Active', 'Deactivated', 'Pending']
 const MEMBER_DEPARTMENT_PREFIXES = ['Administrative Office', "Registrar's Office", 'General Service Department', 'Unassigned']
-const SCHEDULE_STATUS_OPTIONS = ['Draft', 'Plot']
 const DATE_RANGE_OPTIONS = [
   { value: '7', label: 'Last 7 days' },
   { value: '30', label: 'Last 30 days' },
@@ -160,6 +180,12 @@ function formatReservationStatus(status?: string) {
   const normalizedStatus = status?.toLowerCase() || 'pending'
   if (normalizedStatus === 'rejected') return 'Declined'
   return `${normalizedStatus.charAt(0).toUpperCase()}${normalizedStatus.slice(1)}`
+}
+
+function memberDepartment(role: string, department?: string) {
+  return department?.trim() || (role === 'Admin' ? 'Administrative Office'
+    : role === 'Registrar' ? "Registrar's Office"
+      : role === 'University Administrator' ? 'General Service Department' : 'Unassigned')
 }
 
 function shortLabel(value: string, maxLength = 16) {
@@ -227,7 +253,9 @@ function EmptyAnalyticsState({ message }: { message: string }) {
 }
 
 function AnalyticsPage({ userRole }: AnalyticsPageProps) {
-  const { reservations, rooms, buildings, memberships, invitations, users, departments, schedules, isLoading } = useReportingData()
+  const { reservations, rooms, buildings, memberships, invitations, users, departments, schedules, errors, isLoading } = useReportingData()
+  const { records: currentScheduleRecords, isLoading: isCurrentSchedulesLoading, error: currentSchedulesError } = useFacilityScheduleRecords()
+  const { activeAcademicYear, currentSemester, isLoading: isAcademicYearLoading } = useAcademicSemester()
   const isRegistrar = userRole.trim().toLowerCase() === 'registrar'
   const isUniversityAdministrator = userRole.trim().toLowerCase() === 'university administrator'
   const [analyticsKind, setAnalyticsKind] = useState<AnalyticsKind>(() => {
@@ -254,9 +282,9 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
 
   const selectAnalyticsKind = (nextAnalyticsKind: AnalyticsKind) => {
     setAnalyticsKind(nextAnalyticsKind)
-    setSearchQuery('')
-    setDateRangeFilters([])
-    setDepartmentFilters([])
+    setSearchQuery(previous => previous ? '' : previous)
+    setDateRangeFilters(previous => previous.length ? [] : previous)
+    setDepartmentFilters(previous => previous.length ? [] : previous)
 
     try {
       window.sessionStorage.setItem(ANALYTICS_KIND_STORAGE_KEY, nextAnalyticsKind)
@@ -265,8 +293,25 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     }
   }
 
-  const parentSchedules = useMemo(() => schedules.filter(schedule => !schedule.parentId), [schedules])
-  const scheduleMeetings = useMemo(() => reportingScheduleMeetings(schedules), [schedules])
+  const scheduleRecords = useMemo(() => [
+    ...schedules.map(schedule => ({ schedule, collection: 'schedule' as const })),
+    ...currentScheduleRecords.map(schedule => ({ schedule, collection: 'schedules' as const })),
+  ], [schedules, currentScheduleRecords])
+  const scheduleRows = useMemo(() => {
+    const rows = new Map<string, AnalyticsScheduleRecord>()
+    scheduleRecords.forEach(({ schedule, collection }) => {
+      if (!isWorkbookSchedule(schedule) && schedule.parentId) return
+      const key = `${collection}:${isWorkbookSchedule(schedule) ? scheduleReportRowId(schedule) : schedule.id}`
+      const existing = rows.get(key)
+      if (!existing) rows.set(key, { ...schedule, reportCollection: collection })
+      else if (formatScheduleStatus(schedule.status) === 'Plot') rows.set(key, { ...existing, status: 'Plot' })
+    })
+    return [...rows.values()]
+  }, [scheduleRecords])
+  const scheduleMeetings = useMemo(() => reportingScheduleMeetings([...schedules, ...currentScheduleRecords]), [schedules, currentScheduleRecords])
+  const currentTermMeetings = useMemo(() => activeAcademicYear
+    ? scheduleMeetings.filter(schedule => scheduleMatchesTerm({ ...schedule }, activeAcademicYear, currentSemester))
+    : scheduleMeetings, [scheduleMeetings, activeAcademicYear, currentSemester])
   const roomById = useMemo(() => new Map(rooms.map(room => [room.id, room])), [rooms])
   const buildingById = useMemo(() => new Map(buildings.map(building => [building.id, building])), [buildings])
   const memberById = useMemo(() => new Map(memberships.map(member => [member.id, member])), [memberships])
@@ -276,7 +321,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     const now = Date.now()
     return invitations.filter(invitation => {
       const expiresAt = timestampToDate(invitation.expiresAt)
-      return invitation.status?.toLowerCase() === 'pending' && expiresAt !== null && expiresAt.getTime() > now
+      return invitation.status?.toLowerCase() === 'pending' && (expiresAt === null || expiresAt.getTime() > now)
     })
   }, [invitations])
   const pendingMembershipIds = useMemo(
@@ -287,34 +332,40 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     () => new Set(pendingInvitations.map(invitation => invitation.email?.toLowerCase()).filter((email): email is string => Boolean(email))),
     [pendingInvitations],
   )
-  const memberRecords = useMemo(() => memberships.flatMap(member => {
-    const user = userById.get(member.userId || '')
-    const email = member.email || user?.email || ''
-    const membershipStatus = (member.status || 'Pending').toLowerCase()
-    const hasPendingInvitation = pendingMembershipIds.has(member.id) || pendingEmails.has(email.toLowerCase())
-
-    if (membershipStatus === 'pending' && !hasPendingInvitation) return []
-    const status = hasPendingInvitation || membershipStatus === 'pending'
-      ? 'Pending'
-      : user?.isActive === false ? 'Deactivated' : 'Active'
-    const department = member.department || (
-      member.role === 'Admin' ? 'Administrative Office' :
-        member.role === 'Registrar' ? "Registrar's Office" : member.role === 'University Administrator' ? 'General Service Department' : 'Unassigned'
-    )
-
-    return [{
-      id: member.id,
-      name: formatUserName(user, member) || 'Unnamed member',
-      email: email || 'No email recorded',
-      department,
-      role: member.role || 'Not assigned',
-      membershipStatus: membershipStatus === 'accepted' ? 'Accepted' : 'Pending',
-      status,
-      joinedAt: member.joinedAt,
-      createdAt: member.createdAt,
-      isVerified: user?.isVerify === true,
-    }]
-  }), [memberships, pendingEmails, pendingMembershipIds, userById])
+  const memberRecords = useMemo<AnalyticsMemberRecord[]>(() => {
+    const membershipsById = new Map(memberships.map(member => [member.id, member]))
+    const membershipsByEmail = new Map(memberships.filter(member => member.email).map(member => [member.email!.toLowerCase(), member]))
+    const usersByEmail = new Map(users.filter(user => user.email).map(user => [user.email!.toLowerCase(), user]))
+    const linkedUserIds = new Set(memberships.filter(member => member.userId && userById.has(member.userId)).map(member => member.userId))
+    const accounts = memberships.flatMap(member => {
+      const user = userById.get(member.userId || '')
+      if (!user) return []
+      const email = user.email || member.email || ''
+      if (user.isActive === false && pendingEmails.has(email.toLowerCase())) return []
+      const role = member.role || 'Instructor'
+      return [{ id: `membership:${member.id}`, name: formatUserName(user, member) || email || 'Unnamed member', email,
+        department: memberDepartment(role, member.department), role, status: user.isActive === false ? 'Deactivated' as const : 'Active' as const,
+        joinedAt: user.createdAt, activityAt: user.createdAt, isVerified: user.isVerify === true, isReactivation: false }]
+    })
+    const unlinkedDeactivated = users.filter(user => user.isActive === false && !linkedUserIds.has(user.id)
+      && !pendingEmails.has(user.email?.toLowerCase() || '')).map(user => ({
+        id: `user:${user.id}`, name: formatUserName(user) || user.email || 'Unnamed member', email: user.email || '',
+        department: 'Unassigned', role: 'Instructor', status: 'Deactivated' as const,
+        joinedAt: user.createdAt, activityAt: user.createdAt, isVerified: user.isVerify === true, isReactivation: false,
+      }))
+    const pending = pendingInvitations.map(invitation => {
+      const membership = (invitation.membershipId ? membershipsById.get(invitation.membershipId) : undefined)
+        || membershipsByEmail.get(invitation.email?.toLowerCase() || '')
+      const user = usersByEmail.get(invitation.email?.toLowerCase() || '')
+      const role = membership?.role || invitation.role || 'Instructor'
+      const email = invitation.email || ''
+      return { id: `invitation:${invitation.id}`, name: formatUserName(user, membership) || email || 'Unnamed member', email,
+        department: memberDepartment(role, membership?.department || invitation.department), role, status: 'Pending' as const,
+        joinedAt: user?.createdAt, activityAt: invitation.createdAt, isVerified: user?.isVerify === true,
+        isReactivation: Boolean(invitation.isReactivation || membership?.userId || user) }
+    })
+    return [...accounts, ...unlinkedDeactivated, ...pending]
+  }, [memberships, users, pendingEmails, pendingInvitations, userById])
 
   const normalizedSearch = searchQuery.trim().toLowerCase()
   const isCardHighlighted = (title: string) => Boolean(normalizedSearch) && title.toLowerCase().includes(normalizedSearch)
@@ -335,111 +386,67 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
   const matchesDepartment = (department?: string) => departmentFilters.length === 0 || departmentFilters.includes(department?.trim() || 'Unassigned')
   const reservationDepartment = (reservation: ReservationReportRecord) => reservation.department?.trim() || memberByUserId.get(reservation.userId || '')?.department?.trim() || 'Unassigned'
 
-  const matchingReservations = reservations.filter(reservation => (
+  const matchingReservations = useMemo(() => reservations.filter(reservation => (
     isInDateRange(dateStringToDate(reservation.date) || timestampToDate(reservation.createdAt))
     && matchesDepartment(reservationDepartment(reservation))
-  ))
-  const matchingRooms = rooms.filter(room => {
-    if (!isInDateRange(timestampToDate(room.createdAt))) return false
-    const assignedDepartments = scheduleMeetings
-      .filter(schedule => schedule.roomId === room.id)
-      .map(schedule => schedule.department?.trim() || 'Unassigned')
-    return (assignedDepartments.length ? assignedDepartments : ['Unassigned']).some(matchesDepartment)
-  })
-  const matchingSchedules = parentSchedules.filter(schedule => (
-    isInDateRange(timestampToDate(schedule.createdAt))
-    && matchesDepartment(schedule.department)
-  ))
-  const matchingScheduleMeetings = scheduleMeetings.filter(schedule => (
-    isInDateRange(timestampToDate(schedule.createdAt))
-    && matchesDepartment(schedule.department)
-  ))
-  const matchingMembers = memberRecords.filter(member => (
-    isInDateRange(timestampToDate(member.joinedAt) || timestampToDate(member.createdAt))
-    && matchesDepartment(member.department)
-  ))
-
-  const approvedReservations = matchingReservations.filter(reservation => ['approved', 'completed'].includes(reservation.status?.toLowerCase() || '')).length
-  const declinedReservations = matchingReservations.filter(reservation => ['declined', 'rejected'].includes(reservation.status?.toLowerCase() || '')).length
-  const decidedReservations = approvedReservations + declinedReservations
-  const totalReservedMinutes = matchingReservations.reduce((total, reservation) => total + reservationDurationMinutes(reservation), 0)
-  const previousReservations = useMemo(() => {
-    if (!selectedDateRangeDays || dateRangeStart === null) return []
-    const today = new Date()
-    const currentPeriodStart = dateRangeStart
-    const previousPeriodStart = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (selectedDateRangeDays * 2 - 1))
-    return reservations.filter(reservation => {
-      const date = dateStringToDate(reservation.date) || timestampToDate(reservation.createdAt)
-      return date !== null && date >= previousPeriodStart && date < currentPeriodStart && matchesDepartment(reservationDepartment(reservation))
+  )), [reservations, dateRangeStart, dateRangeEnd, departmentFilters, memberByUserId])
+  const roomDepartments = useMemo(() => {
+    const departmentsByRoom = new Map<string, Set<string>>()
+    currentTermMeetings.forEach(schedule => {
+      if (!schedule.roomId) return
+      const assigned = departmentsByRoom.get(schedule.roomId) || new Set<string>()
+      assigned.add(schedule.department?.trim() || 'Unassigned')
+      departmentsByRoom.set(schedule.roomId, assigned)
     })
-  }, [dateRangeStart, reservations, selectedDateRangeDays, departmentFilters, memberByUserId])
-  const matchingPreviousReservations = previousReservations
-  const demandChange = matchingPreviousReservations.length > 0
-    ? Math.round((matchingReservations.length - matchingPreviousReservations.length) / matchingPreviousReservations.length * 100)
-    : matchingReservations.length > 0 ? 100 : 0
+    return departmentsByRoom
+  }, [currentTermMeetings])
+  const matchingRooms = useMemo(() => rooms.filter(room => {
+    if (!isInDateRange(timestampToDate(room.createdAt))) return false
+    const assignedDepartments = roomDepartments.get(room.id)
+    return assignedDepartments?.size ? [...assignedDepartments].some(matchesDepartment) : matchesDepartment('Unassigned')
+  }), [rooms, roomDepartments, dateRangeStart, dateRangeEnd, departmentFilters])
+  const matchingBuildings = useMemo(() => {
+    const buildingIds = new Set(matchingRooms.map(room => room.buildingId))
+    return buildings.filter(building => {
+      const hasMatchingRoom = buildingIds.has(building.id)
+      return departmentFilters.length > 0 ? hasMatchingRoom : hasMatchingRoom || isInDateRange(timestampToDate(building.createdAt))
+    })
+  }, [buildings, matchingRooms, dateRangeStart, dateRangeEnd, departmentFilters])
+  const matchingSchedules = useMemo(() => scheduleRows.filter(schedule => (
+    isInDateRange(timestampToDate(schedule.createdAt))
+    && matchesDepartment(schedule.department)
+  )), [scheduleRows, dateRangeStart, dateRangeEnd, departmentFilters])
+  const matchingScheduleMeetings = useMemo(() => scheduleMeetings.filter(schedule => (
+    isInDateRange(timestampToDate(schedule.createdAt))
+    && matchesDepartment(schedule.department)
+  )), [scheduleMeetings, dateRangeStart, dateRangeEnd, departmentFilters])
+  const matchingMembers = useMemo(() => memberRecords.filter(member => (
+    isInDateRange(timestampToDate(member.activityAt))
+    && matchesDepartment(member.department)
+  )), [memberRecords, dateRangeStart, dateRangeEnd, departmentFilters])
+  const facilityUsage = useMemo(() => {
+    const normalizedBuildings: Building[] = buildings.map(building => ({
+      id: building.id,
+      name: building.name || '',
+      code: building.code || '',
+      floor: 0,
+      capacity: 0,
+      rooms: rooms.filter(room => room.buildingId === building.id).map(room => {
+        const status: RoomStatus = room.status === 'Available' || room.status === 'Maintenance' ? room.status : 'Unavailable'
+        return { id: room.id, buildingId: room.buildingId, image: '', code: room.code || '', name: room.name || '',
+          type: room.type || '', floor: Number(room.floor) || 0, capacity: Number(room.capacity) || 0, status,
+          description: room.description || '', amenities: room.amenities || [], availableDays: room.availableDays || [],
+          startTime: room.startTime || '', endTime: room.endTime || '', minBookingMins: room.minBookingMins || 0,
+          maxBookingMins: room.maxBookingMins || 0 }
+      }),
+    }))
+    return buildingScheduleUsage(normalizedBuildings, currentTermMeetings as unknown as ScheduleMeetingRecord[], activeAcademicYear, currentSemester)
+  }, [buildings, rooms, currentTermMeetings, activeAcademicYear, currentSemester])
+  const facilityUsageLoading = isLoading || isCurrentSchedulesLoading || isAcademicYearLoading
+  const facilityUsageError = Boolean(currentSchedulesError || errors.includes('schedule'))
 
-  const availableRooms = matchingRooms.filter(room => (room.status || 'Available').toLowerCase() === 'available').length
-  const unavailableRooms = matchingRooms.filter(room => room.status?.toLowerCase() === 'unavailable').length
-  const maintenanceRooms = matchingRooms.filter(room => room.status?.toLowerCase() === 'maintenance').length
   const totalRoomCapacity = matchingRooms.reduce((total, room) => total + (Number(room.capacity) || 0), 0)
-
-  const plottedSchedules = matchingSchedules.filter(schedule => formatScheduleStatus(schedule.status) === 'Plot').length
-  const draftSchedules = matchingSchedules.filter(schedule => formatScheduleStatus(schedule.status) === 'Draft').length
-  const scheduledDepartments = new Set(matchingSchedules.map(schedule => schedule.department?.trim()).filter(Boolean)).size
-
-  const activeMembers = matchingMembers.filter(member => member.status === 'Active').length
-  const pendingMembers = matchingMembers.filter(member => member.status === 'Pending').length
   const deactivatedMembers = matchingMembers.filter(member => member.status === 'Deactivated').length
-  const acceptedMemberships = matchingMembers.filter(member => member.membershipStatus === 'Accepted').length
-  const allPlottedSchedules = parentSchedules.filter(schedule => formatScheduleStatus(schedule.status) === 'Plot').length
-
-  const metrics: AnalyticsMetric[] = analyticsKind === 'rooms' ? [
-    { label: 'Rooms recorded', value: matchingRooms.length.toLocaleString(), detail: 'rooms matching this analytics view' },
-    { label: 'Available rooms', value: availableRooms.toLocaleString(), detail: `${percent(availableRooms, matchingRooms.length)}% of matching rooms` },
-    { label: 'Unavailable or maintenance', value: (unavailableRooms + maintenanceRooms).toLocaleString(), detail: `${unavailableRooms} unavailable · ${maintenanceRooms} maintenance` },
-    { label: 'Recorded capacity', value: totalRoomCapacity.toLocaleString(), detail: 'seats across matching rooms' },
-  ] : analyticsKind === 'schedules' ? [
-    { label: 'Schedule records', value: matchingSchedules.length.toLocaleString(), detail: 'matching parent schedule entries' },
-    { label: 'Plotted schedules', value: plottedSchedules.toLocaleString(), detail: `${percent(plottedSchedules, matchingSchedules.length)}% assigned` },
-    { label: 'Draft schedules', value: draftSchedules.toLocaleString(), detail: `${percent(draftSchedules, matchingSchedules.length)}% still drafting` },
-    { label: 'Departments represented', value: scheduledDepartments.toLocaleString(), detail: 'across matching schedules' },
-  ] : analyticsKind === 'members' ? [
-    { label: 'Member records', value: matchingMembers.length.toLocaleString(), detail: `${acceptedMemberships} accepted memberships` },
-    { label: 'Active members', value: activeMembers.toLocaleString(), detail: `${percent(activeMembers, matchingMembers.length)}% of matching members` },
-    { label: 'Pending members', value: pendingMembers.toLocaleString(), detail: 'active, unexpired invitations' },
-    { label: 'Deactivated members', value: deactivatedMembers.toLocaleString(), detail: 'accounts currently deactivated' },
-  ] : [
-    { label: 'Reservation demand', value: matchingReservations.length.toLocaleString(), detail: `${demandChange >= 0 ? '+' : ''}${demandChange}% vs. prior period` },
-    { label: 'Approval rate', value: `${percent(approvedReservations, decidedReservations)}%`, detail: `${decidedReservations} requests received a decision` },
-    { label: 'Reserved time', value: `${(totalReservedMinutes / 60).toFixed(totalReservedMinutes % 60 === 0 ? 0 : 1)}h`, detail: `${matchingReservations.length > 0 ? (totalReservedMinutes / matchingReservations.length / 60).toFixed(1) : '0'} hours per request on average` },
-    { label: 'Schedule completion', value: `${percent(allPlottedSchedules, parentSchedules.length)}%`, detail: `${allPlottedSchedules} of ${parentSchedules.length} schedules plotted` },
-  ]
-
-  const statusBreakdown = analyticsKind === 'rooms'
-    ? [
-      { status: 'Available', count: availableRooms },
-      { status: 'Unavailable', count: unavailableRooms },
-      { status: 'Maintenance', count: maintenanceRooms },
-    ]
-    : analyticsKind === 'schedules'
-      ? SCHEDULE_STATUS_OPTIONS.map(status => ({
-        status,
-        count: matchingSchedules.filter(schedule => formatScheduleStatus(schedule.status) === status).length,
-      }))
-      : analyticsKind === 'members'
-        ? [
-          { status: 'Active', count: activeMembers },
-          { status: 'Deactivated', count: deactivatedMembers },
-          { status: 'Pending', count: pendingMembers },
-        ]
-        : [
-          { status: 'Pending', count: matchingReservations.filter(reservation => (reservation.status || 'Pending').toLowerCase() === 'pending').length },
-          { status: 'Approved', count: matchingReservations.filter(reservation => reservation.status?.toLowerCase() === 'approved').length },
-          { status: 'Declined', count: matchingReservations.filter(reservation => ['declined', 'rejected'].includes(reservation.status?.toLowerCase() || '')).length },
-          { status: 'Cancelled', count: matchingReservations.filter(reservation => reservation.status?.toLowerCase() === 'cancelled').length },
-          { status: 'Completed', count: matchingReservations.filter(reservation => reservation.status?.toLowerCase() === 'completed').length },
-        ]
-  const statusBreakdownTotal = statusBreakdown.reduce((total, item) => total + item.count, 0)
 
   const departmentOptions = useMemo(
     () => Array.from(new Set(
@@ -477,12 +484,14 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
   ]
   const activeAnalyticsOption = ANALYTICS_OPTIONS.find(option => option.id === analyticsKind) || ANALYTICS_OPTIONS[0]
   const matchingRecordCount = analyticsKind === 'rooms'
-    ? matchingRooms.length
+    ? matchingRooms.length + matchingBuildings.length
     : analyticsKind === 'schedules'
       ? matchingSchedules.length
       : analyticsKind === 'members'
         ? matchingMembers.length
         : matchingReservations.length
+  const analyticsLoading = isLoading || ((analyticsKind === 'rooms' || analyticsKind === 'schedules') && isCurrentSchedulesLoading)
+    || (analyticsKind === 'rooms' && isAcademicYearLoading)
 
   const detailedAnalytics = (() => {
     let primaryData: ChartDatum[] = []
@@ -554,11 +563,12 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       const peakBand = Array.from(timeBands).sort((first, second) => second[1] - first[1])[0]
       const averageLeadTime = leadTimes.length > 0 ? leadTimes.reduce((total, days) => total + days, 0) / leadTimes.length : 0
       const roomsUsed = new Set(matchingReservations.map(reservation => reservation.roomId).filter(Boolean)).size
+      const extendedRequests = matchingReservations.filter(reservation => reservation.requestType === 'Extended').length
       insights = [
         { label: 'Busiest booking day', value: busiestDay?.[0] || '—', detail: busiestDay ? `${busiestDay[1]} requests` : 'No dated requests', color: 'bg-sky-500 text-sky-700' },
         { label: 'Peak start period', value: peakBand?.[1] ? peakBand[0] : '—', detail: peakBand?.[1] ? `${peakBand[1]} requests` : 'No start times', color: 'bg-amber-500 text-amber-700' },
         { label: 'Average lead time', value: leadTimes.length ? `${averageLeadTime.toFixed(1)} days` : '—', detail: 'from request to reserved date', color: 'bg-purple-500 text-purple-700' },
-        { label: 'Rooms requested', value: roomsUsed.toLocaleString(), detail: `${percent(roomsUsed, rooms.length)}% of room inventory`, color: 'bg-emerald-500 text-emerald-700' },
+        { label: 'Extended requests', value: extendedRequests.toLocaleString(), detail: `${roomsUsed} different rooms requested`, color: 'bg-emerald-500 text-emerald-700' },
       ]
       primaryTitle = 'Reservation demand trend'
       primaryDescription = `Requests and approved outcomes over ${selectedDateRangeLabel.toLowerCase()}`
@@ -570,6 +580,9 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       rankedDescription = 'Rooms with the highest booking demand'
     } else if (analyticsKind === 'rooms') {
       const buildingStats = new Map<string, { rooms: number; capacity: number }>()
+      matchingBuildings.forEach(building => {
+        buildingStats.set(building.code || building.name || 'Unnamed building', { rooms: 0, capacity: 0 })
+      })
       matchingRooms.forEach(room => {
         const building = buildingById.get(room.buildingId || '')
         const label = building?.code || building?.name || 'Unassigned'
@@ -588,23 +601,28 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       })
       distributionData = Array.from(typeCounts, ([label, value]) => ({ label, value })).sort((first, second) => second.value - first.value)
 
-      const amenityCounts = new Map<string, number>()
-      matchingRooms.forEach(room => room.amenities?.forEach(amenity => amenityCounts.set(amenity, (amenityCounts.get(amenity) || 0) + 1)))
-      rankedData = Array.from(amenityCounts, ([label, value]) => ({
-        label,
-        value,
-        detail: `${percent(value, matchingRooms.length)}% room coverage`,
-      })).sort((first, second) => second.value - first.value).slice(0, 5)
+      const buildingUsage = matchingBuildings.map(building => ({
+        label: `${building.code || building.name || 'Unnamed building'} · Building`,
+        value: Math.round(facilityUsage.buildings[building.id]?.totalPercent || 0),
+        detail: `${building.name || building.code || 'Building'} · scheduled hours used`,
+        suffix: '%',
+      })).sort((first, second) => second.value - first.value).slice(0, 3)
+      const roomUsage = matchingRooms.filter(room => room.status === 'Available').map(room => ({
+        label: `${room.code || room.name || 'Unnamed room'} · Room`,
+        value: Math.round(facilityUsage.rooms[room.id]?.totalPercent || 0),
+        detail: `${buildingById.get(room.buildingId || '')?.name || 'Building unavailable'} · scheduled hours used`,
+        suffix: '%',
+      })).sort((first, second) => second.value - first.value).slice(0, 3)
+      rankedData = facilityUsageLoading || facilityUsageError || !activeAcademicYear ? [] : [...buildingUsage, ...roomUsage]
 
       const largestRoom = [...matchingRooms].sort((first, second) => (Number(second.capacity) || 0) - (Number(first.capacity) || 0))[0]
       const availableCapacity = matchingRooms.filter(room => (room.status || 'Available').toLowerCase() === 'available').reduce((total, room) => total + (Number(room.capacity) || 0), 0)
-      const buildingsCovered = new Set(matchingRooms.map(room => room.buildingId).filter(Boolean)).size
       const roomsWithAmenities = matchingRooms.filter(room => (room.amenities?.length || 0) > 0).length
       insights = [
         { label: 'Average room capacity', value: matchingRooms.length ? Math.round(totalRoomCapacity / matchingRooms.length).toLocaleString() : '—', detail: 'seats per matching room', color: 'bg-sky-500 text-sky-700' },
         { label: 'Largest room', value: largestRoom?.code || largestRoom?.name || '—', detail: largestRoom ? `${Number(largestRoom.capacity) || 0} recorded seats` : 'No capacity data', color: 'bg-purple-500 text-purple-700' },
         { label: 'Available capacity', value: availableCapacity.toLocaleString(), detail: `${percent(availableCapacity, totalRoomCapacity)}% of recorded seats`, color: 'bg-emerald-500 text-emerald-700' },
-        { label: 'Facility coverage', value: `${buildingsCovered}/${buildings.length}`, detail: `${roomsWithAmenities} rooms list amenities`, color: 'bg-amber-500 text-amber-700' },
+        { label: 'Facility coverage', value: `${matchingBuildings.length}/${buildings.length}`, detail: `${roomsWithAmenities} rooms list amenities`, color: 'bg-amber-500 text-amber-700' },
       ]
       primaryTitle = 'Rooms by building'
       primaryDescription = 'Room inventory and recorded seat capacity by location'
@@ -612,8 +630,8 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       primarySecondaryLabel = 'Seats'
       distributionTitle = 'Room type mix'
       distributionDescription = 'How the room inventory is configured'
-      rankedTitle = 'Most common amenities'
-      rankedDescription = 'Facility features with the widest coverage'
+      rankedTitle = 'Schedule usage by facility'
+      rankedDescription = activeAcademicYear ? `Current term: ${activeAcademicYear.academicYear} · ${currentSemester}` : 'Current academic term is unavailable'
     } else if (analyticsKind === 'schedules') {
       const departmentStats = new Map<string, { schedules: number; plotted: number }>()
       matchingSchedules.forEach(schedule => {
@@ -688,8 +706,8 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         const monthStart = new Date(today.getFullYear(), today.getMonth() - (5 - reverseIndex), 1)
         const monthEnd = new Date(today.getFullYear(), today.getMonth() - (4 - reverseIndex), 1)
         const joined = matchingMembers.filter(member => {
-          const joinedAt = timestampToDate(member.joinedAt) || timestampToDate(member.createdAt)
-          return joinedAt !== null && joinedAt >= monthStart && joinedAt < monthEnd
+          const joinedAt = timestampToDate(member.joinedAt)
+          return member.status !== 'Pending' && joinedAt !== null && joinedAt >= monthStart && joinedAt < monthEnd
         }).length
         return {
           label: monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
@@ -698,14 +716,15 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         }
       })
 
-      const verifiedMembers = matchingMembers.filter(member => member.isVerified).length
+      const linkedAccounts = matchingMembers.filter(member => member.status !== 'Pending')
+      const verifiedMembers = linkedAccounts.filter(member => member.isVerified).length
       const representedDepartments = new Set(matchingMembers.map(member => member.department).filter(department => department !== 'Unassigned')).size
       const topRole = [...distributionData].sort((first, second) => second.value - first.value)[0]
       insights = [
-        { label: 'Verified accounts', value: `${percent(verifiedMembers, matchingMembers.length)}%`, detail: `${verifiedMembers} linked accounts verified`, color: 'bg-emerald-500 text-emerald-700' },
+        { label: 'Verified accounts', value: `${percent(verifiedMembers, linkedAccounts.length)}%`, detail: `${verifiedMembers} linked accounts verified`, color: 'bg-emerald-500 text-emerald-700' },
         { label: 'Departments represented', value: representedDepartments.toLocaleString(), detail: `${departments.length} academic departments recorded`, color: 'bg-sky-500 text-sky-700' },
         { label: 'Largest role group', value: topRole?.value ? topRole.label : '—', detail: topRole?.value ? `${topRole.value} members` : 'No role data', color: 'bg-purple-500 text-purple-700' },
-        { label: 'Open invitations', value: pendingInvitations.length.toLocaleString(), detail: 'pending and not yet expired', color: 'bg-amber-500 text-amber-700' },
+        { label: 'Open invitations', value: matchingMembers.filter(member => member.status === 'Pending').length.toLocaleString(), detail: 'pending and not yet expired', color: 'bg-amber-500 text-amber-700' },
       ]
       primaryTitle = 'Members by department'
       primaryDescription = 'Membership coverage and active accounts across the organization'
@@ -713,8 +732,8 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       primarySecondaryLabel = 'Active'
       distributionTitle = 'Role distribution'
       distributionDescription = 'How responsibilities are represented in the directory'
-      rankedTitle = 'Membership growth'
-      rankedDescription = 'New directory records over the last six months'
+      rankedTitle = 'Member growth'
+      rankedDescription = 'New user accounts over the last six months'
     }
 
     return {
@@ -757,49 +776,49 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         if (dayIndex >= 0 && bandIndex >= 0) matrixRows[dayIndex].values[bandIndex] += 1
       })
 
-      const durationBuckets = [30, 60, 90]
-      secondaryData = durationBuckets.map(duration => ({
+      secondaryData = [30, 60, 90].map(duration => ({
         label: `${duration} minutes`,
-        value: matchingReservations.filter(reservation => reservationDurationMinutes(reservation) === duration).length,
+        value: matchingReservations.filter(reservation => reservation.requestType !== 'Extended' && reservationDurationMinutes(reservation) === duration).length,
       }))
+      secondaryData.push(
+        { label: 'Other standard', value: matchingReservations.filter(reservation => reservation.requestType !== 'Extended' && ![30, 60, 90].includes(reservationDurationMinutes(reservation))).length },
+        { label: 'Extended', value: matchingReservations.filter(reservation => reservation.requestType === 'Extended').length },
+      )
 
       const todayStart = new Date()
       todayStart.setHours(0, 0, 0, 0)
       const isPending = (status?: string) => (status || 'Pending').toLowerCase() === 'pending'
+      const pendingByStep = (step: string) => matchingReservations.filter(reservation => isPending(reservation.status)
+        && reservationReviewStep({ ...reservation, status: reservation.status || 'Pending' }) === step).length
       const pendingPast = matchingReservations.filter(reservation => {
         const date = dateStringToDate(reservation.date)
         return isPending(reservation.status) && date !== null && date < todayStart
       }).length
-      const pendingUpcoming = matchingReservations.filter(reservation => {
-        const date = dateStringToDate(reservation.date)
-        return isPending(reservation.status) && date !== null && date >= todayStart
-      }).length
       const declinedWithoutReason = matchingReservations.filter(reservation => ['declined', 'rejected'].includes(reservation.status?.toLowerCase() || '') && !reservation.declinedReason?.trim()).length
-      const missingRoom = matchingReservations.filter(reservation => !reservation.roomId || !roomById.has(reservation.roomId)).length
-      const uniqueRequesters = new Set(matchingReservations.map(reservation => reservation.userId).filter(Boolean)).size
-      const requestingDepartments = new Set(matchingReservations.map(reservationDepartment).filter(department => department !== 'Unassigned')).size
+      const needsEvidence = matchingReservations.filter(reservation => reservationDisplayStatus(reservation.status || 'Pending', reservation) === 'Needs Evidence').length
       actionItems = [
         { label: 'Overdue pending requests', count: pendingPast, detail: 'reservation date has already passed', color: 'border-rose-200 bg-rose-50 text-rose-700' },
-        { label: 'Upcoming pending requests', count: pendingUpcoming, detail: 'still awaiting a decision', color: 'border-amber-200 bg-amber-50 text-amber-700' },
+        { label: 'Awaiting Dean', count: pendingByStep('Dean'), detail: 'first recommendation is pending', color: 'border-amber-200 bg-amber-50 text-amber-700' },
+        { label: 'Awaiting Registrar', count: pendingByStep('Registrar'), detail: 'second recommendation is pending', color: 'border-sky-200 bg-sky-50 text-sky-700' },
+        { label: 'Awaiting final approval', count: pendingByStep('University Administrator'), detail: 'both recommendations are recorded', color: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+        { label: 'Completed, needs evidence', count: needsEvidence, detail: 'no completion evidence attached', color: 'border-purple-200 bg-purple-50 text-purple-700' },
         { label: 'Declines without a reason', count: declinedWithoutReason, detail: 'decision context is missing', color: 'border-purple-200 bg-purple-50 text-purple-700' },
-        { label: 'Missing room references', count: missingRoom, detail: 'room was removed or never assigned', color: 'border-slate-200 bg-slate-100 text-slate-700' },
-        { label: 'Unique requesters', count: uniqueRequesters, detail: `${requestingDepartments} departments represented`, color: 'border-sky-200 bg-sky-50 text-sky-700' },
       ]
       matrixTitle = 'Reservation demand heatmap'
       matrixDescription = 'Request starts by weekday and time of day'
       secondaryTitle = 'Booking duration profile'
-      secondaryDescription = 'How long matching room requests run'
+      secondaryDescription = 'Standard durations and extended requests'
       actionTitle = 'Reservation action queue'
       actionDescription = 'Requests and data conditions worth reviewing'
     } else if (analyticsKind === 'rooms') {
       const matchingRoomIds = new Set(matchingRooms.map(room => room.id))
       matrixColumns = ['Available', 'Classes', 'Bookings']
       matrixRows = DAY_ORDER.map(label => ({ label, values: [0, 0, 0] }))
-      matchingRooms.forEach(room => room.availableDays?.forEach(day => {
+      matchingRooms.filter(room => room.status === 'Available').forEach(room => room.availableDays?.forEach(day => {
         const row = matrixRows.find(item => item.label === normalizeScheduleDay(day))
         if (row) row.values[0] += 1
       }))
-      scheduleMeetings.filter(schedule => matchingRoomIds.has(schedule.roomId || '')).forEach(schedule => reportingScheduleDays(schedule).forEach(day => {
+      currentTermMeetings.filter(schedule => matchingRoomIds.has(schedule.roomId || '')).forEach(schedule => reportingScheduleDays(schedule).forEach(day => {
         const row = matrixRows.find(item => item.label === day)
         if (row) row.values[1] += 1
       }))
@@ -826,7 +845,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       }))
 
       const usedRoomIds = new Set([
-        ...scheduleMeetings.map(schedule => schedule.roomId).filter((id): id is string => Boolean(id)),
+        ...currentTermMeetings.map(schedule => schedule.roomId).filter((id): id is string => Boolean(id)),
         ...matchingReservations.map(reservation => reservation.roomId).filter((id): id is string => Boolean(id)),
       ])
       actionItems = [
@@ -834,10 +853,10 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         { label: 'No listed amenities', count: matchingRooms.filter(room => !room.amenities?.length).length, detail: 'facility details are incomplete', color: 'border-amber-200 bg-amber-50 text-amber-700' },
         { label: 'No availability days', count: matchingRooms.filter(room => !room.availableDays?.length).length, detail: 'weekly availability is not configured', color: 'border-purple-200 bg-purple-50 text-purple-700' },
         { label: 'Missing operating hours', count: matchingRooms.filter(room => !room.startTime || !room.endTime).length, detail: 'start or end time is absent', color: 'border-sky-200 bg-sky-50 text-sky-700' },
-        { label: 'Unused room inventory', count: matchingRooms.filter(room => !usedRoomIds.has(room.id)).length, detail: 'no schedule or recent reservation usage', color: 'border-slate-200 bg-slate-100 text-slate-700' },
+        { label: 'Unused room inventory', count: matchingRooms.filter(room => !usedRoomIds.has(room.id)).length, detail: 'no current-term class or matching booking', color: 'border-slate-200 bg-slate-100 text-slate-700' },
       ]
       matrixTitle = 'Weekly facility coverage'
-      matrixDescription = 'Available rooms compared with scheduled and reserved demand'
+      matrixDescription = 'Available rooms, current-term classes, and matching bookings'
       secondaryTitle = 'Capacity distribution'
       secondaryDescription = 'Room inventory grouped by recorded seat count'
       actionTitle = 'Room data readiness'
@@ -883,16 +902,21 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         return {
           label: monthStart.toLocaleDateString('en-US', { month: 'short' }),
           values: roleColumns.map(role => matchingMembers.filter(member => {
-            const joinedAt = timestampToDate(member.joinedAt) || timestampToDate(member.createdAt)
+            const joinedAt = timestampToDate(member.joinedAt)
             const memberRole = roleColumns.includes(member.role) ? member.role : 'Other'
-            return joinedAt !== null && joinedAt >= monthStart && joinedAt < monthEnd && memberRole === role
+            return member.status !== 'Pending' && joinedAt !== null && joinedAt >= monthStart && joinedAt < monthEnd && memberRole === role
           }).length),
         }
       })
 
       const now = Date.now()
       const invitationCounts = new Map<string, number>([['Accepted', 0], ['Pending', 0], ['Expired', 0], ['Revoked', 0]])
+      const membershipsById = new Map(memberships.map(member => [member.id, member]))
       invitations.forEach(invitation => {
+        if (!isInDateRange(timestampToDate(invitation.createdAt))) return
+        const membership = membershipsById.get(invitation.membershipId || '')
+        const role = membership?.role || invitation.role || 'Instructor'
+        if (!matchesDepartment(memberDepartment(role, membership?.department || invitation.department))) return
         const status = invitation.status?.toLowerCase() || 'pending'
         const expiresAt = timestampToDate(invitation.expiresAt)
         const label = status === 'pending' && expiresAt && expiresAt.getTime() <= now
@@ -909,15 +933,18 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
         if (email && email !== 'no email recorded') emailCounts.set(email, (emailCounts.get(email) || 0) + 1)
       })
       const duplicateEmails = Array.from(emailCounts.values()).filter(count => count > 1).reduce((total, count) => total + count, 0)
+      const orphanMemberships = memberships.filter(member => (!member.userId || !userById.has(member.userId)) && !pendingMembershipIds.has(member.id)
+        && isInDateRange(timestampToDate(member.createdAt)) && matchesDepartment(memberDepartment(member.role || 'Instructor', member.department))).length
       actionItems = [
-        { label: 'Unverified linked accounts', count: matchingMembers.filter(member => member.status !== 'Pending' && !member.isVerified).length, detail: 'accepted members not email-verified', color: 'border-amber-200 bg-amber-50 text-amber-700' },
+        { label: 'Unverified accounts', count: matchingMembers.filter(member => member.status !== 'Pending' && !member.isVerified).length, detail: 'user profiles not email-verified', color: 'border-amber-200 bg-amber-50 text-amber-700' },
         { label: 'Deactivated accounts', count: deactivatedMembers, detail: 'accounts currently unable to participate', color: 'border-rose-200 bg-rose-50 text-rose-700' },
         { label: 'Unassigned departments', count: matchingMembers.filter(member => member.department === 'Unassigned').length, detail: 'organizational ownership is missing', color: 'border-purple-200 bg-purple-50 text-purple-700' },
-        { label: 'Memberships without users', count: matchingMembers.filter(member => !memberById.get(member.id)?.userId).length, detail: 'directory entries not linked to an account', color: 'border-sky-200 bg-sky-50 text-sky-700' },
+        { label: 'Pending re-invitations', count: matchingMembers.filter(member => member.status === 'Pending' && member.isReactivation).length, detail: 'deactivated users awaiting reactivation', color: 'border-sky-200 bg-sky-50 text-sky-700' },
+        { label: 'Memberships without users', count: orphanMemberships, detail: 'no linked account or live invitation', color: 'border-sky-200 bg-sky-50 text-sky-700' },
         { label: 'Duplicate email records', count: duplicateEmails, detail: 'members sharing a normalized email address', color: 'border-slate-200 bg-slate-100 text-slate-700' },
       ]
       matrixTitle = 'Role onboarding trend'
-      matrixDescription = 'New memberships by role over the last six months'
+      matrixDescription = 'New user accounts by role over the last six months'
       secondaryTitle = 'Invitation outcomes'
       secondaryDescription = 'Acceptance, pending, expiry, and revocation coverage'
       actionTitle = 'Member directory health'
@@ -962,48 +989,70 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     let rows: string[][] = []
 
     if (analyticsKind === 'rooms') {
-      headers = ['Room', 'Code', 'Type', 'Floor', 'Capacity', 'Status', 'Building', 'Building code', 'Amenities', 'Available days', 'Start time', 'End time']
-      rows = matchingRooms.map(room => [
-        room.name || 'Unnamed room',
-        room.code || '',
-        room.type || '',
-        String(room.floor ?? ''),
-        String(room.capacity ?? ''),
-        room.status || 'Available',
-        buildingById.get(room.buildingId || '')?.name || '',
-        buildingById.get(room.buildingId || '')?.code || '',
-        room.amenities?.join(', ') || '',
-        room.availableDays?.join(', ') || '',
-        room.startTime || '',
-        room.endTime || '',
-      ])
+      headers = ['Record', 'Name', 'Code', 'Building', 'Building code', 'Type', 'Floor', 'Capacity', 'Rooms', 'Status', 'Amenities', 'Available days', 'Start time', 'End time', 'Minimum booking (minutes)', 'Maximum booking (minutes)', 'Schedule usage (%)', 'Schedule term']
+      const term = activeAcademicYear ? `${activeAcademicYear.academicYear} · ${currentSemester}` : ''
+      rows = [
+        ...matchingBuildings.map(building => {
+          const buildingRooms = matchingRooms.filter(room => room.buildingId === building.id)
+          const capacity = buildingRooms.reduce((total, room) => total + (Number(room.capacity) || 0), 0)
+          const floors = buildingRooms.map(room => Number(room.floor)).filter(Number.isFinite)
+          return ['Building', building.name || building.code || 'Unnamed building', building.code || '', '', '', '',
+            floors.length ? String(Math.max(...floors)) : '', String(capacity), String(buildingRooms.length), '', '', '', '', '', '', '',
+            facilityUsageLoading || facilityUsageError || !activeAcademicYear ? '' : (facilityUsage.buildings[building.id]?.totalPercent || 0).toFixed(1), term]
+        }),
+        ...matchingRooms.map(room => {
+          const building = buildingById.get(room.buildingId || '')
+          return ['Room', room.name || room.code || 'Unnamed room', room.code || '', building?.name || '', building?.code || '',
+            room.type || '', String(room.floor ?? ''), String(room.capacity ?? ''), '', room.status || '',
+            room.amenities?.join(', ') || '', room.availableDays?.join(', ') || '', room.startTime || '', room.endTime || '',
+            String(room.minBookingMins ?? ''), String(room.maxBookingMins ?? ''),
+            facilityUsageLoading || facilityUsageError || !activeAcademicYear || room.status !== 'Available' ? '' : (facilityUsage.rooms[room.id]?.totalPercent || 0).toFixed(1), term]
+        }),
+      ]
     } else if (analyticsKind === 'schedules') {
-      headers = ['Department', 'Code', 'Title', 'Section', 'Days', 'Start time', 'End time', 'Status', 'Format', 'Instructor', 'Room', 'Time', 'Academic year', 'Semester']
-      rows = matchingScheduleMeetings.map(schedule => {
-        const instructor = memberById.get(schedule.instructorId || '') || memberByUserId.get(schedule.instructorId || '')
-        const room = roomById.get(schedule.roomId || '')
-        return [
-          schedule.department || 'Unassigned',
-          schedule.subjectCode || '',
-          schedule.subjectTitle || '',
-          roomScheduleSection(schedule),
-          reportingScheduleDayText(schedule),
-          schedule.startTime || '',
-          schedule.endTime || '',
-          formatScheduleStatus(schedule.status),
-          schedule.format || '',
-          reportingScheduleResource(formatUserName(userById.get(instructor?.userId || ''), instructor), schedule.faculty),
-          reportingScheduleResource(room?.name || room?.code, schedule.room),
-          reportingScheduleTimeText(schedule),
-          schedule.academicYear || '',
-          schedule.semester || schedule.semesterKey || '',
-        ]
+      headers = ['Department', 'Academic year', 'Semester', 'Year level', 'College', 'Subject Area', 'Code', 'Descriptive Title', 'Course', 'Units Lec', 'Units Lab', 'Units Total', 'Hours Lec', 'Hours Lab', 'Hours Total', 'Max No. of Stud.', 'Section', 'Faculty Lec', 'Faculty Lab', 'F2F Time Lec', 'F2F Time Lab', 'F2F Days Lec', 'F2F Days Lab', 'F2F Room Lec', 'F2F Room Lab', 'Status']
+      rows = matchingSchedules.map(schedule => {
+        const isWorkbook = isWorkbookSchedule(schedule)
+        const sourceId = scheduleReportRowId(schedule)
+        const meetings = isWorkbook ? scheduleRecords.filter(record => record.collection === schedule.reportCollection
+          && scheduleReportRowId(record.schedule) === sourceId).map(record => record.schedule) : reportingScheduleMeetings([schedule])
+        const rawValues = schedule.rawValues?.length === 21 ? schedule.rawValues : []
+        const text = (value?: string | number | null) => value === null || value === undefined ? '' : String(value).trim()
+        const field = (index: number, fallback?: string | number | null) => rawValues[index]?.trim() || text(fallback)
+        const list = (values?: string[]) => values?.filter(Boolean).join(' / ') || ''
+        const meetingValue = (format: 'lec' | 'lab', value: (meeting: ScheduleReportRecord) => string) => meetings
+          .filter(meeting => (meeting.format?.toLowerCase() === 'lab' ? 'lab' : 'lec') === format)
+          .map(value).filter(value => value && value !== '----').join(' / ')
+        const meetingFaculty = (meeting: ScheduleReportRecord) => {
+          const saved = typeof meeting.faculty === 'string' ? meeting.faculty.trim() : ''
+          const instructor = memberById.get(meeting.instructorId || '') || memberByUserId.get(meeting.instructorId || '')
+          return isWorkbook && saved ? saved : reportingScheduleResource(formatUserName(userById.get(instructor?.userId || ''), instructor), meeting.faculty)
+        }
+        const meetingRoom = (meeting: ScheduleReportRecord) => {
+          const room = roomById.get(meeting.roomId || '')
+          return isWorkbook && meeting.room?.trim() ? meeting.room.trim() : reportingScheduleResource(room?.name || room?.code, meeting.room)
+        }
+        return [schedule.department || 'Unassigned', schedule.academicYear || '', schedule.semester || schedule.semesterKey || '',
+          schedule.yearLevelLabel?.split(':', 1)[0].trim() || (schedule.yearLevel ? `Year ${schedule.yearLevel}` : ''),
+          field(0, schedule.college), field(1, schedule.subjectArea), field(2, schedule.subjectCode), field(3, schedule.subjectTitle),
+          field(4, schedule.course), field(5, schedule.units?.lec), field(6, schedule.units?.lab),
+          field(7, schedule.units?.total ?? schedule.credits), field(8, schedule.hours?.lec), field(9, schedule.hours?.lab),
+          field(10, schedule.hours?.total), field(11, schedule.maxStudents), field(12, schedule.classSection),
+          field(13, meetingValue('lec', meetingFaculty)), field(14, meetingValue('lab', meetingFaculty)),
+          field(15, list(schedule.f2fTime?.lec) || meetingValue('lec', reportingScheduleTimeText)),
+          field(16, list(schedule.f2fTime?.lab) || meetingValue('lab', reportingScheduleTimeText)),
+          field(17, list(schedule.f2fDays?.lec) || meetingValue('lec', reportingScheduleDayText)),
+          field(18, list(schedule.f2fDays?.lab) || meetingValue('lab', reportingScheduleDayText)),
+          field(19, list(schedule.f2fRoom?.lec) || meetingValue('lec', meetingRoom)),
+          field(20, list(schedule.f2fRoom?.lab) || meetingValue('lab', meetingRoom)), formatScheduleStatus(schedule.status)]
       })
     } else if (analyticsKind === 'members') {
-      headers = ['Member', 'Email', 'Department', 'Role', 'Membership', 'Status']
-      rows = matchingMembers.map(member => [member.name, member.email, member.department, member.role, member.membershipStatus, member.status])
+      headers = ['Member', 'Email', 'Role', 'Department', 'Status', 'Join date', 'Invitation type', 'Invitation sent']
+      rows = matchingMembers.map(member => [member.name, member.email, member.role, member.department, member.status,
+        member.joinedAt ? formatReportDate(member.joinedAt, '') : '', member.status === 'Pending' ? member.isReactivation ? 'Re-invitation' : 'Invitation' : '',
+        member.status === 'Pending' && member.activityAt ? formatReportDate(member.activityAt, '') : ''])
     } else {
-      headers = ['Reference', 'Date', 'Start time', 'End time', 'Purpose', 'Status', 'Room', 'Building', 'Requester', 'Email', 'Department', 'Duration (minutes)', 'Attendees', 'Subject code', 'Section']
+      headers = ['Reference', 'Date', 'Start time', 'End time', 'Purpose', 'Type', 'Review step', 'Status', 'Room', 'Building', 'Requester', 'Email', 'Department', 'Duration (minutes)', 'Attendees', 'Subject code', 'Section', 'Dean recommended', 'Registrar recommended', 'University Administrator approved', 'Declined by', 'Decline reason', 'Cancellation reason', 'Evidence files']
       rows = matchingReservations.map(reservation => {
         const member = memberByUserId.get(reservation.userId || '')
         const user = userById.get(reservation.userId || '')
@@ -1015,7 +1064,9 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
           reservation.startTime || '',
           reservation.endTime || '',
           reservation.purpose || '',
-          formatReservationStatus(reservation.status),
+          reservation.requestType === 'Extended' ? 'Extended' : 'Standard',
+          reservationReviewStep({ ...reservation, status: reservation.status || 'Pending' }),
+          reservationDisplayStatus(formatReservationStatus(reservation.status), reservation),
           room?.code || room?.name || 'Unassigned',
           building?.name || building?.code || '',
           formatUserName(user, member) || 'Unknown requester',
@@ -1025,6 +1076,13 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
           String(reservation.attendees ?? ''),
           reservation.subjectCode?.trim() || 'N/A',
           reservation.classSection?.trim() || 'N/A',
+          reservation.deanRecommend === true ? 'Yes' : 'No',
+          reservation.registrarRecommend === true ? 'Yes' : 'No',
+          reservation.universityAdministratorRecommend === true ? 'Yes' : 'No',
+          reservation.declinedByRole || '',
+          reservation.declinedReason || '',
+          reservation.cancellationReason || '',
+          String(reservationEvidenceFiles(reservation).length),
         ]
       })
     }
@@ -1040,6 +1098,16 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
           description="Review operational metrics across reservations, rooms, schedules, and member records."
         />
 
+        {(errors.length > 0 || ((analyticsKind === 'rooms' || analyticsKind === 'schedules') && currentSchedulesError)) && (
+          <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+            <AlertCircleIcon className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <p className="text-sm font-bold">Some analytics sources are unavailable</p>
+              <p className="mt-0.5 text-xs text-amber-700">Could not load: {[...errors, ...((analyticsKind === 'rooms' || analyticsKind === 'schedules') && currentSchedulesError ? [currentSchedulesError] : [])].join(', ')}. Available records are still included.</p>
+            </div>
+          </div>
+        )}
+
         <div className={`animate-in grid grid-cols-2 gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm ${availableAnalyticsOptions.length === 2 ? 'lg:grid-cols-2' : availableAnalyticsOptions.length === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`} role="tablist" aria-label="Analytics categories">
           {availableAnalyticsOptions.map(option => {
             const AnalyticsIcon = option.icon
@@ -1050,7 +1118,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                aria-controls="analytics-metrics"
+                aria-controls="analytics-details"
                 onClick={() => selectAnalyticsKind(option.id)}
                 className={`relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--brand-color)] focus-visible:ring-offset-2 ${isActive ? 'bg-gradient-to-br from-[#e3edda] to-[#f3f7ee] text-[#41572a] shadow-sm ring-1 ring-[#c6dbb6]' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
               >
@@ -1067,58 +1135,19 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
           })}
         </div>
 
-        <div id="analytics-metrics" role="tabpanel" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {metrics.map((metric, metricIndex) => (
-            <article key={metricIndex} className={`animate-in relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all ${isCardHighlighted(metric.label) ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-xs font-black uppercase tracking-[0.12em] text-slate-400">{metric.label}</p>
-                  <p className="mt-1 text-xs text-slate-500">{metric.detail}</p>
-                </div>
-                <p className="shrink-0 text-3xl font-black tracking-tight text-slate-900">{isLoading ? '—' : metric.value}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-
         <div className="grid grid-cols-1 gap-x-4 gap-y-6 xl:grid-cols-12">
-          <section className={`animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all xl:col-span-9 ${isCardHighlighted('Status breakdown') ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
-            <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-50 text-purple-700"><ClipboardIcon className="h-5 w-5" /></span>
-              <div>
-                <h2 className="font-black text-slate-900">Status breakdown</h2>
-                <p className="text-xs text-slate-400">Within this analytics view</p>
-              </div>
+          <aside className={`animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all xl:col-span-12 ${isCardHighlighted('Analytics scope') ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-8">
+              <p className="shrink-0 text-sm font-bold text-slate-700">Analytics scope</p>
+              <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+                <div className="flex min-w-0 items-baseline gap-2"><dt className="shrink-0 font-bold text-slate-600">Date range</dt><dd className="min-w-0 break-words font-black text-slate-900">{selectedDateRangeLabel}</dd></div>
+                <div className="flex min-w-0 items-baseline gap-2"><dt className="shrink-0 font-bold text-slate-600">Department</dt><dd className="min-w-0 break-words font-black text-slate-900" title={selectedDepartmentLabel}>{selectedDepartmentLabel}</dd></div>
+              </dl>
             </div>
-            <div className="mt-5 flex gap-3 overflow-x-auto custom-scrollbar pb-1">
-              {statusBreakdown.map(({ status, count }) => {
-                const share = percent(count, statusBreakdownTotal)
-                const countAndShareLabel = count === 0 ? '0%' : `${count} · ${share}%`
-                return (
-                  <div key={status} className={`min-w-40 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 shadow-sm transition-all ${isCardHighlighted(status) ? 'ring-2 ring-[var(--brand-color)]' : ''}`}>
-                    <div className="mb-1.5 flex items-center justify-between gap-3">
-                      <span className="truncate text-sm font-black text-slate-700">{status}</span>
-                      <span className="shrink-0 text-sm font-black text-slate-900">{countAndShareLabel}</span>
-                    </div>
-                    <div className="h-2.5 overflow-hidden rounded-full bg-slate-200">
-                      <span className="block h-full rounded-full bg-[var(--brand-color)]" style={{ width: `${share}%` }} />
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-
-          <aside className={`animate-in rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all xl:col-span-3 ${isCardHighlighted('Analytics scope') ? 'ring-2 ring-[var(--brand-color)] ring-offset-2 ring-offset-[var(--brand-surface)]' : ''}`}>
-            <p className="text-sm font-bold text-slate-700">Analytics scope</p>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex justify-between gap-3"><dt className="font-bold text-slate-600">Date range</dt><dd className="font-black text-slate-900">{selectedDateRangeLabel}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="font-bold text-slate-600">Department</dt><dd className="max-w-36 truncate text-right font-black text-slate-900" title={selectedDepartmentLabel}>{selectedDepartmentLabel}</dd></div>
-            </dl>
           </aside>
         </div>
 
-        <section className="animate-in rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label={`${activeAnalyticsOption.label} analytics controls`}>
+        <section className="relative z-20 animate-in rounded-2xl border border-slate-200 bg-white p-4 shadow-sm" aria-label={`${activeAnalyticsOption.label} analytics controls`}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row">
               <TextInput
@@ -1143,7 +1172,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
               variant="brand"
               icon={<DownloadIcon className="h-4 w-4" />}
               onClick={exportAnalyticsCsv}
-              disabled={isLoading || matchingRecordCount === 0}
+              disabled={analyticsLoading || (analyticsKind === 'rooms' && facilityUsageLoading) || matchingRecordCount === 0}
               className="shrink-0"
             >
               Export CSV
@@ -1151,7 +1180,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
           </div>
         </section>
 
-        <section aria-label="Detailed analytics">
+        <section id="analytics-details" role="tabpanel" aria-label="Detailed analytics">
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
             <AnalyticsPanel
               title={detailedAnalytics.primaryTitle}
@@ -1185,7 +1214,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                     )}
                   </ResponsiveContainer>
                 ) : (
-                  <EmptyAnalyticsState message={isLoading ? 'Loading the latest Firestore records…' : 'Try widening the filters to reveal a trend.'} />
+                  <EmptyAnalyticsState message={analyticsLoading ? 'Loading the latest Firestore records…' : 'Try widening the filters to reveal a trend.'} />
                 )}
               </div>
               {primaryDataMaximum > 0 && (
@@ -1232,7 +1261,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                     </div>
                   </>
                 ) : (
-                  <EmptyAnalyticsState message={isLoading ? 'Loading the latest Firestore records…' : 'No distribution is available for this filtered view.'} />
+                  <EmptyAnalyticsState message={analyticsLoading ? 'Loading the latest Firestore records…' : 'No distribution is available for this filtered view.'} />
                 )}
               </div>
             </AnalyticsPanel>
@@ -1269,7 +1298,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                     </div>
                   ))
                 ) : (
-                  <EmptyAnalyticsState message={isLoading ? 'Loading the latest Firestore records…' : 'No matching records are available for this distribution.'} />
+                  <EmptyAnalyticsState message={analyticsLoading ? 'Loading the latest Firestore records…' : 'No matching records are available for this distribution.'} />
                 )}
               </div>
             </AnalyticsPanel>
@@ -1288,7 +1317,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                       <p className="text-xs font-black uppercase tracking-[0.08em] text-slate-400">{insight.label}</p>
                       <span className={`mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full ${insight.color.split(' ')[0]}`} />
                     </div>
-                    <p className={`mt-2 truncate text-xl font-black ${insight.color.split(' ')[1]}`} title={insight.value}>{isLoading ? '—' : insight.value}</p>
+                    <p className={`mt-2 truncate text-xl font-black ${insight.color.split(' ')[1]}`} title={insight.value}>{analyticsLoading ? '—' : insight.value}</p>
                     <p className="mt-1 text-xs leading-relaxed text-slate-500">{insight.detail}</p>
                   </div>
                 ))}
@@ -1338,7 +1367,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                     </tbody>
                   </table>
                 ) : (
-                  <EmptyAnalyticsState message={isLoading ? 'Loading the latest Firestore records…' : 'There is not enough timing or onboarding data for this matrix.'} />
+                  <EmptyAnalyticsState message={analyticsLoading ? 'Loading the latest Firestore records…' : 'There is not enough timing or onboarding data for this matrix.'} />
                 )}
               </div>
               {matrixMaximum > 0 && (
@@ -1365,7 +1394,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                         <p className="truncate text-sm font-black text-slate-700" title={item.label}>{item.label}</p>
                         <p className="truncate text-xs text-slate-400">{item.detail}</p>
                       </div>
-                      <span className="shrink-0 text-lg font-black text-slate-900">{item.value.toLocaleString()}</span>
+                      <span className="shrink-0 text-lg font-black text-slate-900">{item.value.toLocaleString()}{item.suffix}</span>
                     </div>
                     <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                       <span
@@ -1374,7 +1403,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                       />
                     </div>
                   </div>
-                )) : <EmptyAnalyticsState message={isLoading ? 'Loading the latest Firestore records…' : 'No ranked records match the current filters.'} />}
+                )) : <EmptyAnalyticsState message={analyticsLoading ? 'Loading the latest Firestore records…' : 'No ranked records match the current filters.'} />}
               </div>
             </AnalyticsPanel>
 
@@ -1385,12 +1414,12 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
               className="xl:col-span-12"
               isHighlighted={isCardHighlighted(extendedAnalytics.actionTitle)}
             >
-              <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 xl:grid-cols-5">
+              <div className={`grid grid-cols-1 gap-3 p-5 sm:grid-cols-2 ${extendedAnalytics.actionItems.length === 6 ? 'xl:grid-cols-3' : 'xl:grid-cols-5'}`}>
                 {extendedAnalytics.actionItems.map(item => (
                   <div key={item.label} className={`rounded-xl border p-4 transition-all ${item.color} ${isCardHighlighted(item.label) ? 'ring-2 ring-[var(--brand-color)]' : ''}`}>
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-xs font-black uppercase tracking-[0.07em] opacity-80">{item.label}</p>
-                      <span className="shrink-0 text-2xl font-black leading-none">{isLoading ? '—' : item.count.toLocaleString()}</span>
+                      <span className="shrink-0 text-2xl font-black leading-none">{analyticsLoading ? '—' : item.count.toLocaleString()}</span>
                     </div>
                     <p className="mt-3 text-xs leading-relaxed opacity-75">{item.detail}</p>
                   </div>

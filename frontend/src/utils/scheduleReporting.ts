@@ -60,22 +60,36 @@ export function reportingScheduleWeeklyMinutes(record: ScheduleReportRecord): nu
 }
 
 export function reportingScheduleConflicts(records: readonly ScheduleReportRecord[]) {
-  let rooms = 0, instructors = 0
-  for (let firstIndex = 0; firstIndex < records.length; firstIndex += 1) {
-    const first = records[firstIndex]
-    if (reportingScheduleDuration(first) === null) continue
-    for (let secondIndex = firstIndex + 1; secondIndex < records.length; secondIndex += 1) {
-      const second = records[secondIndex]
-      if (reportingScheduleDuration(second) === null) continue
-      if (!scheduleMatchesTerm({ ...first }, { id: second.academicYearId, academicYear: second.academicYear }, second.semesterKey || second.semester || '')
-        || !scheduleMatchesTerm({ ...second }, { id: first.academicYearId, academicYear: first.academicYear }, first.semesterKey || first.semester || '')) continue
-      if (!reportingScheduleDays(first).some(day => reportingScheduleDays(second).includes(day))) continue
-      if (minutes(first.startTime)! >= minutes(second.endTime)! || minutes(second.startTime)! >= minutes(first.endTime)!) continue
-      if (first.roomId && first.roomId === second.roomId) rooms += 1
-      if (first.instructorId && first.instructorId === second.instructorId) instructors += 1
-    }
+  const meetings = records.flatMap(record => {
+    if (reportingScheduleDuration(record) === null) return []
+    return [{ record, days: reportingScheduleDays(record), start: minutes(record.startTime)!, end: minutes(record.endTime)! }]
+  })
+  const countFor = (resource: 'roomId' | 'instructorId') => {
+    const groups = new Map<string, typeof meetings>()
+    meetings.forEach(meeting => {
+      const id = meeting.record[resource]
+      if (!id) return
+      const group = groups.get(id) || []
+      group.push(meeting)
+      groups.set(id, group)
+    })
+    let conflicts = 0
+    groups.forEach(group => {
+      for (let firstIndex = 0; firstIndex < group.length; firstIndex += 1) {
+        const first = group[firstIndex]
+        for (let secondIndex = firstIndex + 1; secondIndex < group.length; secondIndex += 1) {
+          const second = group[secondIndex]
+          if (!scheduleMatchesTerm({ ...first.record }, { id: second.record.academicYearId, academicYear: second.record.academicYear }, second.record.semesterKey || second.record.semester || '')
+            || !scheduleMatchesTerm({ ...second.record }, { id: first.record.academicYearId, academicYear: first.record.academicYear }, first.record.semesterKey || first.record.semester || '')) continue
+          if (!first.days.some(day => second.days.includes(day))) continue
+          if (first.start >= second.end || second.start >= first.end) continue
+          conflicts += 1
+        }
+      }
+    })
+    return conflicts
   }
-  return { rooms, instructors }
+  return { rooms: countFor('roomId'), instructors: countFor('instructorId') }
 }
 
 export function reportingScheduleResource(registeredName: string | undefined, saved: unknown): string {
