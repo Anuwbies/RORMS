@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useId, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEvent as ReactClipboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import * as XLSX from 'xlsx'
@@ -34,19 +34,26 @@ import { mergeDepartmentSchedule } from '../utils/mergeDepartmentSchedule'
 import { deleteDepartmentScheduleDraft, readDepartmentScheduleDraft, writeDepartmentScheduleDraft, type DepartmentScheduleDraft } from '../services/departmentScheduleDrafts'
 import { needsScheduleRoomRecommendation, recommendParallelRoomGroups, recommendScheduleRooms } from '../utils/scheduleRoomRecommendations'
 import { recommendInstructorScheduleOptions } from '../utils/instructorScheduleRecommendations'
+import { WorkbookSlot } from './WorkbookSlot'
+import type { WorkbookSaveHandle, WorkbookSaveState } from './workbookSaveTypes'
 
-interface DepartmentScheduleImportModalProps {
+interface DepartmentScheduleWorkbookProps {
   onClose: () => void
+  onSaveStateChange?: (state: WorkbookSaveState) => void
+  embedded?: boolean
+  active?: boolean
+  headerHost?: HTMLElement | null
+  footerHost?: HTMLElement | null
+  menuHost?: HTMLElement | null
+  onActivate?: () => void
+  headerTitle?: string
+  headerSubtitle?: string
   term?: DepartmentWorkbookTerm
   departmentName?: string
   readOnly?: boolean
 }
 
-// The reference groups both Lec/Lab/Total sets beneath one Units heading.
-const DISPLAY_HEADER_GROUPS = SCHEDULE_HEADER_GROUPS.filter(group => group.offset !== 8)
-  .map(group => group.offset === 5
-    ? { ...group, width: 6, children: ['Lec', 'Lab', 'Total', 'Lec', 'Lab', 'Total'] }
-    : group)
+const DISPLAY_HEADER_GROUPS = SCHEDULE_HEADER_GROUPS
 
 const DATA_COLUMN_LABELS = DISPLAY_HEADER_GROUPS.flatMap(group => group.children.length
   ? group.children.map((label, index) => `${group.label} ${label} ${index + 1}`)
@@ -68,7 +75,7 @@ function validationGroup(message: string): ValidationGroup {
   return 'Other'
 }
 
-export function DepartmentScheduleImportModal({ onClose, term, departmentName, readOnly = false }: DepartmentScheduleImportModalProps) {
+export const DepartmentScheduleWorkbook = forwardRef<WorkbookSaveHandle, DepartmentScheduleWorkbookProps>(function DepartmentScheduleWorkbook({ onClose, onSaveStateChange, embedded = false, active = true, headerHost, footerHost, menuHost, onActivate, headerTitle, headerSubtitle, term, departmentName, readOnly = false }, ref) {
   const titleId = useId()
   const closeConfirmationTitleId = useId()
   const closeConfirmationDescriptionId = useId()
@@ -82,7 +89,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
   const fileMenuId = useId()
   const [fileMenuOpen, setFileMenuOpen] = useState(false)
   const [exportError, setExportError] = useState('')
-  const dialogRef = useRef<HTMLDialogElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
   const tableRef = useRef<HTMLTableElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const resizeFrameRef = useRef<number | null>(null)
@@ -124,10 +131,9 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
   const [saveBaseline, setSaveBaseline] = useState<DepartmentScheduleSaveBaseline>({
     sheets: initialWorkbook.sheets, columnWidths: null, file: null, persisted: false,
   })
-  const hasUnsavedChanges = useMemo(() => hasDepartmentScheduleChanges(saveBaseline, sheets, columnWidths, file),
-    [saveBaseline, sheets, columnWidths, file])
   const hasLocalEdits = useMemo(() => hasDepartmentScheduleChanges({ ...saveBaseline, persisted: true }, sheets, columnWidths, file),
     [saveBaseline, sheets, columnWidths, file])
+  const hasUnsavedChanges = hasLocalEdits
   const requestClose = () => {
     if (savingRef.current) return
     if (hasUnsavedChanges) setConfirmClose(true)
@@ -189,15 +195,22 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     }
   }, [flushPendingDraft])
 
-  const discardDraftAndClose = async () => {
+  const discardDraft = async (): Promise<boolean> => {
     if (draftTimerRef.current !== null) window.clearTimeout(draftTimerRef.current)
     draftTimerRef.current = null
     latestDraftRef.current = null
     pendingDraftRef.current = null
     try {
       if (draftKeyRef.current) await deleteDepartmentScheduleDraft(draftKeyRef.current)
-      onClose()
-    } catch { setDraftError('The local draft could not be discarded. Please try again.') }
+      return true
+    } catch {
+      setDraftError('The local draft could not be discarded. Please try again.')
+      return false
+    }
+  }
+
+  const discardDraftAndClose = async () => {
+    if (await discardDraft()) onClose()
   }
 
   useEffect(() => {
@@ -213,6 +226,10 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
   useEffect(() => {
     if (loading || saving || !storageReady) setFileMenuOpen(false)
   }, [loading, saving, storageReady])
+
+  useEffect(() => {
+    if (embedded && !active) setFileMenuOpen(false)
+  }, [embedded, active])
 
   const closeFileMenu = () => {
     setFileMenuOpen(false)
@@ -250,7 +267,8 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
       downloadXlsx(createDepartmentScheduleExport(sheetsRef.current, columnWidths, (sheet, row) =>
         rowStatuses.get(facultyScheduleRowKey(sheet.name, row.rowNumber))
           ?? (row.values.slice(1).some(value => value.trim()) ? 'Draft' : '')),
-      `${(file?.name || storedFileName || 'Department Schedule').replace(/\.xlsx$/i, '')}.xlsx`)
+      term ? `Department Schedule - ${term.departmentCode} - SY ${term.academicYear.replace(/\s*[-–—]\s*/, '-')} - ${term.semester === 'sem1' ? '1st' : '2nd'} Semester.xlsx`
+        .replace(/[<>:"/\\|?*]/g, '-') : 'Department Schedule.xlsx')
     } catch (caught) {
       setExportError(caught instanceof Error ? caught.message : 'This workbook could not be exported. Please try again.')
     }
@@ -343,9 +361,9 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     const preventCancel = (event: Event) => event.preventDefault()
     dialog?.addEventListener('keydown', preventEscape, true)
     dialog?.addEventListener('cancel', preventCancel)
-    dialog?.showModal()
+    if (!embedded) (dialog as HTMLDialogElement | null)?.showModal()
     const previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    if (!embedded) document.body.style.overflow = 'hidden'
     return () => {
       if (historyTimerRef.current !== null) window.clearTimeout(historyTimerRef.current)
       if (selectionFrameRef.current !== null) cancelAnimationFrame(selectionFrameRef.current)
@@ -353,10 +371,12 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
       if (resizeFrameRef.current !== null) cancelAnimationFrame(resizeFrameRef.current)
       dialog?.removeEventListener('keydown', preventEscape, true)
       dialog?.removeEventListener('cancel', preventCancel)
-      dialog?.close()
-      document.body.style.overflow = previousOverflow
+      if (!embedded) {
+        (dialog as HTMLDialogElement | null)?.close()
+        document.body.style.overflow = previousOverflow
+      }
     }
-  }, [])
+  }, [embedded])
 
   useEffect(() => {
     if (!term) return
@@ -862,11 +882,12 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     pendingLiveUpdate.onApplied()
   }, [pendingLiveUpdate, loading, saving, storageReady, hasLocalEdits, cellEditing, resizing, contextMenu, rowCountModal, yearRenameRequest, sheets])
 
-  const saveWorkbook = async () => {
-    if (!term || readOnly || loading || savingRef.current || !storageReady || !sheetsRef.current.length || pendingLiveUpdate || pendingCachedRemote) return
+  const saveWorkbook = async (): Promise<boolean> => {
+    if (!term || readOnly || loading || savingRef.current || !storageReady || !sheetsRef.current.length || pendingLiveUpdate || pendingCachedRemote) return false
     const editing = editSessionRef.current
     if (editing) finishCellEditing(editing.cell, true)
     flushTypingGroup()
+    if (!hasDepartmentScheduleChanges({ ...saveBaseline, persisted: true }, sheetsRef.current, columnWidths, file)) return true
     setContextMenu(null)
     savingRef.current = true
     setSaving(true)
@@ -905,14 +926,22 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
       setSaveDuration(performance.now() - startedAt)
       setSaveBaseline({ sheets: savingSheets, columnWidths, file, persisted: true })
       setStorageStatus(saved.cleanupWarning ? `Workbook saved. ${saved.cleanupWarning}` : 'Workbook saved.')
+      return true
     } catch (caught) {
       setStorageStatus('')
       setStorageError(caught instanceof Error ? caught.message : 'The workbook could not be saved. Please try again.')
+      return false
     } finally {
       savingRef.current = false
       setSaving(false)
     }
   }
+
+  useImperativeHandle(ref, () => ({ saveIfChanged: saveWorkbook, discardDraft }))
+
+  useEffect(() => {
+    onSaveStateChange?.({ dirty: hasUnsavedChanges, canSave: Boolean(term && !readOnly && !loading && !saving && storageReady && sheets.length && !pendingLiveUpdate && !pendingCachedRemote), saving })
+  }, [onSaveStateChange, hasUnsavedChanges, term, readOnly, loading, saving, storageReady, sheets.length, pendingLiveUpdate, pendingCachedRemote])
 
   const renameYear = useCallback((sheetIndex: number, start: number, value: string) => {
     setYearRenameRequest(undefined)
@@ -1442,9 +1471,40 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
     />
   )
 
-  return createPortal(
-    <dialog
-      ref={dialogRef}
+  const fileMenuControl = <div ref={fileMenuRef} className="relative flex" onKeyDown={event => {
+    if (!fileMenuOpen) return
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      event.stopPropagation()
+      closeFileMenu()
+    } else if (event.key === 'Tab') setFileMenuOpen(false)
+    else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault()
+      const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'))
+      const index = items.indexOf(document.activeElement as HTMLButtonElement)
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+        : (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
+      items[next]?.focus()
+    }
+  }}>
+    {embedded ? <button type="button" aria-label="Schedule file actions" disabled={loading || saving || !storageReady}
+      aria-haspopup="menu" aria-expanded={fileMenuOpen} aria-controls={fileMenuId}
+      onClick={() => { onActivate?.(); setFileMenuOpen(open => !open) }}
+      className="flex w-8 items-center justify-center text-sm hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[#0b57d0] disabled:opacity-50">
+      <span aria-hidden="true">▾</span>
+    </button> : <Button type="button" variant="outline" disabled={loading || saving || !storageReady} icon={<UploadIcon className="h-4 w-4" />} aria-haspopup="menu" aria-expanded={fileMenuOpen} aria-controls={fileMenuId} onClick={() => setFileMenuOpen(open => !open)}>Import / Export</Button>}
+    {fileMenuOpen && <div id={fileMenuId} role="menu" aria-label="Schedule file actions" className="absolute bottom-full left-0 z-50 mb-2 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+      <button type="button" role="menuitem" disabled={readOnly} onClick={() => { closeFileMenu(); fileInputRef.current?.click() }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><UploadIcon className="h-4 w-4" />Import XLSX</button>
+      <button type="button" role="menuitem" disabled={!sheets.length} onClick={exportWorkbook} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><DownloadIcon className="h-4 w-4" />Export XLSX</button>
+      <button type="button" role="menuitem" onClick={downloadTemplate} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]"><DownloadIcon className="h-4 w-4" />DL Template</button>
+    </div>}
+  </div>
+
+  const Root = embedded ? 'section' : 'dialog'
+  const Footer = embedded ? 'div' : 'footer'
+  const content = (
+    <Root
+      ref={element => { dialogRef.current = element }}
       aria-labelledby={titleId}
       onCancel={event => event.preventDefault()}
       onScrollCapture={() => { if (contextMenu) setContextMenu(null) }}
@@ -1484,13 +1544,16 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
         event.stopPropagation()
         changeHistory(key === 'y' || event.shiftKey)
       }}
-      className="fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden rounded-none border-0 bg-white p-0 text-slate-900 backdrop:bg-black/50"
+      className={embedded
+        ? 'relative m-0 h-full max-h-none w-full max-w-none overflow-hidden rounded-none border-0 bg-white p-0 text-slate-900'
+        : 'fixed inset-0 m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden rounded-none border-0 bg-white p-0 text-slate-900 backdrop:bg-black/50'}
     >
       <div inert={confirmClose} className="flex h-full flex-col">
+        <WorkbookSlot host={embedded ? headerHost : null} active={!embedded || active}>
         <div className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-4 bg-[linear-gradient(135deg,var(--brand-color),#7b9d4f)] px-6 py-4 text-white">
           <div className="min-w-0">
-            <h2 id={titleId} className="text-xl font-bold tracking-tight text-white">{term ? `School Year ${term.academicYear} · ${term.semester === 'sem1' ? '1st' : '2nd'} Semester` : 'Department Schedule Workbook'}</h2>
-            <p className="mt-0.5 truncate text-xs font-medium text-white/80">{departmentName || term?.departmentCode || 'Department'}</p>
+            <h2 id={titleId} className="text-xl font-bold tracking-tight text-white">{headerTitle || (term ? `School Year ${term.academicYear} · ${term.semester === 'sem1' ? '1st' : '2nd'} Semester` : 'Department Schedule Workbook')}</h2>
+            <p className="mt-0.5 truncate text-xs font-medium text-white/80">{headerSubtitle || departmentName || term?.departmentCode || 'Department'}</p>
           </div>
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-3">
             {validationDirectory ? <details className="relative">
@@ -1536,6 +1599,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
             />
           </div>
         </div>
+        </WorkbookSlot>
         <div className="flex min-h-0 flex-1 flex-col">
           {loading && (
             <div role="status" aria-live="polite" className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
@@ -1615,30 +1679,11 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
             </div>
           )}
         </div>
-        <footer className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">
-          <div ref={fileMenuRef} className="relative" onKeyDown={event => {
-            if (!fileMenuOpen) return
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              event.stopPropagation()
-              closeFileMenu()
-            } else if (event.key === 'Tab') setFileMenuOpen(false)
-            else if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
-              event.preventDefault()
-              const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'))
-              const index = items.indexOf(document.activeElement as HTMLButtonElement)
-              const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
-                : (index + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length
-              items[next]?.focus()
-            }
-          }}>
-            <Button type="button" variant="outline" disabled={loading || saving || !storageReady} icon={<UploadIcon className="h-4 w-4" />} aria-haspopup="menu" aria-expanded={fileMenuOpen} aria-controls={fileMenuId} onClick={() => setFileMenuOpen(open => !open)}>Import / Export</Button>
-            {fileMenuOpen && <div id={fileMenuId} role="menu" aria-label="Import or export schedule" className="absolute bottom-full left-0 z-50 mb-2 w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-              <button type="button" role="menuitem" disabled={readOnly} onClick={() => { closeFileMenu(); fileInputRef.current?.click() }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><UploadIcon className="h-4 w-4" />Import XLSX</button>
-              <button type="button" role="menuitem" disabled={!sheets.length} onClick={exportWorkbook} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><DownloadIcon className="h-4 w-4" />Export XLSX</button>
-              <button type="button" role="menuitem" onClick={downloadTemplate} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]"><DownloadIcon className="h-4 w-4" />DL Template</button>
-            </div>}
-          </div>
+        <WorkbookSlot host={embedded ? footerHost : null} active={!embedded || active}>
+        <Footer className={embedded
+          ? 'flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3'
+          : 'relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4'}>
+          {!embedded && fileMenuControl}
           <div className="min-w-0 flex-1 text-sm">
             {footerError && <p role="alert" className="text-rose-700">{footerError}</p>}
             {pendingCachedRemote ? <p role="status" aria-live="polite" className="text-amber-700">
@@ -1654,19 +1699,21 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
                 <button type="button" disabled={loading || saving || resizing} className="font-medium underline" onClick={() => resolveLiveUpdate('remote')}>{hasLocalEdits ? 'Discard edits and load latest' : 'Load latest'}</button>
               </p>
                 : liveWorkbook.error ? <p role="alert" className="text-rose-700">{liveWorkbook.error}{' '}<button type="button" className="font-medium underline" onClick={liveWorkbook.retry}>Retry live updates</button></p>
-                  : !footerError && <p role="status" aria-live="polite" className="text-slate-500">
+                  : !embedded && !footerError && <p role="status" aria-live="polite" className="text-slate-500">
                     {storageStatus || (readOnly ? 'This semester is read-only.' : !term ? 'Open a department and semester from My Department to save this workbook.' : '')}
                     {mergedCellValuesRef.current.size > 0 && <>{' '}<button type="button" disabled={loading || saving || resizing || readOnly} className="font-medium underline" onClick={useLatestValuesForConflicts}>Use latest values for all conflicts</button></>}
                   </p>}
           </div>
           <div className="ml-auto flex flex-wrap items-center gap-3">
-            {!loading && storageReady && <p role="status" aria-live="polite" className={`text-sm ${hasUnsavedChanges && !saving ? 'text-amber-700' : 'text-slate-500'}`}>
-              {saving ? 'Saving…' : hasUnsavedChanges ? 'Unsaved changes' : saveDuration === null ? 'Saved' : `Saved in ${(saveDuration / 1000).toFixed(1)}s`}
+            {!embedded && !loading && storageReady && <p role="status" aria-live="polite" className={`text-sm ${hasUnsavedChanges && !saving ? 'text-amber-700' : 'text-slate-500'}`}>
+              {saving ? 'Saving…' : hasUnsavedChanges ? 'Unsaved changes' : saveDuration === null ? (saveBaseline.persisted ? 'Saved' : 'No changes') : `Saved in ${(saveDuration / 1000).toFixed(1)}s`}
             </p>}
-            <Button type="button" variant="outline" disabled={saving} onClick={requestClose}>Close</Button>
-            <Button type="button" variant="brand" disabled={!term || readOnly || loading || saving || !storageReady || !sheets.length || Boolean(pendingLiveUpdate || pendingCachedRemote)} onClick={() => { void saveWorkbook() }}>{saving ? 'Saving…' : 'Save'}</Button>
+            {!embedded && <Button type="button" variant="outline" disabled={saving} onClick={requestClose} className="h-10! rounded-lg!">Close</Button>}
+            {!embedded && <Button type="button" variant="brand" disabled={!hasUnsavedChanges || !term || readOnly || loading || saving || !storageReady || !sheets.length || Boolean(pendingLiveUpdate || pendingCachedRemote)} onClick={() => { void saveWorkbook() }} className="h-10! rounded-lg!">{saving ? 'Saving…' : 'Save'}</Button>}
           </div>
-        </footer>
+        </Footer>
+        </WorkbookSlot>
+        {embedded && menuHost && createPortal(fileMenuControl, menuHost)}
       </div>
       {!loading && !saving && !contextMenu && !rowCountModal && validationTooltip}
       {contextMenu && (
@@ -1732,6 +1779,7 @@ export function DepartmentScheduleImportModal({ onClose, term, departmentName, r
           </div>
         </div>
       </div>}
-    </dialog>, document.body,
+    </Root>
   )
-}
+  return embedded ? content : createPortal(content, document.body)
+})

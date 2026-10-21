@@ -44,6 +44,7 @@ export interface ScheduleCellActions extends WorkbookCellActions {
 interface EditableScheduleCellProps extends ScheduleSuggestionProps {
   value: string
   editable?: boolean
+  scheduleSuggestions?: boolean
   label: string
   sheetIndex: number
   rowNumber: number
@@ -60,7 +61,7 @@ interface EditableScheduleCellProps extends ScheduleSuggestionProps {
   validationMessage?: string
 }
 
-export const EditableScheduleCell = memo(function EditableScheduleCell({ value, editable = true, label, sheetIndex, rowNumber, rowIndex, column, selected, rowSelected, selectionTop, selectionBottom, issueHighlighted = false, issueHighlightTop = false, issueHighlightBottom = false, actions, validationMessage, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel = 0 }: EditableScheduleCellProps) {
+export const EditableScheduleCell = memo(function EditableScheduleCell({ value, editable = true, scheduleSuggestions = true, label, sheetIndex, rowNumber, rowIndex, column, selected, rowSelected, selectionTop, selectionBottom, issueHighlighted = false, issueHighlightTop = false, issueHighlightBottom = false, actions, validationMessage, suggestionDirectory, suggestionError, courseSuggestions, courseSuggestionError, suggestionYearLevel = 0 }: EditableScheduleCellProps) {
   const cellRef = useRef<HTMLTableCellElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const activeRef = useRef(false)
@@ -70,12 +71,12 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
   const [suggestionsOpen, setSuggestionsOpen] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
   const [caret, setCaret] = useState({ start: 0, end: 0 })
-  const isCollege = column === 0
+  const isCollege = scheduleSuggestions && column === 0
   const isRoom = column === 19 || column === 20
-  const isCourse = column === 2 || column === 3
+  const isCourse = scheduleSuggestions && (column === 2 || column === 3)
   const isTime = column === 15 || column === 16, isDay = column === 17 || column === 18
   const isMeetingSlot = isTime || isDay
-  const hasSuggestions = isCollege || isCourse || isRoom || isMeetingSlot || column === 13 || column === 14
+  const hasSuggestions = scheduleSuggestions && (isCollege || isCourse || isRoom || isMeetingSlot || column === 13 || column === 14)
   const fragment = isCourse ? { start: 0, end: value.length, query: value.trim() } : facultyFragment(value, caret.start, caret.end)
   const roomEntryIndex = isRoom ? splitScheduleResources(value.slice(fragment.start, fragment.end)).length > 1
     ? -1 : splitScheduleResources(value.slice(0, fragment.start)).length - 1 : 0
@@ -125,7 +126,7 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
       const course = isCourse ? chosenCourse ?? resolveScheduleCourse(courseSuggestions ?? [], text, column, suggestionYearLevel) : undefined
       if (course?.code && course.title && actions.chooseCourse) actions.chooseCourse(cell, course)
       else {
-        const completed = completeScheduleResourceText(text, column, suggestionDirectory)
+        const completed = scheduleSuggestions ? completeScheduleResourceText(text, column, suggestionDirectory) : text
         if (completed !== value) actions.updateCell(cell, completed)
       }
     }

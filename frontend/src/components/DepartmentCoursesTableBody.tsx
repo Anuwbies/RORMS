@@ -38,6 +38,7 @@ const CourseRow = memo(function CourseRow({ row, rowIndex, sheetIndex, selectedC
     {row.values.map((value, column) => <EditableScheduleCell
       key={column}
       value={value}
+      scheduleSuggestions={false}
       label={`${DEPARTMENT_COURSE_HEADERS[column]}, row ${rowIndex + 1}`}
       sheetIndex={sheetIndex}
       rowNumber={row.rowNumber}

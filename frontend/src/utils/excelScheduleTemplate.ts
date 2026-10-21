@@ -38,7 +38,7 @@ export const SCHEDULE_HEADER_GROUPS = [
   { label: 'Descriptive Title', offset: 3, width: 1, children: [] },
   { label: 'Course', offset: 4, width: 1, children: [] },
   { label: 'Units', offset: 5, width: 3, children: ['Lec', 'Lab', 'Total'] },
-  { label: '', offset: 8, width: 3, children: ['Lec', 'Lab', 'Total'] },
+  { label: 'Hours', offset: 8, width: 3, children: ['Lec', 'Lab', 'Total'] },
   { label: 'Max No. of Stud.', offset: 11, width: 1, children: [] },
   { label: 'Section', offset: 12, width: 1, children: [] },
   { label: 'Faculty', offset: 13, width: 2, children: ['Lec', 'Lab'] },
@@ -81,7 +81,10 @@ export function validateScheduleHeader(header: ScheduleRange, read: ScheduleCell
   }
   const expected = scheduleHeaderValues()
   for (let row = 0; row < 2; row++) for (let column = 0; column < SCHEDULE_COLUMN_COUNT; column++) {
-    if (normalizedHeader(read(header.s.r + row, columns[column])) !== normalizedHeader(expected[row][column])) {
+    const actual = normalizedHeader(read(header.s.r + row, columns[column]))
+    // Workbooks saved before the Hours heading was added have this cell blank.
+    if (row === 0 && column === 8 && !actual) continue
+    if (actual !== normalizedHeader(expected[row][column])) {
       return `The selected headers do not match the fixed template at column ${column + 1}, header row ${row + 1}.`
     }
   }

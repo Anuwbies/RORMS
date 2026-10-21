@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { createEmptyDepartmentScheduleSheet, type DepartmentScheduleImportSheet } from '../src/utils/departmentScheduleImport.ts'
-import { createDepartmentScheduleWorkbookState } from '../src/utils/departmentScheduleWorkbookState.ts'
+import { createDepartmentScheduleWorkbookState, readDepartmentScheduleWorkbookState } from '../src/utils/departmentScheduleWorkbookState.ts'
 import { departmentScheduleImportRowIssues, extractDepartmentScheduleImportRows } from '../src/utils/departmentScheduleImportRows.ts'
 import type { ScheduleDirectory } from '../src/utils/excelScheduleRows.ts'
 import { parseExcelScheduleDays } from '../src/utils/ScheduleValidation.ts'
@@ -110,6 +110,19 @@ test('saves a schedule with an assigned room as Draft and retains all 21 header 
   assert.deepEqual(row.rawValues, values())
   assert.deepEqual(row.meetings.map(meeting => [meeting.instructorId, meeting.startTime, meeting.endTime, meeting.days, meeting.roomId]),
     [['member1', '07:30', '09:00', ['Wed'], 'room1']])
+})
+
+test('decimal and zero Hours survive the compact workbook save and reopen path', () => {
+  const sheet = createEmptyDepartmentScheduleSheet()
+  sheet.rows[0].values = values()
+  sheet.rows[0].values[8] = '2.5'
+  sheet.rows[0].values[9] = '0'
+  sheet.rows[0].values[10] = '2.5'
+  const saved = createDepartmentScheduleWorkbookState([sheet], 0, null)
+  const reopened = readDepartmentScheduleWorkbookState(saved.editorState)
+  assert.deepEqual(reopened.sheets[0].rows[0].values.slice(8, 11), ['2.5', '0', '2.5'])
+  const [projected] = extractDepartmentScheduleImportRows(reopened.snapshot, reopened.ownedNames, reopened.sheets, directory)
+  assert.deepEqual(projected.hours, { lec: 2.5, lab: 0, total: 2.5 })
 })
 
 test('includes hidden years and multiple sheets; keeps stable source IDs after inserted rows', () => {
