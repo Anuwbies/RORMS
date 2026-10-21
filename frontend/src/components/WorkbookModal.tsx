@@ -14,11 +14,12 @@ interface WorkbookModalProps {
   department: DepartmentCoursesContext
   scheduleReadOnly: boolean
   coursesReadOnly: boolean
+  viewOnly?: boolean
 }
 
 type WorkbookTab = 'schedule' | 'courses' | 'summary'
 
-export function WorkbookModal({ onClose, departmentName, term, department, scheduleReadOnly, coursesReadOnly }: WorkbookModalProps) {
+export function WorkbookModal({ onClose, departmentName, term, department, scheduleReadOnly, coursesReadOnly, viewOnly = false }: WorkbookModalProps) {
   const headerTitle = `School Year ${term.academicYear.replace(/\s*[-–—]\s*/, ' - ')} · ${term.semester === 'sem1' ? '1st' : '2nd'} Semester`
   const dialogRef = useRef<HTMLDialogElement>(null)
   const scheduleRef = useRef<WorkbookSaveHandle>(null)
@@ -49,7 +50,7 @@ export function WorkbookModal({ onClose, departmentName, term, department, sched
     setSummarySaveState(previous => previous.dirty === next.dirty && previous.canSave === next.canSave && previous.saving === next.saving ? previous : next)
   }, [])
 
-  const hasChanges = scheduleSaveState.dirty || coursesSaveState.dirty || summarySaveState.dirty
+  const hasChanges = !viewOnly && (scheduleSaveState.dirty || coursesSaveState.dirty || summarySaveState.dirty)
   const canSaveAll = hasChanges && !savingAll && (!scheduleSaveState.dirty || scheduleSaveState.canSave)
     && (!coursesSaveState.dirty || coursesSaveState.canSave) && (!summarySaveState.dirty || summarySaveState.canSave)
 
@@ -79,6 +80,7 @@ export function WorkbookModal({ onClose, departmentName, term, department, sched
   }
 
   const requestClose = () => {
+    if (viewOnly) { onClose(); return }
     if (savingAll || scheduleSaveState.saving || coursesSaveState.saving || summarySaveState.saving) return
     if (hasChanges) setConfirmClose(true)
     else onClose()
@@ -126,6 +128,11 @@ export function WorkbookModal({ onClose, departmentName, term, department, sched
         </button>
         <span ref={setScheduleMenuHost} className="relative flex shrink-0" />
       </div>
+      <div className={`flex min-w-32 sm:min-w-40 ${activeTab === 'summary' ? 'bg-[#dce2e8] text-[#0b57d0]' : 'text-[#3c4043] hover:bg-[#e8ebf0]'}`}>
+        <button id="workbook-summary-tab" type="button" role="tab" aria-controls="workbook-summary-panel" aria-selected={activeTab === 'summary'}
+          onClick={() => setActiveTab('summary')} className="min-w-0 flex-1 px-3 text-left text-base font-medium focus-visible:outline-2 focus-visible:outline-[#0b57d0] sm:px-5">Summary</button>
+        <span ref={setSummaryMenuHost} className="relative flex shrink-0" />
+      </div>
       <div className={`flex min-w-32 sm:min-w-40 ${activeTab === 'courses' ? 'bg-[#dce2e8] text-[#0b57d0]' : 'text-[#3c4043] hover:bg-[#e8ebf0]'}`}>
         <button
           id="workbook-courses-tab"
@@ -139,11 +146,6 @@ export function WorkbookModal({ onClose, departmentName, term, department, sched
           Courses
         </button>
         <span ref={setCoursesMenuHost} className="relative flex shrink-0" />
-      </div>
-      <div className={`flex min-w-32 sm:min-w-40 ${activeTab === 'summary' ? 'bg-[#dce2e8] text-[#0b57d0]' : 'text-[#3c4043] hover:bg-[#e8ebf0]'}`}>
-        <button id="workbook-summary-tab" type="button" role="tab" aria-controls="workbook-summary-panel" aria-selected={activeTab === 'summary'}
-          onClick={() => setActiveTab('summary')} className="min-w-0 flex-1 px-3 text-left text-base font-medium focus-visible:outline-2 focus-visible:outline-[#0b57d0] sm:px-5">Summary</button>
-        <span ref={setSummaryMenuHost} className="relative flex shrink-0" />
       </div>
     </nav>
   )
@@ -172,7 +174,7 @@ export function WorkbookModal({ onClose, departmentName, term, department, sched
               headerTitle={headerTitle}
               headerSubtitle={departmentName}
               term={term}
-              readOnly={scheduleReadOnly}
+              readOnly={viewOnly || scheduleReadOnly}
               onClose={onClose}
             />
           </div>
@@ -189,25 +191,25 @@ export function WorkbookModal({ onClose, departmentName, term, department, sched
               department={department}
               headerTitle={headerTitle}
               headerSubtitle={departmentName}
-              readOnly={coursesReadOnly}
+              readOnly={viewOnly || coursesReadOnly}
               onClose={onClose}
             />
           </div>
           <div id="workbook-summary-panel" role="tabpanel" aria-labelledby="workbook-summary-tab" aria-hidden={activeTab !== 'summary'} inert={activeTab !== 'summary'} className={`absolute inset-0 min-h-0 ${activeTab === 'summary' ? '' : 'invisible'}`}>
             <DepartmentSummaryWorkbook ref={summaryRef} term={term} headerTitle={headerTitle} headerSubtitle={departmentName}
               headerHost={headerHost} footerHost={footerHost} menuHost={summaryMenuHost} active={activeTab === 'summary'}
-              readOnly={scheduleReadOnly} onActivate={() => setActiveTab('summary')} onSaveStateChange={updateSummarySaveState} />
+              readOnly={viewOnly || scheduleReadOnly} onActivate={() => setActiveTab('summary')} onSaveStateChange={updateSummarySaveState} />
           </div>
         </div>
         <footer className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">
           {tabs}
-          <p role="status" aria-live="polite" className={`text-sm ${hasChanges && !savingAll ? 'text-amber-700' : 'text-slate-500'}`}>
+          {!viewOnly && <p role="status" aria-live="polite" className={`text-sm ${hasChanges && !savingAll ? 'text-amber-700' : 'text-slate-500'}`}>
             {savingAll ? 'Saving workbook…' : hasChanges ? 'Unsaved changes' : saveCompleted ? 'Workbook saved.' : 'No changes'}
-          </p>
+          </p>}
           <div ref={setFooterHost} className="min-w-0 flex-1" />
           {saveError && <p role="alert" className="text-sm text-rose-700">{saveError}</p>}
           <Button type="button" variant="outline" disabled={savingAll || scheduleSaveState.saving || coursesSaveState.saving || summarySaveState.saving} onClick={requestClose} className="h-10! rounded-lg!">Close</Button>
-          <Button type="button" variant="brand" disabled={!canSaveAll} onClick={() => { void saveChangedWorkbooks() }} className="h-10! rounded-lg!">{savingAll || scheduleSaveState.saving || coursesSaveState.saving || summarySaveState.saving ? 'Saving…' : 'Save'}</Button>
+          {!viewOnly && <Button type="button" variant="brand" disabled={!canSaveAll} onClick={() => { void saveChangedWorkbooks() }} className="h-10! rounded-lg!">{savingAll || scheduleSaveState.saving || coursesSaveState.saving || summarySaveState.saving ? 'Saving…' : 'Save'}</Button>}
         </footer>
       </div>
       {confirmClose && <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" onKeyDown={event => {

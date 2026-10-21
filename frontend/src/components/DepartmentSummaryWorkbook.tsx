@@ -10,6 +10,7 @@ import { titleCaseName } from '../utils/userName'
 import { CELL_UNDO_COOLDOWN_MS } from '../utils/cellTextHistory'
 import { headerResizeScrollStep } from '../utils/headerColumnWidths'
 import { WorkbookSlot } from './WorkbookSlot'
+import { DownloadIcon, UploadIcon } from './Icons'
 import { ExcelFacultySuggestions } from './ExcelFacultySuggestions'
 import type { WorkbookSaveHandle, WorkbookSaveState } from './workbookSaveTypes'
 
@@ -345,6 +346,18 @@ export const DepartmentSummaryWorkbook = forwardRef<WorkbookSaveHandle, Departme
   }, [dirty, readOnly, loading, saving, autoFilling, storageReady, onSaveStateChange])
 
   useEffect(() => {
+    if (!readOnly) return
+    setSelectedCell(null)
+    setSelectedRange(null)
+    rangeRef.current = null
+    setSelectedRow(null)
+    dragRef.current = null
+    dragPointerRef.current = null
+    if (dragFrameRef.current !== null) cancelAnimationFrame(dragFrameRef.current)
+    dragFrameRef.current = null
+  }, [readOnly])
+
+  useEffect(() => {
     if (!menuOpen) return
     const close = (event: PointerEvent) => { if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false) }
     document.addEventListener('pointerdown', close)
@@ -395,7 +408,7 @@ export const DepartmentSummaryWorkbook = forwardRef<WorkbookSaveHandle, Departme
   }
 
   const startCellSelection = (event: ReactPointerEvent<HTMLTableCellElement>, row: number, column: number) => {
-    if (event.button !== 0 || editingCell && column !== -1) return
+    if (readOnly || event.button !== 0 || editingCell && column !== -1) return
     if (editingCell) finishEditing(true, false)
     event.preventDefault()
     const current = rangeRef.current
@@ -849,14 +862,24 @@ export const DepartmentSummaryWorkbook = forwardRef<WorkbookSaveHandle, Departme
     }
   }
 
+  const downloadTemplate = () => {
+    setMenuOpen(false)
+    const anchor = document.createElement('a')
+    anchor.href = TEMPLATE_URL
+    anchor.download = 'Department Summary Template.xlsx'
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+  }
+
   const menu = <div ref={menuRef} className="relative flex h-full">
     <button type="button" aria-label="Summary file actions" aria-haspopup="menu" aria-controls={menuId} aria-expanded={menuOpen}
       disabled={loading || saving} onClick={() => { onActivate(); setMenuOpen(open => !open) }}
       className="flex w-8 items-center justify-center text-sm hover:bg-black/5 focus-visible:outline-2 focus-visible:outline-[#0b57d0] disabled:opacity-50">▾</button>
     {menuOpen && <div id={menuId} role="menu" aria-label="Summary file actions" className="absolute bottom-full right-0 z-50 mb-2 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
-      <button type="button" role="menuitem" disabled={readOnly} onClick={() => { setMenuOpen(false); inputRef.current?.click() }} className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-[#f3f7ee] disabled:text-slate-400">Import XLSX</button>
-      <button type="button" role="menuitem" onClick={() => { void exportSummary() }} className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-[#f3f7ee]">Export XLSX</button>
-      <a role="menuitem" href={TEMPLATE_URL} download="Department Summary Template.xlsx" onClick={() => setMenuOpen(false)} className="flex w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-[#f3f7ee]">DL Format</a>
+      <button type="button" role="menuitem" disabled={readOnly} onClick={() => { setMenuOpen(false); inputRef.current?.click() }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:text-slate-400"><UploadIcon className="h-4 w-4" />Import XLSX</button>
+      <button type="button" role="menuitem" onClick={() => { void exportSummary() }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 enabled:hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]"><DownloadIcon className="h-4 w-4" />Export XLSX</button>
+      <button type="button" role="menuitem" onClick={downloadTemplate} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-[#f3f7ee] focus-visible:outline-2 focus-visible:outline-[var(--brand-color)]"><DownloadIcon className="h-4 w-4" />DL Template</button>
     </div>}
   </div>
 
@@ -945,43 +968,43 @@ export const DepartmentSummaryWorkbook = forwardRef<WorkbookSaveHandle, Departme
               <th scope="col" className="relative border-r border-b border-black bg-[#ffff00] px-2 py-1">Lab{resizeHandle(widthIndex(5), 'Lab')}</th></tr>
           </thead>
           <tbody>{rows.map((row, rowIndex) => {
-            const rowSelected = selectedRange?.column === -1
+            const rowSelected = !readOnly && (selectedRange?.column === -1
               ? rowIndex >= Math.min(selectedRange.anchor, selectedRange.end) && rowIndex <= Math.max(selectedRange.anchor, selectedRange.end)
-              : selectedRow === rowIndex
+              : selectedRow === rowIndex)
             const rangeTop = selectedRange && rowIndex === Math.min(selectedRange.anchor, selectedRange.end)
             const rangeBottom = selectedRange && rowIndex === Math.max(selectedRange.anchor, selectedRange.end)
             return <tr key={rowIndex} data-summary-row={rowIndex} className={rowIndex === rows.length - 1 ? 'bg-[#e3edda] font-semibold' : rowIndex % 2 ? 'bg-slate-50' : 'bg-white'}>
-            <th scope="row" tabIndex={0} data-summary-row-counter aria-label={`Select row ${rowIndex + 1}`} aria-selected={rowSelected}
+            <th scope="row" tabIndex={readOnly ? -1 : 0} data-summary-row-counter aria-label={`${readOnly ? 'Row' : 'Select row'} ${rowIndex + 1}`} aria-selected={rowSelected}
               className={`relative border-r border-b border-slate-300 px-2 py-2 font-normal text-slate-500 select-none ${rowSelected
                 ? `bg-[#62853e]/15 outline-none after:pointer-events-none after:absolute after:left-0 after:-right-px after:top-0 after:-bottom-px after:z-[1] after:border-l-2 after:border-[var(--brand-color)] ${rangeTop || !selectedRange ? 'after:border-t-2' : ''} ${rangeBottom || !selectedRange ? 'after:border-b-2' : ''}`
-                : 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand-color)]'}`}
+                : readOnly ? '' : 'focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--brand-color)]'}`}
               onPointerDown={event => startCellSelection(event, rowIndex, -1)}
               onPointerMove={moveCellSelection}
               onPointerUp={endCellSelection}
               onPointerCancel={endCellSelection}
               onLostPointerCapture={endCellSelection}
-              onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setSelectedCell(null); changeRange(null); setSelectedRow(rowIndex) } }}
+              onKeyDown={event => { if (!readOnly && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); setSelectedCell(null); changeRange(null); setSelectedRow(rowIndex) } }}
             >{rowIndex === rows.length - 1 ? '' : rowIndex + 1}</th>
             {row.map((value, columnIndex) => {
               if (rowIndex === rows.length - 1 && columnIndex > 0 && columnIndex < 4) return null
               const choices = columnIndex === 2 ? REGULARITY_CHOICES : columnIndex === 3 ? EMPLOYMENT_CHOICES : null
-              const selected = selectedRange?.column === columnIndex
+              const selected = !readOnly && selectedRange?.column === columnIndex
                 && rowIndex >= Math.min(selectedRange.anchor, selectedRange.end)
                 && rowIndex <= Math.max(selectedRange.anchor, selectedRange.end)
               const editing = editingCell?.row === rowIndex && editingCell.column === columnIndex
               return <Fragment key={COLUMNS[columnIndex].letter}><td ref={editing && columnIndex === 0 ? facultyCellRef : editing && choices ? choiceCellRef : undefined} data-summary-cell={`${rowIndex}:${columnIndex}`}
-                aria-label={`${COLUMNS[columnIndex].label}, row ${rowIndex + 1}`} aria-selected={selected || rowSelected} tabIndex={editing ? -1 : 0}
+                aria-label={`${COLUMNS[columnIndex].label}, row ${rowIndex + 1}`} aria-selected={selected || rowSelected} tabIndex={readOnly || editing ? -1 : 0}
                 colSpan={rowIndex === rows.length - 1 && columnIndex === 0 ? 4 : undefined}
                 className={`relative h-10 max-w-0 border-r border-b border-slate-300 px-2 py-2 outline-none ${columnIndex === 7 ? 'border-l' : ''} ${selected || rowSelected
                   ? `bg-[#62853e]/15 after:pointer-events-none after:absolute after:inset-x-0 after:top-0 after:-bottom-px after:border-[var(--brand-color)] ${rowSelected ? `after:-right-px after:z-[1] ${columnIndex === 6 || columnIndex === COLUMNS.length - 1 ? 'after:border-r-2' : ''} ${columnIndex === 7 ? 'after:border-l-2' : ''}` : 'after:border-x-2'} ${rangeTop || !selectedRange ? 'after:border-t-2' : ''} ${rangeBottom || !selectedRange ? 'after:border-b-2' : ''}`
-                  : 'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-color)]'}`}
+                  : readOnly ? '' : 'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--brand-color)]'}`}
                 onPointerDown={event => startCellSelection(event, rowIndex, columnIndex)}
                 onPointerMove={moveCellSelection}
                 onPointerUp={endCellSelection}
                 onPointerCancel={endCellSelection}
                 onLostPointerCapture={endCellSelection}
                 onFocus={() => {
-                  if (dragRef.current || editingCell) return
+                  if (readOnly || dragRef.current || editingCell) return
                   if (!selectedRange || selectedRange.column !== columnIndex || rowIndex < Math.min(selectedRange.anchor, selectedRange.end) || rowIndex > Math.max(selectedRange.anchor, selectedRange.end)) {
                     changeRange({ column: columnIndex, anchor: rowIndex, end: rowIndex })
                   }

@@ -9,6 +9,15 @@ export interface ReservationLogSource {
     startTime: string
     endTime: string
     status: string
+    requestType: 'Standard' | 'Extended'
+    reviewStep: string
+    deanRecommend: boolean
+    registrarRecommend: boolean
+    universityAdministratorRecommend: boolean
+    declinedByRole?: string
+    declinedReason?: string
+    cancellationReason?: string
+    evidenceCount: number
     purpose?: string
     subjectCode?: string
     classSection?: string
@@ -33,6 +42,7 @@ interface ReservationLogDetails {
   outcome: string
   sourceId?: string
   reservationSnapshot?: { date: string; department: string; beforeStatus: string; afterStatus: string }
+  reservationChanges?: Array<{ field: string; label: string; before: string; after: string }>
 }
 
 const label = 'text-[0.65rem] font-bold uppercase tracking-widest text-slate-500'
@@ -40,6 +50,7 @@ const panel = 'rounded-xl border border-slate-200/80 bg-slate-50/80 p-3'
 const statusClasses: Record<string, string> = {
   Pending: 'bg-amber-100 text-amber-700', Approved: 'bg-emerald-100 text-emerald-700',
   Declined: 'bg-rose-100 text-rose-700', Cancelled: 'bg-slate-100 text-slate-700', Completed: 'bg-blue-100 text-blue-700',
+  'Needs Evidence': 'bg-purple-100 text-purple-700',
 }
 
 function Status({ value }: { value: string }) {
@@ -95,12 +106,22 @@ export function ReservationLogDetailsModal({ event, source, isLoading, sourceNot
             </dl>
 
             <div className={panel}>
-              <h5 className={`mb-2 ${label}`}>{event.reviewStage ? `${event.reviewStage} recommendation` : 'Recorded status change'}</h5>
+              <h5 className={`mb-2 ${label}`}>{event.reviewStage ? `${event.reviewStage} recommendation` : recorded?.beforeStatus === recorded?.afterStatus ? 'Recorded review change' : 'Recorded status change'}</h5>
               <dl className="grid grid-cols-2 gap-3">
                 <div className="min-w-0 rounded-lg border border-slate-200 bg-white p-2.5"><dt className={`mb-2 ${label}`}>Before</dt><dd><Status value={recorded?.beforeStatus || 'Unknown'} /></dd></div>
                 <div className="min-w-0 rounded-lg border border-[#c6dbb6] bg-[#f3f7ee] p-2.5"><dt className={`mb-2 ${label}`}>After</dt><dd><Status value={recorded?.afterStatus || 'Unknown'} /></dd></div>
               </dl>
             </div>
+
+            {Boolean(event.reservationChanges?.some(change => change.field !== 'status')) && <div className={panel}>
+              <h5 className={`mb-2 ${label}`}>Recorded review changes</h5>
+              <dl className="space-y-2">
+                {event.reservationChanges?.filter(change => change.field !== 'status').map(change => <div key={change.field} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                  <dt className={label}>{change.label}</dt>
+                  <dd className="mt-1 break-words text-sm font-semibold text-slate-700">{change.before} → {change.after}</dd>
+                </div>)}
+              </dl>
+            </div>}
 
             <div className={panel}>
               <h5 className={`mb-2 ${label}`}>Reservation at the time of this event</h5>
@@ -121,6 +142,8 @@ export function ReservationLogDetailsModal({ event, source, isLoading, sourceNot
                     {[
                       ['Reserved by', source.requester?.name || 'Requester unavailable'],
                       ['Current status', reservation.status],
+                      ['Request type', reservation.requestType],
+                      ['Review step', reservation.reviewStep],
                       ['Booking date', bookingDate(reservation.date)],
                       ['Time', `${reservation.startTime || 'Not set'} – ${reservation.endTime || 'Not set'}`],
                       ['Attendees', reservation.attendees === undefined ? 'Not recorded' : `${reservation.attendees} pax`],
@@ -128,10 +151,16 @@ export function ReservationLogDetailsModal({ event, source, isLoading, sourceNot
                       ['Subject code', reservation.subjectCode || 'N/A'],
                       ['Section', reservation.classSection || 'N/A'],
                       ['Department', reservation.department || 'Unassigned'],
+                      ['Dean recommended', reservation.deanRecommend ? 'Yes' : 'No'],
+                      ['Registrar recommended', reservation.registrarRecommend ? 'Yes' : 'No'],
+                      ['Final approval', reservation.universityAdministratorRecommend ? 'Yes' : 'No'],
+                      ['Evidence files', String(reservation.evidenceCount)],
                       ['Requested', reservation.createdAt?.toLocaleDateString('en-US', { timeZone: 'Asia/Manila' }) || 'Date unavailable'],
                     ].map(([title, value]) => <div key={title} className="min-w-0"><dt className={label}>{title}</dt><dd className="mt-1 break-words text-sm font-semibold text-slate-700">{value}</dd></div>)}
                   </dl>
                   {source.requester?.email && <p className="break-all text-xs text-slate-500">{source.requester.email}</p>}
+                  {reservation.declinedByRole && <p className="text-xs text-slate-600">Declined by {reservation.declinedByRole}{reservation.declinedReason ? `: ${reservation.declinedReason}` : ''}</p>}
+                  {reservation.cancellationReason && <p className="text-xs text-slate-600">Cancellation reason: {reservation.cancellationReason}</p>}
                   <div className="border-t border-slate-200/80 pt-2.5"><h6 className={`mb-1 ${label}`}>Purpose</h6><p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-600">{reservation.purpose || 'No purpose specified.'}</p></div>
                 </> : <p className="text-xs text-slate-500">Current reservation information is unavailable. The recorded event is preserved above.</p>}
               </div>

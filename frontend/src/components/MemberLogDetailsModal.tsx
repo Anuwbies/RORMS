@@ -16,7 +16,7 @@ export interface MemberLogDetails {
   role?: string
   outcome?: 'Success' | 'Warning' | 'Failed'
   sourcePath?: string
-  memberSnapshot?: { email: string; role: string; department: string }
+  memberSnapshot?: { email: string; role: string; department: string; isReactivation?: boolean }
   memberChanges?: Array<{ field: string; label: string; before: string; after: string }>
 }
 
@@ -134,7 +134,7 @@ export function MemberLogDetailsModal({ event, onClose }: { event: MemberLogDeta
                 <p className="break-words text-sm font-bold text-slate-700">{event.target}</p>
                 {event.memberSnapshot?.email && <p className="mt-1 break-all text-xs text-slate-500">{event.memberSnapshot.email}</p>}
                 <dl className="mt-3 grid grid-cols-2 gap-3 border-t border-slate-200/80 pt-2.5">
-                  {[['Role', event.memberSnapshot?.role || 'Not recorded'], ['Department', event.memberSnapshot?.department || 'Unassigned']].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm font-semibold text-slate-700">{value}</dd></div>)}
+                  {[['Role', event.memberSnapshot?.role || 'Not recorded'], ['Department', event.memberSnapshot?.department || 'Unassigned'], ...(event.action.toLowerCase().includes('invit') ? [['Invitation type', event.memberSnapshot?.isReactivation ? 'Re-invitation' : 'Invitation']] : [])].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-500">{label}</dt><dd className="mt-1 break-words text-sm font-semibold text-slate-700">{value}</dd></div>)}
                 </dl>
               </div>
 

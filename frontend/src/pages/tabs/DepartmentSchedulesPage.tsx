@@ -7,11 +7,11 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { PlotScheduleModal } from '../../components/PlotScheduleModal'
-import { DepartmentScheduleWorkbook } from '../../components/DepartmentScheduleWorkbook'
+import { WorkbookModal } from '../../components/WorkbookModal'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
-import { canEditDepartmentWorkbook, workbookEditablePhases, type WorkbookMembership } from '../../utils/departmentWorkbookPermissions'
+import type { WorkbookMembership } from '../../utils/departmentWorkbookPermissions'
 import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
 import { resolveCurrentSemester } from '../../utils/academicSemester'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
@@ -168,7 +168,7 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
 
   // Modals & Navigation state
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
-  const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false)
+  const [isWorkbookOpen, setIsWorkbookOpen] = useState(false)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
   const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
@@ -602,23 +602,26 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
           onSelectSemester={(semesterPhase) => {
             setSelectedSemesterPhase(semesterPhase)
             setIsSchoolYearModalOpen(false)
-            setIsAddScheduleModalOpen(true)
+            setIsWorkbookOpen(true)
           }}
           subtitle={`Choose the academic term to open the saved workbook for ${selectedDepartment?.code}.`}
-          editablePhases={[...workbookEditablePhases(workbookMembership?.role)]}
+          editablePhases={[]}
         />
 
       </div>
 
-      {/* Open the same saved department/year/semester workbook as My Department. */}
-      {isAddScheduleModalOpen && selectedDepartment && selectedAcademicYear?.id && selectedAcademicYear.academicYear && selectedSemesterPhase && <DepartmentScheduleWorkbook
+      {/* Open the shared workbook for viewing across all three tabs. */}
+      {isWorkbookOpen && selectedDepartment && selectedAcademicYear?.id && selectedAcademicYear.academicYear && selectedSemesterPhase && <WorkbookModal
         key={`${selectedDepartment.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
-        onClose={() => setIsAddScheduleModalOpen(false)}
+        onClose={() => setIsWorkbookOpen(false)}
         departmentName={selectedDepartment.name}
         term={{ departmentId: selectedDepartment.id, departmentCode: selectedDepartment.code,
           academicYearId: selectedAcademicYear.id, academicYear: selectedAcademicYear.academicYear,
           semester: semesterKey(selectedSemesterPhase.name), membershipId: workbookMembership?.id || '' }}
-        readOnly={!canEditDepartmentWorkbook(workbookMembership || undefined, auth.currentUser?.uid || '', selectedDepartment.code, selectedSemesterPhase.phase)}
+        department={{ departmentId: selectedDepartment.id, departmentCode: selectedDepartment.code, membershipId: workbookMembership?.id || '' }}
+        scheduleReadOnly
+        coursesReadOnly
+        viewOnly
       />}
 
       {/* Instructor Schedule Modal (Opened when clicking a member in DataTable) */}

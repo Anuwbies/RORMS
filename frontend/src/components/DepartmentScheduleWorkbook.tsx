@@ -184,6 +184,7 @@ export const DepartmentScheduleWorkbook = forwardRef<WorkbookSaveHandle, Departm
   }, [])
 
   useEffect(() => {
+    if (readOnly) return
     const persistOnPageHide = () => { void flushPendingDraft().catch(() => {}) }
     const persistWhenHidden = () => { if (document.visibilityState === 'hidden') persistOnPageHide() }
     window.addEventListener('pagehide', persistOnPageHide)
@@ -193,7 +194,7 @@ export const DepartmentScheduleWorkbook = forwardRef<WorkbookSaveHandle, Departm
       document.removeEventListener('visibilitychange', persistWhenHidden)
       void flushPendingDraft().catch(() => {})
     }
-  }, [flushPendingDraft])
+  }, [flushPendingDraft, readOnly])
 
   const discardDraft = async (): Promise<boolean> => {
     if (draftTimerRef.current !== null) window.clearTimeout(draftTimerRef.current)
@@ -418,7 +419,7 @@ export const DepartmentScheduleWorkbook = forwardRef<WorkbookSaveHandle, Departm
       if (cancelled) return
       const loaded = saved ? readDepartmentScheduleWorkbookState(saved.editorState) : null
       const account = auth.currentUser?.uid
-      const draftKey = account ? JSON.stringify([account, workbookTermPaths(term).document]) : null
+      const draftKey = !readOnly && account ? JSON.stringify([account, workbookTermPaths(term).document]) : null
       let draft: DepartmentScheduleDraft | null = null
       if (draftKey) {
         try { draft = await readDepartmentScheduleDraft(draftKey) }
@@ -478,7 +479,7 @@ export const DepartmentScheduleWorkbook = forwardRef<WorkbookSaveHandle, Departm
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [term?.departmentId, term?.departmentCode, term?.academicYearId, term?.academicYear, term?.semester, term?.membershipId, flushPendingDraft])
+  }, [term?.departmentId, term?.departmentCode, term?.academicYearId, term?.academicYear, term?.semester, term?.membershipId, readOnly, flushPendingDraft])
 
   useEffect(() => {
     if (!file) return
@@ -534,7 +535,7 @@ export const DepartmentScheduleWorkbook = forwardRef<WorkbookSaveHandle, Departm
 
   useEffect(() => {
     const key = draftKeyRef.current
-    if (!draftReady || !storageReady || loading || saving || !key) return
+    if (readOnly || !draftReady || !storageReady || loading || saving || !key) return
     if (!hasLocalEdits) {
       if (draftTimerRef.current !== null) window.clearTimeout(draftTimerRef.current)
       draftTimerRef.current = null
@@ -562,7 +563,7 @@ export const DepartmentScheduleWorkbook = forwardRef<WorkbookSaveHandle, Departm
       if (draftTimerRef.current !== null) window.clearTimeout(draftTimerRef.current)
       draftTimerRef.current = null
     }
-  }, [draftReady, storageReady, loading, saving, hasLocalEdits, saveBaseline, sheets, columnWidths, selectedSheet, file, flushPendingDraft])
+  }, [readOnly, draftReady, storageReady, loading, saving, hasLocalEdits, saveBaseline, sheets, columnWidths, selectedSheet, file, flushPendingDraft])
 
   const sheet = sheets[selectedSheet]
   const visibleRows = sheet?.rows ?? EMPTY_ROWS
