@@ -509,13 +509,11 @@ async function getUserIdsForRoles(roles: UserRole[]): Promise<string[]> {
     .filter(Boolean))];
 }
 
-async function getReservationReviewerUserIds(role: "Dean" | "University Administrator", department: string): Promise<string[]> {
-  if (role === "Dean" && !department) return [];
+async function getReservationReviewerUserIds(role: "Registrar" | "University Administrator"): Promise<string[]> {
   const snapshot = await getDb().collection("memberships").where("role", "==", role).get();
   return [...new Set(snapshot.docs
     .map(membership => membership.data())
-    .filter(membership => membership.status === "accepted"
-      && (role !== "Dean" || stringValue(membership.department) === department))
+    .filter(membership => membership.status === "accepted")
     .map(membership => stringValue(membership.userId))
     .filter(Boolean))];
 }
@@ -626,13 +624,13 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
     } else if (deanRecommended && status === "Pending") {
       notification = {
         title: "Dean recommended your reservation",
-        message: `Your request for ${roomName} has been recommended by the Dean and is awaiting University Administrator approval.`,
+        message: `Your request for ${roomName} has been recommended by the Dean and is awaiting Registrar review.`,
         type: "booking_recommended",
       };
     } else if (registrarRecommended && status === "Pending") {
       notification = {
         title: "Registrar recommended your reservation",
-        message: `Your request for ${roomName} has been recommended by the Registrar and is awaiting Dean review.`,
+        message: `Your request for ${roomName} has been recommended by the Registrar and is awaiting University Administrator approval.`,
         type: "booking_recommended",
       };
     } else if (statusChanged && status === "Declined") {
@@ -671,23 +669,23 @@ export const notifyReservationStatusChanged = onDocumentUpdated(
       );
     }
 
-    const nextReviewer = status === "Pending" && deanRecommended && after.universityAdministratorRecommend !== true
+    const nextReviewer = status === "Pending" && registrarRecommended && after.universityAdministratorRecommend !== true
       ? "University Administrator"
-      : status === "Pending" && registrarRecommended && after.deanRecommend !== true
-        ? "Dean" : null;
+      : status === "Pending" && deanRecommended && after.registrarRecommend !== true
+        ? "Registrar" : null;
     if (!nextReviewer) return;
 
-    const reviewers = await getReservationReviewerUserIds(nextReviewer, stringValue(after.department));
+    const reviewers = await getReservationReviewerUserIds(nextReviewer);
     await createUserNotifications(
       reviewers,
       {
         title: "Reservation ready for review",
-        message: `${nextReviewer === "Dean" ? "The Registrar" : "The Dean"} recommended a reservation for ${roomName}. Review it in Manage Reservations.`,
+        message: `${nextReviewer === "Registrar" ? "The Dean" : "The Registrar"} recommended a reservation for ${roomName}. Review it in Manage Reservations.`,
         type: "booking_recommended",
         sourceCollection: "reservations",
         sourceId: event.params.reservationId,
       },
-      `${event.id}_${nextReviewer === "Dean" ? "dean" : "university_administrator"}_review`
+      `${event.id}_${nextReviewer === "Registrar" ? "registrar" : "university_administrator"}_review`
     );
   }
 );

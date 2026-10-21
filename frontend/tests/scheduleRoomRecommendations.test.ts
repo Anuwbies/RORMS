@@ -51,6 +51,25 @@ test('TBA room entries offer available rooms without requiring an overlap', () =
   assert.deepEqual(h.recommendations(20), ['B 101', 'C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
 })
 
+test('saved rooms in other departments trigger alternatives and are excluded from ordinary recommendations', () => {
+  const h = setup()
+  h.second.rows[0].values[17] = 'SAT'
+  const external: FacultySubjectAssignment[] = [
+    { location: 'other-A', code: '', section: '', departmentCode: 'CBA', roomId: 'A', room: 'A 101',
+      days: ['Fri'], start: 450, end: 540 },
+    { location: 'other-C', code: '', section: '', departmentCode: 'CBA', roomId: 'C', room: 'C 101',
+      days: ['Fri'], start: 450, end: 540 },
+    { location: 'other-E', code: '', section: '', departmentCode: 'CBA', roomId: 'E', room: 'E 101',
+      days: ['Sat'], start: 450, end: 540 },
+  ]
+  const recommend = () => recommendScheduleRooms(
+    departmentFacultyScheduleAssignments(parseDepartmentScheduleImportRows(h.sheets, directory), directory), directory.rooms,
+    facultyScheduleRowKey(h.first.name, h.first.rows[0].rowNumber), 19, 0, { externalRoomAssignments: external })
+  assert.deepEqual(recommend(), ['B 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+  h.first.rows[0].values[19] = 'TBA'
+  assert.deepEqual(recommend(), ['B 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+})
+
 test('unavailable and maintenance rooms are excluded from room recommendations', () => {
   const h = setup()
   h.first.rows[0].values[19] = 'TBA'
@@ -68,6 +87,21 @@ test('unavailable and maintenance rooms are excluded from room recommendations',
   } finally {
     delete directory.rooms.find(room => room.id === 'C')!.status
     delete directory.rooms.find(room => room.id === 'D')!.status
+  }
+})
+
+test('department workbook recommendations use the same college and room type rule', () => {
+  const h = setup()
+  h.first.rows[0].values[0] = 'LECTURE'
+  h.first.rows[0].values[19] = 'A101'
+  h.second.rows[0].values[17] = 'SAT'
+  directory.rooms.find(room => room.id === 'A')!.type = 'Laboratory'
+  directory.rooms.find(room => room.id === 'B')!.type = 'Laboratory'
+  for (const room of directory.rooms.filter(room => !['A', 'B'].includes(room.id))) room.type = 'Lecture'
+  try {
+    assert.deepEqual(h.recommendations(), ['C 101', 'D 101', 'E 101', 'F 101', 'G 101'])
+  } finally {
+    for (const room of directory.rooms) delete room.type
   }
 })
 
@@ -117,44 +151,46 @@ function buildingFixture(busy = false) {
   return { rooms, assignments, assignment }
 }
 
-test('available rooms from the top three buildings are recommended in usage order', () => {
+test('available rooms from every used building are recommended in usage order', () => {
   const { rooms, assignments } = buildingFixture()
   assert.deepEqual(recommendScheduleRooms(assignments, rooms, 'target', 19, 0), [
-    'PTC 101', 'PTC 102', 'PTC 103', 'ITS 101', 'ITS 102', 'ITS 103', 'MBA 101', 'MBA 102', 'MBA 103',
+    'PTC 101', 'PTC 102', 'PTC 103', 'ITS 101', 'ITS 102', 'ITS 103', 'MBA 101', 'MBA 102', 'MBA 103', 'BE 102', 'BE 103',
   ])
 })
 
-test('only the third building is capped at five distinct available rooms', () => {
+test('every used building contributes all distinct available rooms', () => {
   const { rooms, assignments } = buildingFixture()
   for (const buildingId of ['PTC', 'ITS', 'MBA']) for (let number = 104; number <= 110; number++) {
     rooms.push({ id: `${buildingId}${number}`, code: `${buildingId}${number}`, name: `${buildingId} ${number}`, buildingId })
   }
-  // Occupied and duplicate entries must not consume the five recommendations.
+  // Occupied rooms are excluded and duplicate room records produce one recommendation.
   const occupied = assignments.find(item => item.rowKey === 'MBA-0')!
   occupied.start = 450; occupied.end = 540
   rooms.push({ ...rooms.find(room => room.id === 'MBA102')! })
   const result = recommendScheduleRooms(assignments, rooms, 'target', 19, 0)
   assert.equal(result.filter(name => name.startsWith('PTC')).length, 10)
   assert.equal(result.filter(name => name.startsWith('ITS')).length, 10)
-  assert.deepEqual(result.filter(name => name.startsWith('MBA')), ['MBA 102', 'MBA 103', 'MBA 104', 'MBA 105', 'MBA 106'])
-  assert.equal(result.length, 25)
+  assert.deepEqual(result.filter(name => name.startsWith('MBA')),
+    ['MBA 102', 'MBA 103', 'MBA 104', 'MBA 105', 'MBA 106', 'MBA 107', 'MBA 108', 'MBA 109', 'MBA 110'])
+  assert.deepEqual(result.filter(name => name.startsWith('BE')), ['BE 102', 'BE 103'])
+  assert.equal(result.length, 31)
 })
 
-test('TBA recommendations retain the top-three buildings and the third-building room cap', () => {
+test('TBA recommendations include all rooms from every used building', () => {
   const { rooms, assignments } = buildingFixture()
   assignments[0].room = 'TBA'; assignments[0].roomId = ''
   for (let number = 104; number <= 108; number++) rooms.push({
     id: `MBA${number}`, code: `MBA${number}`, name: `MBA ${number}`, buildingId: 'MBA',
   })
   const result = recommendScheduleRooms(assignments, rooms, 'target', 19, 0)
-  assert.equal(result.filter(name => name.startsWith('MBA')).length, 5)
-  assert.ok(result.every(name => !name.startsWith('BE')))
+  assert.equal(result.filter(name => name.startsWith('MBA')).length, 8)
+  assert.deepEqual(result.filter(name => name.startsWith('BE')), ['BE 102', 'BE 103'])
   assert.ok(result.includes('PTC 101') && result.includes('ITS 101'))
 })
 
-test('occupied top-three buildings do not cause recommendations from a fourth building', () => {
+test('occupied higher-usage buildings do not hide available rooms in another used building', () => {
   const { rooms, assignments } = buildingFixture(true)
-  assert.deepEqual(recommendScheduleRooms(assignments, rooms, 'target', 19, 0), [])
+  assert.deepEqual(recommendScheduleRooms(assignments, rooms, 'target', 19, 0), ['BE 102', 'BE 103'])
 })
 
 test('usage counts schedules rather than repeated meetings and resolves room aliases', () => {
@@ -163,11 +199,13 @@ test('usage counts schedules rather than repeated meetings and resolves room ali
   repeated.roomId = ''; repeated.room = 'be-102'
   assignments.push(...Array.from({ length: 20 }, () => ({ ...repeated })))
   const result = recommendScheduleRooms(assignments, rooms, 'target', 19, 0)
-  assert.ok(result.every(name => !name.startsWith('BE')))
+  assert.deepEqual(result.filter(name => name.startsWith('BE')), ['BE 102', 'BE 103'])
+  assert.ok(result.indexOf('MBA 101') < result.indexOf('BE 102'))
   assignments.push(assignment('BE102', 'BE-new-1', 780), assignment('BE103', 'BE-new-2', 780))
   const updated = recommendScheduleRooms(assignments, rooms, 'target', 19, 0)
   assert.ok(updated.includes('BE 102'))
-  assert.ok(!updated.some(name => name.startsWith('MBA')))
+  assert.ok(updated.indexOf('BE 102') < updated.indexOf('ITS 101'))
+  assert.ok(updated.some(name => name.startsWith('MBA')))
 })
 
 test('rooms with unknown building links are excluded from building recommendations', () => {
@@ -216,7 +254,7 @@ test('parallel room recommendations preserve a connected chain and exclude occup
   const h = setup()
   h.sheets.splice(1)
   const parallelDirectory: ScheduleDirectory = { ...directory, rooms: Array.from({ length: 8 }, (_, index) => ({
-    id: `ptc${300 + index}`, code: `PTC ${300 + index}`, name: `PTC ${300 + index}`, buildingId: 'ptc', floor: 3,
+    id: `ptc${300 + index}`, code: `PTC ${300 + index}`, name: `PTC ${300 + index}`, buildingId: 'ptc', floor: 3, type: 'Lecture',
   })) }
   const recommend = () => recommendScheduleRooms(departmentFacultyScheduleAssignments(parseDepartmentScheduleImportRows(h.sheets, parallelDirectory), parallelDirectory),
     parallelDirectory.rooms, facultyScheduleRowKey(h.first.name, h.first.rows[0].rowNumber), 19, 0)

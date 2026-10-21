@@ -5,7 +5,7 @@ import { semesterKey } from '../utils/departmentWorkbookPaths'
 import type { WorkbookScheduleMeeting } from '../utils/excelScheduleRows'
 import { scheduleMatchesTerm } from '../utils/roomSchedule'
 import { scheduleMeetingRecords } from '../utils/scheduleMeetings'
-import { assertPlotRoom, hasPendingRoomAllocation, plotMeetingKey, plotMeetingsOverlap, plottedScheduleFields, plotScheduleRevision, readProvidedRoomKeys, readRegistrarPlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
+import { assertPlotRoom, hasPendingRoomAllocation, plotMeetingKey, plotMeetingsOverlap, plotScheduleCollege, plottedScheduleFields, plotScheduleRevision, readProvidedRoomKeys, readRegistrarPlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
 import { prepareScheduleRoomWorkbookSync } from './scheduleRoomWorkbookSync'
 import type { ScheduleRoomWorkbookRow } from '../utils/scheduleRoomWorkbookCells'
 import { plotParallelGroup, plotParallelRoomMessages } from '../utils/plotParallelRooms'
@@ -23,7 +23,7 @@ interface PlotRequest {
 
 export function readPlotRoom(id: string, data: Record<string, unknown>): PlotRoom {
   return { id, code: String(data.code ?? ''), name: String(data.name ?? ''), buildingId: String(data.buildingId ?? ''),
-    status: String(data.status ?? ''), startTime: String(data.startTime ?? ''), endTime: String(data.endTime ?? ''),
+    status: String(data.status ?? ''), type: String(data.type ?? ''), startTime: String(data.startTime ?? ''), endTime: String(data.endTime ?? ''),
     capacity: typeof data.capacity === 'number' ? data.capacity : 0,
     floor: typeof data.floor === 'number' && Number.isFinite(data.floor) ? data.floor : undefined,
     availableDays: Array.isArray(data.availableDays) ? data.availableDays.filter((day): day is string => typeof day === 'string') : [] }
@@ -108,7 +108,7 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
     const roomMap = new Map(rooms.filter(room => room.exists()).map(room => [room.id, readPlotRoom(room.id, room.data()!)]))
     // Read peer rooms from the fresh schedule snapshots so concurrent changes are checked too.
     const parallelRoomIds = [...new Set(scheduleMeetingRecords([...current].filter(([id, data]) =>
-      !['Return', 'Returned'].includes(String(data.status))
+      (data.status === 'Draft' || data.status === 'Plot')
       && scheduleMatchesTerm({ ...data, id }, { id: request.academicYearId, academicYear: request.academicYear }, request.semester))
       .map(([id, data]) => ({ id, data: () => data })))
       .filter(meeting => meeting.groupId && meeting.roomId && !roomMap.has(meeting.roomId)).map(meeting => meeting.roomId!))]
@@ -157,7 +157,7 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
         if (assignment.roomId) {
           const room = roomMap.get(assignment.roomId)
           if (!room) throw new Error('A selected room was removed. Choose another room.')
-          assertPlotRoom(meeting, room, typeof data.maxStudents === 'number' ? data.maxStudents : null)
+          assertPlotRoom(meeting, room, typeof data.maxStudents === 'number' ? data.maxStudents : null, plotScheduleCollege(data))
           if (assignment.roomId !== meeting.roomId) meetings[index] = { ...meetings[index], roomId: room.id, room: room.name.trim() || room.code, buildingId: room.buildingId }
         } else meetings[index] = { ...meetings[index], roomId: '', room: scheduleCollection === 'schedules' ? '' : 'TBA', buildingId: '',
           ...(scheduleCollection === 'schedules' ? { status: 'Draft' as const } : {}) }
@@ -175,7 +175,7 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
       })
     }
     const proposed = new Map([...current, ...changed])
-    const entries = scheduleMeetingRecords([...proposed].filter(([id, data]) => !['Return', 'Returned'].includes(String(data.status))
+    const entries = scheduleMeetingRecords([...proposed].filter(([id, data]) => (data.status === 'Draft' || data.status === 'Plot')
       && scheduleMatchesTerm({ ...data, id }, { id: request.academicYearId, academicYear: request.academicYear }, request.semester))
       .map(([id, data]) => ({ id, data: () => data })))
     const parallelMessages = plotParallelRoomMessages(entries, [...roomMap.values()])

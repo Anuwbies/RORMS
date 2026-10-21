@@ -7,8 +7,8 @@ import type { ScheduleDirectory } from '../src/utils/excelScheduleRows.ts'
 import { parseExcelScheduleDays } from '../src/utils/ScheduleValidation.ts'
 
 const directory: ScheduleDirectory = { departmentCode: 'CITE', faculty: [{ id: 'member1', fullName: 'Engelbert Cruz', department: 'CITE' }],
-  rooms: [{ id: 'room1', code: 'PTC 201', name: 'Lecture 201', buildingId: 'ptc' },
-    ...[200, 202, 203].map(number => ({ id: `room${number}`, code: `PTC ${number}`, name: `Lecture ${number}`, buildingId: 'ptc' }))] }
+  rooms: [{ id: 'room1', code: 'PTC 201', name: 'Lecture 201', buildingId: 'ptc', type: 'Lecture' },
+    ...[200, 202, 203].map(number => ({ id: `room${number}`, code: `PTC ${number}`, name: `Lecture ${number}`, buildingId: 'ptc', type: 'Lecture' }))] }
 const values = () => ['CITE', 'IT', 'ITE 101', 'Computing', 'BSIT', '2', '1', '3', '2', '3', '5.00', '40', '1', 'Cruz, Engelbert', '', '7:30-9:00', '', 'WED', '', 'PTC 201', '']
 function extract(sheets: DepartmentScheduleImportSheet[]) {
   const saved = createDepartmentScheduleWorkbookState(sheets, 0, null)
@@ -33,6 +33,36 @@ test('four parallel sections share one instructor meeting in connected rooms wit
   assert.ok(rows.every(row => row.parallelSourceRow === sheet.rows[0].rowNumber))
   assert.ok(rows.every(row => row.validationIssues.length === 0))
   assert.equal(departmentScheduleImportRowIssues([sheet], directory).size, 0)
+})
+
+test('room type validation follows each College choice in live editing and Save', () => {
+  const rooms: ScheduleDirectory = { ...directory, rooms: [...directory.rooms,
+    { id: 'lab', code: 'PTC 204', name: 'Laboratory 204', buildingId: 'ptc', type: 'Laboratory' }] }
+  for (const college of ['OPEN LAB', 'LECTURE', 'LABORATORY', 'PARALLEL']) {
+    for (const [roomCode, roomType] of [['PTC 201', 'Lecture'], ['PTC 204', 'Laboratory']] as const) {
+      const sheet = createEmptyDepartmentScheduleSheet()
+      const row = values()
+      row[0] = college
+      if (college === 'LABORATORY') {
+        row[14] = row[13]; row[13] = ''
+        row[16] = row[15]; row[15] = ''
+        row[18] = row[17]; row[17] = ''
+        row[19] = ''; row[20] = roomCode
+      } else row[19] = roomCode
+      sheet.rows[0].values = row
+      const expectedType = college === 'OPEN LAB' || college === 'LABORATORY' ? 'Laboratory' : 'Lecture'
+      const expectedIssue = roomType !== expectedType
+      const live = departmentScheduleImportRowIssues([sheet], rooms).get(JSON.stringify(['Schedule', sheet.rows[0].rowNumber])) ?? []
+      const saved = createDepartmentScheduleWorkbookState([sheet], 0, null)
+      const [parsed] = extractDepartmentScheduleImportRows(saved.snapshot, saved.ownedNames, [sheet], rooms)
+      assert.deepEqual(live, parsed.validationIssues)
+      const label = college === 'OPEN LAB' ? 'Open Lab' : college === 'LABORATORY' ? 'Laboratory'
+        : college === 'PARALLEL' ? 'Parallel' : 'Lecture'
+      const name = roomCode === 'PTC 201' ? 'Lecture 201' : 'Laboratory 204'
+      const message = `Room ${name} is a ${roomType} room. ${label} schedules require ${expectedType} rooms.`
+      assert.equal(live.includes(message), expectedIssue, `${college} in ${roomType}`)
+    }
+  }
 })
 
 test('parallel classes still conflict with outside classes and separate parallel groups', () => {

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { applyScheduleCellValues, indexScheduleRows, linkScheduleCourseChanges } from '../src/utils/departmentScheduleEdits.ts'
+import { applyScheduleCellValues, indexScheduleRows, linkScheduleCourseChanges, scheduleCollegeForCourseType } from '../src/utils/departmentScheduleEdits.ts'
 import { planScheduleCellPaste, readScheduleCourseClipboard } from '../src/utils/scheduleCellClipboard.ts'
 import { CellTextHistory } from '../src/utils/cellTextHistory.ts'
 import type { DepartmentScheduleImportSheet } from '../src/utils/departmentScheduleImport.ts'
@@ -33,8 +33,54 @@ test('pasted code or title columns fill both course fields for every pasted row'
     const linked = linkScheduleCourseChanges(sheets, indexes, pasted, courses)
     const next = applyScheduleCellValues(sheets, indexes, linked)
     assert.deepEqual(next[0].rows.map(row => row.values.slice(2, 4)), [['ITE 398', 'Capstone Project'], ['GEN 001', 'Understanding the Self']])
+    assert.deepEqual(next[0].rows.map(row => row.values[0]), ['LECTURE', 'LECTURE'])
     assert.equal(pasted.length, 2)
   }
+})
+
+test('course types fill College only for the supported values', () => {
+  for (const [type, college] of [
+    ['Lecture', 'LECTURE'], ['Laboratory', 'LABORATORY'],
+    ['Lecture and Laboratory', 'OPEN LAB'], ['Laboratory and Lecture', 'OPEN LAB'],
+    ['', ''], ['Seminar', ''],
+  ]) assert.equal(scheduleCollegeForCourseType(type), college, type)
+
+  const sheet = workbook()[0]
+  sheet.yearSections = [{ label: '4th Year', start: 0, count: 3 }]
+  sheet.rows.push({ rowNumber: 5, values: Array<string>(21).fill('') })
+  const sheets = [sheet], indexes = indexScheduleRows(sheets)
+  const typedCourses = [
+    { ...courses[0], code: 'LAB 101', title: 'Lab Course', type: 'Laboratory' },
+    { ...courses[0], code: 'MIX 101', title: 'Mixed Course', type: 'Laboratory and Lecture' },
+    { ...courses[0], code: 'UNK 101', title: 'Unknown Course', type: 'Seminar' },
+  ]
+  sheet.rows[2].values[0] = 'LECTURE'
+  const linked = linkScheduleCourseChanges(sheets, indexes, typedCourses.map((course, index) =>
+    ({ cell: { sheet: 0, row: sheet.rows[index].rowNumber, column: 2 }, value: course.code })), typedCourses)
+  const next = applyScheduleCellValues(sheets, indexes, linked)[0]
+  assert.deepEqual(next.rows.map(row => row.values[0]), ['LABORATORY', 'OPEN LAB', ''])
+})
+
+test('the three matching rows below PARALLEL keep their College cells empty', () => {
+  const sheet = workbook()[0]
+  sheet.yearSections = [{ label: '4th Year', start: 0, count: 6 }]
+  sheet.rows = Array.from({ length: 6 }, (_, index) => ({ rowNumber: index + 3, values: Array<string>(21).fill('') }))
+  sheet.rows[0].values[0] = 'PARALLEL'
+  sheet.rows[0].values[2] = 'ITE 398'
+  sheet.rows[0].values[3] = 'Capstone Project'
+  for (let index = 1; index <= 3; index++) {
+    sheet.rows[index].values[2] = 'ITE 398'
+    sheet.rows[index].values[3] = 'Capstone Project'
+  }
+  const sheets = [sheet], indexes = indexScheduleRows(sheets)
+  const edits = sheet.rows.slice(1, 5).map(row => ({ cell: { sheet: 0, row: row.rowNumber, column: 2 }, value: 'ITE 398' }))
+  const linked = linkScheduleCourseChanges(sheets, indexes, edits, courses)
+  const next = applyScheduleCellValues(sheets, indexes, linked)[0]
+  assert.deepEqual(next.rows.slice(0, 5).map(row => row.values[0]), ['PARALLEL', '', '', '', 'LECTURE'])
+
+  const different = linkScheduleCourseChanges(sheets, indexes,
+    [{ cell: { sheet: 0, row: sheet.rows[1].rowNumber, column: 2 }, value: 'GEN 001' }], courses)
+  assert.equal(applyScheduleCellValues(sheets, indexes, different)[0].rows[1].values[0], 'LECTURE')
 })
 
 test('a pasted full row with a missing counterpart fills it from the nonempty course field', () => {
@@ -60,6 +106,23 @@ test('linked paste and deletion undo and redo both fields together without resol
     const redo = history.redo()!
     const reapplied = applyScheduleCellValues(restored, indexes, [redo, ...(redo.related ?? [])].map(change => ({ cell: change.cell, value: change.after })))
     assert.deepEqual(reapplied[0].rows[0].values, next[0].rows[0].values)
+  }
+})
+
+test('clearing Code or Descriptive Title clears College, including PARALLEL, and undo restores it', () => {
+  for (const college of ['LECTURE', 'PARALLEL']) for (const column of [2, 3]) {
+    const sheets = workbook(), indexes = indexScheduleRows(sheets)
+    sheets[0].rows[0].values[0] = college
+    const linked = linkScheduleCourseChanges(sheets, indexes,
+      [{ cell: { sheet: 0, row: 3, column }, value: '' }], courses, false)
+    const history = new CellTextHistory()
+    history.recordChanges(linked.map(change => ({ cell: change.cell, before: sheets[0].rows[0].values[change.cell.column], after: change.value })))
+    const cleared = applyScheduleCellValues(sheets, indexes, linked)
+    assert.deepEqual(cleared[0].rows[0].values.slice(0, 4), ['', '', '', ''], `${college}, column ${column}`)
+    const undo = history.undo()!
+    const restored = applyScheduleCellValues(cleared, indexes, [undo, ...(undo.related ?? [])]
+      .map(change => ({ cell: change.cell, value: change.before })))
+    assert.deepEqual(restored[0].rows[0].values.slice(0, 4), sheets[0].rows[0].values.slice(0, 4))
   }
 })
 

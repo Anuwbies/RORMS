@@ -1,6 +1,6 @@
 import type { ScheduleMeetingRecord } from './scheduleMeetings'
-import { assignedSchedulePlotStatus, plotMeetingKey, plotScheduleRevision, schedulePlotSelectionKey, type PlotAssignment, type PlotRoom } from './schedulePlotting.ts'
-import { areParallelFacultyMeetings, excelScheduleRoomKey, parallelRoomAssignmentIssue, parallelRoomConnectionIssue, type FacultySubjectAssignment } from './ScheduleValidation.ts'
+import { assignedSchedulePlotStatus, plotMeetingKey, plotScheduleCollege, plotScheduleRevision, schedulePlotSelectionKey, type PlotAssignment, type PlotRoom } from './schedulePlotting.ts'
+import { areParallelFacultyMeetings, excelScheduleRoomKey, isDraftOrPlotScheduleMeeting, parallelRoomAssignmentIssue, parallelRoomConnectionIssue, splitScheduleResources, type FacultySubjectAssignment } from './ScheduleValidation.ts'
 
 const text = (value: unknown) => typeof value === 'string' ? value : ''
 const minutes = (value: string | undefined) => {
@@ -13,7 +13,18 @@ export function plotFacultyScheduleAssignments(meetings: readonly ScheduleMeetin
   const roomMap = new Map(rooms.map(room => [room.id, room]))
   const selectionKeys = meetings.map(schedulePlotSelectionKey)
   const firstSelectionIndex = new Map<string, number>()
-  selectionKeys.forEach((key, index) => { if (!firstSelectionIndex.has(key)) firstSelectionIndex.set(key, index) })
+  const entryCounts = new Map<string, number>()
+  selectionKeys.forEach((key, index) => {
+    if (firstSelectionIndex.has(key)) return
+    const meeting = meetings[index]
+    const roomColumn = meeting.format === 'Lab' ? 20 : 19
+    const group = JSON.stringify([meeting.sourceScheduleId || meeting.id, roomColumn])
+    const entryIndex = entryCounts.get(group) ?? 0
+    entryCounts.set(group, entryIndex + 1)
+    const rawValues = Array.isArray(meeting.rawValues) ? meeting.rawValues : undefined
+    const roomCell = rawValues && typeof rawValues[roomColumn] === 'string' ? rawValues[roomColumn] : undefined
+    firstSelectionIndex.set(key, roomCell !== undefined && splitScheduleResources(roomCell).length <= 1 ? 0 : entryIndex)
+  })
   return meetings.map((meeting, index) => {
     const matched = roomMap.get(meeting.roomId ?? '')
     const room = matched?.name || matched?.code || text(meeting.room) || text(meeting.roomId)
@@ -22,15 +33,16 @@ export function plotFacultyScheduleAssignments(meetings: readonly ScheduleMeetin
     const savedYearLevel = text(meeting.yearLevelLabel).split(':', 1)[0].trim()
     const yearLevel = savedYearLevel || (typeof meeting.yearLevel === 'number' && Number.isInteger(meeting.yearLevel)
       ? `Year ${meeting.yearLevel}` : 'Year level unknown')
+    const roomColumn = meeting.format === 'Lab' ? 20 : 19
     return {
-      location: meeting.id, rowKey: String(meeting.sourceScheduleId || meeting.id), roomColumn: 19,
+      location: meeting.id, rowKey: String(meeting.sourceScheduleId || meeting.id), roomColumn,
       roomEntryIndex: firstSelectionIndex.get(selectionKeys[index]),
       code: meeting.subjectCode ?? '', section: meeting.classSection ?? '', subjectTitle: meeting.subjectTitle,
       faculty: text(meeting.faculty) || meeting.instructorId, instructorId: meeting.instructorId,
       parallelGroup: meeting.groupId || meeting.type === 'parallel'
         ? JSON.stringify([meeting.department, meeting.sourceWorkbook, meeting.sourceSheet, meeting.groupId || meeting.sourceScheduleId || meeting.id]) : undefined,
       meetingKind: ['Lec', 'Lab', 'Flexible', 'Unspecified'].includes(meeting.format ?? '') ? meeting.format as FacultySubjectAssignment['meetingKind'] : undefined,
-      departmentCode: meeting.department, room, roomExists,
+      departmentCode: meeting.department, college: plotScheduleCollege(meeting), room, roomExists,
       maxStudents: typeof meeting.maxStudents === 'number' && Number.isFinite(meeting.maxStudents) ? meeting.maxStudents : null,
       description: yearLevel,
       timeText: meeting.startTime && meeting.endTime ? `${meeting.startTime}–${meeting.endTime}` : '',
@@ -40,7 +52,7 @@ export function plotFacultyScheduleAssignments(meetings: readonly ScheduleMeetin
 }
 
 export function plotParallelRoomMessages(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[]): ReadonlyMap<string, readonly string[]> {
-  const active = meetings.filter(meeting => !['Return', 'Returned'].includes(meeting.status ?? ''))
+  const active = meetings.filter(isDraftOrPlotScheduleMeeting)
   const assignments = plotFacultyScheduleAssignments(active, rooms)
   const messages = new Map<string, readonly string[]>()
   for (const assignment of assignments) {
@@ -56,7 +68,7 @@ export function plotParallelRoomMessages(meetings: readonly ScheduleMeetingRecor
 }
 
 export function plotParallelGroup(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[], target: ScheduleMeetingRecord): ScheduleMeetingRecord[] {
-  const active = meetings.filter(meeting => !['Return', 'Returned'].includes(meeting.status ?? ''))
+  const active = meetings.filter(isDraftOrPlotScheduleMeeting)
   const assignments = plotFacultyScheduleAssignments(active, rooms)
   const index = active.findIndex(meeting => meeting.id === target.id)
   if (index < 0 || !assignments[index].parallelGroup) return []

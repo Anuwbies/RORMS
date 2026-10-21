@@ -1,4 +1,4 @@
-export const RESERVATION_REVIEW_STEPS = ['Registrar', 'Dean', 'University Administrator'] as const
+export const RESERVATION_REVIEW_STEPS = ['Dean', 'Registrar', 'University Administrator'] as const
 
 export type ReservationReviewStep = typeof RESERVATION_REVIEW_STEPS[number]
 
@@ -17,6 +17,6 @@ export function reservationReviewStep(reservation: ReservationReviewProgress): R
   }
 
   if (reservation.status === 'Approved' || reservation.status === 'Completed') return 'University Administrator'
-  if (reservation.registrarRecommend !== true) return 'Registrar'
-  return reservation.deanRecommend === true ? 'University Administrator' : 'Dean'
+  if (reservation.deanRecommend !== true) return 'Dean'
+  return reservation.registrarRecommend === true ? 'University Administrator' : 'Registrar'
 }

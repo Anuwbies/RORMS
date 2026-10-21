@@ -105,11 +105,11 @@ test("Admin retains cancellation and completion management but cannot grant fina
 
 test("Admin can manually set each review step and status with an audit event", async () => {
   const states = [
-    ["registrarPending", "Pending", false, false, false, null],
-    ["registrarApproved", "Pending", true, false, false, null],
-    ["registrarDeclined", "Declined", false, false, false, "Registrar"],
-    ["deanApproved", "Pending", true, true, false, null],
-    ["deanDeclined", "Declined", true, false, false, "Dean"],
+    ["deanPending", "Pending", false, false, false, null],
+    ["deanApproved", "Pending", false, true, false, null],
+    ["deanDeclined", "Declined", false, false, false, "Dean"],
+    ["registrarApproved", "Pending", true, true, false, null],
+    ["registrarDeclined", "Declined", false, true, false, "Registrar"],
     ["administratorApproved", "Approved", true, true, true, null],
     ["administratorDeclined", "Declined", true, true, false, "University Administrator"],
   ];
@@ -117,8 +117,8 @@ test("Admin can manually set each review step and status with an audit event", a
     const fake = fixture({ role: "Admin" });
     const reviewingRegistrar = adminReviewState.startsWith("registrar");
     const reviewingDean = adminReviewState.startsWith("dean");
-    const beforeRegistrar = !reviewingRegistrar;
-    const beforeDean = !reviewingRegistrar && !reviewingDean;
+    const beforeDean = !reviewingDean;
+    const beforeRegistrar = !reviewingRegistrar && !reviewingDean;
     fake.documents.get("reservations/res1").registrarRecommend = beforeRegistrar;
     fake.documents.get("reservations/res1").deanRecommend = beforeDean;
     const result = await changeReservationStatus(fake.db, "reviewer", {
@@ -126,7 +126,7 @@ test("Admin can manually set each review step and status with an audit event", a
       expectedReview: { registrar: beforeRegistrar, dean: beforeDean, universityAdministrator: false, declinedByRole: null },
       ...(declinedByRole ? { declinedReason: "Reviewed by Admin" } : {}),
     });
-    assert.equal(result.changed, adminReviewState !== "registrarPending");
+    assert.equal(result.changed, adminReviewState !== "deanPending");
     const saved = fake.documents.get("reservations/res1");
     assert.equal(saved.status, status);
     assert.equal(saved.registrarRecommend, registrar);
@@ -137,14 +137,14 @@ test("Admin can manually set each review step and status with an audit event", a
   }
 });
 
-test("Admin approvals advance Registrar, Dean, and University Administrator in order", async () => {
+test("Admin approvals advance Dean, Registrar, and University Administrator in order", async () => {
   const fake = fixture({ role: "Admin" });
   fake.documents.get("reservations/res1").registrarRecommend = false;
   fake.documents.get("reservations/res1").deanRecommend = false;
 
   for (const [adminReviewState, status, registrar, dean, universityAdministrator] of [
-    ["registrarApproved", "Pending", true, false, false],
-    ["deanApproved", "Pending", true, true, false],
+    ["deanApproved", "Pending", false, true, false],
+    ["registrarApproved", "Pending", true, true, false],
     ["administratorApproved", "Approved", true, true, true],
   ]) {
     const current = fake.documents.get("reservations/res1");
@@ -170,7 +170,7 @@ test("Admin resetting final approval to Pending clears the University Administra
 
   await changeReservationStatus(fake.db, "reviewer", {
     reservationId: "res1", status: "Pending", expectedStatus: "Approved",
-    adminReviewState: "deanApproved",
+    adminReviewState: "registrarApproved",
     expectedReview: { registrar: true, dean: true, universityAdministrator: true, declinedByRole: null },
   });
 
@@ -398,9 +398,9 @@ test("declining an extended request remains possible when the room or request is
   assert.equal(fake.documents.get("reservations/res1").status, "Declined");
 });
 
-test("Registrar recommendation keeps a new request Pending and writes one audit event", async () => {
+test("Registrar recommendation after Dean review keeps a request Pending and writes one audit event", async () => {
   const fake = fixture({ role: "Registrar", reservationStatus: "Pending" });
-  Object.assign(fake.documents.get("reservations/res1"), { registrarRecommend: false, deanRecommend: false });
+  Object.assign(fake.documents.get("reservations/res1"), { registrarRecommend: false, deanRecommend: true });
   const recommendation = { reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Registrar" };
   await changeReservationStatus(fake.db, "reviewer", recommendation);
   const saved = fake.documents.get("reservations/res1");
@@ -413,14 +413,22 @@ test("Registrar recommendation keeps a new request Pending and writes one audit 
   assert.equal(fake.logs().length, 1);
 });
 
-test("Dean recommendation requires Registrar review and an accepted membership in the requester's department", async () => {
-  const recommendation = { reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Dean" };
-  const missingRegistrar = fixture({ role: "Dean", reservationStatus: "Pending" });
-  missingRegistrar.documents.get("reservations/res1").registrarRecommend = false;
-  await assert.rejects(changeReservationStatus(missingRegistrar.db, "reviewer", recommendation), { code: "failed-precondition" });
+test("Registrar cannot review before the Dean recommends", async () => {
+  const fake = fixture({ role: "Registrar", reservationStatus: "Pending" });
+  Object.assign(fake.documents.get("reservations/res1"), { registrarRecommend: false, deanRecommend: false });
+  await assert.rejects(changeReservationStatus(fake.db, "reviewer", {
+    reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Registrar",
+  }), { code: "failed-precondition" });
+  await assert.rejects(changeReservationStatus(fake.db, "reviewer", {
+    reservationId: "res1", status: "Declined", expectedStatus: "Pending", declinedReason: "Unavailable",
+  }), { code: "failed-precondition" });
+  assert.equal(fake.logs().length, 0);
+});
 
+test("Dean recommendation starts review and requires an accepted membership in the requester's department", async () => {
+  const recommendation = { reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Dean" };
   const dean = fixture({ role: "Dean", reservationStatus: "Pending" });
-  dean.documents.get("reservations/res1").deanRecommend = false;
+  Object.assign(dean.documents.get("reservations/res1"), { registrarRecommend: false, deanRecommend: false });
   await changeReservationStatus(dean.db, "reviewer", recommendation);
   const saved = dean.documents.get("reservations/res1");
   assert.equal(saved.status, "Pending");
@@ -437,22 +445,23 @@ test("Dean recommendation requires Registrar review and an accepted membership i
   await assert.rejects(changeReservationStatus(programHead.db, "reviewer", recommendation), { code: "permission-denied" });
 });
 
-test("Dean can decline a Registrar-recommended request with a reason only in their department", async () => {
+test("Dean can decline a new request with a reason only in their department", async () => {
   const decline = { reservationId: "res1", status: "Declined", expectedStatus: "Pending", declinedReason: "Department cannot support this booking" };
   const dean = fixture({ role: "Dean", reservationStatus: "Pending" });
-  dean.documents.get("reservations/res1").deanRecommend = false;
+  Object.assign(dean.documents.get("reservations/res1"), { registrarRecommend: false, deanRecommend: false });
   await changeReservationStatus(dean.db, "reviewer", decline);
   const saved = dean.documents.get("reservations/res1");
   assert.equal(saved.status, "Declined");
-  assert.equal(saved.registrarRecommend, true);
+  assert.equal(saved.registrarRecommend, false);
   assert.equal(saved.deanRecommend, false);
   assert.equal(saved.declinedByRole, "Dean");
   assert.equal(saved.declinedReason, decline.declinedReason);
   assert.deepEqual(dean.logs()[0].changes.declinedReason, { before: "", after: decline.declinedReason });
 
-  const missingRegistrar = fixture({ role: "Dean", reservationStatus: "Pending" });
-  missingRegistrar.documents.get("reservations/res1").registrarRecommend = false;
-  await assert.rejects(changeReservationStatus(missingRegistrar.db, "reviewer", decline), { code: "failed-precondition" });
+  const afterRegistrar = fixture({ role: "Dean", reservationStatus: "Pending" });
+  afterRegistrar.documents.get("reservations/res1").deanRecommend = false;
+  await changeReservationStatus(afterRegistrar.db, "reviewer", decline);
+  assert.equal(afterRegistrar.documents.get("reservations/res1").registrarRecommend, false);
   const foreign = fixture({ role: "Dean", reservationStatus: "Pending" });
   foreign.documents.get("reservations/res1").department = "CAS";
   await assert.rejects(changeReservationStatus(foreign.db, "reviewer", decline), { code: "permission-denied" });
@@ -471,24 +480,40 @@ test("University Administrator approval requires both recommendations", async ()
   await assert.rejects(changeReservationStatus(dean.db, "reviewer", request), { code: "permission-denied" });
 });
 
-test("older open requests can receive Registrar and Dean recommendations in the new order", async () => {
-  const fake = fixture({ role: "Registrar" });
+test("older open requests can receive Dean and Registrar recommendations in order", async () => {
+  const fake = fixture({ role: "Dean" });
   const saved = fake.documents.get("reservations/res1");
   delete saved.registrarRecommend;
-  saved.deanRecommend = true;
-  await changeReservationStatus(fake.db, "reviewer", { reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Registrar" });
-  assert.equal(saved.registrarRecommend, undefined);
-  assert.equal(fake.documents.get("reservations/res1").registrarRecommend, true);
-  assert.equal(fake.documents.get("reservations/res1").deanRecommend, false);
-  assert.deepEqual(fake.logs()[0].changes.deanRecommend, { before: true, after: false });
-  fake.documents.get("memberships/member1").role = "Dean";
+  delete saved.deanRecommend;
   await changeReservationStatus(fake.db, "reviewer", { reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Dean" });
+  assert.equal(saved.registrarRecommend, undefined);
+  assert.equal(fake.documents.get("reservations/res1").deanRecommend, true);
+  fake.documents.get("memberships/member1").role = "Registrar";
+  await changeReservationStatus(fake.db, "reviewer", { reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Registrar" });
+  assert.equal(fake.documents.get("reservations/res1").registrarRecommend, true);
   assert.equal(fake.documents.get("reservations/res1").deanRecommend, true);
   assert.equal(fake.documents.get("reservations/res1").status, "Pending");
   fake.documents.get("memberships/member1").role = "University Administrator";
   await changeReservationStatus(fake.db, "reviewer", { ...request, expectedStatus: "Pending" });
   assert.equal(fake.documents.get("reservations/res1").status, "Approved");
   assert.equal(fake.logs().length, 3);
+});
+
+test("Dean review resets a legacy Registrar-first recommendation", async () => {
+  const fake = fixture({ role: "Dean" });
+  fake.documents.get("reservations/res1").deanRecommend = false;
+  await changeReservationStatus(fake.db, "reviewer", {
+    reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Dean",
+  });
+  const saved = fake.documents.get("reservations/res1");
+  assert.equal(saved.deanRecommend, true);
+  assert.equal(saved.registrarRecommend, false);
+  assert.deepEqual(fake.logs()[0].changes.registrarRecommend, { before: true, after: false });
+  fake.documents.get("memberships/member1").role = "Registrar";
+  await changeReservationStatus(fake.db, "reviewer", {
+    reservationId: "res1", status: "Pending", expectedStatus: "Pending", recommendation: "Registrar",
+  });
+  assert.equal(fake.documents.get("reservations/res1").registrarRecommend, true);
 });
 
 test("final decline also requires both recommendations and University Administrator role", async () => {
@@ -571,9 +596,9 @@ test("reopening an extended final decline still checks current room constraints"
   assert.equal(fake.documents.get("reservations/res1").status, "Approved");
 });
 
-test("Registrar can decline an open request before recommendation with a required audited reason", async () => {
+test("Registrar can decline a Dean-recommended request before Registrar recommendation with a required audited reason", async () => {
   const fake = fixture({ role: "Registrar", reservationStatus: "Pending" });
-  Object.assign(fake.documents.get("reservations/res1"), { registrarRecommend: false, deanRecommend: false });
+  Object.assign(fake.documents.get("reservations/res1"), { registrarRecommend: false, deanRecommend: true });
   const decline = { reservationId: "res1", status: "Declined", expectedStatus: "Pending", declinedReason: "  Room unavailable  " };
   await changeReservationStatus(fake.db, "reviewer", decline);
   const saved = fake.documents.get("reservations/res1");

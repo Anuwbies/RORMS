@@ -23,7 +23,9 @@ interface BuildingBrowserProps {
   onRoomClick: (room: Room) => void;
   actionButton?: React.ReactNode;
   renderBuildingActions?: (building: Building) => React.ReactNode;
+  renderBuildingScheduleUsage?: (building: Building) => React.ReactNode;
   renderRoomActions?: (room: Room, buildingId: string) => React.ReactNode;
+  renderRoomScheduleUsage?: (room: Room) => React.ReactNode;
   isLoading?: boolean;
   unreadCommentRoomIds?: ReadonlySet<string>;
 }
@@ -36,12 +38,15 @@ export function BuildingBrowser({
   onRoomClick,
   actionButton,
   renderBuildingActions,
+  renderBuildingScheduleUsage,
   renderRoomActions,
+  renderRoomScheduleUsage,
   isLoading,
   unreadCommentRoomIds
 }: BuildingBrowserProps) {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedStatuses, setSelectedStatuses] = useState<RoomStatus[]>([])
+  const [selectedRoomTypes, setSelectedRoomTypes] = useState<string[]>([])
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([])
 
   const filteredBuildings = useMemo(() => {
@@ -54,16 +59,17 @@ export function BuildingBrowser({
           return null
         }
 
-        // 2. Filter rooms by status (always applies)
-        const statusMatchingRooms = selectedStatuses.length > 0
-          ? building.rooms.filter(room => selectedStatuses.includes(room.status))
-          : building.rooms
+        // 2. Apply room filters before matching the search term.
+        const matchingRooms = building.rooms.filter(room =>
+          (selectedStatuses.length === 0 || selectedStatuses.includes(room.status))
+          && (selectedRoomTypes.length === 0 || selectedRoomTypes.includes(room.type))
+        )
 
-        // 3. If no search term, return building with status-filtered rooms
+        // 3. If no search term, return building with filtered rooms
         if (!normalizedSearch) {
           return {
             ...building,
-            rooms: statusMatchingRooms,
+            rooms: matchingRooms,
           }
         }
 
@@ -79,12 +85,12 @@ export function BuildingBrowser({
         if (buildingMatchesSearch) {
           return {
             ...building,
-            rooms: statusMatchingRooms,
+            rooms: matchingRooms,
           }
         }
 
-        // 5. If building doesn't match, check rooms for search match (within status-filtered rooms)
-        const fullyMatchingRooms = statusMatchingRooms.filter((room) =>
+        // 5. If building doesn't match, check rooms for search match (within filtered rooms)
+        const fullyMatchingRooms = matchingRooms.filter((room) =>
           [
             room.name,
             room.code,
@@ -104,7 +110,7 @@ export function BuildingBrowser({
         }
       })
       .filter((building): building is Building => building !== null)
-  }, [buildings, searchTerm, selectedStatuses, selectedBuildings])
+  }, [buildings, searchTerm, selectedStatuses, selectedRoomTypes, selectedBuildings])
 
   return (
     <div className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-visible flex flex-col w-full animate-in fade-in slide-in-from-bottom-8 duration-700 delay-150">
@@ -135,11 +141,19 @@ export function BuildingBrowser({
                   options: ['Available', 'Unavailable', 'Maintenance'],
                   selectedValues: selectedStatuses,
                   onChange: (newSelected) => setSelectedStatuses(newSelected as RoomStatus[])
+                },
+                {
+                  id: 'roomType',
+                  title: 'Room Type',
+                  options: ['Lecture', 'Laboratory'],
+                  selectedValues: selectedRoomTypes,
+                  onChange: setSelectedRoomTypes
                 }
               ]}
               onClearAll={() => {
                 setSelectedBuildings([])
                 setSelectedStatuses([])
+                setSelectedRoomTypes([])
               }}
               buttonClassName="w-full sm:w-auto"
             />
@@ -258,6 +272,7 @@ export function BuildingBrowser({
                       </div>
                     </div>
                   </div>
+                  {renderBuildingScheduleUsage?.(building)}
                 </div>
 
                 <div className={`grid transition-all duration-500 ease-in-out ${isExpanded ? 'grid-rows-[1fr] mt-10 opacity-100' : 'grid-rows-[0fr] mt-0 opacity-0'}`}>
@@ -290,13 +305,13 @@ export function BuildingBrowser({
                                 <div
                                   key={room.id}
                                   onClick={() => onRoomClick(room)}
-                                  className="relative flex rounded-2xl border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] hover:z-50 focus-within:z-50 cursor-pointer"
+                                  className="relative flex flex-wrap rounded-2xl border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] hover:z-50 focus-within:z-50 cursor-pointer"
                                 >
                                   <div className="relative shrink-0">
                                     <img
                                       src={room.image}
                                       alt={room.name}
-                                      className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-l-2xl sm:w-32 sm:h-32"
+                                      className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-tl-2xl sm:w-32 sm:h-32"
                                       onError={(e) => { e.currentTarget.src = DEFAULT_ROOM_IMAGE }}
                                     />
                                     {unreadCommentRoomIds?.has(room.id) && <span className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[0.625rem] font-bold text-amber-800 shadow-sm" role="status">New comments</span>}
@@ -333,6 +348,7 @@ export function BuildingBrowser({
                                       </span>
                                     </div>
                                   </div>
+                                  {renderRoomScheduleUsage?.(room)}
                                 </div>
                               ))}
                             </div>

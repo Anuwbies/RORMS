@@ -1,12 +1,13 @@
 import type { ScheduleMeetingRecord } from './scheduleMeetings'
 import { plotMeetingsOverlap } from './schedulePlotting.ts'
+import { isDraftOrPlotScheduleMeeting } from './ScheduleValidation.ts'
 
 /** Call with the selected term and staged rooms, just as the Plot transaction does. */
 export function scheduleRoomOverlapMessages(meetings: readonly ScheduleMeetingRecord[], roomLabel: (meeting: ScheduleMeetingRecord) => string) {
   const messages = new Map<string, string[]>()
   const byRoom = new Map<string, ScheduleMeetingRecord[]>()
   for (const meeting of meetings) {
-    if (!meeting.roomId || ['Return', 'Returned'].includes(meeting.status ?? '')) continue
+    if (!meeting.roomId || !isDraftOrPlotScheduleMeeting(meeting)) continue
     const others = byRoom.get(meeting.roomId) ?? []
     for (const other of others) {
       if (meeting.id === other.id || !plotMeetingsOverlap(meeting, other)) continue

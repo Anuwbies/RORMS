@@ -1,5 +1,6 @@
 import type { WorkbookScheduleMeeting, WorkbookScheduleRow } from './excelScheduleRows'
 import type { ScheduleMeetingRecord } from './scheduleMeetings'
+import { scheduleRoomTypeIssue } from './ScheduleValidation.ts'
 
 export interface PlotRoom {
   id: string
@@ -7,6 +8,7 @@ export interface PlotRoom {
   name: string
   buildingId: string
   status: string
+  type?: string
   availableDays: string[]
   startTime: string
   endTime: string
@@ -46,6 +48,11 @@ export const plotScheduleRevision = (schedule: Record<string, unknown>) => JSON.
 export const schedulePlotSelectionKey = (meeting: ScheduleMeetingRecord) => JSON.stringify([
   meeting.sourceScheduleId || meeting.id, plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>),
 ])
+
+export function plotScheduleCollege(meeting: Record<string, unknown>): string {
+  const college = typeof meeting.college === 'string' ? meeting.college.trim() : ''
+  return college || (meeting.groupId || meeting.type === 'parallel' ? 'PARALLEL' : '')
+}
 
 /** The department workbook owns this list; older Registrar metadata remains readable. */
 export function readProvidedRoomKeys(schedule: Record<string, unknown>): string[] | undefined {
@@ -171,8 +178,11 @@ const minutes = (value: string) => {
   return match && +match[1] < 24 && +match[2] < 60 ? +match[1] * 60 + +match[2] : NaN
 }
 
-export function assertPlotRoom(meeting: Pick<WorkbookScheduleMeeting, 'startTime' | 'endTime' | 'days'>, room: PlotRoom, maxStudents: number | null): void {
+export function assertPlotRoom(meeting: Pick<WorkbookScheduleMeeting, 'startTime' | 'endTime' | 'days'>, room: PlotRoom,
+  maxStudents: number | null, college: string): void {
   if (room.status !== 'Available') throw new Error(`${room.code || room.name} is not available for plotting.`)
+  const roomTypeIssue = scheduleRoomTypeIssue(room, college)
+  if (roomTypeIssue) throw new Error(roomTypeIssue)
   const start = minutes(meeting.startTime), end = minutes(meeting.endTime)
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || !meeting.days.length) throw new Error('This meeting has invalid days or times.')
   if (maxStudents !== null && maxStudents > room.capacity) throw new Error(`${room.code || room.name} does not have enough capacity for this class.`)
