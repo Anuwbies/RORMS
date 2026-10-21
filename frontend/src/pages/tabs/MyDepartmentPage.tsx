@@ -6,10 +6,12 @@ import { IconButton } from '../../components/IconButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { PersonalScheduleModal } from '../../components/PersonalScheduleModal'
-import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
+import { SectionScheduleModal, type SectionScheduleSelection } from '../../components/SectionScheduleModal'
+import { Workbookodal } from '../../components/Workbookodal'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
+import { scheduleMatchesTerm, scheduleSectionLabel } from '../../utils/roomSchedule'
+import type { ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
 import { resolveCurrentSemester, type AcademicYearData } from '../../utils/academicSemester'
-import { DepartmentCoursesImportModal } from '../../components/DepartmentCoursesImportModal'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
@@ -54,6 +56,13 @@ const phaseClasses: Record<string, string> = {
   Ended: 'bg-rose-100 text-rose-700',
 }
 
+const YEAR_LEVELS = [
+  { year: 1, label: '1st Year' },
+  { year: 2, label: '2nd Year' },
+  { year: 3, label: '3rd Year' },
+  { year: 4, label: '4th Year' },
+] as const
+
 function MyDepartmentPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
@@ -69,12 +78,12 @@ function MyDepartmentPage() {
   const [editError, setEditError] = useState('')
   const [isSavingEdit, setIsSavingEdit] = useState(false)
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
+  const [selectedSection, setSelectedSection] = useState<SectionScheduleSelection | null>(null)
   const [selectedInstructorIds, setSelectedInstructorIds] = useState<string[]>([])
   const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
   const [removeError, setRemoveError] = useState('')
 
-  const [isImportScheduleModalOpen, setIsImportScheduleModalOpen] = useState(false)
-  const [isCoursesModalOpen, setIsCoursesModalOpen] = useState(false)
+  const [isWorkbookOpen, setIsWorkbookOpen] = useState(false)
   // School Year and Semester Selection State
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [isSchoolYearModalOpen, setIsSchoolYearModalOpen] = useState(false)
@@ -92,6 +101,9 @@ function MyDepartmentPage() {
   const [userNamesById, setUserNamesById] = useState<Record<string, string>>({})
   const [members, setMembers] = useState<Member[]>([])
   const [availableInstructors, setAvailableInstructors] = useState<Member[]>([])
+  const [sectionSchedules, setSectionSchedules] = useState<ScheduleMeetingRecord[]>([])
+  const [sectionsLoading, setSectionsLoading] = useState(false)
+  const [sectionsError, setSectionsError] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isAdding, setIsAdding] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
@@ -105,6 +117,29 @@ function MyDepartmentPage() {
   const activeAcademicYear = academicYears.find(year => year.isActive)
   const currentSemesterName = activeAcademicYear ? resolveCurrentSemester(activeAcademicYear) : ''
   const currentSemesterPhase = currentSemesterName === '2nd Semester' ? activeAcademicYear?.sem2?.phase : activeAcademicYear?.sem1?.phase
+  const sectionsByYear = useMemo(() => {
+    const sections: Record<number, string[]> = { 1: [], 2: [], 3: [], 4: [] }
+    if (!activeAcademicYear || !currentSemesterName) return sections
+
+    const seen = new Set<string>()
+    for (const schedule of sectionSchedules) {
+      if (schedule.departmentId !== departmentInfo?.id || !(schedule.academicYearId || schedule.academicYear)
+        || !(schedule.semesterKey || schedule.semester) || !scheduleMatchesTerm(schedule, activeAcademicYear, currentSemesterName)) continue
+      const year = schedule.yearLevel
+      const section = typeof schedule.classSection === 'string' ? schedule.classSection.trim() : ''
+      if (typeof year !== 'number' || !sections[year] || !section) continue
+
+      const label = scheduleSectionLabel(schedule)
+      const key = `${year}:${label.toLocaleUpperCase()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      sections[year].push(label)
+    }
+
+    for (const level of YEAR_LEVELS) sections[level.year].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+    return sections
+  }, [sectionSchedules, departmentInfo?.id, activeAcademicYear, currentSemesterName])
+  const sectionCount = YEAR_LEVELS.reduce((total, level) => total + sectionsByYear[level.year].length, 0)
 
   // Calculate new members (joined in last 7 days)
   const newMembersCount = members.filter(m => {
@@ -302,6 +337,28 @@ function MyDepartmentPage() {
     })
     return () => unsubscribe()
   }, [])
+
+  useEffect(() => {
+    if (!departmentInfo?.id) {
+      setSectionSchedules([])
+      setSectionsLoading(false)
+      setSectionsError(false)
+      return
+    }
+
+    setSectionsLoading(true)
+    setSectionsError(false)
+    const schedulesQuery = query(collection(db, 'schedules'), where('departmentId', '==', departmentInfo.id))
+    return onSnapshot(schedulesQuery, snapshot => {
+      setSectionSchedules(snapshot.docs.map(document => ({ ...document.data(), id: document.id } as ScheduleMeetingRecord)))
+      setSectionsLoading(false)
+    }, error => {
+      console.error('Error loading department sections:', error)
+      setSectionSchedules([])
+      setSectionsLoading(false)
+      setSectionsError(true)
+    })
+  }, [departmentInfo?.id])
 
   const filteredMembers = members
     .filter((member) => {
@@ -681,6 +738,15 @@ function MyDepartmentPage() {
         }}
       />
 
+      <SectionScheduleModal
+        isOpen={Boolean(selectedSection)}
+        onClose={() => setSelectedSection(null)}
+        section={selectedSection}
+        department={departmentInfo}
+        academicYear={activeAcademicYear?.academicYear}
+        semester={currentSemesterName}
+      />
+
 
       <SelectSemesterModal
         isOpen={isSchoolYearModalOpen}
@@ -696,25 +762,21 @@ function MyDepartmentPage() {
           setSelectedSemesterPhase(semesterPhase)
           setIsSchoolYearModalOpen(false)
 
-          setIsImportScheduleModalOpen(true)
+          setIsWorkbookOpen(true)
         }}
         editablePhases={currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? ['Drafting', 'Revision'] : []}
       />
 
-      {isImportScheduleModalOpen && departmentInfo && selectedAcademicYear?.id && selectedAcademicYear?.academicYear && selectedSemesterPhase && <DepartmentScheduleImportModal
+      {isWorkbookOpen && departmentInfo && selectedAcademicYear?.id && selectedAcademicYear?.academicYear && selectedSemesterPhase && <Workbookodal
         key={`${departmentInfo.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
         departmentName={departmentInfo.name}
         term={{ departmentId: departmentInfo.id, departmentCode: departmentInfo.code,
           academicYearId: selectedAcademicYear.id, academicYear: selectedAcademicYear.academicYear,
           semester: semesterKey(selectedSemesterPhase.name), membershipId: currentUserMembership?.id || '' }}
-        readOnly={(currentUserRole !== 'Dean' && currentUserRole !== 'Program Head') || !['Drafting', 'Revision'].includes(selectedSemesterPhase.phase)}
-        onClose={() => setIsImportScheduleModalOpen(false)}
-      />}
-      {isCoursesModalOpen && departmentInfo && <DepartmentCoursesImportModal
-        key={departmentInfo.id}
         department={{ departmentId: departmentInfo.id, departmentCode: departmentInfo.code, membershipId: currentUserMembership?.id || '' }}
-        readOnly={currentUserRole !== 'Dean' && currentUserRole !== 'Program Head'}
-        onClose={() => setIsCoursesModalOpen(false)}
+        scheduleReadOnly={(currentUserRole !== 'Dean' && currentUserRole !== 'Program Head') || !['Drafting', 'Revision'].includes(selectedSemesterPhase.phase)}
+        coursesReadOnly={currentUserRole !== 'Dean' && currentUserRole !== 'Program Head'}
+        onClose={() => setIsWorkbookOpen(false)}
       />}
 
 
@@ -894,7 +956,7 @@ function MyDepartmentPage() {
                 <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Members</span>
               </div>
             </div>
-            <dl className="mt-5 grid gap-5 border-t border-slate-100 pt-5 sm:grid-cols-2 sm:gap-8">
+            <dl className="mt-5 grid gap-5 border-t border-slate-300 pt-5 sm:grid-cols-2 sm:gap-8">
               <div>
                 <dt className="text-xs font-bold uppercase tracking-wider text-slate-500">Dean</dt>
                 <dd className="mt-2 text-sm font-semibold text-slate-900">{deanName}</dd>
@@ -920,7 +982,7 @@ function MyDepartmentPage() {
                 <CalendarIcon className="h-6 w-6" />
               </div>
             </div>
-            <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t border-slate-100 pt-5">
+            <div className="mt-5 flex flex-wrap items-end justify-between gap-4 border-t border-slate-300 pt-5">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-500">School Year</p>
                 <p className="mt-1 text-lg font-bold text-slate-900">{activeAcademicYear?.academicYear || 'No active school year'}</p>
@@ -937,6 +999,51 @@ function MyDepartmentPage() {
             </div>
           </section>
         </div>
+
+        {currentUserMembership?.status !== 'pending' && (
+          <section aria-label="Sections by year level" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Sections by Year Level</h2>
+                <p className="text-xs font-medium text-slate-500">
+                  {activeAcademicYear ? `${activeAcademicYear.academicYear} • ${currentSemesterName}` : 'No active academic year'}
+                </p>
+              </div>
+              <span className="rounded-lg bg-[#f3f7ee] px-2.5 py-1 text-xs font-bold text-[#41572a]">
+                {sectionCount} {sectionCount === 1 ? 'section' : 'sections'}
+              </span>
+            </div>
+            {sectionsError ? (
+              <p role="alert" className="mt-5 border-t border-slate-300 pt-5 text-sm text-rose-700">Unable to load sections.</p>
+            ) : (
+              <div className="mt-5 grid gap-4 border-t border-slate-300 pt-5 sm:grid-cols-2 xl:grid-cols-4">
+                {YEAR_LEVELS.map(level => (
+                  <div key={level.year} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-bold text-slate-900">{level.label}</h3>
+                      <span className="text-xs font-semibold text-slate-500">{sectionsByYear[level.year].length}</span>
+                    </div>
+                    <div className="mt-3 grid grid-cols-3 gap-2">
+                      {sectionsByYear[level.year].length ? sectionsByYear[level.year].map(section => (
+                        <button
+                          key={section}
+                          type="button"
+                          title={`View ${section} schedule`}
+                          onClick={() => setSelectedSection({ label: section, yearLevel: level.year })}
+                          className="min-w-0 rounded-lg bg-white px-0.5 py-1 text-center text-[9px] leading-tight font-semibold tracking-tight whitespace-nowrap text-[#41572a] ring-1 ring-[#c6dbb6] transition-colors hover:bg-[#e3edda] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#62853e] cursor-pointer"
+                        >
+                          {section}
+                        </button>
+                      )) : (
+                        <span className="col-span-3 text-xs text-slate-500">{sectionsLoading ? 'Loading sections...' : 'No sections'}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
 
         {/* Members DataTable (hidden while department membership is pending) */}
         {currentUserMembership?.status !== 'pending' && (
@@ -985,28 +1092,18 @@ function MyDepartmentPage() {
                     Add Instructor
                   </Button>
                 )}
-                {(currentUserRole === 'Dean' || currentUserRole === 'Program Head') && (
-                  <Button
-                    type="button"
-                    variant="brand"
-                    icon={<BookIcon className="h-5 w-5" />}
-                    onClick={() => setIsCoursesModalOpen(true)}
-                  >
-                    Manage Courses
-                  </Button>
-                )}
                 {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head' || currentUserRole === 'Instructor') && (
                   <Button
                     type="button"
                     variant="brand"
-                    icon={<CalendarIcon className="h-5 w-5" />}
+                    icon={<BookIcon className="h-5 w-5" />}
                     onClick={() => {
                       const active = academicYears.find((y: any) => y.isActive)
                       if (active) setSelectedAcademicYear(active)
                       setIsSchoolYearModalOpen(true)
                     }}
                   >
-                    {currentUserRole === 'Dean' || currentUserRole === 'Program Head' ? 'Manage Schedule' : 'Department Schedule'}
+                    Manage Workbook
                   </Button>
                 )}
               </div>

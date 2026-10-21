@@ -7,7 +7,7 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { PlotScheduleModal } from '../../components/PlotScheduleModal'
-import { DepartmentScheduleImportModal } from '../../components/DepartmentScheduleImportModal'
+import { DepartmentScheduleWorkbook } from '../../components/DepartmentScheduleWorkbook'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
@@ -611,7 +611,7 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
       </div>
 
       {/* Open the same saved department/year/semester workbook as My Department. */}
-      {isAddScheduleModalOpen && selectedDepartment && selectedAcademicYear?.id && selectedAcademicYear.academicYear && selectedSemesterPhase && <DepartmentScheduleImportModal
+      {isAddScheduleModalOpen && selectedDepartment && selectedAcademicYear?.id && selectedAcademicYear.academicYear && selectedSemesterPhase && <DepartmentScheduleWorkbook
         key={`${selectedDepartment.id}:${selectedAcademicYear.id}:${selectedSemesterPhase.name}`}
         onClose={() => setIsAddScheduleModalOpen(false)}
         departmentName={selectedDepartment.name}

@@ -3,7 +3,7 @@ import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightI
 import { db, auth } from '../firebase'
 import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../utils/scheduleMeetings'
 import { roomScheduleInstructor, roomScheduleLabel, roomScheduleRoom, scheduleSectionLabel, scheduleMatchesDepartment, scheduleMatchesTerm } from '../utils/roomSchedule'
-import { collection, query, onSnapshot } from 'firebase/firestore'
+import { collection, query, where, onSnapshot } from 'firebase/firestore'
 import { Button } from './Button'
 import { ExtendedReservationBadge } from './ExtendedReservationBadge'
 import { SingleSelectDropdown } from './SingleSelectDropdown'
@@ -29,6 +29,8 @@ export interface PersonalScheduleModalProps {
   scheduleStatuses?: readonly ('Draft' | 'Plot')[]
   hideReservationIdentity?: boolean
   schedulesOnly?: boolean
+  sectionFilter?: { departmentId: string; yearLevel: number; label: string }
+  scheduleTitle?: string
 }
 
 import {
@@ -177,7 +179,9 @@ export function PersonalScheduleModal({
   hideReturnedSchedules = false,
   scheduleStatuses,
   hideReservationIdentity = false,
-  schedulesOnly = false
+  schedulesOnly = false,
+  sectionFilter,
+  scheduleTitle,
 }: PersonalScheduleModalProps) {
   const isInstructorMode = Boolean(member)
   const memberId = member?.id
@@ -185,6 +189,7 @@ export function PersonalScheduleModal({
   const memberMembershipId = member?.membershipId
   const memberRole = member?.role
   const memberDepartment = member?.department
+  const displayTitle = scheduleTitle ?? `${member?.name}'s Schedule`
   const [displayOption, setDisplayOption] = useState<DisplayOption>('Schedule and Reservation')
   const effectiveDisplayOption = schedulesOnly ? 'Schedule' : displayOption
   const isDeanScheduleOnly = isInstructorMode && memberRole === 'Dean' && effectiveDisplayOption === 'Schedule'
@@ -334,10 +339,14 @@ export function PersonalScheduleModal({
         setSchedules([])
         schedulesLoaded = true
       } else {
-        const q = query(collection(db, 'schedules'))
+        const q = sectionFilter
+          ? query(collection(db, 'schedules'), where('departmentId', '==', sectionFilter.departmentId))
+          : query(collection(db, 'schedules'))
         unsubscribeSchedule = onSnapshot(q, (snapshot) => {
-          const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => Boolean(item.instructorId && validInstructorIds.includes(item.instructorId))
-            && scheduleMatchesDepartment(item, memberDepartment))
+          const fetched = scheduleMeetingRecords(snapshot.docs).filter(item => scheduleMatchesDepartment(item, memberDepartment)
+            && (sectionFilter
+              ? item.yearLevel === sectionFilter.yearLevel && scheduleSectionLabel(item).trim().toUpperCase() === sectionFilter.label.trim().toUpperCase()
+              : Boolean(item.instructorId && validInstructorIds.includes(item.instructorId))))
           fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
           setSchedules(fetched)
           setScheduleLoadError('')
@@ -346,7 +355,8 @@ export function PersonalScheduleModal({
         }, (err) => {
           console.error('Error loading instructor schedules:', err)
           setSchedules([])
-          setScheduleLoadError('The instructor schedule could not be loaded. Close and reopen the schedule to retry.')
+          setScheduleLoadError(sectionFilter ? 'The section schedule could not be loaded. Close and reopen the schedule to retry.'
+            : 'The instructor schedule could not be loaded. Close and reopen the schedule to retry.')
           schedulesLoaded = true
           if (reservationsLoaded) setIsLoading(false)
         })
@@ -385,7 +395,8 @@ export function PersonalScheduleModal({
 
     setSchedules([])
     setIsLoading(false)
-  }, [isOpen, isInstructorMode, memberMembershipId, memberId, memberUserId, memberRole, memberDepartment, showWeekCalendar])
+  }, [isOpen, isInstructorMode, memberMembershipId, memberId, memberUserId, memberRole, memberDepartment, showWeekCalendar,
+    sectionFilter?.departmentId, sectionFilter?.yearLevel, sectionFilter?.label])
 
   // 5. Filter Schedules by Academic Year & Semester
   const filteredSchedules = useMemo(() => {
@@ -426,6 +437,12 @@ export function PersonalScheduleModal({
 
   const renderMeetingRoom = (meeting: ScheduleMeetingRecord) => (
     <span className="truncate">Room: <span className="text-gray-700 font-medium truncate" title={getRoomName(meeting)}>{getRoomName(meeting)}</span></span>
+  )
+
+  const sectionInstructorName = (meeting: ScheduleMeetingRecord) => roomScheduleInstructor(meeting, instructorsMap).toUpperCase()
+
+  const renderSectionInstructor = (meeting: ScheduleMeetingRecord) => sectionFilter && (
+    <span className="truncate">Inst: <span className="font-medium text-gray-700" title={sectionInstructorName(meeting)}>{sectionInstructorName(meeting)}</span></span>
   )
 
   const getUserName = (uid?: string) => {
@@ -627,7 +644,7 @@ export function PersonalScheduleModal({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff', margin: 0 }}>
-                  {`${member?.name}'s Schedule`}
+                  {displayTitle}
                 </h2>
 
               </div>
@@ -637,11 +654,13 @@ export function PersonalScheduleModal({
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.2)', padding: '8px 16px', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', color: '#ffffff', border: '1px solid rgba(255,255,255,0.3)' }}>
-                {showWeekCalendar
-                  ? weekInfo.label
-                  : `${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}`}
-              </span>
+              {!sectionFilter && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: '12px', backgroundColor: 'rgba(255,255,255,0.2)', padding: '8px 16px', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase', color: '#ffffff', border: '1px solid rgba(255,255,255,0.3)' }}>
+                  {showWeekCalendar
+                    ? weekInfo.label
+                    : `${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}`}
+                </span>
+              )}
             </div>
           </div>
 
@@ -768,7 +787,8 @@ export function PersonalScheduleModal({
                                       {[group.parent, ...group.children].map((item, iIdx) => (
                                         <div key={iIdx} style={{ display: 'flex', flexDirection: 'column', paddingLeft: '6px', borderLeft: `2px solid ${pdfStyles.borderColor}`, fontSize: '10px', color: '#4b5563' }}>
                                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937', fontWeight: 500 }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
-                                          <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(item)}</span></div>
+                                          {!sectionFilter && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(item)}</span></div>}
+                                          {sectionFilter && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <span style={{ color: '#374151', fontWeight: 500 }}>{sectionInstructorName(item)}</span></div>}
                                           <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(item)}</span></div>
                                           {!isInstructorMode && item.department && (
                                             <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{item.department}</span></div>
@@ -787,7 +807,8 @@ export function PersonalScheduleModal({
                                     </div>
                                     <div style={{ marginTop: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937', fontWeight: 500 }}>{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></div>
-                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(group.parent)}</span></div>
+                                      {!sectionFilter && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(group.parent)}</span></div>}
+                                      {sectionFilter && <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <span style={{ color: '#374151', fontWeight: 500 }}>{sectionInstructorName(group.parent)}</span></div>}
                                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Room: <span style={{ color: '#374151', fontWeight: 500 }}>{getRoomName(group.parent)}</span></div>
                                       {!isInstructorMode && group.parent.department && (
                                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{group.parent.department}</span></div>
@@ -823,7 +844,7 @@ export function PersonalScheduleModal({
             {schedulesOnly && <>
               <div className="flex items-center gap-2.5">
                 <h3 className="text-xl font-bold tracking-tight text-white">
-                  {`${member?.name}'s Schedule`}
+                  {displayTitle}
                 </h3>
               </div>
               <p className="mt-0.5 text-xs text-white/80 font-medium">
@@ -1132,7 +1153,8 @@ export function PersonalScheduleModal({
                                       <div key={iIdx} className="flex flex-col pl-2 border-l-2 border-[var(--brand-color)]/30 min-w-0">
                                         <div className="flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                           <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
-                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>
+                                          {!sectionFilter && <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>}
+                                          {renderSectionInstructor(item)}
                                           {renderMeetingRoom(item)}
                                           {!isInstructorMode && item.department && (
                                             <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
@@ -1152,7 +1174,8 @@ export function PersonalScheduleModal({
                                   </div>
                                   <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                     <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></span>
-                                    <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(group.parent)}</span></span>
+                                    {!sectionFilter && <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(group.parent)}</span></span>}
+                                    {renderSectionInstructor(group.parent)}
                                     {renderMeetingRoom(group.parent)}
                                     {!isInstructorMode && group.parent.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
@@ -1164,7 +1187,8 @@ export function PersonalScheduleModal({
                                         <span className="font-bold text-gray-900 uppercase truncate">{child.subjectCode || 'TBA'}</span>
                                         <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                           <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(child.startTime)} - {formatTime(child.endTime)}</span></span>
-                                          <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(child)}</span></span>
+                                          {!sectionFilter && <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(child)}</span></span>}
+                                          {renderSectionInstructor(child)}
                                           {renderMeetingRoom(child)}
                                           {!isInstructorMode && child.department && (
                                             <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{child.department}</span></span>
@@ -1184,7 +1208,8 @@ export function PersonalScheduleModal({
                                   </div>
                                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
                                     <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></span>
-                                    <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(group.parent)}</span></span>
+                                    {!sectionFilter && <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(group.parent)}</span></span>}
+                                    {renderSectionInstructor(group.parent)}
                                     {renderMeetingRoom(group.parent)}
                                     {!isInstructorMode && group.parent.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
@@ -1207,7 +1232,9 @@ export function PersonalScheduleModal({
         {/* Modal Footer */}
         <div className="bg-gray-50/80 px-7 py-4 border-t border-gray-200 flex items-center justify-between gap-3 shrink-0 rounded-b-2xl relative z-30">
           <div className="text-xs text-gray-500 font-medium">
-            {showWeekCalendar ? (
+            {sectionFilter ? (
+              <span className="font-bold text-gray-700">Section timetable</span>
+            ) : showWeekCalendar ? (
               <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester} • {weekInfo.label}</span>
             ) : (
               <span className="font-bold text-gray-700">{selectedAcademicYear?.academicYear || 'Academic Year'} • {selectedSemester}</span>
