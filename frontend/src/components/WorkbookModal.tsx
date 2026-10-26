@@ -14,12 +14,13 @@ interface WorkbookModalProps {
   department: DepartmentCoursesContext
   scheduleReadOnly: boolean
   coursesReadOnly: boolean
+  summaryReadOnly: boolean
   viewOnly?: boolean
 }
 
 type WorkbookTab = 'schedule' | 'courses' | 'summary'
 
-export function WorkbookModal({ onClose, departmentName, term, department, scheduleReadOnly, coursesReadOnly, viewOnly = false }: WorkbookModalProps) {
+export function WorkbookModal({ onClose, departmentName, term, department, scheduleReadOnly, coursesReadOnly, summaryReadOnly, viewOnly = false }: WorkbookModalProps) {
   const headerTitle = `School Year ${term.academicYear.replace(/\s*[-–—]\s*/, ' - ')} · ${term.semester === 'sem1' ? '1st' : '2nd'} Semester`
   const dialogRef = useRef<HTMLDialogElement>(null)
   const scheduleRef = useRef<WorkbookSaveHandle>(null)
@@ -198,7 +199,7 @@ export function WorkbookModal({ onClose, departmentName, term, department, sched
           <div id="workbook-summary-panel" role="tabpanel" aria-labelledby="workbook-summary-tab" aria-hidden={activeTab !== 'summary'} inert={activeTab !== 'summary'} className={`absolute inset-0 min-h-0 ${activeTab === 'summary' ? '' : 'invisible'}`}>
             <DepartmentSummaryWorkbook ref={summaryRef} term={term} headerTitle={headerTitle} headerSubtitle={departmentName}
               headerHost={headerHost} footerHost={footerHost} menuHost={summaryMenuHost} active={activeTab === 'summary'}
-              readOnly={viewOnly || scheduleReadOnly} onActivate={() => setActiveTab('summary')} onSaveStateChange={updateSummarySaveState} />
+              readOnly={viewOnly || summaryReadOnly} onActivate={() => setActiveTab('summary')} onSaveStateChange={updateSummarySaveState} />
           </div>
         </div>
         <footer className="relative z-40 flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-slate-200 bg-white px-6 py-4">

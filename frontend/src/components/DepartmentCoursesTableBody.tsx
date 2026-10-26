@@ -11,9 +11,10 @@ interface CourseRowProps {
   selectionTop: boolean
   selectionBottom: boolean
   actions: WorkbookCellActions
+  readOnly: boolean
 }
 
-const CourseRow = memo(function CourseRow({ row, rowIndex, sheetIndex, selectedColumn, selectionTop, selectionBottom, actions }: CourseRowProps) {
+const CourseRow = memo(function CourseRow({ row, rowIndex, sheetIndex, selectedColumn, selectionTop, selectionBottom, actions, readOnly }: CourseRowProps) {
   return <tr data-row-index={rowIndex} className="even:bg-slate-50">
     <th
       scope="row"
@@ -38,6 +39,7 @@ const CourseRow = memo(function CourseRow({ row, rowIndex, sheetIndex, selectedC
     {row.values.map((value, column) => <EditableScheduleCell
       key={column}
       value={value}
+      editable={!readOnly}
       scheduleSuggestions={false}
       label={`${DEPARTMENT_COURSE_HEADERS[column]}, row ${rowIndex + 1}`}
       sheetIndex={sheetIndex}
@@ -58,9 +60,10 @@ interface DepartmentCoursesTableBodyProps {
   sheetIndex: number
   selection: ColumnCellSelection | null
   actions: WorkbookCellActions
+  readOnly: boolean
 }
 
-export const DepartmentCoursesTableBody = memo(function DepartmentCoursesTableBody({ rows, sheetIndex, selection, actions }: DepartmentCoursesTableBodyProps) {
+export const DepartmentCoursesTableBody = memo(function DepartmentCoursesTableBody({ rows, sheetIndex, selection, actions, readOnly }: DepartmentCoursesTableBodyProps) {
   const first = selection?.sheet === sheetIndex ? Math.min(selection.anchor, selection.end) : -1
   const last = selection?.sheet === sheetIndex ? Math.max(selection.anchor, selection.end) : -1
   return <tbody>{rows.map((row, rowIndex) => <CourseRow
@@ -72,5 +75,6 @@ export const DepartmentCoursesTableBody = memo(function DepartmentCoursesTableBo
     selectionTop={rowIndex === first}
     selectionBottom={rowIndex === last}
     actions={actions}
+    readOnly={readOnly}
   />)}</tbody>
 })

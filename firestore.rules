@@ -59,9 +59,10 @@ service cloud.firestore {
           && data.state.fileName is string && data.state.fileName.size() > 5 && data.state.fileName.size() <= 255
           && data.state.fileName.matches('.*[.][xX][lL][sS][xX]')
           && data.state.sourceData is string && data.state.sourceData.size() <= 800000
-          && (!data.state.keys().hasAny(['columnWidths']) || (data.state.columnWidths is list && data.state.columnWidths.size() == 19))
+          && (!data.state.keys().hasAny(['columnWidths']) || (data.state.columnWidths is list && data.state.columnWidths.size() == 14))
           && data.createdAt is timestamp && data.updatedAt == request.time
-          && canSaveWorkbook(departmentId, data.academicYearId, data.semester, data.membershipId);
+          && exists(/databases/$(database)/documents/academicYears/$(data.academicYearId))
+          && canManageCourses(departmentId, data.membershipId);
       }
       allow read: if request.auth != null;
       allow create: if validSummaryWorkbook() && request.resource.data.revision == 1 && request.resource.data.createdAt == request.time;

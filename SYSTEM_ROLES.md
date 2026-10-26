@@ -32,6 +32,7 @@ The Dean acts as the primary academic planner for their specific department.
 *   **Schedule Creation:** Create the initial draft schedule for their department, mapping subjects, instructors, sections, times, and days.
     Department creation uses the supplied Faculty Schedules and PHINMA Department Courses Excel templates together, with Rooms & Labs as an optional third sheet. The faculty timetable supplies instructor/day/time/subject/section; the course table supplies title, year level, credits, and subject type. The room table supplies room codes for uniquely matching faculty meetings, including separate rooms for adjacent time slots. Original templates remain editable in their existing layouts. Save regenerates schedule records from those cells: Plot when at least one meeting has a resolved Rooms & Labs assignment, otherwise Draft for later Registrar plotting. Lecture and Laboratory means Flexible/Open Lab, with delivery chosen by the instructor; the system does not invent a lecture/lab hour split. Meetings without a matching room remain TBA for later Registrar plotting. Existing department/semester editing permissions still apply.
 *   **Manage Courses:** Accepted Deans and Program Heads can edit and save their department's complete courses workbook without choosing a semester. Save also writes populated rows to the `courses` collection; blank rows stay in the workbook. Admin memberships are permitted by the persistence service and Firestore rules. Course saves do not publish semester schedules.
+*   **Manage Summary:** Accepted Deans and Program Heads can edit and save their department's Summary tab in any semester phase. Schedule editing remains limited to Drafting and Revision.
 *   **Room Requests:** Specify preferred rooms or building requirements for their departmental courses.
     Parallel sections sharing an instructor, subject, meeting type, days and time must use separate, consecutively numbered rooms in the same building and floor. Their rooms may form a chain such as PTC 300–301–302–303; each room need not directly adjoin the first section's room.
 *   **Instructor Load Management:** Ensure that instructors are not over-scheduled and that their teaching hours align with department policies before submitting.
@@ -39,12 +40,12 @@ The Dean acts as the primary academic planner for their specific department.
 
 ### 4. Program Head
 *   **Department Assignment:** A department may have multiple Program Heads, each represented by their own membership. Assigning or removing one does not change the others.
-*   **Schedule Management:** Accepted Program Heads can edit their department's semester workbook during Drafting and Revision, and can be assigned teaching schedules.
+*   **Schedule Management:** Accepted Program Heads can edit their department's schedule during Drafting and Revision, and can be assigned teaching schedules. They can edit their department's Courses and Summary tabs in any semester phase.
 *   **Member Management:** Program Heads can view department members; member-management actions remain restricted to the existing authorized roles.
 
 ### 5. Instructor
 The Instructor is the end-user who utilizes the assigned resources to deliver education.
-*   **Room reservations:** An Instructor enters every attendee's name in a separate field generated from the attendee count. The attendee fields appear in their own panel beside the reservation form on large screens. After the reservation ends, the Instructor can upload one room-condition photo from My Reservations; the names and photo appear in reservation details for accountability. Clicking Reserve Room in the room schedule opens the red room-use rules; the requester must acknowledge them before the reservation form opens.
+*   **Department Workbook:** Instructors can view their department's Schedule, Courses, and Summary tabs in every semester phase but cannot edit or save them.
 *   **Schedule Viewing:** Access a personalized dashboard showing their assigned courses, rooms, and time slots.
 *   **Availability Submission:** Submit "Preferred Teaching Times" or personal constraints (e.g., research blocks) for consideration during the scheduling phase.
 *   **Change Requests:** Formally request a room or time change if the assigned resource does not meet the course's pedagogical needs.
