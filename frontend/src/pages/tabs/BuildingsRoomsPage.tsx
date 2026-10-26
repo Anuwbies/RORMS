@@ -164,6 +164,10 @@ function BuildingsRoomsPage() {
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [filterBuildingId, setFilterBuildingId] = useState('all')
+  const [filterFloor, setFilterFloor] = useState('all')
+  const [filterType, setFilterType] = useState('all')
+  const [filterStatus, setFilterStatus] = useState('all')
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [academicYearsLoaded, setAcademicYearsLoaded] = useState(false)
   const [scheduleRows, setScheduleRows] = useState<ScheduleReportRecord[]>([])
@@ -1163,6 +1167,37 @@ function BuildingsRoomsPage() {
   }
 
   const canManageBuildings = currentUserRole === 'Admin' || currentUserRole === 'Registrar' || currentUserRole === 'University Administrator'
+  const buildingFilterOptions = useMemo(() => [
+    'all',
+    ...buildings.slice().sort((a, b) => a.code.localeCompare(b.code)).map(building => building.id),
+  ], [buildings])
+  const floorFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => String(room.floor)))).sort((a, b) => Number(a) - Number(b)),
+  ], [rooms])
+  const typeFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => room.type).filter(Boolean))).sort(),
+  ], [rooms])
+  const statusFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => room.status).filter(Boolean))).sort(),
+  ], [rooms])
+  const filteredBuildings = useMemo(() => {
+    const hasRoomFilter = filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
+    return buildings
+      .filter(building => filterBuildingId === 'all' || building.id === filterBuildingId)
+      .map(building => ({
+        ...building,
+        rooms: building.rooms.filter(room =>
+          (filterFloor === 'all' || String(room.floor) === filterFloor)
+          && (filterType === 'all' || room.type === filterType)
+          && (filterStatus === 'all' || room.status === filterStatus)
+        ),
+      }))
+      .filter(building => !hasRoomFilter || building.rooms.length > 0)
+  }, [buildings, filterBuildingId, filterFloor, filterType, filterStatus])
+  const hasActiveFilters = filterBuildingId !== 'all' || filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
   const roomAvailability = rooms.reduce<Record<RoomStatus, number>>((counts, room) => {
     if (room.status === 'Available' || room.status === 'Unavailable' || room.status === 'Maintenance') {
       counts[room.status] += 1
@@ -1648,7 +1683,7 @@ function BuildingsRoomsPage() {
                             const sMins = (sh || 0) * 60 + (sm || 0)
                             const eMins = (eh || 0) * 60 + (em || 0)
                             if (sMins >= eMins) {
-                              const nextEndMins = Math.min(1080, sMins + 30)
+                              const nextEndMins = Math.min(1410, sMins + 30)
                               const endHour = Math.floor(nextEndMins / 60).toString().padStart(2, '0')
                               const endMin = (nextEndMins % 60).toString().padStart(2, '0')
                               setNewRoomEndTime(`${endHour}:${endMin}`)
@@ -1658,11 +1693,12 @@ function BuildingsRoomsPage() {
                         onToggle={handleDropdownToggle}
                         minuteStep={30}
                         hideClear
-                        minTime="07:30"
+                        hourOrder="ascending"
+                        minTime="00:00"
                         maxTime={(() => {
-                          if (!newRoomEndTime) return '17:30'
+                          if (!newRoomEndTime) return '23:00'
                           const [eh, em] = newRoomEndTime.split(':').map(Number)
-                          const maxStartMins = Math.max(450, ((eh || 0) * 60 + (em || 0)) - 30)
+                          const maxStartMins = Math.max(0, ((eh || 0) * 60 + (em || 0)) - 30)
                           const h = Math.floor(maxStartMins / 60).toString().padStart(2, '0')
                           const m = (maxStartMins % 60).toString().padStart(2, '0')
                           return `${h}:${m}`
@@ -1683,7 +1719,7 @@ function BuildingsRoomsPage() {
                             const sMins = (sh || 0) * 60 + (sm || 0)
                             const eMins = (eh || 0) * 60 + (em || 0)
                             if (eMins <= sMins) {
-                              const nextStartMins = Math.max(450, eMins - 30)
+                              const nextStartMins = Math.max(0, eMins - 30)
                               const startHour = Math.floor(nextStartMins / 60).toString().padStart(2, '0')
                               const startMin = (nextStartMins % 60).toString().padStart(2, '0')
                               setNewRoomStartTime(`${startHour}:${startMin}`)
@@ -1693,16 +1729,17 @@ function BuildingsRoomsPage() {
                         onToggle={handleDropdownToggle}
                         minuteStep={30}
                         hideClear
+                        hourOrder="ascending"
                         defaultPlacement="latest"
                         minTime={(() => {
-                          if (!newRoomStartTime) return '08:00'
+                          if (!newRoomStartTime) return '00:30'
                           const [sh, sm] = newRoomStartTime.split(':').map(Number)
-                          const minEndMins = Math.min(1080, ((sh || 0) * 60 + (sm || 0)) + 30)
+                          const minEndMins = Math.min(1410, ((sh || 0) * 60 + (sm || 0)) + 30)
                           const h = Math.floor(minEndMins / 60).toString().padStart(2, '0')
                           const m = (minEndMins % 60).toString().padStart(2, '0')
                           return `${h}:${m}`
                         })()}
-                        maxTime="18:00"
+                        maxTime="23:30"
                       />
                     </div>
                   </div>
@@ -2113,8 +2150,87 @@ function BuildingsRoomsPage() {
           description="Manage campus facilities, view room capacities, and track utilization."
         />
 
-
-
+        <section aria-label="Filter buildings and rooms" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Filter Buildings & Rooms</h2>
+              <p className="text-sm text-slate-500">Narrow the buildings and rooms shown below.</p>
+            </div>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterBuildingId('all')
+                  setFilterFloor('all')
+                  setFilterType('all')
+                  setFilterStatus('all')
+                }}
+                className="text-sm font-semibold text-[var(--brand-color)] hover:text-[var(--brand-color-hover)]"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Building</label>
+              <SingleSelectDropdown
+                options={buildingFilterOptions}
+                value={filterBuildingId}
+                onChange={setFilterBuildingId}
+                getOptionLabel={value => value === 'all' ? 'All buildings' : buildings.find(building => building.id === value)?.code ?? value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by building"
+                portal
+                matchTriggerWidth
+                searchable
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Floor</label>
+              <SingleSelectDropdown
+                options={floorFilterOptions}
+                value={filterFloor}
+                onChange={setFilterFloor}
+                getOptionLabel={value => value === 'all' ? 'All floors' : `Floor ${value}`}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by floor"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Room Type</label>
+              <SingleSelectDropdown
+                options={typeFilterOptions}
+                value={filterType}
+                onChange={setFilterType}
+                getOptionLabel={value => value === 'all' ? 'All types' : value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by room type"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Status</label>
+              <SingleSelectDropdown
+                options={statusFilterOptions}
+                value={filterStatus}
+                onChange={setFilterStatus}
+                getOptionLabel={value => value === 'all' ? 'All statuses' : value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by status"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+          </div>
+        </section>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
           <section aria-label="Room availability" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -2180,7 +2296,7 @@ function BuildingsRoomsPage() {
         </div>
 
         <BuildingBrowser
-          buildings={buildings}
+          buildings={filteredBuildings}
           renderBuildingScheduleUsage={building => (
             <BuildingScheduleUsage
               usage={buildingUsage.buildings[building.id]}
@@ -2321,10 +2437,10 @@ function BuildingsRoomsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={building.rooms.length === 0}
+                    disabled={!buildings.some(source => source.id === building.id && source.rooms.length > 0)}
                     className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 disabled:cursor-default"
                     onClick={() => {
-                      handleOpenBulkDeleteRooms(building)
+                      handleOpenBulkDeleteRooms(buildings.find(source => source.id === building.id) ?? building)
                       setOpenMenuId(null)
                     }}
                   >

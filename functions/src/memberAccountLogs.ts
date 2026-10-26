@@ -85,8 +85,9 @@ export async function manageMemberAccount(db: Firestore, uid: string | undefined
       transaction.get(logRef),
     ]);
     const actor = actorSnapshot.data() || {};
-    const actorMembership = actorMemberships.docs.find(document => document.data().role === "Admin" && document.data().status === "accepted");
-    if (!actorSnapshot.exists || !actorMembership || actor.isActive === false) throw new HttpsError("permission-denied", "Only active Admins can manage members.");
+    const actorMembership = actorMemberships.docs.find(document => document.data().role === "Admin" && document.data().status === "accepted")
+      || actorMemberships.docs.find(document => document.data().role === "Registrar" && document.data().status === "accepted");
+    if (!actorSnapshot.exists || !actorMembership || actor.isActive === false) throw new HttpsError("permission-denied", "Only active Admins and Registrars can manage members.");
     if (existingLog.exists) {
       const saved = existingLog.data() || {};
       if (saved.actorId !== uid || saved.requestFingerprint !== requestFingerprint) {
@@ -297,7 +298,7 @@ export async function manageMemberAccount(db: Firestore, uid: string | undefined
     // The token-bearing invitation ID and email HTML never enter the audit log.
     const event = {
       category: "Accounts", action, operation: request.action, requestFingerprint,
-      actorId: uid, actorName: name(actor, actorMembership.data()) || uid, actorRole: "Admin", membershipId: actorMembership.id,
+      actorId: uid, actorName: name(actor, actorMembership.data()) || uid, actorRole: actorMembership.data().role, membershipId: actorMembership.id,
       targetCollection: targetRef.parent.id, targetId: targetRef.id,
       memberName: name(profile, member) || email, memberEmail: email, memberRole, department, isReactivation: reactivation,
       changes, source: "user", createdAt: FieldValue.serverTimestamp(),

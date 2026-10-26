@@ -240,10 +240,18 @@ test("failed log writes roll back edits, invitations, cancellations and deactiva
   }
 });
 
-test("only authenticated active accepted Admins can change accounts", async () => {
+test("active accepted Registrars can manage members with their own audit role", async () => {
+  const registrar = fixture({ role: "Registrar" });
+  await manageMemberAccount(registrar.db, "admin", edit);
+  assert.equal(registrar.documents.get("memberships/assignment").role, "Program Head");
+  assert.equal(registrar.logs()[0].actorRole, "Registrar");
+  assert.equal(registrar.logs()[0].membershipId, "admin-assignment");
+});
+
+test("only authenticated active accepted Admins and Registrars can change accounts", async () => {
   const fake = fixture();
   await assert.rejects(manageMemberAccount(fake.db, undefined, edit), { code: "unauthenticated" });
-  for (const options of [{ role: "Registrar" }, { role: "Dean" }, { role: "Program Head" }, { role: "Instructor" }, { active: false }, { membershipStatus: "pending" }]) {
+  for (const options of [{ role: "Dean" }, { role: "Program Head" }, { role: "Instructor" }, { active: false }, { membershipStatus: "pending" }, { role: "Registrar", active: false }, { role: "Registrar", membershipStatus: "pending" }]) {
     const denied = fixture(options);
     await assert.rejects(manageMemberAccount(denied.db, "admin", edit), { code: "permission-denied" });
     assert.equal(denied.logs().length, 0);

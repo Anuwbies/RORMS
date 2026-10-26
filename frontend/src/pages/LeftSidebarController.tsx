@@ -31,18 +31,18 @@ import MyReservationsPage from './tabs/MyReservationsPage'
 import AcademicCalendarPage from './tabs/AcademicCalendarPage'
 import DepartmentSchedulesPage from './tabs/DepartmentSchedulesPage'
 
+const ALL_TABS: DashboardSection[] = [
+  'dashboard', 'academicCalendar', 'members', 'departments', 'buildingsRooms',
+  'departmentSchedules', 'manageReservations', 'reserveRoom', 'analytics', 'reports', 'logs',
+  'mySchedule', 'myDepartment', 'myReservations'
+]
+
 export const ROLE_ALLOWED_TABS: Record<string, DashboardSection[]> = {
-  'Admin': [
-    'dashboard', 'academicCalendar', 'members', 'departments', 'buildingsRooms',
-    'departmentSchedules', 'manageReservations', 'reserveRoom', 'analytics', 'reports', 'logs'
-  ],
+  'Admin': ALL_TABS,
   'University Administrator': [
-    'dashboard', 'buildingsRooms', 'manageReservations', 'reserveRoom', 'analytics', 'reports', 'logs'
+    'dashboard', 'buildingsRooms', 'manageReservations', 'reserveRoom', 'mySchedule', 'myDepartment', 'myReservations', 'analytics', 'reports', 'logs'
   ],
-  'Registrar': [
-    'dashboard', 'academicCalendar', 'departmentSchedules', 'buildingsRooms',
-    'manageReservations', 'reserveRoom', 'analytics', 'reports', 'logs'
-  ],
+  'Registrar': ALL_TABS,
   'Dean': [
     'dashboard', 'academicCalendar', 'mySchedule', 'myDepartment', 'manageReservations', 'reserveRoom', 'myReservations', 'buildingsRooms', 'analytics', 'reports', 'logs'
   ],

@@ -20,6 +20,7 @@ export interface PersonalScheduleModalProps {
   member?: ScheduleMemberInfo | null
   initialAcademicYear?: string
   initialSemester?: string
+  reservationsOnly?: boolean
   actionButton?: ReactNode
   hideFilters?: boolean
   showWeekCalendar?: boolean
@@ -172,6 +173,7 @@ export function PersonalScheduleModal({
   member,
   initialAcademicYear,
   initialSemester,
+  reservationsOnly = false,
   actionButton,
   hideFilters,
   showWeekCalendar,
@@ -191,7 +193,7 @@ export function PersonalScheduleModal({
   const memberDepartment = member?.department
   const displayTitle = scheduleTitle ?? `${member?.name}'s Schedule`
   const [displayOption, setDisplayOption] = useState<DisplayOption>('Schedule and Reservation')
-  const effectiveDisplayOption = schedulesOnly ? 'Schedule' : displayOption
+  const effectiveDisplayOption = schedulesOnly ? 'Schedule' : reservationsOnly ? 'Reservation' : displayOption
   const isDeanScheduleOnly = isInstructorMode && memberRole === 'Dean' && effectiveDisplayOption === 'Schedule'
 
   const [schedules, setSchedules] = useState<any[]>([])
@@ -415,18 +417,19 @@ export function PersonalScheduleModal({
     })
   }, [schedules, memberDepartment, selectedAcademicYear?.id, selectedAcademicYear?.academicYear, selectedSemester, hideReturnedSchedules, scheduleStatuses, effectiveDisplayOption])
 
-  const getMeetingStatus = (meeting: { status?: string }) => meeting.status || 'Draft'
+  const getMeetingStatus = (meeting: { status?: string; statusByDay?: Record<string, 'Draft' | 'Plot'> }, day?: string) =>
+    day && meeting.statusByDay?.[day] || meeting.status || 'Draft'
 
-  const getScheduleStatusClasses = (meeting: Parameters<typeof getMeetingStatus>[0]) => {
-    const s = getMeetingStatus(meeting)
+  const getScheduleStatusClasses = (meeting: Parameters<typeof getMeetingStatus>[0], day: string) => {
+    const s = getMeetingStatus(meeting, day)
     if (s === 'Plot') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
     if (s === 'Revise' || s === 'Revised') return 'bg-amber-50 border-amber-300'
     if (s === 'Return' || s === 'Returned') return 'bg-rose-50 border-rose-300'
     return 'bg-slate-100 border-slate-300' // Draft
   }
 
-  const getPdfStatusStyles = (meeting: Parameters<typeof getMeetingStatus>[0]) => {
-    const s = getMeetingStatus(meeting)
+  const getPdfStatusStyles = (meeting: Parameters<typeof getMeetingStatus>[0], day: string) => {
+    const s = getMeetingStatus(meeting, day)
     if (s === 'Plot') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
     if (s === 'Revise' || s === 'Revised') return { backgroundColor: '#fffbeb', borderColor: '#fcd34d' }
     if (s === 'Return' || s === 'Returned') return { backgroundColor: '#fff1f2', borderColor: '#fda4af' }
@@ -474,9 +477,7 @@ export function PersonalScheduleModal({
 
   // Build whole-day time slots, including overlapping meetings and reservations.
   const timeSlots = useMemo(() => {
-    const baseSlots = STANDARD_TIME_SLOTS
-
-    const timeSlotSet = new Set<string>(baseSlots.length > 0 ? baseSlots : STANDARD_TIME_SLOTS)
+    const timeSlotSet = new Set<string>(STANDARD_TIME_SLOTS)
 
     filteredSchedules.forEach(schedule => {
       if (schedule.startTime && schedule.endTime) {
@@ -557,6 +558,45 @@ export function PersonalScheduleModal({
     return grid
   }, [timeSlots, filteredSchedules, activeWeekReservations, showWeekCalendar, weekInfo.weekDays])
 
+  // Keep the 90-minute labels while giving a meeting that crosses rows one cell.
+  const slotGroupsByDay = useMemo(() => {
+    const groups: Record<string, Array<{ endIndex: number; schedules: typeof scheduleGrid[string][string] } | null>> = {}
+
+    DAYS.forEach(day => {
+      const dayGroups = Array.from({ length: timeSlots.length }, () => null as { endIndex: number; schedules: typeof scheduleGrid[string][string] } | null)
+
+      for (let startIndex = 0; startIndex < timeSlots.length;) {
+        let endIndex = startIndex
+
+        for (let index = startIndex; index <= endIndex; index++) {
+          const schedules = scheduleGrid[timeSlots[index]]?.[day] || []
+          schedules.forEach(schedule => {
+            for (let nextIndex = endIndex + 1; nextIndex < timeSlots.length && isScheduleInSlot(schedule, timeSlots[nextIndex]); nextIndex++) {
+              endIndex = nextIndex
+            }
+          })
+        }
+
+        const uniqueSchedules = new Map<string, typeof scheduleGrid[string][string][number]>()
+        for (let index = startIndex; index <= endIndex; index++) {
+          const schedules = scheduleGrid[timeSlots[index]]?.[day] || []
+          schedules.forEach(schedule => {
+            const identity = schedule.id ?? schedule.docId ?? `${schedule.subjectCode}-${schedule.startTime}-${schedule.endTime}-${scheduleSectionLabel(schedule)}`
+            const key = `${schedule._itemType}:${identity}`
+            if (!uniqueSchedules.has(key)) uniqueSchedules.set(key, schedule)
+          })
+        }
+
+        dayGroups[startIndex] = { endIndex, schedules: Array.from(uniqueSchedules.values()) }
+        startIndex = endIndex + 1
+      }
+
+      groups[day] = dayGroups
+    })
+
+    return groups
+  }, [timeSlots, scheduleGrid])
+
   const academicYearOptions = useMemo(() => {
     return academicYears.map(y => y.academicYear)
   }, [academicYears])
@@ -591,15 +631,20 @@ export function PersonalScheduleModal({
       const imgWidth = img.width
       const imgHeight = img.height
 
-      // Dynamically create the PDF to exactly match the image dimensions
-      // This prevents the schedule from shrinking if it has many rows.
       const pdf = new jsPDF({
-        orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [imgWidth, imgHeight]
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
       })
 
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+      const margin = 20
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const scale = Math.min((pageWidth - margin * 2) / imgWidth, (pageHeight - margin * 2) / imgHeight)
+      const printWidth = imgWidth * scale
+      const printHeight = imgHeight * scale
+
+      pdf.addImage(imgData, 'PNG', (pageWidth - printWidth) / 2, (pageHeight - printHeight) / 2, printWidth, printHeight)
 
       const targetName = (member?.name || 'Instructor')
       const safeName = targetName.trim().replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '')
@@ -684,7 +729,7 @@ export function PersonalScheduleModal({
                 </tr>
               </thead>
               <tbody>
-                {timeSlots.map(slot => {
+                {timeSlots.map((slot, slotIndex) => {
                   const [start, end] = slot.split('-')
                   return (
                     <tr key={slot}>
@@ -695,11 +740,14 @@ export function PersonalScheduleModal({
                         </div>
                       </td>
                       {DAYS.map(day => {
-                        const daySchedules = scheduleGrid[slot]?.[day] || []
+                        const slotGroup = slotGroupsByDay[day][slotIndex]
+                        if (!slotGroup) return null
+                        const daySchedules = slotGroup.schedules
+                        const span = slotGroup.endIndex - slotIndex + 1
                         const isSelected = false
                         if (daySchedules.length === 0) {
                           return (
-                            <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
+                            <td key={day} rowSpan={span} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
                               <div style={{ height: '100%' }} />
                             </td>
                           )
@@ -733,11 +781,11 @@ export function PersonalScheduleModal({
                         })
 
                         const slotStartMins = timeToMins(start)
-                        const slotEndMins = timeToMins(end)
+                        const slotEndMins = timeToMins(timeSlots[slotGroup.endIndex].split('-')[1])
                         const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
 
                         return (
-                          <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top' }}>
+                          <td key={day} rowSpan={span} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top' }}>
                             <div style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
                               {grouped.map((group, idx) => {
                                 const itemStartMins = Math.max(slotStartMins, timeToMins(group.parent.startTime))
@@ -773,7 +821,7 @@ export function PersonalScheduleModal({
                                   )
                                 }
 
-                                const pdfStyles = getPdfStatusStyles(group.parent)
+                                const pdfStyles = getPdfStatusStyles(group.parent, day)
 
                                 return group.parent.type === 'parallel' ? (
                                   <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: pdfStyles.backgroundColor, border: `1px solid ${pdfStyles.borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -851,7 +899,7 @@ export function PersonalScheduleModal({
                 {[member?.role || 'Instructor', member?.departmentName || member?.department || getUserDepartment(member?.userId || member?.id)].filter(Boolean).join(' • ')}
               </p>
             </>}
-            {!schedulesOnly && <SingleSelectDropdown
+            {!schedulesOnly && !reservationsOnly && <SingleSelectDropdown
               options={DISPLAY_OPTIONS}
               value={displayOption}
               onChange={setDisplayOption}
@@ -1010,28 +1058,34 @@ export function PersonalScheduleModal({
                 </tr>
               </thead>
               <tbody className="contents">
-                {timeSlots.map(slot => {
+                {timeSlots.map((slot, slotIndex) => {
                   const [start, end] = slot.split('-')
                   return (
                     <tr key={slot} className="contents group">
-                      <td className="px-3 py-2 text-xs font-bold text-gray-700 border-b border-r border-gray-300 align-middle whitespace-nowrap bg-gray-50/60 group-hover:bg-gray-100/70 transition-colors h-full flex items-center justify-center">
+                      <td className="px-3 py-2 text-xs font-bold text-gray-700 border-b border-r border-gray-300 align-middle whitespace-nowrap bg-gray-50/60 group-hover:bg-gray-100/70 transition-colors h-full flex items-center justify-center" style={{ gridColumn: 1, gridRow: slotIndex + 2 }}>
                         <div className="flex flex-col items-center justify-center gap-1">
                           <span className="text-gray-900 font-bold text-xs">{formatTime(start)}</span>
                           <span className="text-gray-900 font-bold text-xs">{formatTime(end)}</span>
                         </div>
                       </td>
-                      {DAYS.map(day => {
-                        const daySchedules = scheduleGrid[slot]?.[day] || []
+                      {DAYS.map((day, dayIndex) => {
+                        const slotGroup = slotGroupsByDay[day][slotIndex]
+                        if (!slotGroup) return null
+                        const daySchedules = slotGroup.schedules
+                        const spansRows = slotGroup.endIndex > slotIndex
+                        const cellPosition = { gridColumn: dayIndex + 2, gridRow: `${slotIndex + 2} / span ${slotGroup.endIndex - slotIndex + 1}` }
+                        const columnBorder = dayIndex === DAYS.length - 1 ? 'border-r-0' : 'border-r'
                         const isSelected = false
 
                         if (daySchedules.length === 0) {
                           return (
                             <td
                               key={day}
-                              className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors h-full flex flex-col min-w-0 ${isSelected
+                              className={`px-2.5 py-2 border-b ${columnBorder} border-gray-300 align-top transition-colors h-full flex flex-col min-w-0 ${isSelected
                                   ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
                                   : 'bg-white group-hover:bg-gray-50/50'
                                 }`}
+                              style={cellPosition}
                             >
                               <div className="flex-1 h-full" />
                             </td>
@@ -1067,7 +1121,7 @@ export function PersonalScheduleModal({
                         })
 
                         const slotStartMins = timeToMins(start)
-                        const slotEndMins = timeToMins(end)
+                        const slotEndMins = timeToMins(timeSlots[slotGroup.endIndex].split('-')[1])
                         const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
 
                         const isSingleFullSlot = grouped.length === 1 &&
@@ -1083,13 +1137,23 @@ export function PersonalScheduleModal({
                           : 'auto';
 
                         return (
+                          <>
+                          {spansRows && (
+                            <td
+                              key={`${day}-grid`}
+                              className={`px-2.5 py-2 border-b ${columnBorder} border-gray-300 align-top transition-colors h-full flex flex-col min-w-0 bg-white group-hover:bg-gray-50/50`}
+                              style={cellPosition}
+                            >
+                              <div className="flex-1 h-full" />
+                            </td>
+                          )}
                           <td
                             key={day}
-                            className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors min-w-0 h-full grid gap-1 ${isSelected
+                            className={`px-2.5 py-2 align-top transition-colors min-w-0 h-full grid gap-1 ${spansRows ? 'relative z-10' : `border-b ${columnBorder} border-gray-300`} ${isSelected && !spansRows
                                 ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
-                                : 'bg-white group-hover:bg-gray-50/50'
+                                : spansRows ? '' : 'bg-white group-hover:bg-gray-50/50'
                               }`}
-                            style={{ gridTemplateRows: gridRowsStyle }}
+                            style={{ ...cellPosition, gridTemplateRows: gridRowsStyle }}
                           >
                             {grouped.map((group, idx) => {
                               const itemStartMins = Math.max(slotStartMins, timeToMins(group.parent.startTime))
@@ -1139,7 +1203,7 @@ export function PersonalScheduleModal({
                               }
 
                               return group.parent.type === 'parallel' ? (
-                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-max overflow-hidden  ${getScheduleStatusClasses(group.parent)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-max overflow-hidden  ${getScheduleStatusClasses(group.parent, day)}`}>
                                   <div className="flex flex-col focus:outline-none min-w-0">
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
@@ -1165,7 +1229,7 @@ export function PersonalScheduleModal({
                                   </div>
                                 </div>
                               ) : group.children.length > 0 ? (
-                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden  ${getScheduleStatusClasses(group.parent)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden  ${getScheduleStatusClasses(group.parent, day)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
@@ -1199,7 +1263,7 @@ export function PersonalScheduleModal({
                                   </div>
                                 </div>
                               ) : (
-                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden  ${getScheduleStatusClasses(group.parent)}`}>
+                                <div data-schedule-meeting key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden  ${getScheduleStatusClasses(group.parent, day)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
@@ -1219,6 +1283,7 @@ export function PersonalScheduleModal({
                               )
                             })}
                           </td>
+                          </>
                         )
                       })}
                     </tr>

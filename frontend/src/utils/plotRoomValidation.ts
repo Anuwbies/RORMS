@@ -2,6 +2,7 @@ import type { ScheduleMeetingRecord } from './scheduleMeetings.ts'
 import type { PlotRoom } from './schedulePlotting.ts'
 import { excelScheduleRoomKey, isDraftOrPlotScheduleMeeting, validateFacultyScheduleAssignments, validateOtherDepartmentRoomAssignments } from './ScheduleValidation.ts'
 import { plotFacultyScheduleAssignments } from './plotParallelRooms.ts'
+import { scheduleSectionLabel } from './roomSchedule.ts'
 
 /** Show the department workbook's room warnings for the current staged Plot selection. */
 export function plotRoomValidationMessages(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[], departmentCode: string) {
@@ -19,7 +20,14 @@ export function plotRoomValidationMessages(meetings: readonly ScheduleMeetingRec
 
   for (const issue of validateFacultyScheduleAssignments(own, [], rooms)) {
     if (issue.message.startsWith('Room ') || issue.message.startsWith('Parallel ')
-      || /^All \d+ parallel sections/.test(issue.message)) add(issue.location, issue.message)
+      || /^All \d+ parallel sections/.test(issue.message)) {
+      const meeting = active.find(item => item.id === issue.location)
+      const isRoomOverlap = issue.message.startsWith('Room ') && issue.message.includes(' is also assigned on ')
+      const currentTime = meeting?.startTime && meeting.endTime ? ` (${meeting.startTime}–${meeting.endTime})` : ''
+      const currentDays = meeting?.days?.length ? ` on ${meeting.days.join('/')}` : ''
+      add(issue.location, isRoomOverlap && meeting
+        ? `${scheduleSectionLabel(meeting)}${currentDays}${currentTime}: ${issue.message}` : issue.message)
+    }
   }
   for (const issue of validateOtherDepartmentRoomAssignments(own, external)) add(issue.location, issue.message)
   for (const assignment of own) {

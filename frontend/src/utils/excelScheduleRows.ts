@@ -13,6 +13,7 @@ export interface ScheduleDirectory {
 
 export interface WorkbookScheduleMeeting {
   status?: 'Draft' | 'Plot'
+  statusByDay?: Record<string, 'Draft' | 'Plot'>
   format: 'Lec' | 'Lab' | 'Flexible' | 'Unspecified'
   modality?: 'F2F' | 'Remote Coaching' | 'Independent Learning' | 'Unspecified'
   faculty: string
@@ -105,13 +106,13 @@ export function extractWorkbookScheduleRows(snapshot: WorkbookEditSnapshot, dire
         const faculty = entries(v[13 + offset], true), times = entries(v[15 + offset])
         const days = entries(v[17 + offset]), rooms = entries(v[19 + offset], true)
         if (![faculty, times, days, rooms].some(values => values.length)) continue
-        const count = Math.max(faculty.length, times.length, rooms.length, 1)
-        for (const [label, values] of [['Faculty', faculty], ['F2F Time', times], ['F2F Room', rooms]] as const) {
+        const count = Math.max(faculty.length, times.length, days.length, rooms.length, 1)
+        for (const [label, values] of [['Faculty', faculty], ['F2F Time', times], ['F2F Days', days], ['F2F Room', rooms]] as const) {
           if (values.length > 1 && values.length !== count) issues.push(`${offset === 0 ? 'Lec' : 'Lab'} ${label} has ${values.length} entries for ${count} meetings.`)
         }
         for (let index = 0; index < count; index++) {
           const facultyName = at(faculty, index), time = at(times, index), room = at(rooms, index)
-          const day = count > 1 && days.length === count ? days[index] : v[17 + offset]
+          const day = at(days, index)
           const parsedTime = parseExcelScheduleTime(time), parsedDays = parseExcelScheduleDays(day)
           const candidates = isExcelScheduleTba(facultyName) ? [] : directory.faculty.filter(member => member.department === directory.departmentCode && excelScheduleFacultyKeys(facultyName).some(alias => excelScheduleFacultyKeys(member.fullName).includes(alias)))
           const instructorId = facultyName && candidates.length === 1 ? candidates[0].id : ''

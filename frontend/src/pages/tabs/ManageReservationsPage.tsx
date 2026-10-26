@@ -90,6 +90,8 @@ interface Reservation {
   deanRecommend?: boolean
   registrarRecommend?: boolean
   universityAdministratorRecommend?: boolean
+  autoApproved?: boolean
+  approvedByRole?: string
   declinedReason?: string
   declinedByRole?: string
   autoProcessed?: boolean

@@ -10,7 +10,8 @@ import { SectionScheduleModal, type SectionScheduleSelection } from '../../compo
 import { WorkbookModal } from '../../components/WorkbookModal'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
 import { scheduleMatchesTerm, scheduleSectionLabel } from '../../utils/roomSchedule'
-import type { ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
+import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
+import { savedMeetingPlotStatus } from '../../utils/schedulePlotting'
 import { resolveCurrentSemester, type AcademicYearData } from '../../utils/academicSemester'
 import { Button } from '../../components/Button'
 import { FilterDropdown } from '../../components/FilterDropdown'
@@ -107,7 +108,8 @@ function MyDepartmentPage() {
   const [loading, setLoading] = useState(true)
   const [isAdding, setIsAdding] = useState(false)
   const [isRemoving, setIsRemoving] = useState(false)
-  const areMemberActionsDisabled = currentUserRole === 'Program Head' || currentUserRole === 'Instructor'
+  const areMemberActionsDisabled = currentUserRole === 'Program Head' || currentUserRole === 'Instructor' || currentUserRole === 'University Administrator'
+  const isOfficeRole = currentUserRole === 'Admin' || currentUserRole === 'Registrar' || currentUserRole === 'University Administrator'
   const dean = members.find(member => member.role === 'Dean' && member.id === departmentInfo?.dean)
     ?? members.find(member => member.role === 'Dean' && member.status === 'Active')
     ?? members.find(member => member.role === 'Dean')
@@ -140,6 +142,44 @@ function MyDepartmentPage() {
     return sections
   }, [sectionSchedules, departmentInfo?.id, activeAcademicYear, currentSemesterName])
   const sectionCount = YEAR_LEVELS.reduce((total, level) => total + sectionsByYear[level.year].length, 0)
+  const yearPlotProgress = useMemo(() => {
+    const progress: Record<number, { plot: number; total: number }> = Object.fromEntries(
+      YEAR_LEVELS.map(level => [level.year, { plot: 0, total: 0 }])
+    )
+    if (!departmentInfo?.id || !activeAcademicYear || !currentSemesterName) return progress
+
+    const meetings = scheduleMeetingRecords(sectionSchedules.map(schedule => ({ id: schedule.id, data: () => schedule })))
+    for (const meeting of meetings) {
+      const year = meeting.yearLevel
+      if (meeting.departmentId !== departmentInfo.id || typeof year !== 'number' || !progress[year]
+        || !meeting.startTime || !meeting.endTime || !scheduleMatchesTerm(meeting, activeAcademicYear, currentSemesterName)) continue
+      for (const day of new Set(meeting.days ?? [])) {
+        progress[year].total += 1
+        if (savedMeetingPlotStatus(meeting, day) === 'Plot') progress[year].plot += 1
+      }
+    }
+    return progress
+  }, [sectionSchedules, departmentInfo?.id, activeAcademicYear, currentSemesterName])
+  const sectionPlotProgress = useMemo(() => {
+    const progress = new Map<string, { plot: number; total: number }>()
+    if (!departmentInfo?.id || !activeAcademicYear || !currentSemesterName) return progress
+
+    const meetings = scheduleMeetingRecords(sectionSchedules.map(schedule => ({ id: schedule.id, data: () => schedule })))
+    for (const meeting of meetings) {
+      const year = meeting.yearLevel
+      if (meeting.departmentId !== departmentInfo.id || typeof year !== 'number' || !meeting.startTime || !meeting.endTime
+        || !scheduleMatchesTerm(meeting, activeAcademicYear, currentSemesterName)) continue
+      const section = scheduleSectionLabel(meeting).trim().toLocaleUpperCase()
+      const key = JSON.stringify([year, section])
+      const counts = progress.get(key) ?? { plot: 0, total: 0 }
+      for (const day of new Set(meeting.days ?? [])) {
+        counts.total += 1
+        if (savedMeetingPlotStatus(meeting, day) === 'Plot') counts.plot += 1
+      }
+      progress.set(key, counts)
+    }
+    return progress
+  }, [sectionSchedules, departmentInfo?.id, activeAcademicYear, currentSemesterName])
 
   // Calculate new members (joined in last 7 days)
   const newMembersCount = members.filter(m => {
@@ -929,7 +969,7 @@ function MyDepartmentPage() {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
+        {!isOfficeRole && <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
           {departmentInfo && (
           <section aria-label="Department information" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between gap-4">
@@ -1000,9 +1040,9 @@ function MyDepartmentPage() {
               </div>
             </div>
           </section>
-        </div>
+        </div>}
 
-        {currentUserMembership?.status !== 'pending' && (
+        {!isOfficeRole && currentUserMembership?.status !== 'pending' && (
           <section aria-label="Sections by year level" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -1021,22 +1061,35 @@ function MyDepartmentPage() {
               <div className="mt-5 grid gap-4 border-t border-slate-300 pt-5 sm:grid-cols-2 xl:grid-cols-4">
                 {YEAR_LEVELS.map(level => (
                   <div key={level.year} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-bold text-slate-900">{level.label}</h3>
-                      <span className="text-xs font-semibold text-slate-500">{sectionsByYear[level.year].length}</span>
+                    <div role="progressbar" aria-label={`${level.label} schedules plotted`}
+                      aria-valuemin={0} aria-valuemax={100}
+                      aria-valuenow={yearPlotProgress[level.year].total ? Math.round(yearPlotProgress[level.year].plot / yearPlotProgress[level.year].total * 100) : 0}
+                      aria-valuetext={`${yearPlotProgress[level.year].plot} of ${yearPlotProgress[level.year].total} schedule meetings plotted`}
+                      title={`${sectionsByYear[level.year].length} sections • ${yearPlotProgress[level.year].plot} of ${yearPlotProgress[level.year].total} schedule meetings plotted`}
+                      className="relative isolate flex items-center justify-between gap-2 overflow-hidden rounded-lg bg-[#f3f7ee] px-2 py-1.5">
+                      <span aria-hidden="true" className="absolute inset-y-0 left-0 z-0 bg-[#c6dbb6] transition-[width] duration-300"
+                        style={{ width: `${yearPlotProgress[level.year].total ? yearPlotProgress[level.year].plot / yearPlotProgress[level.year].total * 100 : 0}%` }} />
+                      <h3 className="relative z-10 text-sm font-bold text-slate-900">{level.label}</h3>
+                      <span className="relative z-10 text-xs font-semibold text-[#41572a]">{yearPlotProgress[level.year].plot}/{yearPlotProgress[level.year].total} plotted</span>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2">
-                      {sectionsByYear[level.year].length ? sectionsByYear[level.year].map(section => (
-                        <button
-                          key={section}
-                          type="button"
-                          title={`View ${section} schedule`}
-                          onClick={() => setSelectedSection({ label: section, yearLevel: level.year })}
-                          className="min-w-0 rounded-lg bg-white px-0.5 py-1 text-center text-[9px] leading-tight font-semibold tracking-tight whitespace-nowrap text-[#41572a] ring-1 ring-[#c6dbb6] transition-colors hover:bg-[#e3edda] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#62853e] cursor-pointer"
-                        >
-                          {section}
-                        </button>
-                      )) : (
+                      {sectionsByYear[level.year].length ? sectionsByYear[level.year].map(section => {
+                        const counts = sectionPlotProgress.get(JSON.stringify([level.year, section.trim().toLocaleUpperCase()])) ?? { plot: 0, total: 0 }
+                        return (
+                          <button
+                            key={section}
+                            type="button"
+                            title={`${section}: ${counts.plot} plotted, ${counts.total - counts.plot} draft. View schedule`}
+                            aria-label={`View ${section} schedule, ${counts.plot} of ${counts.total} meetings plotted`}
+                            onClick={() => setSelectedSection({ label: section, yearLevel: level.year })}
+                            className="relative isolate min-w-0 overflow-hidden rounded-lg bg-white px-0.5 py-1 text-center text-[9px] leading-tight font-semibold tracking-tight whitespace-nowrap text-[#41572a] ring-1 ring-[#c6dbb6] transition-colors hover:bg-[#e3edda] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#62853e] cursor-pointer"
+                          >
+                            <span aria-hidden="true" className="absolute inset-y-0 left-0 z-0 bg-[#c6dbb6] transition-[width] duration-300"
+                              style={{ width: `${counts.total ? counts.plot / counts.total * 100 : 0}%` }} />
+                            <span className="relative z-10">{section}</span>
+                          </button>
+                        )
+                      }) : (
                         <span className="col-span-3 text-xs text-slate-500">{sectionsLoading ? 'Loading sections...' : 'No sections'}</span>
                       )}
                     </div>
@@ -1056,7 +1109,7 @@ function MyDepartmentPage() {
             searchPlaceholder="Search members..."
             searchValue={searchTerm}
             onSearchChange={setSearchTerm}
-            filters={
+            filters={!isOfficeRole ? (
               <FilterDropdown
                 groups={[
                   {
@@ -1079,10 +1132,10 @@ function MyDepartmentPage() {
                   setSelectedStatuses([])
                 }}
               />
-            }
+            ) : undefined}
             emptyTitle={loading ? "Loading..." : "No members found"}
             emptyDescription={loading ? 'Loading members...' : 'No members found matching your search.'}
-            primaryAction={
+            primaryAction={!isOfficeRole ? (
               <div className="flex gap-2">
                 {currentUserRole === 'Dean' && (
                   <Button
@@ -1094,7 +1147,7 @@ function MyDepartmentPage() {
                     Add Instructor
                   </Button>
                 )}
-                {(currentUserRole === 'Dean' || currentUserRole === 'Admin' || currentUserRole === 'Program Head' || currentUserRole === 'Instructor') && (
+                {(currentUserRole === 'Dean' || currentUserRole === 'Program Head' || currentUserRole === 'Instructor') && (
                   <Button
                     type="button"
                     variant="brand"
@@ -1109,7 +1162,7 @@ function MyDepartmentPage() {
                   </Button>
                 )}
               </div>
-            }
+            ) : undefined}
           />
         )}
       </div>

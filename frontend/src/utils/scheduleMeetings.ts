@@ -19,6 +19,7 @@ export interface ScheduleMeetingRecord extends Record<string, unknown> {
   academicYear?: string
   semester?: string
   status?: string
+  statusByDay?: Record<string, 'Draft' | 'Plot'>
 }
 
 interface ScheduleDocument { id: string; data: () => Record<string, unknown> }

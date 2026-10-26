@@ -14,6 +14,7 @@ interface TimePickerProps {
   hideClear?: boolean
   placeholder?: string
   defaultPlacement?: 'earliest' | 'latest'
+  hourOrder?: 'clock' | 'ascending'
 }
 
 export function TimePicker({
@@ -28,7 +29,8 @@ export function TimePicker({
   disabledTimes,
   hideClear = false,
   placeholder,
-  defaultPlacement = 'earliest'
+  defaultPlacement = 'earliest',
+  hourOrder = 'clock'
 }: TimePickerProps) {
   const [isOpen, setIsOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -121,8 +123,9 @@ export function TimePicker({
     return false
   }, [minMinutes, maxMinutes, disabledTimes])
 
-  // 12-hour list in clock order (12 first, then 01..11)
-  const allHours = useMemo(() => ['12', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], [])
+  const allHours = useMemo(() => hourOrder === 'ascending'
+    ? ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
+    : ['12', '01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11'], [hourOrder])
   const allMinutes = useMemo(() => Array.from({ length: Math.floor(60 / minuteStep) }, (_, i) => (i * minuteStep).toString().padStart(2, '0')), [minuteStep])
   const periods = useMemo(() => ['AM', 'PM'], [])
 

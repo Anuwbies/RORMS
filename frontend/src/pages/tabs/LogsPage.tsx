@@ -330,15 +330,12 @@ const logColumns = (onViewSource: (row: LogEntry) => void, loadingSourceId: stri
 ]
 
 function LogsPage({ userRole }: LogsPageProps) {
-  const isRegistrar = userRole.trim().toLowerCase() === 'registrar'
   const isUniversityAdministrator = userRole.trim().toLowerCase() === 'university administrator'
   const isDepartmentLeader = ['dean', 'program head'].includes(userRole.trim().toLowerCase())
   const availableLogCategories = isUniversityAdministrator
     ? LOG_CATEGORIES.filter(option => option.id === 'Reservations' || option.id === 'Facilities')
     : isDepartmentLeader
     ? LOG_CATEGORIES.filter(option => option.id === 'Reservations' || option.id === 'Scheduling')
-    : isRegistrar
-    ? LOG_CATEGORIES.filter(option => option.id !== 'Accounts')
     : LOG_CATEGORIES
   const [selectedCategory, setSelectedCategory] = useState<LogCategory>(() => {
     const storedCategory = getStoredLogCategory()
@@ -385,7 +382,7 @@ function LogsPage({ userRole }: LogsPageProps) {
     try {
       window.sessionStorage.setItem(LOG_CATEGORY_STORAGE_KEY, category)
     } catch {
-      // The role restriction still applies when browser storage is unavailable.
+      // Continue with the selected category when browser storage is unavailable.
     }
   }, [category, selectedCategory])
 
@@ -445,7 +442,8 @@ function LogsPage({ userRole }: LogsPageProps) {
           status: reservationDisplayStatus(status, evidenceRecord),
           requestType: data.requestType === 'Extended' ? 'Extended' : 'Standard',
           reviewStep: reservationReviewStep({ status, deanRecommend: data.deanRecommend === true,
-            registrarRecommend: data.registrarRecommend === true, declinedByRole: logText(data.declinedByRole) }),
+            registrarRecommend: data.registrarRecommend === true, declinedByRole: logText(data.declinedByRole),
+            autoApproved: data.autoApproved === true, approvedByRole: logText(data.approvedByRole) }),
           deanRecommend: data.deanRecommend === true,
           registrarRecommend: data.registrarRecommend === true,
           universityAdministratorRecommend: data.universityAdministratorRecommend === true,

@@ -1,5 +1,5 @@
 import type { ScheduleMeetingRecord } from './scheduleMeetings'
-import { assignedSchedulePlotStatus, plotMeetingKey, plotScheduleCollege, plotScheduleRevision, schedulePlotSelectionKey, type PlotAssignment, type PlotRoom } from './schedulePlotting.ts'
+import { assignedSchedulePlotStatus, plotMeetingKey, plotScheduleCollege, plotScheduleRevision, savedMeetingPlotStatus, schedulePlotSelectionKey, type PlotAssignment, type PlotRoom } from './schedulePlotting.ts'
 import { areParallelFacultyMeetings, excelScheduleRoomKey, isDraftOrPlotScheduleMeeting, parallelRoomAssignmentIssue, parallelRoomConnectionIssue, splitScheduleResources, type FacultySubjectAssignment } from './ScheduleValidation.ts'
 
 const text = (value: unknown) => typeof value === 'string' ? value : ''
@@ -11,7 +11,7 @@ const minutes = (value: string | undefined) => {
 /** Share the workbook's meeting and parallel-group semantics with Plot validation and recommendations. */
 export function plotFacultyScheduleAssignments(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[]): FacultySubjectAssignment[] {
   const roomMap = new Map(rooms.map(room => [room.id, room]))
-  const selectionKeys = meetings.map(schedulePlotSelectionKey)
+  const selectionKeys = meetings.map(meeting => schedulePlotSelectionKey(meeting))
   const firstSelectionIndex = new Map<string, number>()
   const entryCounts = new Map<string, number>()
   selectionKeys.forEach((key, index) => {
@@ -75,14 +75,14 @@ export function plotParallelGroup(meetings: readonly ScheduleMeetingRecord[], ro
   return active.filter((_, i) => i === index || areParallelFacultyMeetings(assignments[index], assignments[i]))
 }
 
-export function parallelPlotCheckboxState(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[], pending: ReadonlyMap<string, PlotAssignment>) {
+export function parallelPlotCheckboxState(meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[], pending: ReadonlyMap<string, PlotAssignment>, day?: string) {
   const proposed = meetings.map(meeting => ({ ...meeting, roomId: pending.get(schedulePlotSelectionKey(meeting))?.roomId ?? meeting.roomId }))
   const complete = meetings.length > 0 && proposed.every(meeting => meeting.roomId && rooms.some(room => room.id === meeting.roomId))
   const valid = complete && plotParallelRoomMessages(proposed, rooms).size === 0
   const checked = valid && meetings.every(meeting => {
-    const assignment = pending.get(schedulePlotSelectionKey(meeting))
+    const assignment = pending.get(schedulePlotSelectionKey(meeting, day))
     return assignment?.targetStatus ? assignment.targetStatus === 'Plot'
-      : assignment ? false : assignedSchedulePlotStatus(pending, meeting) === 'Plot'
+      : assignment && !day ? false : assignedSchedulePlotStatus(pending, meeting, day) === 'Plot'
   })
   return { complete, valid, checked }
 }
@@ -101,10 +101,10 @@ export function stagePlotRoomSelections(pending: ReadonlyMap<string, PlotAssignm
     .map(({ meeting }) => parallelPlotSelectionGroupKey(meeting)).filter((key): key is string => Boolean(key)))
   const changedKeys = new Set(selections.filter(({ meeting, roomId }) => !parallelPlotSelectionGroupKey(meeting)
     && (pending.get(schedulePlotSelectionKey(meeting))?.roomId ?? meeting.roomId ?? '') !== roomId)
-    .map(({ meeting }) => schedulePlotSelectionKey(meeting)))
+    .map(({ meeting }) => JSON.stringify([meeting.sourceScheduleId || meeting.id, plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0])])))
   for (const [key, assignment] of next) if (assignment.parallelGroupKey && changedGroups.has(assignment.parallelGroupKey)
-    || changedKeys.has(key)) {
-    if (assignment.roomId === assignment.expectedRoomId) next.delete(key)
+    || changedKeys.has(JSON.stringify([assignment.scheduleId, assignment.meetingKey]))) {
+    if (assignment.day || assignment.roomId === assignment.expectedRoomId) next.delete(key)
     else {
       const { targetStatus: _status, ...roomChoice } = assignment
       next.set(key, roomChoice)
@@ -126,26 +126,29 @@ export function stagePlotRoomSelections(pending: ReadonlyMap<string, PlotAssignm
 }
 
 /** One checkbox stages every row together; undo/redo records this map as one edit. */
-export function toggleParallelSchedulePlot(pending: ReadonlyMap<string, PlotAssignment>, meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[]): Map<string, PlotAssignment> {
-  const state = parallelPlotCheckboxState(meetings, rooms, pending)
+export function toggleParallelSchedulePlot(pending: ReadonlyMap<string, PlotAssignment>, meetings: readonly ScheduleMeetingRecord[], rooms: readonly PlotRoom[], day?: string): Map<string, PlotAssignment> {
+  const state = parallelPlotCheckboxState(meetings, rooms, pending, day)
   if (!state.valid) return new Map(pending)
   const targetStatus = state.checked ? 'Draft' : 'Plot'
   const next = new Map(pending)
-  const rows = new Set(meetings.map(meeting => String(meeting.sourceScheduleId || meeting.id)))
-  for (const [key, assignment] of next) if (rows.has(assignment.scheduleId) && assignment.targetStatus) {
+  const selectionKeys = new Set(meetings.map(meeting => schedulePlotSelectionKey(meeting, day)))
+  for (const [key, assignment] of next) if (selectionKeys.has(key) && assignment.targetStatus) {
     if (assignment.roomId === assignment.expectedRoomId) next.delete(key)
     else next.set(key, { ...assignment, targetStatus: undefined })
   }
-  if (targetStatus === 'Draft' && meetings.every(meeting => (meeting.status || 'Draft') === 'Draft')) return next
+  if (targetStatus === 'Draft' && meetings.every(meeting => savedMeetingPlotStatus(meeting, day) === 'Draft')) return next
   for (const meeting of meetings) {
     if (!['Draft', 'Plot'].includes(meeting.status || 'Draft')) return new Map(pending)
-    const key = schedulePlotSelectionKey(meeting)
+    const key = schedulePlotSelectionKey(meeting, day)
     const existing = next.get(key)
-    if (targetStatus === (meeting.status || 'Draft') && !existing) continue
+    const roomChoice = next.get(schedulePlotSelectionKey(meeting))
+    if (targetStatus === savedMeetingPlotStatus(meeting, day) && !existing
+      && (roomChoice?.roomId ?? meeting.roomId ?? '') === (meeting.roomId ?? '')) continue
     next.set(key, { scheduleId: String(meeting.sourceScheduleId || meeting.id), targetStatus,
       parallelGroupKey: parallelPlotSelectionGroupKey(meeting),
-      meetingKey: plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0]), roomId: existing?.roomId ?? meeting.roomId ?? '',
-      expectedRoomId: existing?.expectedRoomId ?? meeting.roomId ?? '', expectedRevision: existing?.expectedRevision ?? plotScheduleRevision(meeting) })
+      meetingKey: plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0]), roomId: roomChoice?.roomId ?? existing?.roomId ?? meeting.roomId ?? '',
+      expectedRoomId: existing?.expectedRoomId ?? meeting.roomId ?? '', expectedRevision: existing?.expectedRevision ?? plotScheduleRevision(meeting),
+      ...(day && (meeting.days?.length ?? 0) > 1 ? { day } : {}) })
   }
   return next
 }

@@ -136,6 +136,8 @@ interface ScheduleSlotSelection {
   startTime: string
 }
 
+const RESERVATION_CREATOR_ROLES = ['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor']
+
 function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [buildings, setBuildings] = useState<Building[]>([])
@@ -156,7 +158,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [rooms, setRooms] = useState<Room[]>([])
   const reservationAvailabilityRef = useMemo(() => doc(db, 'settings', 'reservationAvailability'), [])
   const canManageReservationAvailability = userRole === 'Admin' || userRole === 'Registrar' || userRole === 'University Administrator'
-  const canCreateReservation = userRole === 'Dean' || userRole === 'Program Head' || userRole === 'Instructor'
+  const canCreateReservation = RESERVATION_CREATOR_ROLES.includes(userRole)
   
   const maxAllowedDate = useMemo(() => {
     const today = new Date()
@@ -439,6 +441,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     attendees: number
     purpose: string
     requestType: ReservationRequestType
+    autoApprovedByRole: 'Admin' | 'University Administrator' | null
+    registrarPreRecommended: boolean
   } | null>(null)
   const [roomInfoSource, setRoomInfoSource] = useState<'main' | 'searchResults'>('main')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -604,7 +608,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       console.error("Error fetching reservations:", error)
     })
 
-    const unsubscribeSchedules = onSnapshot(collection(db, 'schedule'), (snapshot) => {
+    const unsubscribeSchedules = onSnapshot(collection(db, 'schedules'), (snapshot) => {
       setSchedules(scheduleMeetingRecords(snapshot.docs))
     }, (error) => {
       console.error("Error fetching schedules:", error)
@@ -1626,7 +1630,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
                       const building = buildings.find(b => b.rooms.some(r => r.id === selectedRoomInfo.id))
 
-                      await runTransaction(db, async (transaction) => {
+                      const submissionResult = await runTransaction(db, async (transaction) => {
                         const availabilitySnapshot = await transaction.get(reservationAvailabilityRef)
                         if (availabilitySnapshot.exists() && availabilitySnapshot.data().isReservationEnabled === false) {
                           throw new Error('RESERVATIONS_DISABLED')
@@ -1638,14 +1642,20 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         if (!membershipSnapshot.exists() || membership?.userId !== userId || membership?.status !== 'accepted' || !department) {
                           throw new Error('MEMBERSHIP_DEPARTMENT_UNAVAILABLE')
                         }
-                        if (!['Dean', 'Program Head', 'Instructor'].includes(membership.role)) {
+                        if (!RESERVATION_CREATOR_ROLES.includes(membership.role)) {
                           throw new Error('RESERVATION_ROLE_UNAVAILABLE')
                         }
                         if (membership.role === 'Instructor' && attendeeNames.some(name => !name || name.length > 120)) {
                           throw new Error('ATTENDEE_NAMES_REQUIRED')
                         }
 
-                        if (reservationData.requestType === 'Extended') {
+                        const autoApprovalRole = membership.role === 'Admin' || membership.role === 'University Administrator'
+                          ? membership.role
+                          : null
+                        const isAutoApproved = autoApprovalRole !== null
+                        const registrarPreRecommended = membership.role === 'Registrar'
+                        const recommendationsComplete = isAutoApproved || registrarPreRecommended
+                        if (reservationData.requestType === 'Extended' || isAutoApproved) {
                           const currentRoomSnapshot = await transaction.get(doc(db, 'rooms', selectedRoomInfo.id))
                           const currentRoom = currentRoomSnapshot.data()
                           if (!currentRoom || currentRoom.status !== 'Available'
@@ -1653,7 +1663,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                             || startMins < reservationTimeMinutes(currentRoom.startTime || '07:30')
                             || endMins > reservationTimeMinutes(currentRoom.endTime || '18:00')
                             || reservationData.duration < Math.max(30, currentRoom.minBookingMins || 30)
-                            || attendeeCount > currentRoom.capacity) {
+                            || attendeeCount > currentRoom.capacity
+                            || (reservationData.requestType === 'Standard'
+                              && reservationData.duration > (currentRoom.maxBookingMins || 180))) {
                             throw new Error('ROOM_AVAILABILITY_CHANGED')
                           }
                         }
@@ -1673,13 +1685,27 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           subjectCode: reservationData.subjectCode.trim().toUpperCase(),
                           classSection: reservationData.classSection.trim().toUpperCase(),
                           department,
-                          status: 'Pending',
-                          deanRecommend: false,
-                          registrarRecommend: false,
-                          universityAdministratorRecommend: false,
+                          status: isAutoApproved ? 'Approved' : 'Pending',
+                          deanRecommend: recommendationsComplete,
+                          registrarRecommend: recommendationsComplete,
+                          universityAdministratorRecommend: isAutoApproved,
+                          ...(recommendationsComplete ? {
+                            recommendedBy: userId,
+                            recommendedByRole: membership.role,
+                            recommendedAt: serverTimestamp(),
+                            registrarRecommendedBy: userId,
+                            registrarRecommendedAt: serverTimestamp(),
+                          } : {}),
+                          ...(isAutoApproved ? {
+                            autoApproved: true,
+                            approvedBy: userId,
+                            approvedByRole: autoApprovalRole,
+                            approvedAt: serverTimestamp(),
+                          } : {}),
                           createdAt: serverTimestamp(),
                           updatedAt: serverTimestamp()
                         })
+                        return { autoApprovedByRole: autoApprovalRole, registrarPreRecommended }
                       })
 
                       const submittedInfo = {
@@ -1693,7 +1719,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         duration: reservationData.duration,
                         requestType: reservationData.requestType,
                         attendees: Number(reservationData.attendees),
-                        purpose: reservationData.purpose.trim()
+                        purpose: reservationData.purpose.trim(),
+                        autoApprovedByRole: submissionResult.autoApprovedByRole,
+                        registrarPreRecommended: submissionResult.registrarPreRecommended
                       }
 
                       setIsReservationModalOpen(false)
@@ -1705,7 +1733,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       } else if (error instanceof Error && error.message === 'MEMBERSHIP_DEPARTMENT_UNAVAILABLE') {
                         showNotification('Your department is unavailable. Please refresh the page or contact an administrator.', 'error', 'Department Unavailable')
                       } else if (error instanceof Error && error.message === 'RESERVATION_ROLE_UNAVAILABLE') {
-                        showNotification('Only Deans, Program Heads, and Instructors can reserve rooms.', 'error', 'Reservation Not Allowed')
+                        showNotification('Your role cannot reserve rooms.', 'error', 'Reservation Not Allowed')
                       } else if (error instanceof Error && error.message === 'ATTENDEE_NAMES_REQUIRED') {
                         showNotification('Enter the name of every attendee before submitting the reservation.', 'error', 'Attendee Names Required')
                       } else if (error instanceof Error && error.message === 'ROOM_AVAILABILITY_CHANGED') {
@@ -1800,11 +1828,11 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-900 leading-snug">
-                  Request Sent Successfully
+                  {successDetails.autoApprovedByRole ? 'Reservation Approved' : 'Request Sent Successfully'}
                 </h3>
-                <p className="text-xs font-semibold text-amber-700">{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}Pending Dean recommendation</p>
+                <p className={`text-xs font-semibold ${successDetails.autoApprovedByRole ? 'text-emerald-700' : 'text-amber-700'}`}>{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}{successDetails.autoApprovedByRole ? `Automatically approved by ${successDetails.autoApprovedByRole}` : successDetails.registrarPreRecommended ? 'Awaiting University Administrator approval' : 'Pending Dean recommendation'}</p>
                 <p className="text-sm text-gray-600 font-medium mt-0.5 whitespace-nowrap">
-                  Your reservation for <span className="font-bold text-gray-900">{successDetails.roomName}</span> has been submitted.
+                  Your reservation for <span className="font-bold text-gray-900">{successDetails.roomName}</span> has been {successDetails.autoApprovedByRole ? 'approved' : 'submitted'}.
                 </p>
               </div>
             </div>

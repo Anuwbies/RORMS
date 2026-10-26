@@ -50,6 +50,8 @@ interface Reservation {
   deanRecommend?: boolean
   registrarRecommend?: boolean
   universityAdministratorRecommend?: boolean
+  autoApproved?: boolean
+  approvedByRole?: string
   declinedByRole?: string
   autoProcessed?: boolean
   evidencePath?: string
