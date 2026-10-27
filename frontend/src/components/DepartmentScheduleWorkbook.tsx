@@ -516,7 +516,7 @@ export const DepartmentScheduleWorkbook = forwardRef<WorkbookSaveHandle, Departm
         const workbook = XLSX.read(data, { type: 'array' })
         const matchingSheets = readDepartmentScheduleImport(workbook)
         if (!matchingSheets.length) {
-          throw new Error('No worksheet matches the required two-row headers. Include all 21 columns from College through F2F Room, with the Lec, Lab, and Total subheaders in the order shown below.')
+          throw new Error('No worksheet matches the required two-row headers. Include all 21 columns from Class Type through F2F Room, with the Lec, Lab, and Total subheaders in the order shown below.')
         }
         if (!cancelled) {
           sheetsRef.current = matchingSheets

@@ -32,7 +32,7 @@ export function scheduleStatusStyle(setup: ScheduleSetup, row: number, validatio
 
 // The full template includes fields that may be hidden in imported workbooks.
 export const SCHEDULE_HEADER_GROUPS = [
-  { label: 'College', offset: 0, width: 1, children: [] },
+  { label: 'Class Type', offset: 0, width: 1, children: [] },
   { label: 'Subject Area', offset: 1, width: 1, children: [] },
   { label: 'Code', offset: 2, width: 1, children: [] },
   { label: 'Descriptive Title', offset: 3, width: 1, children: [] },
@@ -75,14 +75,19 @@ function normalizedHeader(text: string): string {
   return text.trim().replace(/\s+/g, ' ').toLowerCase().replace('desciptive', 'descriptive')
 }
 
+export function isScheduleHeaderAnchor(text: string): boolean {
+  return ['class type', 'college'].includes(normalizedHeader(text))
+}
+
 export function validateScheduleHeader(header: ScheduleRange, read: ScheduleCellReader, columns: readonly number[] = Array.from({ length: header.e.c - header.s.c + 1 }, (_, index) => header.s.c + index)): string | null {
   if (header.e.r - header.s.r !== 1 || columns.length !== SCHEDULE_COLUMN_COUNT || columns[0] !== header.s.c || columns.at(-1) !== header.e.c || columns.some((column, index) => index > 0 && column <= columns[index - 1])) {
-    return 'Select both header rows from College through F2F Room (21 template columns, including hidden columns).'
+    return 'Select both header rows from Class Type through F2F Room (21 template columns, including hidden columns).'
   }
   const expected = scheduleHeaderValues()
   for (let row = 0; row < 2; row++) for (let column = 0; column < SCHEDULE_COLUMN_COUNT; column++) {
     const actual = normalizedHeader(read(header.s.r + row, columns[column]))
     // Workbooks saved before the Hours heading was added have this cell blank.
+    if (row === 0 && column === 0 && isScheduleHeaderAnchor(actual)) continue
     if (row === 0 && column === 8 && !actual) continue
     if (actual !== normalizedHeader(expected[row][column])) {
       return `The selected headers do not match the fixed template at column ${column + 1}, header row ${row + 1}.`
@@ -92,7 +97,7 @@ export function validateScheduleHeader(header: ScheduleRange, read: ScheduleCell
 }
 
 export function detectScheduleSetup(candidates: Iterable<ScheduleRange['s']>, lastRow: number, read: ScheduleCellReader): ScheduleSetup | null {
-  const anchors = [...candidates].filter(position => normalizedHeader(read(position.r, position.c)) === 'college')
+  const anchors = [...candidates].filter(position => isScheduleHeaderAnchor(read(position.r, position.c)))
     .sort((first, second) => first.r - second.r || first.c - second.c)
   for (const anchor of anchors) {
     const header = scheduleHeaderAt(anchor)

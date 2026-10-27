@@ -115,7 +115,7 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
   const fields = {
     status: 'Status', yearLevel: 'Year level', yearLevelLabel: 'Year level label', subjectCode: 'Subject code', subjectTitle: 'Subject title',
     course: 'Course', classSection: 'Section', faculty: 'Faculty', f2fRoom: 'Rooms', f2fTime: 'Meeting times', f2fDays: 'Meeting days',
-    college: 'College', subjectArea: 'Subject area', credits: 'Credits', units: 'Units', hours: 'Hours', maxStudents: 'Maximum students',
+    college: 'Class Type', subjectArea: 'Subject area', credits: 'Credits', units: 'Units', hours: 'Hours', maxStudents: 'Maximum students',
   }
   // Audit authored schedule fields. Meetings, links, parallel groups and validation
   // are recalculated for every save; rawValues duplicates the workbook cell audit.

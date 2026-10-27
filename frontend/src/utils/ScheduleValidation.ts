@@ -314,7 +314,7 @@ export const facultyScheduleRowKey = (sheet: string, row: number) => JSON.string
 export type DepartmentCourseIdentity = Pick<DepartmentCourseSuggestion, 'code' | 'title'>
 export const SCHEDULE_COLLEGE_CHOICES = ['OPEN LAB', 'LECTURE', 'LABORATORY', 'PARALLEL'] as const
 
-/** College controls only Faculty, Time, Day and Room Lec/Lab columns. */
+/** Class Type controls only Faculty, Time, Day and Room Lec/Lab columns. */
 export function isScheduleColumnEditable(college: string, column: number): boolean {
   if (column < 13 || column > 20) return true
   const normalized = college.trim().replace(/\s+/g, ' ').toUpperCase().replace(/^OPENLAB$/, 'OPEN LAB')
@@ -322,7 +322,7 @@ export function isScheduleColumnEditable(college: string, column: number): boole
   return column % 2 === 1 ? normalized === 'LECTURE' || normalized === 'PARALLEL' : normalized === 'LABORATORY'
 }
 
-/** Blank College cells that continue the same parallel subject inherit its Lec edit rule. */
+/** Blank Class Type cells that continue the same parallel subject inherit its Lec edit rule. */
 export function scheduleEditableColleges(
   rows: readonly { values: readonly string[] }[],
   yearSections?: readonly { start: number; count: number }[],
@@ -417,7 +417,7 @@ export function validateDepartmentFacultyScheduleRows(rows: readonly WorkbookSch
     const location = facultyScheduleRowKey(row.sourceSheet, row.sourceRow)
     const issues = new Set(messages.get(location) ?? [])
     if (!isValidScheduleCollege(row.college)) {
-      issues.add(`${row.college} is not a valid College. Choose OPEN LAB, LECTURE, LABORATORY, or PARALLEL.`)
+      issues.add(`${row.college} is not a valid Class Type. Choose OPEN LAB, LECTURE, LABORATORY, or PARALLEL.`)
     }
     for (const meeting of row.meetings) {
       if (meeting.time.trim() && !isExcelScheduleTba(meeting.time) && !parseExcelScheduleTime(meeting.time)) {

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
 import * as XLSX from 'xlsx'
 import { createEmptyDepartmentScheduleSheet, detectDepartmentScheduleYearSections, readDepartmentScheduleImport } from '../src/utils/departmentScheduleImport.ts'
+import { createDepartmentScheduleExport } from '../src/utils/departmentScheduleExport.ts'
 import { scheduleHeaderValues, scheduleHeaderMerges, scheduleHeaderAt } from '../src/utils/excelScheduleTemplate.ts'
 
 function scheduleSheet() {
@@ -27,6 +29,19 @@ test('detects an offset, merged two-row header after an XLSX round trip and reta
   assert.deepEqual(matches[0].rows[0].values.slice(2, 8), ['ITE 101', 'Computing', 'BSIT', '2', '1', '3'])
 })
 
+test('the downloadable schedule template uses Class Type and can be imported', () => {
+  const workbook = XLSX.read(readFileSync(new URL('../public/department-schedule-template.xlsx', import.meta.url)), { type: 'buffer' })
+  assert.equal(workbook.Sheets.Schedule.B2?.v, 'Class Type')
+  assert.equal(readDepartmentScheduleImport(workbook).length, 1)
+})
+
+test('an exported schedule uses Class Type and can be imported again', () => {
+  const bytes = createDepartmentScheduleExport([createEmptyDepartmentScheduleSheet()], null, () => '')
+  const workbook = XLSX.read(bytes, { type: 'array' })
+  assert.equal(workbook.Sheets.Schedule.B2?.v, 'Class Type')
+  assert.equal(readDepartmentScheduleImport(workbook).length, 1)
+})
+
 test('checks every sheet, tolerates case and whitespace, and accepts headers without data', () => {
   const workbook = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([['Instructions']]), 'Notes')
@@ -37,7 +52,8 @@ test('checks every sheet, tolerates case and whitespace, and accepts headers wit
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(scheduleHeaderValues()), 'Empty')
   const matches = readDepartmentScheduleImport(workbook)
   assert.deepEqual(matches.map(match => match.name), ['First', 'Empty'])
-  assert.equal(matches[1].rows.length, 0)
+  assert.equal(matches[1].rows.length, 40)
+  assert.ok(matches[1].rows.every(row => row.values.every(value => value === '')))
 })
 
 test('rejects missing, swapped, or incorrect subheaders even when top-level labels match', () => {
@@ -80,13 +96,12 @@ test('groups imported rows by curriculum headings instead of fixed ten-row secti
   XLSX.utils.book_append_sheet(workbook, sheet, 'Schedule')
   const [match] = readDepartmentScheduleImport(workbook)
   assert.deepEqual(match.yearSections, [
-    { label: '', start: 0, count: 1 },
-    { label: '1BSIT: 2023-24 CURRICULUM', sourceLabel: '1BSIT: 2023-24 CURRICULUM', start: 1, count: 10 },
-    { label: '2BSIT: 2023-24 curriculum', sourceLabel: '2BSIT: 2023-24 curriculum', start: 11, count: 10 },
-    { label: '4BSIT: 2022-23 CURRICULUM', sourceLabel: '4BSIT: 2022-23 CURRICULUM', start: 21, count: 10 },
+    { label: '1BSIT: 2023-24 CURRICULUM', sourceLabel: '1BSIT: 2023-24 CURRICULUM', start: 0, count: 10 },
+    { label: '2BSIT: 2023-24 curriculum', sourceLabel: '2BSIT: 2023-24 curriculum', start: 10, count: 10 },
+    { label: '4BSIT: 2022-23 CURRICULUM', sourceLabel: '4BSIT: 2022-23 CURRICULUM', start: 20, count: 10 },
   ])
-  assert.equal(match.rows[1].values[2], 'ITE 101')
-  assert.deepEqual(match.rows.filter(row => row.values.some(Boolean)).map(row => row.rowNumber), [3, 5, 8, 9, 11])
+  assert.equal(match.rows[0].values[2], 'ITE 101')
+  assert.deepEqual(match.rows.filter(row => row.values.some(Boolean)).map(row => row.rowNumber), [5, 8, 9, 11])
   assert.equal(new Set(match.rows.map(row => row.rowNumber)).size, match.rows.length)
 })
 

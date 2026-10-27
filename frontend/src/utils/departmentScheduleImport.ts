@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx'
-import { SCHEDULE_COLUMN_COUNT, scheduleHeaderAt, validateScheduleHeader } from './excelScheduleTemplate.ts'
+import { SCHEDULE_COLUMN_COUNT, isScheduleHeaderAnchor, scheduleHeaderAt, validateScheduleHeader } from './excelScheduleTemplate.ts'
 
 export interface DepartmentScheduleImportRow {
   rowNumber: number
@@ -75,7 +75,7 @@ export function readDepartmentScheduleImport(workbook: XLSX.WorkBook): Departmen
       const cell = sheet[XLSX.utils.encode_cell({ r: row, c: column })] as XLSX.CellObject | undefined
       return cell ? XLSX.utils.format_cell(cell) : ''
     }
-    const anchors = cells.filter(cell => read(cell.r, cell.c).trim().toLowerCase() === 'college')
+    const anchors = cells.filter(cell => isScheduleHeaderAnchor(read(cell.r, cell.c)))
       .sort((first, second) => first.r - second.r || first.c - second.c)
     for (const anchor of anchors) {
       const header = scheduleHeaderAt(anchor)

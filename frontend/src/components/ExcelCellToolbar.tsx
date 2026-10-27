@@ -425,7 +425,7 @@ export const ExcelCellToolbar = memo(function ExcelCellToolbar({ style, mergeDis
       <ToolbarIconButton
         ref={plotButtonRef}
         aria-label="Plot options"
-        title={canPlotScheduleRows ? 'Plot or unplot selected schedule rows' : 'Select cells from College through Status on rows assigned to a year'}
+        title={canPlotScheduleRows ? 'Plot or unplot selected schedule rows' : 'Select cells from Class Type through Status on rows assigned to a year'}
         aria-haspopup="menu"
         aria-expanded={plotMenuOpen}
         aria-controls={plotMenuOpen ? plotMenuId : undefined}

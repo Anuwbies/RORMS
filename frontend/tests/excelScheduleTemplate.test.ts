@@ -81,7 +81,7 @@ test('accepts the complete UY header including fields hidden in Excel and reject
 
 test('the fixed template matches the screenshot order and its two Lec/Lab/Total groups', () => {
   assert.deepEqual(scheduleHeaderValues(), [
-    ['College', 'Subject Area', 'Code', 'Descriptive Title', 'Course', 'Units', '', '', '', '', '', 'Max No. of Stud.', 'Section', 'Faculty', '', 'F2F Time', '', 'F2F Days', '', 'F2F Room', ''],
+    ['Class Type', 'Subject Area', 'Code', 'Descriptive Title', 'Course', 'Units', '', '', 'Hours', '', '', 'Max No. of Stud.', 'Section', 'Faculty', '', 'F2F Time', '', 'F2F Days', '', 'F2F Room', ''],
     ['', '', '', '', '', 'Lec', 'Lab', 'Total', 'Lec', 'Lab', 'Total', '', '', 'Lec', 'Lab', 'Lec', 'Lab', 'Lec', 'Lab', 'Lec', 'Lab'],
   ])
   const { cells, read } = uyCells()
@@ -114,6 +114,13 @@ test('auto-detection trims trailing blanks while preserving headings and interna
   assert.equal(detected.includesEmptyRows, true)
   assert.ok(readAssignedScheduleRecords(detected, read).find(record => record.row === 13)!.values.every(value => value === ''))
   assert.deepEqual([...cells], original)
+})
+
+test('accepts the former College header in existing workbooks', () => {
+  const { cells, read } = uyCells()
+  cells.set('12:0', 'College')
+  assert.equal(validateScheduleHeader(header, read, uyColumns), null)
+  assert.ok(detectScheduleSetup([header.s], 184, read))
 })
 
 test('auto-detection leaves nonmatching sheets unset and registers a valid header without year headings', () => {

@@ -168,8 +168,8 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
   return (
     <td
       ref={cellRef}
-      title={!editable ? 'Choose a compatible College value to edit this Lec/Lab cell.' : validationMessage ? undefined : value}
-      aria-label={`${validationMessage ? `${label}. ${validationMessage}` : label}${editable ? '' : '. Read-only for this College value.'}`}
+      title={!editable ? 'Choose a compatible Class Type value to edit this Lec/Lab cell.' : validationMessage ? undefined : value}
+      aria-label={`${validationMessage ? `${label}. ${validationMessage}` : label}${editable ? '' : '. Read-only for this Class Type value.'}`}
       aria-readonly={!editable || undefined}
       aria-invalid={validationMessage ? true : undefined}
       data-edit-cell={`${sheetIndex}:${rowNumber}:${column}`}
@@ -311,8 +311,8 @@ export const EditableScheduleCell = memo(function EditableScheduleCell({ value, 
         error={isCollege || isMeetingSlot ? undefined : isCourse ? courseSuggestionError : suggestionError}
         activeIndex={activeIndex}
         onSelect={chooseSuggestion}
-        label={isCollege ? 'College options' : isCourse ? 'Department courses, same year level first' : isRoom ? 'System rooms' : isTime ? 'Time options' : isDay ? 'Day options' : 'Department instructors and program heads'}
-        noun={isCollege ? 'College options' : isCourse ? 'department courses' : isRoom ? 'rooms' : isTime ? 'time recommendations' : isDay ? 'day recommendations' : 'instructors or program heads'}
+        label={isCollege ? 'Class Type options' : isCourse ? 'Department courses, same year level first' : isRoom ? 'System rooms' : isTime ? 'Time options' : isDay ? 'Day options' : 'Department instructors and program heads'}
+        noun={isCollege ? 'Class Type options' : isCourse ? 'department courses' : isRoom ? 'rooms' : isTime ? 'time recommendations' : isDay ? 'day recommendations' : 'instructors or program heads'}
         emptyMessage={isMeetingSlot ? 'No recommendations available.' : undefined}
         statusMessage={isMeetingSlot && recommendedSlots !== null && recommendedSlots.length === 0 ? 'No recommendations available.' : undefined}
         matchAnchorWidth

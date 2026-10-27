@@ -95,6 +95,11 @@ const REPORT_COLUMNS: Record<ReportKind, string[]> = {
   members: ['Member info', 'Role', 'Department', 'Status', 'Join date'],
 }
 
+const SCHEDULE_CSV_HEADERS = [
+  ...REPORT_COLUMNS.schedules.slice(0, 17),
+  'Lec/Lab', 'Faculty', 'F2F Time', 'F2F Days', 'F2F Room', 'Status',
+]
+
 const DATE_RANGE_OPTIONS: Array<{ value: DateRange; label: string }> = [
   { value: '7', label: 'Last 7 days' },
   { value: '30', label: 'Last 30 days' },
@@ -918,6 +923,27 @@ function ReportsPage({ userRole }: ReportsPageProps) {
   })), [reportKind, facilityUsage, facilityUsageLoading, facilityUsageError, facilityUsageColorIndexes, roomById, activeAcademicYear, currentSemester])
 
   const exportCsv = () => {
+    if (reportKind === 'schedules') {
+      const cellValue = (row: ReportRow, index: number) => {
+        const value = row.cells[index]?.primary.trim() || ''
+        return /^[-—–]+$/.test(value) ? '' : value
+      }
+      const rows = filteredRows.flatMap(row => {
+        const sharedValues = Array.from({ length: 17 }, (_, index) => cellValue(row, index))
+        const formats = [
+          { label: 'Lec', indexes: [17, 19, 21, 23] },
+          { label: 'Lab', indexes: [18, 20, 22, 24] },
+        ]
+          .map(format => ({ label: format.label, values: format.indexes.map(index => cellValue(row, index)) }))
+          .filter(format => format.values.some(Boolean))
+
+        return (formats.length ? formats : [{ label: '', values: ['', '', '', ''] }])
+          .map(format => [...sharedValues, format.label, ...format.values, cellValue(row, 25)])
+      })
+      downloadReportCsv(`rorms-${reportKind}-report-${new Date().toISOString().slice(0, 10)}.csv`, SCHEDULE_CSV_HEADERS, rows)
+      return
+    }
+
     const headers = [...REPORT_COLUMNS[reportKind]]
     if (reportKind === 'reservations') headers.push('Reference', 'Purpose', 'Subject code', 'Section', 'Attendees', 'Duration (minutes)', 'Dean recommended', 'Registrar recommended', 'University Administrator approved', 'Declined by', 'Decline reason', 'Cancellation reason', 'Evidence files')
     if (reportKind === 'rooms') headers.push('Record ID', 'Code', 'Building code', 'Description', 'Available days', 'Start time', 'End time', 'Minimum booking (minutes)', 'Maximum booking (minutes)', 'Schedule term', 'Schedule usage by department')

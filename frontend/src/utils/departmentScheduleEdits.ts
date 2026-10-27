@@ -101,7 +101,7 @@ export function scheduleCollegeForCourseType(type: string): string {
   return ''
 }
 
-/** Check user edits before recording history; row pastes use their incoming College. */
+/** Check user edits before recording history; row pastes use their incoming Class Type. */
 export function filterScheduleEditableChanges(sheets: readonly DepartmentScheduleImportSheet[], indexes: readonly ReadonlyMap<number, number>[],
   changes: readonly ScheduleCellValueChange[]): ScheduleCellValueChange[] {
   const overrides = new Map<number, Map<string, string>>()
