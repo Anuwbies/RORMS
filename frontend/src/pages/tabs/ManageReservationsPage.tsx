@@ -9,6 +9,7 @@ import { FilterDropdown, type FilterGroup } from '../../components/FilterDropdow
 import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/reservationReviewStep'
+import { reservationRoomIds } from '../../utils/reservationRooms'
 import { hasReservationEvidence, reservationDisplayStatus, type ReservationEvidenceFile } from '../../utils/reservationEvidence'
 import { db, functions, auth } from '../../firebase'
 import { httpsCallable } from 'firebase/functions'
@@ -79,6 +80,7 @@ interface Reservation {
   id: string
   userId: string
   roomId: string
+  roomIds?: string[]
   buildingId: string
   date: string
   startTime: string
@@ -704,7 +706,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           email: user?.email || 'No Email',
           avatar: user?.profilePicture || '',
         },
-        roomName: room?.name || 'Unknown Room',
+        roomName: reservationRoomIds(res).map(id => rooms.find(candidate => candidate.id === id)?.name || 'Unknown Room').join(' + '),
         buildingName: building?.name || 'Unknown Building',
         buildingCode: building?.code || ''
       }
@@ -1540,7 +1542,7 @@ function ManageReservationsPage({ userRole }: { userRole: string }) {
           isOpen={!!viewingReservation}
           onClose={() => setViewingReservation(null)}
           reservation={enrichedReservations.find(reservation => reservation.id === viewingReservation.id) || viewingReservation}
-          roomName={viewingReservation.roomName || 'Unknown Room'}
+          roomName={(enrichedReservations.find(reservation => reservation.id === viewingReservation.id) || viewingReservation).roomName || 'Unknown Room'}
           roomType={rooms.find(room => room.id === viewingReservation.roomId)?.type || 'Unknown Room Type'}
           requester={viewingReservation.requester}
           showReviewIndicators

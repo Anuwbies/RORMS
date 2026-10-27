@@ -14,7 +14,10 @@ export function subscribeRoomTimetable(roomId: string, includeReservations: bool
   const sources = [
     query(collection(db, 'schedules'), where('roomId', '==', roomId)),
     query(collection(db, 'schedules'), where('roomIds', 'array-contains', roomId)),
-    ...(includeReservations ? [query(collection(db, 'reservations'), where('roomId', '==', roomId))] : []),
+    ...(includeReservations ? [
+      query(collection(db, 'reservations'), where('roomId', '==', roomId)),
+      query(collection(db, 'reservations'), where('roomIds', 'array-contains', roomId)),
+    ] : []),
   ]
   const snapshots = new Map<number, readonly QueryDocumentSnapshot<DocumentData>[]>()
   const errors = new Set<number>()
@@ -38,7 +41,9 @@ export function subscribeRoomTimetable(roomId: string, includeReservations: bool
       const documents = new Map([...snapshots.get(0)!, ...snapshots.get(1)!].map(document => [document.id, document]))
       receive({
         schedules: roomScheduleMeetings([...documents.values()], roomId),
-        reservations: (snapshots.get(2) ?? []).map((document): Record<string, unknown> => ({ ...document.data(), id: document.id }))
+        reservations: [...new Map([...(snapshots.get(2) ?? []), ...(snapshots.get(3) ?? [])]
+          .map(document => [document.id, document] as const)).values()]
+          .map((document): Record<string, unknown> => ({ ...document.data(), id: document.id }))
           .filter(reservation => ['Approved', 'Pending'].includes(String(reservation.status))),
       })
     } catch (error) {

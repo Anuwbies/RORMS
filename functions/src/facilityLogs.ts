@@ -6,11 +6,17 @@ type Value = string | number | boolean | null | string[];
 type Fields = Record<string, Value>;
 type Change = { before: Value; after: Value };
 const ACTIONS = ["create_building", "update_building", "delete_building", "create_room", "update_room", "delete_room", "delete_rooms", "create_facility", "delete_comment"];
-const ROOM_FIELDS = ["buildingId", "name", "code", "type", "floor", "capacity", "status", "image", "description", "amenities", "availableDays", "startTime", "endTime", "minBookingMins", "maxBookingMins"];
+const ROOM_FIELDS = ["buildingId", "name", "code", "type", "floor", "capacity", "status", "image", "description", "amenities", "availableDays", "startTime", "endTime", "minBookingMins", "maxBookingMins", "isCollapsible", "collapsibleWithRoomId"];
 const FACILITY_FIELDS = ["buildingId", "name", "code", "type", "floor", "capacity", "status", "image", "description", "amenities", "availableDays", "startTime", "endTime", "minBookingMins", "maxBookingMins"];
 const text = (value: unknown): string => typeof value === "string" ? value.trim() : "";
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const validId = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
+const adjacentRoomCodes = (firstCode: string, secondCode: string): boolean => {
+  const first = firstCode.match(/^(.*?)(\d+)$/);
+  const second = secondCode.match(/^(.*?)(\d+)$/);
+  return Boolean(first && second && first[1].toUpperCase() === second[1].toUpperCase()
+    && Math.abs(Number(first[2]) - Number(second[2])) === 1);
+};
 const roleNames = ["Admin", "Registrar", "University Administrator", "Dean", "Program Head", "Instructor"];
 
 function snapshotFields(data: Record<string, unknown>, fields: string[]): Fields {
@@ -27,7 +33,11 @@ function inputFields(value: unknown, room: boolean, facility: boolean): Fields {
   const output: Fields = {};
   for (const field of fields) {
     const input = data[field];
-    if (["floor", "capacity", "minBookingMins", "maxBookingMins"].includes(field)) {
+    if (["isCollapsible", "collapsibleWithRoomId"].includes(field) && input === undefined) continue;
+    if (field === "isCollapsible") {
+      if (typeof input !== "boolean") throw new HttpsError("invalid-argument", "Invalid collapsible room setting.");
+      output[field] = input;
+    } else if (["floor", "capacity", "minBookingMins", "maxBookingMins"].includes(field)) {
       if (typeof input !== "number" || !Number.isSafeInteger(input) || input < 0) throw new HttpsError("invalid-argument", `Invalid ${field}.`);
       output[field] = input;
     } else if (["amenities", "availableDays"].includes(field)) {
@@ -49,6 +59,11 @@ function inputFields(value: unknown, room: boolean, facility: boolean): Fields {
       || (Number(output.maxBookingMins) !== 0 && Number(output.minBookingMins) >= Number(output.maxBookingMins))
       || (output.availableDays as string[]).some(day => !["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].includes(day))) {
       throw new HttpsError("invalid-argument", "Invalid room availability or booking limits.");
+    }
+    if ((output.isCollapsible !== undefined || output.collapsibleWithRoomId !== undefined)
+      && (output.isCollapsible !== Boolean(output.collapsibleWithRoomId)
+        || (output.isCollapsible && !validId(text(output.collapsibleWithRoomId))))) {
+      throw new HttpsError("invalid-argument", "Select one room to combine with this collapsible room.");
     }
   }
   return output;
@@ -101,7 +116,8 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
     const actorName = identity ? `${text(identity.surname)}, ${text(identity.firstName)}`
       : text(profile.fullName) || text(actorMembership?.data().fullName) || uid;
     const addEvent = (source: DocumentReference, eventAction: string, snapshot: Fields, changes: Record<string, Change>, context: Record<string, unknown> = {}) => {
-      const ref = events.length ? db.collection("logs").doc(`${logRef.id}_${source.id}`) : logRef;
+      const ref = action === "delete_rooms" ? (events.length ? db.collection("logs").doc(`${logRef.id}_${source.id}`) : logRef)
+        : source.id === targetId ? logRef : db.collection("logs").doc(`${logRef.id}_${source.id}`);
       events.push({ ref, data: {
         category: "Facilities", action: eventAction, operation: action, requestFingerprint: fingerprint,
         actorId: uid, actorName, actorRole: actorMembership?.data().role || "Unknown", membershipId: actorMembership?.id || "",
@@ -116,6 +132,16 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
         buildingId: text(data.buildingId), buildingName: text(building.name), buildingCode: text(building.code), roomId: source.id,
       });
     };
+    const unlinkRoom = (source: DocumentReference, data: Record<string, unknown>, removedId: string) => {
+      if (text(data.collapsibleWithRoomId) !== removedId) return;
+      mutations.push(() => transaction.update(source, {
+        isCollapsible: false, collapsibleWithRoomId: "", updatedAt: FieldValue.serverTimestamp(),
+      }));
+      addEvent(source, "facility.room_updated", snapshotFields(data, ROOM_FIELDS), {
+        isCollapsible: { before: true, after: false },
+        collapsibleWithRoomId: { before: removedId, after: "" },
+      }, { buildingId: text(data.buildingId), roomId: source.id });
+    };
 
     if (action === "delete_rooms") {
       const [building, ...rooms] = await Promise.all([
@@ -127,6 +153,14 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
         const data = document.data() || {};
         if (data.buildingId !== buildingId) throw new HttpsError("failed-precondition", "A selected room moved to another building. Reload and try again.");
         deleteRoom(document.ref, data, building.data() || {});
+      }
+      const deletedIds = new Set(rooms.map(document => document.id));
+      const partners = [...new Set(rooms.map(document => text(document.data()?.collapsibleWithRoomId))
+        .filter(id => validId(id) && !deletedIds.has(id)))];
+      const partnerDocs = await Promise.all(partners.map(id => transaction.get(db.collection("rooms").doc(id))));
+      for (const partner of partnerDocs) if (partner.exists) {
+        const deletedId = text(partner.data()?.collapsibleWithRoomId);
+        if (deletedIds.has(deletedId)) unlinkRoom(partner.ref, partner.data() || {}, deletedId);
       }
     } else {
       const collectionName = action === "delete_comment" ? "comments" : room ? "rooms" : facility ? "facilities" : "buildings";
@@ -146,6 +180,36 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
       }
       if (saving) {
         if (action === "update_room" && before.buildingId !== values.buildingId) throw new HttpsError("failed-precondition", "The room's building changed. Reload and try again.");
+        if (room) {
+          const previousPartnerId = text(before.collapsibleWithRoomId);
+          const nextPartnerId = values.collapsibleWithRoomId === undefined ? previousPartnerId : text(values.collapsibleWithRoomId);
+          if (nextPartnerId === targetId) throw new HttpsError("invalid-argument", "A room cannot be combined with itself.");
+          const partnerIds = [...new Set([nextPartnerId, previousPartnerId].filter(id => validId(id)))];
+          const partners = await Promise.all(partnerIds.map(id => transaction.get(db.collection("rooms").doc(id))));
+          const nextPartner = partners.find(document => document.id === nextPartnerId);
+          if (nextPartnerId && (!nextPartner?.exists || nextPartner.data()?.buildingId !== values.buildingId
+            || nextPartner.data()?.floor !== values.floor
+            || !adjacentRoomCodes(text(values.code), text(nextPartner.data()?.code)))) {
+            throw new HttpsError("failed-precondition", "Choose an immediately adjacent room number in the same building and floor.");
+          }
+          if (nextPartnerId && text(nextPartner?.data()?.collapsibleWithRoomId)
+            && text(nextPartner?.data()?.collapsibleWithRoomId) !== targetId) {
+            throw new HttpsError("failed-precondition", "That room is already combined with another room.");
+          }
+          if (previousPartnerId !== nextPartnerId) {
+            const previousPartner = partners.find(document => document.id === previousPartnerId);
+            if (previousPartner?.exists) unlinkRoom(previousPartner.ref, previousPartner.data() || {}, targetId);
+          }
+          if (nextPartner?.exists && text(nextPartner.data()?.collapsibleWithRoomId) !== targetId) {
+            mutations.push(() => transaction.update(nextPartner.ref, {
+              isCollapsible: true, collapsibleWithRoomId: targetId, updatedAt: FieldValue.serverTimestamp(),
+            }));
+            addEvent(nextPartner.ref, "facility.room_updated", snapshotFields(nextPartner.data() || {}, ROOM_FIELDS), {
+              isCollapsible: { before: Boolean(nextPartner.data()?.isCollapsible), after: true },
+              collapsibleWithRoomId: { before: text(nextPartner.data()?.collapsibleWithRoomId), after: targetId },
+            }, { buildingId: text(values.buildingId), roomId: nextPartner.id });
+          }
+        }
         const catalog = await transaction.get(db.collection(collectionName));
         if (catalog.docs.some(candidate => candidate.id !== targetId && ["name", "code"].some(field => text(candidate.data()[field]).toLowerCase() === text(values[field]).toLowerCase()))) throw new HttpsError("already-exists", `A ${room ? "room" : facility ? "facility" : "building"} with this name or code already exists.`);
         const changes: Record<string, Change> = {};
@@ -158,6 +222,11 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
         addEvent(source, `facility.${room ? "room" : facility ? "facility" : "building"}_${action.startsWith("create_") ? "created" : "updated"}`, values,
           action.startsWith("create_") ? {} : changes, { buildingId: room || facility ? parentId : targetId, buildingName: room || facility ? text(building.name) : text(values.name), buildingCode: room || facility ? text(building.code) : text(values.code), roomId: room ? targetId : "" });
       } else if (action === "delete_room") {
+        const partnerId = text(before.collapsibleWithRoomId);
+        if (validId(partnerId)) {
+          const partner = await transaction.get(db.collection("rooms").doc(partnerId));
+          if (partner.exists) unlinkRoom(partner.ref, partner.data() || {}, targetId);
+        }
         deleteRoom(source, before, building);
       } else if (action === "delete_building") {
         const rooms = await transaction.get(db.collection("rooms").where("buildingId", "==", targetId));

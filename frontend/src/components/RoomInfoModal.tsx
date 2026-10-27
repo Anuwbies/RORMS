@@ -5,6 +5,8 @@ import type { Room } from '../types/room'
 import { Button } from './Button'
 import { RoomAmenities } from './RoomAmenities'
 import { RoomCommentsModal } from './RoomCommentsModal'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { db } from '../firebase'
 
 interface RoomInfoModalProps {
   isOpen: boolean
@@ -19,6 +21,7 @@ interface RoomInfoModalProps {
 export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton, comments, hasUnreadComments = false }: RoomInfoModalProps) {
   const [isCommentsVisible, setIsCommentsVisible] = useState(false)
   const [isAnonymous, setIsAnonymous] = useState(false)
+  const [linkedRoom, setLinkedRoom] = useState<{ partnerId: string; room: Room | null; message: string } | null>(null)
   const commentsToggleRef = useRef<HTMLButtonElement>(null)
   const roomModalRef = useRef<HTMLDivElement>(null)
   const [roomModalSize, setRoomModalSize] = useState<{ width: number; height: number } | null>(null)
@@ -28,6 +31,20 @@ export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton, com
     setIsCommentsVisible(false)
     setIsAnonymous(false)
   }, [isOpen, room?.id])
+
+  useEffect(() => {
+    const partnerId = room?.collapsibleWithRoomId
+    if (!isOpen || !partnerId) return
+    return onSnapshot(doc(db, 'rooms', partnerId), snapshot => {
+      setLinkedRoom({
+        partnerId,
+        room: snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } as Room : null,
+        message: snapshot.exists() ? '' : 'Linked room record not found',
+      })
+    }, () => {
+      setLinkedRoom({ partnerId, room: null, message: 'Could not load linked room' })
+    })
+  }, [isOpen, room?.collapsibleWithRoomId])
 
   useLayoutEffect(() => {
     const modal = roomModalRef.current
@@ -143,6 +160,17 @@ export function RoomInfoModal({ isOpen, room, onClose, onBack, actionButton, com
                   </p>
                 </div>
               </div>
+
+              {room.isCollapsible && room.collapsibleWithRoomId && (
+                <div>
+                  <h5 className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">Collapsible With</h5>
+                  <p className="rounded-xl border border-[var(--brand-color)]/20 bg-[#f3f7ee] p-3 text-sm font-semibold text-[#41572a]">
+                    {linkedRoom?.partnerId === room.collapsibleWithRoomId
+                      ? linkedRoom.room ? `${linkedRoom.room.code} — ${linkedRoom.room.name}` : linkedRoom.message
+                      : 'Loading linked room…'}
+                  </p>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>

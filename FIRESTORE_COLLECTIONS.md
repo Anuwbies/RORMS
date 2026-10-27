@@ -176,6 +176,9 @@ Centralized inventory of all campus rooms and their real-time status.
   - `endTime`: string (Daily availability end time, e.g., "17:00")
   - `minBookingMins`: number (Minimum allowed booking duration in minutes)
   - `maxBookingMins`: number (Maximum standard booking duration in minutes; extended requests may exceed this with Admin/Registrar approval)
+  - `isCollapsible`: boolean (Whether this room can be combined with one other room; defaults to false for new rooms)
+  - `collapsibleWithRoomId`: string (The paired room document ID, or an empty string; each pair points to the other room. Pairing requires the same building, floor, room-code prefix, and immediately adjacent trailing room number, such as 122 or 124 for 123.)
+  - The Buildings & Rooms form saves both ends of the pair in a Firestore transaction after the existing facility save, so pairing works with the currently deployed `manageFacility` callable. Clearing the checkbox or deleting one room clears the surviving partner's link. These direct pair updates follow the currently deployed top-level write policy and do not create facility audit-log entries until the updated callable is deployed.
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
 

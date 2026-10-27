@@ -106,8 +106,24 @@ service firebase.storage {
       allow delete: if request.auth != null && ownUpload() && noCurrentReference();
     }
 
+    match /reservation-evidence/{reservationId}/{fileName} {
+      function reservation() {
+        return firestore.get(/databases/(default)/documents/reservations/$(reservationId)).data;
+      }
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && reservation().userId == request.auth.uid
+        && reservation().status in ['Approved', 'Completed']
+        && reservation().get('afterUseEvidence', {}).get('path', '') == ''
+        && fileName.matches('[0-9a-f-]+\\.(jpg|png|webp)')
+        && request.resource.size > 0 && request.resource.size <= 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+      allow update: if false;
+      allow delete: if request.auth != null && reservation().userId == request.auth.uid
+        && reservation().get('afterUseEvidence', {}).get('path', '') != 'reservation-evidence/' + reservationId + '/' + fileName;
+    }
+
     // Preserve the currently deployed policy for other storage locations.
-    // This exception must not match the private workbook namespace.
+    // This exception must not match private workbook or reservation-evidence paths.
     match /{folder}/{otherPaths=**} {
       allow read, write: if folder != 'department-workbooks' && folder != 'reservation-evidence';
     }
