@@ -1,17 +1,18 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode, type PointerEvent, type FocusEvent, type KeyboardEvent } from 'react'
+import { Fragment, useState, useEffect, useMemo, useRef, type ReactNode, type PointerEvent, type FocusEvent, type KeyboardEvent } from 'react'
 import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon, CheckIcon } from './Icons'
 import { db, auth } from '../firebase'
 import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../utils/scheduleMeetings'
 import { useScheduleRoomPlotting, type SchedulePlottingOptions } from '../hooks/useScheduleRoomPlotting'
-import { previousScheduleTerm, roomScheduleInstructor, roomScheduleLabel, roomScheduleRoom, scheduleSectionLabel, scheduleMatchesTerm } from '../utils/roomSchedule'
+import { previousScheduleTerm, roomScheduleInstructor, roomScheduleLabel, roomScheduleRoom, scheduleMatchesDepartment, scheduleSectionLabel, scheduleMatchesTerm } from '../utils/roomSchedule'
 import { collection, query, onSnapshot } from 'firebase/firestore'
 import { Button } from './Button'
+import { useSnackbar } from './Snackbar'
 import { ExtendedReservationBadge } from './ExtendedReservationBadge'
 import { SingleSelectDropdown } from './SingleSelectDropdown'
 import { DatePicker } from './DatePicker'
 import { ExcelValidationTooltip } from './ExcelValidationTooltip'
 import { scheduleRoomOverlapMessages } from '../utils/scheduleRoomOverlaps'
-import { isProvidedScheduleRoom, plotSelectionDirectionLocked, schedulePlotSelectionKey } from '../utils/schedulePlotting'
+import { isProvidedScheduleRoom, plotSelectionDirectionLocked, savedMeetingPlotStatus, schedulePlotSelectionKey } from '../utils/schedulePlotting'
 import { plotParallelRoomGroupRecommendations, plotRoomRecommendations, type PlotParallelRoomGroupOption } from '../utils/plotRoomRecommendations'
 import { parallelPlotCheckboxState, plotParallelGroup } from '../utils/plotParallelRooms'
 import { plotRoomValidationMessages } from '../utils/plotRoomValidation'
@@ -36,6 +37,8 @@ export interface PlotScheduleModalProps {
   scheduleStatuses?: readonly ('Draft' | 'Plot')[]
   hideReservationIdentity?: boolean
   plotting?: SchedulePlottingOptions
+  sectionFilter?: { departmentId: string; yearLevel: number; label: string }
+  scheduleTitle?: string
 }
 
 import {
@@ -182,13 +185,16 @@ export function PlotScheduleModal({
   hideReturnedSchedules = false,
   scheduleStatuses,
   hideReservationIdentity = false,
-  plotting
+  plotting,
+  sectionFilter,
+  scheduleTitle
 }: PlotScheduleModalProps) {
   const isInstructorMode = Boolean(member)
   const memberId = member?.id
   const memberUserId = member?.userId
   const memberMembershipId = member?.membershipId
   const memberRole = member?.role
+  const { showSnackbar } = useSnackbar()
 
   const [schedules, setSchedules] = useState<any[]>([])
   const [allSchedules, setAllSchedules] = useState<ScheduleMeetingRecord[]>([])
@@ -202,8 +208,26 @@ export function PlotScheduleModal({
   const [instructorsMap, setInstructorsMap] = useState<Map<string, string>>(new Map())
   const [userDepartmentMap, setUserDepartmentMap] = useState<Map<string, string>>(new Map())
   const [roomsMap, setRoomsMap] = useState<Map<string, string>>(new Map())
+  const plotInstructorIds = useMemo(() => sectionFilter
+    ? [...new Set(allSchedules.filter(item => item.departmentId === sectionFilter.departmentId
+      && item.yearLevel === sectionFilter.yearLevel
+      && scheduleSectionLabel(item).trim().toUpperCase() === sectionFilter.label.trim().toUpperCase())
+      .map(item => item.instructorId ?? ''))]
+    : [memberMembershipId, memberId, memberUserId].filter((id): id is string => Boolean(id)),
+  [allSchedules, sectionFilter?.departmentId, sectionFilter?.yearLevel, sectionFilter?.label, memberMembershipId, memberId, memberUserId])
   const roomPlot = useScheduleRoomPlotting(plotting, isOpen && isInstructorMode, selectedAcademicYear, selectedSemester,
-    [memberMembershipId, memberId, memberUserId].filter((id): id is string => Boolean(id)), 'schedules')
+    plotInstructorIds, 'schedules', sectionFilter)
+  const handlePlotSave = async () => {
+    const count = roomPlot.pendingCount
+    const result = await roomPlot.save()
+    if (!result) return
+    const plural = count === 1 ? 'Schedule' : `${count} schedules`
+    showSnackbar({
+      type: 'success',
+      message: result === 'unplotted' ? `${plural} returned to Draft.`
+        : result === 'updated' ? `${plural} updated.` : `${plural} plotted.`,
+    })
+  }
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
 
@@ -340,17 +364,22 @@ export function PlotScheduleModal({
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const allMeetings = scheduleMeetingRecords(snapshot.docs)
         setAllSchedules(allMeetings)
-        const fetched = allMeetings.filter(item => Boolean(item.instructorId && validInstructorIds.includes(item.instructorId)))
+        const fetched = allMeetings.filter(item => sectionFilter
+          ? item.departmentId === sectionFilter.departmentId && scheduleMatchesDepartment(item, member?.department)
+            && item.yearLevel === sectionFilter.yearLevel
+            && scheduleSectionLabel(item).trim().toUpperCase() === sectionFilter.label.trim().toUpperCase()
+          : Boolean(item.instructorId && validInstructorIds.includes(item.instructorId)))
         fetched.sort((a: any, b: any) => (a.orderIndex || 0) - (b.orderIndex || 0))
         setSchedules(fetched)
         setScheduleLoadError('')
         schedulesLoaded = true
         if (reservationsLoaded) setIsLoading(false)
       }, (err) => {
-        console.error('Error loading instructor schedules:', err)
+        console.error('Error loading schedules:', err)
         setAllSchedules([])
         setSchedules([])
-        setScheduleLoadError('The instructor schedule could not be loaded. Close and reopen the schedule to retry.')
+        setScheduleLoadError(sectionFilter ? 'The section schedule could not be loaded. Close and reopen the schedule to retry.'
+          : 'The instructor schedule could not be loaded. Close and reopen the schedule to retry.')
         schedulesLoaded = true
         if (reservationsLoaded) setIsLoading(false)
       })
@@ -388,7 +417,8 @@ export function PlotScheduleModal({
 
     setSchedules([])
     setIsLoading(false)
-  }, [isOpen, isInstructorMode, memberMembershipId, memberId, memberUserId, memberRole, showWeekCalendar])
+  }, [isOpen, isInstructorMode, memberMembershipId, memberId, memberUserId, memberRole, member?.department, showWeekCalendar,
+    sectionFilter?.departmentId, sectionFilter?.yearLevel, sectionFilter?.label])
 
   // 5. Filter Schedules by Academic Year & Semester
   const filteredSchedules = useMemo(() => {
@@ -415,6 +445,14 @@ export function PlotScheduleModal({
         room: pending.roomId ? roomPlot.labels.get(pending.roomId) || meeting.room : '' } : meeting
     }),
   [allSchedules, selectedAcademicYear, selectedSemester, roomPlot.pending, roomPlot.labels])
+  const plottingTargets = useMemo(() => {
+    if (!sectionFilter) return filteredSchedules
+    const termMeetings = allSchedules.filter(meeting => scheduleMatchesTerm(meeting, selectedAcademicYear, selectedSemester))
+    const linked = filteredSchedules.flatMap(meeting => plotParallelGroup(termMeetings, roomPlot.rooms, meeting))
+    return [...new Map([...filteredSchedules, ...linked]
+      .filter(meeting => meeting.departmentId === sectionFilter.departmentId)
+      .map(meeting => [meeting.id, meeting])).values()]
+  }, [allSchedules, filteredSchedules, sectionFilter?.departmentId, selectedAcademicYear, selectedSemester, roomPlot.rooms])
   const previousTermMeetings = useMemo(() => {
     const previous = previousScheduleTerm(selectedAcademicYear?.academicYear ?? '', selectedSemester)
     if (!previous) return []
@@ -431,11 +469,11 @@ export function PlotScheduleModal({
     ? plotRoomValidationMessages(proposedMeetings, roomPlot.rooms, plotting?.departmentCode ?? '') : new Map<string, string[]>(),
   [proposedMeetings, roomPlot.rooms, roomPlot.enabled, roomPlot.ready, plotting?.departmentCode])
   const roomRecommendations = useMemo(() => roomPlot.enabled && roomPlot.ready
-    ? plotRoomRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules, previousTermMeetings) : new Map<string, readonly string[]>(),
-  [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled, roomPlot.ready, roomValidationMessages, previousTermMeetings])
+    ? plotRoomRecommendations(proposedMeetings, roomPlot.rooms, plottingTargets, previousTermMeetings) : new Map<string, readonly string[]>(),
+  [proposedMeetings, roomPlot.rooms, plottingTargets, roomPlot.enabled, roomPlot.ready, roomValidationMessages, previousTermMeetings])
   const parallelRoomRecommendations = useMemo(() => roomPlot.enabled && roomPlot.ready
-    ? plotParallelRoomGroupRecommendations(proposedMeetings, roomPlot.rooms, filteredSchedules, roomValidationMessages, previousTermMeetings) : new Map<string, readonly PlotParallelRoomGroupOption[]>(),
-  [proposedMeetings, roomPlot.rooms, filteredSchedules, roomPlot.enabled, roomPlot.ready, roomValidationMessages, previousTermMeetings])
+    ? plotParallelRoomGroupRecommendations(proposedMeetings, roomPlot.rooms, plottingTargets, roomValidationMessages, previousTermMeetings) : new Map<string, readonly PlotParallelRoomGroupOption[]>(),
+  [proposedMeetings, roomPlot.rooms, plottingTargets, roomPlot.enabled, roomPlot.ready, roomValidationMessages, previousTermMeetings])
   const overlapMessages = useMemo(() => {
     return roomPlot.enabled ? roomValidationMessages : scheduleRoomOverlapMessages(proposedMeetings,
       meeting => roomPlot.labels.get(meeting.roomId ?? '') || roomScheduleRoom(meeting, roomsMap))
@@ -475,17 +513,17 @@ export function PlotScheduleModal({
     }
   }
 
-  const getScheduleStatusClasses = (meeting: ScheduleMeetingRecord, children: ScheduleMeetingRecord[] = []) => {
+  const getScheduleStatusClasses = (meeting: ScheduleMeetingRecord, children: ScheduleMeetingRecord[] = [], day?: string) => {
     if (groupOverlapMessages([meeting, ...children]).length) return 'bg-rose-100 border-rose-500 ring-1 ring-rose-400'
-    const s = getMeetingStatus(meeting)
+    const s = day && meeting.source === 'workbook' && meeting.schemaVersion === 2 ? savedMeetingPlotStatus(meeting, day) : getMeetingStatus(meeting)
     if (s === 'Plot') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
     if (s === 'Revise' || s === 'Revised') return 'bg-amber-50 border-amber-300'
     if (s === 'Return' || s === 'Returned') return 'bg-rose-50 border-rose-300'
     return 'bg-slate-100 border-slate-300' // Draft
   }
 
-  const getPdfStatusStyles = (meeting: Parameters<typeof getMeetingStatus>[0]) => {
-    const s = getMeetingStatus(meeting)
+  const getPdfStatusStyles = (meeting: ScheduleMeetingRecord, day: string) => {
+    const s = meeting.source === 'workbook' && meeting.schemaVersion === 2 ? savedMeetingPlotStatus(meeting, day) : getMeetingStatus(meeting)
     if (s === 'Plot') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
     if (s === 'Revise' || s === 'Revised') return { backgroundColor: '#fffbeb', borderColor: '#fcd34d' }
     if (s === 'Return' || s === 'Returned') return { backgroundColor: '#fff1f2', borderColor: '#fda4af' }
@@ -494,17 +532,26 @@ export function PlotScheduleModal({
 
   const getRoomName = (meeting: { roomId?: string; room?: unknown }) =>
     (meeting.roomId ? roomsMap.get(meeting.roomId) : '') || (typeof meeting.room === 'string' ? meeting.room.trim() : '')
+  const visibleParallelMembers = (meeting: ScheduleMeetingRecord, children: ScheduleMeetingRecord[]) => {
+    if (!sectionFilter) return [meeting, ...children]
+    const termMeetings = allSchedules.filter(item => scheduleMatchesTerm(item, selectedAcademicYear, selectedSemester))
+    const linked = plotParallelGroup(termMeetings, roomPlot.rooms, meeting)
+    return [...new Map([meeting, ...children, ...linked].map(item => [item.id, item])).values()]
+  }
+  const renderSectionInstructor = (meeting: ScheduleMeetingRecord) => sectionFilter && (
+    <span className="truncate">Inst: <span className="font-medium text-gray-700" title={roomScheduleInstructor(meeting, instructorsMap)}>{roomScheduleInstructor(meeting, instructorsMap).toUpperCase()}</span></span>
+  )
 
-  const renderPlotCheckbox = (meeting: ScheduleMeetingRecord, parallel = false) => {
+  const renderPlotCheckbox = (meeting: ScheduleMeetingRecord, day: string, parallel = false) => {
     if (!roomPlot.enabled || meeting.source !== 'workbook' || meeting.schemaVersion !== 2) return null
     const termMeetings = allSchedules.filter(item => scheduleMatchesTerm(item, selectedAcademicYear, selectedSemester))
     const members = parallel ? plotParallelGroup(termMeetings, roomPlot.rooms, meeting)
       : termMeetings.filter(item => schedulePlotSelectionKey(item) === schedulePlotSelectionKey(meeting))
-    const state = parallel ? parallelPlotCheckboxState(members, roomPlot.rooms, roomPlot.pending) : null
+    const state = parallel ? parallelPlotCheckboxState(members, roomPlot.rooms, roomPlot.pending, day) : null
     const hasRoom = Boolean(roomPlot.selected(meeting))
-    const marked = state ? state.checked : hasRoom && roomPlot.marked(meeting)
+    const marked = state ? state.checked : hasRoom && roomPlot.marked(meeting, day)
     const errors = groupOverlapMessages(members)
-    const savedPlotted = members.length > 0 && members.every(item => item.status === 'Plot')
+    const savedPlotted = members.length > 0 && members.every(item => savedMeetingPlotStatus(item, day) === 'Plot')
     const directionLocked = plotSelectionDirectionLocked(roomPlot.actionMode, marked, savedPlotted)
     const revertingUnplot = roomPlot.actionMode === 'unplot' && !marked && savedPlotted
     const blocked = (state ? !state.valid : !hasRoom) || !marked && errors.length > 0 && !revertingUnplot || directionLocked
@@ -513,7 +560,7 @@ export function PlotScheduleModal({
       : `${marked ? 'Return' : 'Mark'} ${meeting.subjectCode || 'schedule'}${parallel ? ' parallel group' : ''} ${marked ? 'to Draft' : 'for plotting'}`
     return <button type="button" role="checkbox" aria-checked={marked} aria-label={label} title={label}
       disabled={!roomPlot.permitted || !roomPlot.ready || roomPlot.saving || blocked}
-      onClick={event => { event.stopPropagation(); if (blocked) return; if (parallel) roomPlot.toggleMarkedGroup(members, errors); else roomPlot.toggleMarked(meeting, errors) }}
+      onClick={event => { event.stopPropagation(); if (blocked) return; if (parallel) roomPlot.toggleMarkedGroup(members, errors, day); else roomPlot.toggleMarked(meeting, errors, day) }}
       className={`ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded border focus-visible:outline-2 focus-visible:outline-[var(--brand-color)] disabled:cursor-default ${marked ? 'border-[var(--brand-color)] bg-[var(--brand-color)] text-white' : 'border-gray-300 bg-white text-gray-500 enabled:hover:border-[var(--brand-color)]'}`}>
       {marked && <CheckIcon className="h-3.5 w-3.5" />}
     </button>
@@ -659,6 +706,45 @@ export function PlotScheduleModal({
     return grid
   }, [timeSlots, filteredSchedules, activeWeekReservations, showWeekCalendar, weekInfo.weekDays])
 
+  // Keep the 90-minute labels while rendering meetings that cross rows once.
+  const slotGroupsByDay = useMemo(() => {
+    const groups: Record<string, Array<{ endIndex: number; schedules: typeof scheduleGrid[string][string] } | null>> = {}
+
+    DAYS.forEach(day => {
+      const dayGroups = Array.from({ length: timeSlots.length }, () => null as { endIndex: number; schedules: typeof scheduleGrid[string][string] } | null)
+
+      for (let startIndex = 0; startIndex < timeSlots.length;) {
+        let endIndex = startIndex
+
+        for (let index = startIndex; index <= endIndex; index++) {
+          const schedules = scheduleGrid[timeSlots[index]]?.[day] || []
+          schedules.forEach(schedule => {
+            for (let nextIndex = endIndex + 1; nextIndex < timeSlots.length && isScheduleInSlot(schedule, timeSlots[nextIndex]); nextIndex++) {
+              endIndex = nextIndex
+            }
+          })
+        }
+
+        const uniqueSchedules = new Map<string, typeof scheduleGrid[string][string][number]>()
+        for (let index = startIndex; index <= endIndex; index++) {
+          const schedules = scheduleGrid[timeSlots[index]]?.[day] || []
+          schedules.forEach(schedule => {
+            const identity = schedule.id ?? schedule.docId ?? `${schedule.subjectCode}-${schedule.startTime}-${schedule.endTime}-${scheduleSectionLabel(schedule)}`
+            const key = `${schedule._itemType}:${identity}`
+            if (!uniqueSchedules.has(key)) uniqueSchedules.set(key, schedule)
+          })
+        }
+
+        dayGroups[startIndex] = { endIndex, schedules: Array.from(uniqueSchedules.values()) }
+        startIndex = endIndex + 1
+      }
+
+      groups[day] = dayGroups
+    })
+
+    return groups
+  }, [timeSlots, scheduleGrid])
+
   const academicYearOptions = useMemo(() => {
     return academicYears.map(y => y.academicYear)
   }, [academicYears])
@@ -746,7 +832,7 @@ export function PlotScheduleModal({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#ffffff', margin: 0 }}>
-                  {`${member?.name}'s Schedule`}
+                  {scheduleTitle || `${member?.name}'s Schedule`}
                 </h2>
 
               </div>
@@ -784,7 +870,7 @@ export function PlotScheduleModal({
                 </tr>
               </thead>
               <tbody>
-                {timeSlots.map(slot => {
+                {timeSlots.map((slot, slotIndex) => {
                   const [start, end] = slot.split('-')
                   return (
                     <tr key={slot}>
@@ -795,11 +881,14 @@ export function PlotScheduleModal({
                         </div>
                       </td>
                       {DAYS.map(day => {
-                        const daySchedules = scheduleGrid[slot]?.[day] || []
+                        const slotGroup = slotGroupsByDay[day][slotIndex]
+                        if (!slotGroup) return null
+                        const daySchedules = slotGroup.schedules
+                        const span = slotGroup.endIndex - slotIndex + 1
                         const isSelected = false
                         if (daySchedules.length === 0) {
                           return (
-                            <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
+                            <td key={day} rowSpan={span} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
                               <div style={{ height: '100%' }} />
                             </td>
                           )
@@ -833,11 +922,11 @@ export function PlotScheduleModal({
                         })
 
                         const slotStartMins = timeToMins(start)
-                        const slotEndMins = timeToMins(end)
+                        const slotEndMins = timeToMins(timeSlots[slotGroup.endIndex].split('-')[1])
                         const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
 
                         return (
-                          <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top' }}>
+                          <td key={day} rowSpan={span} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top' }}>
                             <div style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
                               {grouped.map((group, idx) => {
                                 const itemStartMins = Math.max(slotStartMins, timeToMins(group.parent.startTime))
@@ -873,7 +962,7 @@ export function PlotScheduleModal({
                                   )
                                 }
 
-                                const pdfStyles = getPdfStatusStyles(group.parent)
+                                const pdfStyles = getPdfStatusStyles(group.parent, day)
 
                                 return group.parent.type === 'parallel' ? (
                                   <div key={idx} style={{ gridRow: gridRowStyle, backgroundColor: pdfStyles.backgroundColor, border: `1px solid ${pdfStyles.borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -955,7 +1044,7 @@ export function PlotScheduleModal({
           <div>
             <div className="flex items-center gap-2.5">
               <h3 className="text-xl font-bold tracking-tight text-white">
-                {`${member?.name}'s Schedule`}
+                {scheduleTitle || `${member?.name}'s Schedule`}
               </h3>
 
             </div>
@@ -1113,28 +1202,34 @@ export function PlotScheduleModal({
                 </tr>
               </thead>
               <tbody className="contents">
-                {timeSlots.map(slot => {
+                {timeSlots.map((slot, slotIndex) => {
                   const [start, end] = slot.split('-')
                   return (
                     <tr key={slot} className="contents group">
-                      <td className="px-3 py-2 text-xs font-bold text-gray-700 border-b border-r border-gray-300 align-middle whitespace-nowrap bg-gray-50/60 group-hover:bg-gray-100/70 transition-colors h-full flex items-center justify-center">
+                      <td className="px-3 py-2 text-xs font-bold text-gray-700 border-b border-r border-gray-300 align-middle whitespace-nowrap bg-gray-50/60 group-hover:bg-gray-100/70 transition-colors h-full flex items-center justify-center" style={{ gridColumn: 1, gridRow: slotIndex + 2 }}>
                         <div className="flex flex-col items-center justify-center gap-1">
                           <span className="text-gray-900 font-bold text-xs">{formatTime(start)}</span>
                           <span className="text-gray-900 font-bold text-xs">{formatTime(end)}</span>
                         </div>
                       </td>
-                      {DAYS.map(day => {
-                        const daySchedules = scheduleGrid[slot]?.[day] || []
+                      {DAYS.map((day, dayIndex) => {
+                        const slotGroup = slotGroupsByDay[day][slotIndex]
+                        if (!slotGroup) return null
+                        const daySchedules = slotGroup.schedules
+                        const spansRows = slotGroup.endIndex > slotIndex
+                        const cellPosition = { gridColumn: dayIndex + 2, gridRow: `${slotIndex + 2} / span ${slotGroup.endIndex - slotIndex + 1}` }
+                        const columnBorder = dayIndex === DAYS.length - 1 ? 'border-r-0' : 'border-r'
                         const isSelected = false
 
                         if (daySchedules.length === 0) {
                           return (
                             <td
                               key={day}
-                              className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors h-full flex flex-col min-w-0 ${isSelected
+                              className={`px-2.5 py-2 border-b ${columnBorder} border-gray-300 align-top transition-colors h-full flex flex-col min-w-0 ${isSelected
                                   ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
                                   : 'bg-white group-hover:bg-gray-50/50'
                                 }`}
+                              style={cellPosition}
                             >
                               <div className="flex-1 h-full" />
                             </td>
@@ -1170,7 +1265,7 @@ export function PlotScheduleModal({
                         })
 
                         const slotStartMins = timeToMins(start)
-                        const slotEndMins = timeToMins(end)
+                        const slotEndMins = timeToMins(timeSlots[slotGroup.endIndex].split('-')[1])
                         const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
 
                         const isSingleFullSlot = grouped.length === 1 &&
@@ -1186,13 +1281,23 @@ export function PlotScheduleModal({
                           : 'auto';
 
                         return (
+                          <Fragment key={day}>
+                          {spansRows && (
+                            <td
+                              key={`${day}-grid`}
+                              className={`px-2.5 py-2 border-b ${columnBorder} border-gray-300 align-top transition-colors h-full flex flex-col min-w-0 bg-white group-hover:bg-gray-50/50`}
+                              style={cellPosition}
+                            >
+                              <div className="flex-1 h-full" />
+                            </td>
+                          )}
                           <td
                             key={day}
-                            className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors min-w-0 h-full grid gap-1 ${isSelected
+                            className={`px-2.5 py-2 align-top transition-colors min-w-0 h-full grid gap-1 ${spansRows ? 'relative z-10' : `border-b ${columnBorder} border-gray-300`} ${isSelected && !spansRows
                                 ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
-                                : 'bg-white group-hover:bg-gray-50/50'
+                                : spansRows ? '' : 'bg-white group-hover:bg-gray-50/50'
                               }`}
-                            style={{ gridTemplateRows: gridRowsStyle }}
+                            style={{ ...cellPosition, gridTemplateRows: gridRowsStyle }}
                           >
                             {grouped.map((group, idx) => {
                               const itemStartMins = Math.max(slotStartMins, timeToMins(group.parent.startTime))
@@ -1242,22 +1347,23 @@ export function PlotScheduleModal({
                               }
 
                               return group.parent.type === 'parallel' ? (
-                                <div data-schedule-meeting {...overlapProps([group.parent, ...group.children])} key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-max overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent, group.children)}`}>
+                                <div data-schedule-meeting {...overlapProps(visibleParallelMembers(group.parent, group.children))} key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-max overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent, group.children, day)}`}>
                                   <div className="flex flex-col focus:outline-none min-w-0">
                                     <div className="flex flex-row items-center gap-1.5 min-w-0">
                                       <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                       <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
                                         {scheduleCardLabel(group.parent)}
                                       </span>
-                                      {renderPlotCheckbox(group.parent, true)}
+                                      {renderPlotCheckbox(group.parent, day, true)}
                                     </div>
                                   </div>
                                   <div className="mt-2 flex flex-col gap-2 border-t border-[var(--brand-color)]/20 pt-2 cursor-default min-w-0" onClick={e => e.stopPropagation()}>
-                                    {[group.parent, ...group.children].map((item, iIdx) => (
+                                    {visibleParallelMembers(group.parent, group.children).map((item, iIdx) => (
                                       <div key={iIdx} className={`flex flex-col pl-2 border-l-2 min-w-0 ${overlapMessages.has(item.id) ? 'border-rose-500 bg-rose-200/60' : 'border-[var(--brand-color)]/30'}`}>
                                         <div className="flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
-                                          <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
+                                          <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(item.startTime || '')} - {formatTime(item.endTime || '')}</span></span>
                                           <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>
+                                          {renderSectionInstructor(item)}
                                           {renderMeetingRoom(item)}
                                           {!isInstructorMode && item.department && (
                                             <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
@@ -1268,17 +1374,18 @@ export function PlotScheduleModal({
                                   </div>
                                 </div>
                               ) : group.children.length > 0 ? (
-                                <div data-schedule-meeting {...overlapProps([group.parent, ...group.children])} key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent, group.children)}`}>
+                                <div data-schedule-meeting {...overlapProps([group.parent, ...group.children])} key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-all min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent, group.children, day)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
                                       {scheduleCardLabel(group.parent)}
                                     </span>
-                                    {renderPlotCheckbox(group.parent)}
+                                    {renderPlotCheckbox(group.parent, day)}
                                   </div>
                                   <div className="mt-1 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                     <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></span>
                                     <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(group.parent)}</span></span>
+                                    {renderSectionInstructor(group.parent)}
                                     {renderMeetingRoom(group.parent)}
                                     {!isInstructorMode && group.parent.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
@@ -1291,6 +1398,7 @@ export function PlotScheduleModal({
                                         <div className="mt-0.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0">
                                           <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(child.startTime)} - {formatTime(child.endTime)}</span></span>
                                           <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(child)}</span></span>
+                                          {renderSectionInstructor(child)}
                                           {renderMeetingRoom(child)}
                                           {!isInstructorMode && child.department && (
                                             <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{child.department}</span></span>
@@ -1301,17 +1409,18 @@ export function PlotScheduleModal({
                                   </div>
                                 </div>
                               ) : (
-                                <div data-schedule-meeting {...overlapProps([group.parent])} key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent)}`}>
+                                <div data-schedule-meeting {...overlapProps([group.parent])} key={idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 min-h-0 overflow-hidden ${roomPlot.enabled ? 'w-full max-w-full' : ''} ${getScheduleStatusClasses(group.parent, [], day)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate">{group.parent.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
                                       {scheduleCardLabel(group.parent)}
                                     </span>
-                                    {renderPlotCheckbox(group.parent)}
+                                    {renderPlotCheckbox(group.parent, day)}
                                   </div>
                                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
                                     <span className="truncate">Time: <span className="font-medium text-gray-700">{formatTime(group.parent.startTime)} - {formatTime(group.parent.endTime)}</span></span>
                                     <span className="truncate">Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(group.parent)}</span></span>
+                                    {renderSectionInstructor(group.parent)}
                                     {renderMeetingRoom(group.parent)}
                                     {!isInstructorMode && group.parent.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{group.parent.department}</span></span>
@@ -1321,6 +1430,7 @@ export function PlotScheduleModal({
                               )
                             })}
                           </td>
+                          </Fragment>
                         )
                       })}
                     </tr>
@@ -1345,7 +1455,7 @@ export function PlotScheduleModal({
           </div>
           <div className="flex items-center gap-3">
             {roomPlot.enabled ? (
-              <Button type="button" variant="primary" onClick={() => { void roomPlot.save() }}
+              <Button type="button" variant="primary" onClick={() => { void handlePlotSave() }}
                 disabled={isLoading || Boolean(scheduleLoadError) || !roomPlot.ready || !roomPlot.permitted || roomPlot.saving || !roomPlot.pendingCount || roomPlot.needsPlotApproval || Boolean(livePlotError) || memberRole === 'Dean'}
                 className="w-45 px-4 text-sm flex items-center justify-center gap-2 !bg-[var(--brand-color)] hover:!bg-[var(--brand-color-hover)] text-white shadow-sm disabled:opacity-50 cursor-pointer"
                 icon={roomPlot.saving ? <SpinnerIcon className="h-4 w-4 animate-spin" /> : <CheckCircleIcon className="h-4 w-4" />}>

@@ -108,6 +108,62 @@ test("room edits log every changed property with server-read before values", asy
   assert.equal(fake.documents.get("rooms/room").status, "Maintenance");
 });
 
+test("collapsible rooms are paired and unpaired on both records", async () => {
+  const fake = fixture();
+  const partner = { ...room, name: "PTC 202", code: "PTC-202" };
+  fake.documents.set("rooms/partner", partner);
+  await manageFacilityRecords(fake.db, "actor", request("update_room", {
+    targetId: "room", data: { ...room, isCollapsible: true, collapsibleWithRoomId: "partner" },
+  }));
+  assert.equal(fake.documents.get("rooms/room").collapsibleWithRoomId, "partner");
+  assert.equal(fake.documents.get("rooms/partner").collapsibleWithRoomId, "room");
+  assert.equal(fake.logs().length, 2);
+
+  await manageFacilityRecords(fake.db, "actor", request("update_room", {
+    operationId: "op-2", targetId: "room", data: { ...room, isCollapsible: false, collapsibleWithRoomId: "" },
+  }));
+  assert.equal(fake.documents.get("rooms/room").isCollapsible, false);
+  assert.equal(fake.documents.get("rooms/partner").isCollapsible, false);
+  assert.equal(fake.documents.get("rooms/partner").collapsibleWithRoomId, "");
+});
+
+test("creating a collapsible room links the existing partner in the same transaction", async () => {
+  const fake = fixture();
+  await manageFacilityRecords(fake.db, "actor", request("create_room", {
+    targetId: "new-room", data: {
+      ...room, name: "PTC 202", code: "PTC-202", isCollapsible: true, collapsibleWithRoomId: "room",
+    },
+  }));
+  assert.equal(fake.documents.get("rooms/new-room").collapsibleWithRoomId, "room");
+  assert.equal(fake.documents.get("rooms/room").collapsibleWithRoomId, "new-room");
+  assert.equal(fake.documents.get("logs/facility_op-1").action, "facility.room_created");
+});
+
+test("collapsible pairing rejects occupied and different-floor rooms and cleans up bulk deletion", async () => {
+  const fake = fixture();
+  fake.documents.set("rooms/partner", { ...room, name: "PTC 202", code: "PTC-202" });
+  fake.documents.set("rooms/other", { ...room, name: "PTC 203", code: "PTC-203", floor: 3 });
+  fake.documents.set("rooms/nonadjacent", { ...room, name: "PTC 205", code: "PTC-205" });
+  await assert.rejects(manageFacilityRecords(fake.db, "actor", request("update_room", {
+    targetId: "room", data: { ...room, isCollapsible: true, collapsibleWithRoomId: "nonadjacent" },
+  })), { code: "failed-precondition" });
+  await assert.rejects(manageFacilityRecords(fake.db, "actor", request("update_room", {
+    targetId: "room", data: { ...room, isCollapsible: true, collapsibleWithRoomId: "other" },
+  })), { code: "failed-precondition" });
+  fake.documents.get("rooms/partner").collapsibleWithRoomId = "other";
+  await assert.rejects(manageFacilityRecords(fake.db, "actor", request("update_room", {
+    targetId: "room", data: { ...room, isCollapsible: true, collapsibleWithRoomId: "partner" },
+  })), { code: "failed-precondition" });
+  fake.documents.get("rooms/partner").collapsibleWithRoomId = "room";
+  fake.documents.get("rooms/partner").isCollapsible = true;
+  fake.documents.get("rooms/room").collapsibleWithRoomId = "partner";
+  fake.documents.get("rooms/room").isCollapsible = true;
+  await manageFacilityRecords(fake.db, "actor", request("delete_rooms", { buildingId: "building", roomIds: ["room"] }));
+  assert.equal(fake.documents.has("rooms/room"), false);
+  assert.equal(fake.documents.get("rooms/partner").collapsibleWithRoomId, "");
+  assert.equal(fake.documents.get("rooms/partner").isCollapsible, false);
+});
+
 test("room deletion preserves its snapshot and comments and returns the committed image for cleanup", async () => {
   const fake = fixture();
   const result = await manageFacilityRecords(fake.db, "actor", request("delete_room", { targetId: "room" }));

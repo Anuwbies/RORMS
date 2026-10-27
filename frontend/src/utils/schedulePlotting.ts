@@ -25,6 +25,7 @@ export interface PlotAssignment {
   expectedRoomId: string
   expectedRevision: string
   targetStatus?: 'Draft' | 'Plot'
+  day?: string
   /** Local staging metadata; never persisted on the schedule document. */
   parallelGroupKey?: string
 }
@@ -45,9 +46,13 @@ export const plotScheduleRevision = (schedule: Record<string, unknown>) => JSON.
   schedule.workbookRevisionId ?? '', readRegistrarPlot(schedule.registrarPlot)?.revisionId ?? '',
 ])
 
-export const schedulePlotSelectionKey = (meeting: ScheduleMeetingRecord) => JSON.stringify([
+export const schedulePlotSelectionKey = (meeting: ScheduleMeetingRecord, day?: string) => JSON.stringify([
   meeting.sourceScheduleId || meeting.id, plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>),
+  ...(day && (meeting.days?.length ?? 0) > 1 ? [day] : []),
 ])
+
+export const savedMeetingPlotStatus = (meeting: ScheduleMeetingRecord, day?: string): 'Draft' | 'Plot' =>
+  day && meeting.statusByDay?.[day] ? meeting.statusByDay[day] : meeting.status === 'Plot' ? 'Plot' : 'Draft'
 
 export function plotScheduleCollege(meeting: Record<string, unknown>): string {
   const college = typeof meeting.college === 'string' ? meeting.college.trim() : ''
@@ -75,21 +80,23 @@ export function isProvidedScheduleRoom(meeting: ScheduleMeetingRecord): boolean 
     : keys.includes(plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>))
 }
 
-export function assignedSchedulePlotStatus(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): 'Draft' | 'Plot' {
-  const selected = pending.get(schedulePlotSelectionKey(meeting))
+export function assignedSchedulePlotStatus(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord, day?: string): 'Draft' | 'Plot' {
+  const selected = pending.get(schedulePlotSelectionKey(meeting, day))
+  const roomChoice = pending.get(schedulePlotSelectionKey(meeting))
   return selected?.targetStatus
-    ?? (selected && selected.roomId !== selected.expectedRoomId ? 'Draft' : meeting.status === 'Plot' ? 'Plot' : 'Draft')
+    ?? (roomChoice && roomChoice.roomId !== roomChoice.expectedRoomId ? 'Draft' : savedMeetingPlotStatus(meeting, day))
 }
 
-/** A checkbox stages one meeting status; identical calendar copies share its selection key. */
-export function toggleAssignedSchedulePlot(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord): Map<string, PlotAssignment> {
+/** A calendar checkbox stages the status of its own day. */
+export function toggleAssignedSchedulePlot(pending: ReadonlyMap<string, PlotAssignment>, meeting: ScheduleMeetingRecord, day?: string): Map<string, PlotAssignment> {
   const next = new Map(pending)
-  const key = schedulePlotSelectionKey(meeting)
+  const key = schedulePlotSelectionKey(meeting, day)
   const selected = pending.get(key)
-  const roomId = selected?.roomId ?? meeting.roomId ?? ''
+  const roomChoice = pending.get(schedulePlotSelectionKey(meeting))
+  const roomId = roomChoice?.roomId ?? selected?.roomId ?? meeting.roomId ?? ''
   if (!roomId || !['Draft', 'Plot'].includes(meeting.status || 'Draft')) return next
-  const targetStatus = assignedSchedulePlotStatus(pending, meeting) === 'Plot' ? 'Draft' : 'Plot'
-  if (targetStatus === (meeting.status === 'Plot' ? 'Plot' : 'Draft')) {
+  const targetStatus = assignedSchedulePlotStatus(pending, meeting, day) === 'Plot' ? 'Draft' : 'Plot'
+  if (targetStatus === savedMeetingPlotStatus(meeting, day) && roomId === (meeting.roomId ?? '')) {
     if (selected?.roomId !== selected?.expectedRoomId) {
       const { targetStatus: _status, ...roomChoice } = selected!
       next.set(key, roomChoice)
@@ -98,7 +105,8 @@ export function toggleAssignedSchedulePlot(pending: ReadonlyMap<string, PlotAssi
   }
   next.set(key, { scheduleId: String(meeting.sourceScheduleId || meeting.id), targetStatus,
     meetingKey: plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>), roomId,
-    expectedRoomId: selected?.expectedRoomId ?? meeting.roomId ?? '', expectedRevision: selected?.expectedRevision ?? plotScheduleRevision(meeting) })
+    expectedRoomId: selected?.expectedRoomId ?? meeting.roomId ?? '', expectedRevision: selected?.expectedRevision ?? plotScheduleRevision(meeting),
+    ...(day && (meeting.days?.length ?? 0) > 1 ? { day } : {}) })
   return next
 }
 

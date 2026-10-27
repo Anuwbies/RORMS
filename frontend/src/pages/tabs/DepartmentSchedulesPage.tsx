@@ -7,14 +7,17 @@ import { DataTable, type ColumnDef } from '../../components/DataTable'
 import { FilterDropdown } from '../../components/FilterDropdown'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
 import { PlotScheduleModal } from '../../components/PlotScheduleModal'
+import { SectionScheduleModal, type SectionScheduleSelection } from '../../components/SectionScheduleModal'
 import { WorkbookModal } from '../../components/WorkbookModal'
 import { SelectSemesterModal } from '../../components/SelectSemesterModal'
 import { auth, db } from '../../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import type { WorkbookMembership } from '../../utils/departmentWorkbookPermissions'
 import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../../utils/scheduleMeetings'
+import { savedMeetingPlotStatus } from '../../utils/schedulePlotting'
 import { resolveCurrentSemester } from '../../utils/academicSemester'
 import { semesterKey } from '../../utils/departmentWorkbookPaths'
+import { scheduleMatchesTerm, scheduleSectionLabel } from '../../utils/roomSchedule'
 import {
   collection,
   doc,
@@ -25,6 +28,12 @@ import {
 } from 'firebase/firestore'
 
 const SEMESTER_PHASES = ['Closed', 'Drafting', 'Plotting', 'Revision', 'Final', 'Ended'] as const
+const YEAR_LEVELS = [
+  { year: 1, label: '1st Year' },
+  { year: 2, label: '2nd Year' },
+  { year: 3, label: '3rd Year' },
+  { year: 4, label: '4th Year' },
+] as const
 
 interface Department {
   id: string
@@ -171,6 +180,7 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
   const [isWorkbookOpen, setIsWorkbookOpen] = useState(false)
   const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false)
   const [selectedMember, setSelectedMember] = useState<Member | null>(null)
+  const [selectedSection, setSelectedSection] = useState<SectionScheduleSelection | null>(null)
   const [avatarErrors, setAvatarErrors] = useState<Record<string, boolean>>({})
 
   // DataTable filtering & search
@@ -180,19 +190,84 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
 
   // Department Schedule statistics
   const [deptSchedules, setDeptSchedules] = useState<DepartmentScheduleSummary[]>([])
+  const [sectionsLoading, setSectionsLoading] = useState(false)
+  const [sectionsError, setSectionsError] = useState(false)
+
+  const sectionsByYear = useMemo(() => {
+    const sections: Record<number, string[]> = { 1: [], 2: [], 3: [], 4: [] }
+    if (!activeAcademicYear || !activeSemesterName || !selectedDepartment) return sections
+
+    const seen = new Set<string>()
+    for (const schedule of deptSchedules) {
+      if (schedule.departmentId !== selectedDepartment.id || !(schedule.academicYearId || schedule.academicYear)
+        || !(schedule.semesterKey || schedule.semester) || !scheduleMatchesTerm(schedule, activeAcademicYear, activeSemesterName)) continue
+      const year = schedule.yearLevel
+      const section = typeof schedule.classSection === 'string' ? schedule.classSection.trim() : ''
+      if (typeof year !== 'number' || !sections[year] || !section) continue
+
+      const label = scheduleSectionLabel(schedule)
+      const key = `${year}:${label.toLocaleUpperCase()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      sections[year].push(label)
+    }
+
+    for (const level of YEAR_LEVELS) sections[level.year].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+    return sections
+  }, [deptSchedules, selectedDepartment, activeAcademicYear, activeSemesterName])
+  const sectionCount = YEAR_LEVELS.reduce((total, level) => total + sectionsByYear[level.year].length, 0)
+  const yearPlotProgress = useMemo(() => {
+    const progress: Record<number, { plot: number; total: number }> = Object.fromEntries(
+      YEAR_LEVELS.map(level => [level.year, { plot: 0, total: 0 }])
+    )
+    if (!selectedDepartment || !activeAcademicYear || !activeSemesterName) return progress
+
+    const meetings = scheduleMeetingRecords(deptSchedules.map(schedule => ({ id: schedule.id, data: () => schedule })))
+    for (const meeting of meetings) {
+      const year = meeting.yearLevel
+      if (meeting.departmentId !== selectedDepartment.id || typeof year !== 'number' || !progress[year]
+        || !meeting.startTime || !meeting.endTime || !scheduleMatchesTerm(meeting, activeAcademicYear, activeSemesterName)) continue
+      for (const day of new Set(meeting.days ?? [])) {
+        progress[year].total += 1
+        if (savedMeetingPlotStatus(meeting, day) === 'Plot') progress[year].plot += 1
+      }
+    }
+    return progress
+  }, [deptSchedules, selectedDepartment, activeAcademicYear, activeSemesterName])
+  const sectionPlotProgress = useMemo(() => {
+    const progress = new Map<string, { plot: number; total: number }>()
+    if (!selectedDepartment || !activeAcademicYear || !activeSemesterName) return progress
+
+    const meetings = scheduleMeetingRecords(deptSchedules.map(schedule => ({ id: schedule.id, data: () => schedule })))
+    for (const meeting of meetings) {
+      const year = meeting.yearLevel
+      if (meeting.departmentId !== selectedDepartment.id || typeof year !== 'number' || !meeting.startTime || !meeting.endTime
+        || !scheduleMatchesTerm(meeting, activeAcademicYear, activeSemesterName)) continue
+      const section = scheduleSectionLabel(meeting).trim().toLocaleUpperCase()
+      const key = JSON.stringify([year, section])
+      const counts = progress.get(key) ?? { plot: 0, total: 0 }
+      for (const day of new Set(meeting.days ?? [])) {
+        counts.total += 1
+        if (savedMeetingPlotStatus(meeting, day) === 'Plot') counts.plot += 1
+      }
+      progress.set(key, counts)
+    }
+    return progress
+  }, [deptSchedules, selectedDepartment, activeAcademicYear, activeSemesterName])
 
   useEffect(() => {
-    if (!selectedDepartment?.code || !currentAcademicYear || !currentSemester) {
+    if (!currentAcademicYear || !currentSemester) {
       setDeptSchedules([])
+      setSectionsLoading(false)
+      setSectionsError(false)
       return
     }
 
-    const q = query(
-      collection(db, 'schedules'),
-      where('department', '==', selectedDepartment.code)
-    )
+    setDeptSchedules([])
+    setSectionsLoading(true)
+    setSectionsError(false)
 
-    const unsub = onSnapshot(q, (snap) => {
+    const unsub = onSnapshot(collection(db, 'schedules'), (snap) => {
       const allDocs = snap.docs.map((document): DepartmentScheduleSummary => {
         const data = document.data()
         return {
@@ -213,28 +288,35 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
         return matchesYear && matchesSem
       })
       setDeptSchedules(filtered)
+      setSectionsLoading(false)
+    }, error => {
+      console.error('Error loading department schedules:', error)
+      setDeptSchedules([])
+      setSectionsLoading(false)
+      setSectionsError(true)
     })
 
     return () => unsub()
-  }, [selectedDepartment?.code, currentAcademicYear?.id, currentAcademicYear?.academicYear, currentSemester])
+  }, [currentAcademicYear?.id, currentAcademicYear?.academicYear, currentSemester])
 
   const memberScheduleCounts = useMemo(() => {
-    const schedulesByInstructor = new Map<string, Map<string, 'Draft' | 'Plot'>>()
+    const meetingsByInstructor = new Map<string, Map<string, 'Draft' | 'Plot'>>()
     const meetings = scheduleMeetingRecords(deptSchedules.map(schedule => ({ id: schedule.id, data: () => schedule })))
     for (const meeting of meetings) {
       const instructorId = meeting.instructorId?.trim()
-      if (!instructorId) continue
-      const scheduleId = String(meeting.sourceScheduleId || meeting.parentId || meeting.id)
-      const schedules = schedulesByInstructor.get(instructorId) ?? new Map<string, 'Draft' | 'Plot'>()
-      schedules.set(scheduleId, meeting.status === 'Plot' ? 'Plot' : 'Draft')
-      schedulesByInstructor.set(instructorId, schedules)
+      if (!instructorId || !meeting.startTime || !meeting.endTime) continue
+      const instructorMeetings = meetingsByInstructor.get(instructorId) ?? new Map<string, 'Draft' | 'Plot'>()
+      for (const day of new Set(meeting.days ?? [])) {
+        instructorMeetings.set(JSON.stringify([meeting.id, day]), savedMeetingPlotStatus(meeting, day))
+      }
+      meetingsByInstructor.set(instructorId, instructorMeetings)
     }
     return new Map(members.map(member => {
-      const schedules = new Map<string, 'Draft' | 'Plot'>()
+      const meetings = new Map<string, 'Draft' | 'Plot'>()
       for (const id of [member.membershipId, member.id]) {
-        for (const [scheduleId, status] of schedulesByInstructor.get(id) ?? []) schedules.set(scheduleId, status)
+        for (const [meetingDay, status] of meetingsByInstructor.get(id) ?? []) meetings.set(meetingDay, status)
       }
-      return [member.membershipId, { plot: [...schedules.values()].filter(status => status === 'Plot').length, total: schedules.size }] as const
+      return [member.membershipId, { plot: [...meetings.values()].filter(status => status === 'Plot').length, total: meetings.size }] as const
     }))
   }, [deptSchedules, members])
 
@@ -524,6 +606,62 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
           </section>
         )}
 
+        <section aria-label="Sections by year level" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-base font-bold text-slate-900">Sections by Year Level</h2>
+              <p className="text-xs font-medium text-slate-500">
+                {activeAcademicYear ? `${activeAcademicYear.academicYear} • ${activeSemesterName}` : 'No active academic year'}
+              </p>
+            </div>
+            <span className="rounded-lg bg-[#f3f7ee] px-2.5 py-1 text-xs font-bold text-[#41572a]">
+              {sectionCount} {sectionCount === 1 ? 'section' : 'sections'}
+            </span>
+          </div>
+          {sectionsError ? (
+            <p role="alert" className="mt-5 border-t border-slate-300 pt-5 text-sm text-rose-700">Unable to load sections.</p>
+          ) : (
+            <div className="mt-5 grid gap-4 border-t border-slate-300 pt-5 sm:grid-cols-2 xl:grid-cols-4">
+              {YEAR_LEVELS.map(level => (
+                <div key={level.year} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div role="progressbar" aria-label={`${level.label} schedules plotted`}
+                    aria-valuemin={0} aria-valuemax={100}
+                    aria-valuenow={yearPlotProgress[level.year].total ? Math.round(yearPlotProgress[level.year].plot / yearPlotProgress[level.year].total * 100) : 0}
+                    aria-valuetext={`${yearPlotProgress[level.year].plot} of ${yearPlotProgress[level.year].total} schedule meetings plotted`}
+                    title={`${sectionsByYear[level.year].length} sections • ${yearPlotProgress[level.year].plot} of ${yearPlotProgress[level.year].total} schedule meetings plotted`}
+                    className="relative isolate flex items-center justify-between gap-2 overflow-hidden rounded-lg bg-[#f3f7ee] px-2 py-1.5">
+                    <span aria-hidden="true" className="absolute inset-y-0 left-0 z-0 bg-[#c6dbb6] transition-[width] duration-300"
+                      style={{ width: `${yearPlotProgress[level.year].total ? yearPlotProgress[level.year].plot / yearPlotProgress[level.year].total * 100 : 0}%` }} />
+                    <h3 className="relative z-10 text-sm font-bold text-slate-900">{level.label}</h3>
+                    <span className="relative z-10 text-xs font-semibold text-[#41572a]">{yearPlotProgress[level.year].plot}/{yearPlotProgress[level.year].total} plotted</span>
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {sectionsByYear[level.year].length ? sectionsByYear[level.year].map(section => {
+                      const counts = sectionPlotProgress.get(JSON.stringify([level.year, section.trim().toLocaleUpperCase()])) ?? { plot: 0, total: 0 }
+                      return (
+                        <button
+                          key={section}
+                          type="button"
+                          title={`${section}: ${counts.plot} plotted, ${counts.total - counts.plot} draft. View schedule`}
+                          aria-label={`View ${section} schedule, ${counts.plot} of ${counts.total} meetings plotted`}
+                          onClick={() => setSelectedSection({ label: section, yearLevel: level.year })}
+                          className="relative isolate min-w-0 overflow-hidden rounded-lg bg-white px-0.5 py-1 text-center text-[9px] leading-tight font-semibold tracking-tight whitespace-nowrap text-[#41572a] ring-1 ring-[#c6dbb6] transition-colors hover:bg-[#e3edda] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#62853e] cursor-pointer"
+                        >
+                          <span aria-hidden="true" className="absolute inset-y-0 left-0 z-0 bg-[#c6dbb6] transition-[width] duration-300"
+                            style={{ width: `${counts.total ? counts.plot / counts.total * 100 : 0}%` }} />
+                          <span className="relative z-10">{section}</span>
+                        </button>
+                      )
+                    }) : (
+                      <span className="col-span-3 text-xs text-slate-500">{sectionsLoading ? 'Loading sections...' : 'No sections'}</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
 
         {/* Members DataTable for Selected Department */}
         <div className="relative z-10">
@@ -636,6 +774,15 @@ export function DepartmentSchedulesPage({ userRole }: { userRole: string }) {
           setIsScheduleModalOpen(false)
           setSelectedMember(null)
         }}
+      />
+      <SectionScheduleModal
+        isOpen={Boolean(selectedSection)}
+        onClose={() => setSelectedSection(null)}
+        section={selectedSection}
+        department={selectedDepartment}
+        academicYear={activeAcademicYear?.academicYear}
+        semester={activeSemesterName}
+        plotting={workbookMembership ? { membershipId: workbookMembership.id, departmentCode: selectedDepartment?.code || '' } : undefined}
       />
     </section>
   )

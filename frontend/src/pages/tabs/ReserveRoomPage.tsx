@@ -25,6 +25,7 @@ import {
   query, 
   orderBy,
   where,
+  getDocsFromServer,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -32,6 +33,7 @@ import {
 
 import type { Room, Building, RoomStatus } from '../../types/room'
 import { DEFAULT_ROOM_IMAGE, roomStatusClasses, DAYS_OF_WEEK } from '../../types/room'
+import { reservationUsesRoom } from '../../utils/reservationRooms'
 
 function getLocalIsoDate(date: Date = new Date()) {
   const year = date.getFullYear()
@@ -136,6 +138,8 @@ interface ScheduleSlotSelection {
   startTime: string
 }
 
+const RESERVATION_CREATOR_ROLES = ['Admin', 'Registrar', 'University Administrator', 'Dean', 'Program Head', 'Instructor']
+
 function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [buildings, setBuildings] = useState<Building[]>([])
@@ -156,7 +160,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [rooms, setRooms] = useState<Room[]>([])
   const reservationAvailabilityRef = useMemo(() => doc(db, 'settings', 'reservationAvailability'), [])
   const canManageReservationAvailability = userRole === 'Admin' || userRole === 'Registrar' || userRole === 'University Administrator'
-  const canCreateReservation = userRole === 'Dean' || userRole === 'Program Head' || userRole === 'Instructor'
+  const canCreateReservation = RESERVATION_CREATOR_ROLES.includes(userRole)
   
   const maxAllowedDate = useMemo(() => {
     const today = new Date()
@@ -185,12 +189,18 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
+  useEffect(() => {
+    if (!selectedRoomInfo) return
+    const latest = rooms.find(room => room.id === selectedRoomInfo.id)
+    if (latest && latest !== selectedRoomInfo) setSelectedRoomInfo(latest)
+  }, [rooms, selectedRoomInfo?.id])
   const [isRoomScheduleModalOpen, setIsRoomScheduleModalOpen] = useState(false)
   const [selectedRoomForSchedule, setSelectedRoomForSchedule] = useState<Room | null>(null)
   const [scheduleSlotSelection, setScheduleSlotSelection] = useState<ScheduleSlotSelection | null>(null)
 
   const [reservationData, setReservationData] = useState({
     requestType: 'Standard' as ReservationRequestType,
+    includeLinkedRoom: false,
     date: getLocalIsoDate(),
     startTime: '',
     duration: 60,
@@ -201,8 +211,33 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     classSection: ''
   })
 
+  const linkedRoom = rooms.find(room => room.id === selectedRoomInfo?.collapsibleWithRoomId)
+  const bookingRoom = useMemo(() => selectedRoomInfo && reservationData.includeLinkedRoom && linkedRoom ? {
+    ...selectedRoomInfo,
+    capacity: selectedRoomInfo.capacity + linkedRoom.capacity,
+    availableDays: selectedRoomInfo.availableDays.filter(day => linkedRoom.availableDays.includes(day)),
+    startTime: selectedRoomInfo.startTime > linkedRoom.startTime ? selectedRoomInfo.startTime : linkedRoom.startTime,
+    endTime: selectedRoomInfo.endTime < linkedRoom.endTime ? selectedRoomInfo.endTime : linkedRoom.endTime,
+    minBookingMins: Math.max(selectedRoomInfo.minBookingMins, linkedRoom.minBookingMins),
+    maxBookingMins: (() => {
+      const limits = [selectedRoomInfo.maxBookingMins, linkedRoom.maxBookingMins].filter(limit => limit > 0)
+      return limits.length ? Math.min(...limits) : 0
+    })(),
+  } : selectedRoomInfo, [selectedRoomInfo, reservationData.includeLinkedRoom, linkedRoom])
+  const bookedRoomIds = useMemo(() => selectedRoomInfo
+    ? [selectedRoomInfo.id, ...(reservationData.includeLinkedRoom && selectedRoomInfo.collapsibleWithRoomId ? [selectedRoomInfo.collapsibleWithRoomId] : [])]
+    : [], [selectedRoomInfo, reservationData.includeLinkedRoom])
+  const sharedAvailableDays = selectedRoomInfo && linkedRoom
+    ? selectedRoomInfo.availableDays.filter(day => linkedRoom.availableDays.includes(day)) : []
+  const canCombineRooms = Boolean(selectedRoomInfo && linkedRoom
+    && selectedRoomInfo.status === 'Available' && linkedRoom.status === 'Available'
+    && sharedAvailableDays.length > 0
+    && Math.min(reservationTimeMinutes(selectedRoomInfo.endTime), reservationTimeMinutes(linkedRoom.endTime))
+      - Math.max(reservationTimeMinutes(selectedRoomInfo.startTime), reservationTimeMinutes(linkedRoom.startTime))
+      >= Math.max(30, selectedRoomInfo.minBookingMins, linkedRoom.minBookingMins))
+
   const busyIntervals = useMemo<{ start: number; end: number }[]>(() => {
-    if (!selectedRoomInfo || !reservationData.date) return []
+    if (!bookingRoom || !reservationData.date) return []
     const intervals: { start: number; end: number }[] = []
 
     const timeToMins = (t: string) => {
@@ -214,10 +249,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     // 1. Existing Reservations for this room on this date
     reservations.forEach((r: any) => {
       if (
-        r.roomId === selectedRoomInfo.id &&
+        bookedRoomIds.some(roomId => reservationUsesRoom(r, roomId)) &&
         r.date === reservationData.date &&
-        r.status !== 'Declined' &&
-        r.status !== 'Cancelled' &&
+        ['Pending', 'Approved'].includes(r.status) &&
         r.startTime &&
         r.endTime
       ) {
@@ -236,7 +270,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
     schedules.forEach((s: any) => {
       if (
-        s.roomId === selectedRoomInfo.id &&
+        bookedRoomIds.includes(s.roomId) &&
         s.startTime &&
         s.endTime &&
         Array.isArray(s.days) &&
@@ -250,20 +284,20 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     })
 
     return intervals
-  }, [selectedRoomInfo, reservationData.date, reservations, schedules])
+  }, [bookingRoom, reservationData.date, reservations, schedules, bookedRoomIds])
 
   const isStartTimeDisabled = useCallback((timeStr: string) => {
-    if (!timeStr || !selectedRoomInfo) return false
+    if (!timeStr || !bookingRoom) return false
     const [h, m] = timeStr.split(':').map(Number)
     const startMins = h * 60 + m
-    const minBookingMins = Math.max(30, selectedRoomInfo.minBookingMins || 30)
+    const minBookingMins = Math.max(30, bookingRoom.minBookingMins || 30)
     const proposedEndMins = startMins + minBookingMins
 
     // Check if proposed start time or minimal booking window conflicts with any busy interval
     return busyIntervals.some(interval => {
       return interval.start < proposedEndMins && interval.end > startMins
     })
-  }, [selectedRoomInfo, busyIntervals])
+  }, [bookingRoom, busyIntervals])
 
   const getFirstAvailableStartTime = useCallback((
     dateStr: string,
@@ -304,50 +338,50 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   }, [busyIntervals])
 
   const durationOptions = useMemo(() => {
-    if (!selectedRoomInfo) return []
+    if (!bookingRoom) return []
     const options = []
-    const min = Math.max(30, selectedRoomInfo.minBookingMins || 30)
-    const max = maxReservationDuration(selectedRoomInfo, reservationData.startTime, reservationData.requestType, busyIntervals)
+    const min = Math.max(30, bookingRoom.minBookingMins || 30)
+    const max = maxReservationDuration(bookingRoom, reservationData.startTime, reservationData.requestType, busyIntervals)
 
     for (let i = min; i <= max; i += 30) {
       options.push(i.toString())
     }
     return options
-  }, [selectedRoomInfo, reservationData.startTime, reservationData.requestType, busyIntervals])
+  }, [bookingRoom, reservationData.startTime, reservationData.requestType, busyIntervals])
 
   const extendedEndTime = reservationData.startTime && reservationData.duration > 0
     ? reservationTimeString(reservationTimeMinutes(reservationData.startTime) + reservationData.duration)
     : ''
-  const extendedMinEndTime = selectedRoomInfo && reservationData.startTime
-    ? reservationTimeString(reservationTimeMinutes(reservationData.startTime) + Math.max(30, selectedRoomInfo.minBookingMins || 30))
+  const extendedMinEndTime = bookingRoom && reservationData.startTime
+    ? reservationTimeString(reservationTimeMinutes(reservationData.startTime) + Math.max(30, bookingRoom.minBookingMins || 30))
     : '07:30'
-  const extendedMaxDuration = selectedRoomInfo
-    ? maxReservationDuration(selectedRoomInfo, reservationData.startTime, 'Extended', busyIntervals)
+  const extendedMaxDuration = bookingRoom
+    ? maxReservationDuration(bookingRoom, reservationData.startTime, 'Extended', busyIntervals)
     : 0
   const extendedMaxEndTime = reservationData.startTime
     ? reservationTimeString(reservationTimeMinutes(reservationData.startTime) + extendedMaxDuration)
-    : selectedRoomInfo?.endTime || '18:00'
+    : bookingRoom?.endTime || '18:00'
 
   const computedMaxStartTime = useMemo(() => {
-    if (!selectedRoomInfo) return '17:30'
-    const endTime = selectedRoomInfo.endTime || '18:00'
+    if (!bookingRoom) return '17:30'
+    const endTime = bookingRoom.endTime || '18:00'
     const [eh, em] = endTime.split(':').map(Number)
     if (isNaN(eh) || isNaN(em)) return '17:30'
     
-    const minMins = Math.max(30, selectedRoomInfo.minBookingMins || 30)
+    const minMins = Math.max(30, bookingRoom.minBookingMins || 30)
     const totalEndMins = eh * 60 + em
     
-    const [sh, sm] = (selectedRoomInfo.startTime || '07:30').split(':').map(Number)
+    const [sh, sm] = (bookingRoom.startTime || '07:30').split(':').map(Number)
     const minStartMins = isNaN(sh) || isNaN(sm) ? 450 : sh * 60 + sm
     
     const maxStartMins = Math.max(minStartMins, totalEndMins - minMins)
     const maxH = Math.floor(maxStartMins / 60).toString().padStart(2, '0')
     const maxM = (maxStartMins % 60).toString().padStart(2, '0')
     return `${maxH}:${maxM}`
-  }, [selectedRoomInfo])
+  }, [bookingRoom])
 
   const computedMinStartTime = useMemo(() => {
-    const roomStart = selectedRoomInfo?.startTime || '07:30'
+    const roomStart = bookingRoom?.startTime || '07:30'
     const [sh, sm] = roomStart.split(':').map(Number)
     const roomStartMins = isNaN(sh) || isNaN(sm) ? 450 : sh * 60 + sm
 
@@ -362,13 +396,13 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     }
 
     return roomStart
-  }, [selectedRoomInfo, reservationData.date])
+  }, [bookingRoom, reservationData.date])
 
   const minReservationDate = useMemo(() => {
-    if (!selectedRoomInfo) return getLocalIsoDate()
-    const minMins = Math.max(30, selectedRoomInfo.minBookingMins || 30)
-    const [eh, em] = (selectedRoomInfo.endTime || '18:00').split(':').map(Number)
-    const [sh, sm] = (selectedRoomInfo.startTime || '07:30').split(':').map(Number)
+    if (!bookingRoom) return getLocalIsoDate()
+    const minMins = Math.max(30, bookingRoom.minBookingMins || 30)
+    const [eh, em] = (bookingRoom.endTime || '18:00').split(':').map(Number)
+    const [sh, sm] = (bookingRoom.startTime || '07:30').split(':').map(Number)
     const endMins = (isNaN(eh) || isNaN(em)) ? 1080 : eh * 60 + em
     const startMins = (isNaN(sh) || isNaN(sm)) ? 450 : sh * 60 + sm
     const maxStartMins = Math.max(startMins, endMins - minMins)
@@ -383,7 +417,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       return getLocalIsoDate(tomorrow)
     }
     return getLocalIsoDate(now)
-  }, [selectedRoomInfo])
+  }, [bookingRoom])
 
   const [isReservationModalOpen, setIsReservationModalOpen] = useState(false)
   const reservationFormRef = useRef<HTMLDivElement>(null)
@@ -403,17 +437,17 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [isRoomRulesModalOpen, setIsRoomRulesModalOpen] = useState(false)
   const [rulesAccepted, setRulesAccepted] = useState(false)
   const attendeeFieldCount = Number.isInteger(Number(reservationData.attendees)) && Number(reservationData.attendees) > 0
-    ? Math.max(0, Math.min(Number(reservationData.attendees), selectedRoomInfo?.capacity || 0) - 1)
+    ? Math.max(0, Math.min(Number(reservationData.attendees), bookingRoom?.capacity || 0) - 1)
     : 0
   const firstAvailableStartTime = useMemo(() => {
-    if (!selectedRoomInfo || !reservationData.date) return null
-    return getFirstAvailableStartTime(reservationData.date, selectedRoomInfo)
-  }, [selectedRoomInfo, reservationData.date, getFirstAvailableStartTime])
-  const isDateFull = Boolean(selectedRoomInfo && reservationData.date && firstAvailableStartTime === null)
+    if (!bookingRoom || !reservationData.date) return null
+    return getFirstAvailableStartTime(reservationData.date, bookingRoom)
+  }, [bookingRoom, reservationData.date, getFirstAvailableStartTime])
+  const isDateFull = Boolean(bookingRoom && reservationData.date && firstAvailableStartTime === null)
 
   // Keep the selection valid when live reservations or class schedules change.
   useEffect(() => {
-    if (!isReservationModalOpen || !selectedRoomInfo) return
+    if (!isReservationModalOpen || !bookingRoom) return
     setReservationData(prev => {
       const nextStartTime = firstAvailableStartTime === null
         ? ''
@@ -422,10 +456,10 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
           : prev.startTime
       if (nextStartTime === prev.startTime) return prev
       return { ...prev, startTime: nextStartTime, duration: prev.requestType === 'Standard'
-        ? longestStandardDuration(selectedRoomInfo, nextStartTime, busyIntervals)
-        : Math.max(30, selectedRoomInfo.minBookingMins || 30) }
+        ? longestStandardDuration(bookingRoom, nextStartTime, busyIntervals)
+        : Math.max(30, bookingRoom.minBookingMins || 30) }
     })
-  }, [isReservationModalOpen, selectedRoomInfo, firstAvailableStartTime, computedMinStartTime, computedMaxStartTime, isStartTimeDisabled, busyIntervals])
+  }, [isReservationModalOpen, bookingRoom, firstAvailableStartTime, computedMinStartTime, computedMaxStartTime, isStartTimeDisabled, busyIntervals])
 
   const [successDetails, setSuccessDetails] = useState<{
     roomName: string
@@ -439,6 +473,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     attendees: number
     purpose: string
     requestType: ReservationRequestType
+    autoApprovedByRole: 'Admin' | 'University Administrator' | null
+    registrarPreRecommended: boolean
   } | null>(null)
   const [roomInfoSource, setRoomInfoSource] = useState<'main' | 'searchResults'>('main')
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -604,7 +640,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       console.error("Error fetching reservations:", error)
     })
 
-    const unsubscribeSchedules = onSnapshot(collection(db, 'schedule'), (snapshot) => {
+    const unsubscribeSchedules = onSnapshot(collection(db, 'schedules'), (snapshot) => {
       setSchedules(scheduleMeetingRecords(snapshot.docs))
     }, (error) => {
       console.error("Error fetching schedules:", error)
@@ -700,10 +736,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     const initialBusy: { start: number; end: number }[] = []
     reservations.forEach((r: any) => {
       if (
-        r.roomId === room.id &&
+        reservationUsesRoom(r, room.id) &&
         r.date === initialDate &&
-        r.status !== 'Declined' &&
-        r.status !== 'Cancelled' &&
+        ['Pending', 'Approved'].includes(r.status) &&
         r.startTime &&
         r.endTime
       ) {
@@ -731,6 +766,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
     setReservationData({
       requestType: 'Standard',
+      includeLinkedRoom: false,
       date: initialDate,
       startTime: initialStart,
       duration: longestStandardDuration(room, initialStart, initialBusy),
@@ -765,6 +801,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
     return Array.from(floors).sort((a, b) => a - b).map(String)
   }, [selectedBuildingObj])
   const totalFloors = buildings.reduce((sum, building) => sum + building.floor, 0)
+  const currentRoomInfo = rooms.find(room => room.id === selectedRoomInfo?.id) || selectedRoomInfo
 
   return (
     <section className="h-screen overflow-y-scroll custom-scrollbar bg-[var(--brand-surface)] px-4 pt-0 pb-6 sm:px-6 lg:px-8 lg:pb-8">
@@ -1120,7 +1157,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
       {/* Room Information Modal */}
       <RoomInfoModal
         isOpen={isRoomInfoModalOpen}
-        room={selectedRoomInfo}
+        room={currentRoomInfo}
         onClose={handleCloseModals}
         onBack={roomInfoSource === 'searchResults' ? () => {
           setIsRoomInfoModalOpen(false)
@@ -1233,6 +1270,27 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
             <div className="p-6 space-y-5">
               <div className="space-y-4">
+                {selectedRoomInfo.collapsibleWithRoomId && (
+                  <fieldset className="space-y-2">
+                    <legend className="text-xs font-bold uppercase tracking-widest text-gray-500">Room setup</legend>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                      <input type="radio" name="reservation-room-setup" checked={!reservationData.includeLinkedRoom}
+                        onChange={() => setReservationData(prev => ({ ...prev, includeLinkedRoom: false, startTime: '' }))}
+                        className="h-4 w-4 accent-[var(--brand-color)]" />
+                      {selectedRoomInfo.code} only
+                    </label>
+                    <label className="flex items-center gap-2 text-sm font-medium text-gray-700">
+                      <input type="radio" name="reservation-room-setup" checked={reservationData.includeLinkedRoom}
+                        disabled={!canCombineRooms}
+                        onChange={() => setReservationData(prev => ({ ...prev, includeLinkedRoom: true,
+                          date: sharedAvailableDays.includes(['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date(`${prev.date}T00:00:00`).getDay()])
+                            ? prev.date : getEarliestAvailableDate(sharedAvailableDays), startTime: '' }))}
+                        className="h-4 w-4 accent-[var(--brand-color)]" />
+                      Both rooms: {selectedRoomInfo.code} + {linkedRoom?.code || 'linked room'}
+                    </label>
+                    {!canCombineRooms && <p className="text-xs text-amber-700">The linked room is not currently available for a combined reservation.</p>}
+                  </fieldset>
+                )}
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Reservation type</label>
                   <SingleSelectDropdown
@@ -1256,7 +1314,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       onChange={(date) => {
                         let newStartTime = ''
                         let newDuration = reservationData.duration
-                        if (selectedRoomInfo) {
+                        if (bookingRoom) {
                           const newBusy: { start: number; end: number }[] = []
                           const timeToMins = (t: string) => {
                             const [h, m] = t.split(':').map(Number)
@@ -1264,10 +1322,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           }
                           reservations.forEach((r: any) => {
                             if (
-                              r.roomId === selectedRoomInfo.id &&
+                              bookedRoomIds.some(roomId => reservationUsesRoom(r, roomId)) &&
                               r.date === date &&
-                              r.status !== 'Declined' &&
-                              r.status !== 'Cancelled' &&
+                              ['Pending', 'Approved'].includes(r.status) &&
                               r.startTime &&
                               r.endTime
                             ) {
@@ -1280,7 +1337,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           const targetDay = dayAbbrs[dateObj.getDay()]
                           schedules.forEach((s: any) => {
                             if (
-                              s.roomId === selectedRoomInfo.id &&
+                              bookedRoomIds.includes(s.roomId) &&
                               s.startTime &&
                               s.endTime &&
                               Array.isArray(s.days) &&
@@ -1290,10 +1347,10 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                             }
                           })
 
-                          const firstValid = getFirstAvailableStartTime(date, selectedRoomInfo, newBusy)
+                          const firstValid = getFirstAvailableStartTime(date, bookingRoom, newBusy)
                           newStartTime = firstValid ?? ''
                           if (reservationData.requestType === 'Standard') {
-                            newDuration = longestStandardDuration(selectedRoomInfo, newStartTime, newBusy)
+                            newDuration = longestStandardDuration(bookingRoom, newStartTime, newBusy)
                           }
                         }
                         setReservationData({ ...reservationData, date, startTime: newStartTime, duration: newDuration })
@@ -1301,7 +1358,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       }}
                       minDate={minReservationDate}
                       maxDate={maxAllowedDate}
-                      allowedDays={selectedRoomInfo.availableDays}
+                      allowedDays={bookingRoom?.availableDays || []}
                       hasError={formErrors.date}
                       hideClear
                     />
@@ -1312,14 +1369,14 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Attendees <span className="text-rose-500">*</span></label>
                     <NumberInput
                       min={1}
-                      max={selectedRoomInfo.capacity}
+                      max={bookingRoom?.capacity}
                       value={reservationData.attendees}
                       onChange={(val) => {
                         let finalVal = val
-                        if (val !== '' && selectedRoomInfo.capacity) {
+                        if (val !== '' && bookingRoom?.capacity) {
                           const num = Number(val)
-                          if (num > selectedRoomInfo.capacity) {
-                            finalVal = selectedRoomInfo.capacity.toString()
+                          if (num > bookingRoom.capacity) {
+                            finalVal = bookingRoom.capacity.toString()
                           }
                         }
                         setReservationData(prev => ({
@@ -1330,7 +1387,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         if (finalVal) setFormErrors(prev => ({ ...prev, attendees: false }))
                       }}
                       icon={<UserIcon className="h-4.5 w-4.5 text-gray-400" />}
-                      placeholder={`Max ${selectedRoomInfo.capacity} pax`}
+                      placeholder={`Max ${bookingRoom?.capacity || selectedRoomInfo.capacity} pax`}
                       error={formErrors.attendees}
                     />
                   </div>
@@ -1344,8 +1401,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       value={reservationData.startTime}
                       onChange={(time) => {
                         const newDuration = reservationData.requestType === 'Standard'
-                          ? longestStandardDuration(selectedRoomInfo, time, busyIntervals)
-                          : Math.min(reservationData.duration, maxReservationDuration(selectedRoomInfo, time, 'Extended', busyIntervals))
+                          ? longestStandardDuration(bookingRoom || selectedRoomInfo, time, busyIntervals)
+                          : Math.min(reservationData.duration, maxReservationDuration(bookingRoom || selectedRoomInfo, time, 'Extended', busyIntervals))
                         setReservationData({ ...reservationData, startTime: time, duration: newDuration })
                         if (time) setFormErrors(prev => ({ ...prev, startTime: false }))
                       }}
@@ -1374,7 +1431,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         maxTime={extendedMaxEndTime}
                         minuteStep={30}
                         hasError={formErrors.duration}
-                        disabled={isDateFull || !reservationData.startTime || extendedMaxDuration < Math.max(30, selectedRoomInfo.minBookingMins || 30)}
+                        disabled={isDateFull || !reservationData.startTime || extendedMaxDuration < Math.max(30, bookingRoom?.minBookingMins || 30)}
                         hideClear
                       />
                     ) : (
@@ -1472,6 +1529,12 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       return
                     }
 
+                    if (reservationData.includeLinkedRoom && (!linkedRoom || !canCombineRooms)) {
+                      showNotification('The linked room is not available for a combined reservation.', 'warning', 'Linked Room Unavailable')
+                      return
+                    }
+                    const currentBookingRoom = bookingRoom || selectedRoomInfo
+
                     if (!reservationMembership || reservationMembership.userId !== auth.currentUser?.uid) {
                       showNotification(
                         membershipLoadError
@@ -1516,8 +1579,8 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
                     // 1. Attendees Capacity Validation
                     const attendeeCount = Number(reservationData.attendees)
-                    if (!Number.isInteger(attendeeCount) || attendeeCount <= 0 || (selectedRoomInfo.capacity && attendeeCount > selectedRoomInfo.capacity)) {
-                      showNotification(`Number of attendees must be between 1 and ${selectedRoomInfo.capacity} pax for this room.`, 'warning', 'Invalid Attendees')
+                    if (!Number.isInteger(attendeeCount) || attendeeCount <= 0 || (currentBookingRoom.capacity && attendeeCount > currentBookingRoom.capacity)) {
+                      showNotification(`Number of attendees must be between 1 and ${currentBookingRoom.capacity} pax for this room setup.`, 'warning', 'Invalid Attendees')
                       setFormErrors(prev => ({ ...prev, attendees: true }))
                       return
                     }
@@ -1530,11 +1593,11 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     }
 
                     // 2. Duration Validation
-                    if (!Number.isInteger(reservationData.duration) || reservationData.duration < Math.max(30, selectedRoomInfo.minBookingMins || 30) ||
-                        (reservationData.requestType === 'Standard' && reservationData.duration > (selectedRoomInfo.maxBookingMins || 180))) {
+                    if (!Number.isInteger(reservationData.duration) || reservationData.duration < Math.max(30, currentBookingRoom.minBookingMins || 30) ||
+                        (reservationData.requestType === 'Standard' && reservationData.duration > (currentBookingRoom.maxBookingMins || 180))) {
                       showNotification(reservationData.requestType === 'Extended'
-                        ? `Duration must be at least ${Math.max(30, selectedRoomInfo.minBookingMins || 30)} minutes and end within the room's available hours.`
-                        : `Duration must be between ${Math.max(30, selectedRoomInfo.minBookingMins || 30)} and ${selectedRoomInfo.maxBookingMins || 180} minutes.`, 'warning', 'Invalid Duration')
+                        ? `Duration must be at least ${Math.max(30, currentBookingRoom.minBookingMins || 30)} minutes and end within the room's available hours.`
+                        : `Duration must be between ${Math.max(30, currentBookingRoom.minBookingMins || 30)} and ${currentBookingRoom.maxBookingMins || 180} minutes.`, 'warning', 'Invalid Duration')
                       setFormErrors(prev => ({ ...prev, duration: true }))
                       return
                     }
@@ -1550,7 +1613,7 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
                     const selectedDayName = dayNames[selectedDateObj.getDay()]
                     
-                    if (!selectedRoomInfo.availableDays.includes(selectedDayName)) {
+                    if (!currentBookingRoom.availableDays.includes(selectedDayName)) {
                       showNotification(`The room is not available on ${selectedDayName}s.`, 'warning', 'Room Unavailable')
                       setFormErrors(prev => ({ ...prev, date: true }))
                       return
@@ -1564,12 +1627,13 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
 
                     const startMins = timeToMinutes(reservationData.startTime)
                     const endMins = startMins + reservationData.duration
-                    const roomStartMins = timeToMinutes(selectedRoomInfo.startTime || '07:30')
-                    const roomEndMins = timeToMinutes(selectedRoomInfo.endTime || '18:00')
-                    const minBookingMins = Math.max(30, selectedRoomInfo.minBookingMins || 30)
+                    const roomStartMins = timeToMinutes(currentBookingRoom.startTime || '07:30')
+                    const roomEndMins = timeToMinutes(currentBookingRoom.endTime || '18:00')
+                    const minBookingMins = Math.max(30, currentBookingRoom.minBookingMins || 30)
 
-                    if (startMins < roomStartMins || endMins > roomEndMins || startMins > roomEndMins - minBookingMins) {
-                      showNotification(`Reservation must be within the room's schedule: ${selectedRoomInfo.startTime} - ${selectedRoomInfo.endTime}. Start time cannot be after ${computedMaxStartTime}.`, 'warning', 'Invalid Time')
+                    if (!Number.isFinite(startMins) || !Number.isFinite(endMins) || endMins <= startMins
+                      || startMins < roomStartMins || endMins > roomEndMins || startMins > roomEndMins - minBookingMins) {
+                      showNotification(`Reservation must be within the room setup's schedule: ${currentBookingRoom.startTime} - ${currentBookingRoom.endTime}. Start time cannot be after ${computedMaxStartTime}.`, 'warning', 'Invalid Time')
                       setFormErrors(prev => ({ ...prev, startTime: true }))
                       return
                     }
@@ -1625,8 +1689,14 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       }
 
                       const building = buildings.find(b => b.rooms.some(r => r.id === selectedRoomInfo.id))
+                      const reservationRef = doc(collection(db, 'reservations'))
+                      const existingReservations = await getDocsFromServer(query(collection(db, 'reservations'), where('date', '==', reservationData.date)))
+                      const slotMinutes = Array.from({ length: Math.ceil(endMins / 30) - Math.floor(startMins / 30) },
+                        (_, index) => (Math.floor(startMins / 30) + index) * 30)
+                      const slotRefs = bookedRoomIds.flatMap(roomId => slotMinutes.map(minute =>
+                        doc(db, 'reservationSlots', `${reservationData.date}_${roomId}_${minute}`)))
 
-                      await runTransaction(db, async (transaction) => {
+                      const submissionResult = await runTransaction(db, async (transaction) => {
                         const availabilitySnapshot = await transaction.get(reservationAvailabilityRef)
                         if (availabilitySnapshot.exists() && availabilitySnapshot.data().isReservationEnabled === false) {
                           throw new Error('RESERVATIONS_DISABLED')
@@ -1638,28 +1708,58 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         if (!membershipSnapshot.exists() || membership?.userId !== userId || membership?.status !== 'accepted' || !department) {
                           throw new Error('MEMBERSHIP_DEPARTMENT_UNAVAILABLE')
                         }
-                        if (!['Dean', 'Program Head', 'Instructor'].includes(membership.role)) {
+                        if (!RESERVATION_CREATOR_ROLES.includes(membership.role)) {
                           throw new Error('RESERVATION_ROLE_UNAVAILABLE')
                         }
                         if (membership.role === 'Instructor' && attendeeNames.some(name => !name || name.length > 120)) {
                           throw new Error('ATTENDEE_NAMES_REQUIRED')
                         }
 
-                        if (reservationData.requestType === 'Extended') {
-                          const currentRoomSnapshot = await transaction.get(doc(db, 'rooms', selectedRoomInfo.id))
-                          const currentRoom = currentRoomSnapshot.data()
-                          if (!currentRoom || currentRoom.status !== 'Available'
-                            || !Array.isArray(currentRoom.availableDays) || !currentRoom.availableDays.includes(selectedDayName)
-                            || startMins < reservationTimeMinutes(currentRoom.startTime || '07:30')
-                            || endMins > reservationTimeMinutes(currentRoom.endTime || '18:00')
-                            || reservationData.duration < Math.max(30, currentRoom.minBookingMins || 30)
-                            || attendeeCount > currentRoom.capacity) {
-                            throw new Error('ROOM_AVAILABILITY_CHANGED')
-                          }
+                        const autoApprovalRole = membership.role === 'Admin' || membership.role === 'University Administrator'
+                          ? membership.role
+                          : null
+                        const isAutoApproved = autoApprovalRole !== null
+                        const registrarPreRecommended = membership.role === 'Registrar'
+                        const recommendationsComplete = isAutoApproved || registrarPreRecommended
+                        const [currentRooms, currentReservations, currentSlots] = await Promise.all([
+                          Promise.all(bookedRoomIds.map(roomId => transaction.get(doc(db, 'rooms', roomId)))),
+                          Promise.all(existingReservations.docs.map(existing => transaction.get(existing.ref))),
+                          Promise.all(slotRefs.map(slotRef => transaction.get(slotRef))),
+                        ])
+                        const roomRecords = currentRooms.map(snapshot => snapshot.data())
+                        if (reservationData.includeLinkedRoom && (roomRecords.length !== 2
+                          || roomRecords[0]?.collapsibleWithRoomId !== bookedRoomIds[1]
+                          || roomRecords[1]?.collapsibleWithRoomId !== bookedRoomIds[0])) {
+                          throw new Error('LINKED_ROOM_CHANGED')
+                        }
+                        const currentCapacity = roomRecords.reduce((total, room) => total + (Number(room?.capacity) || 0), 0)
+                        if (!roomRecords.length || roomRecords.some(room => !room || room.status !== 'Available'
+                          || !Array.isArray(room.availableDays) || !room.availableDays.includes(selectedDayName)
+                          || startMins < reservationTimeMinutes(room.startTime || '07:30')
+                          || endMins > reservationTimeMinutes(room.endTime || '18:00')
+                          || reservationData.duration < Math.max(30, room.minBookingMins || 30)
+                          || (reservationData.requestType === 'Standard'
+                            && reservationData.duration > (room.maxBookingMins || 180)))
+                          || attendeeCount > currentCapacity) {
+                          throw new Error('ROOM_AVAILABILITY_CHANGED')
+                        }
+                        if (currentReservations.some(snapshot => {
+                          const other = snapshot.data()
+                          return other && ['Pending', 'Approved'].includes(other.status)
+                            && bookedRoomIds.some(roomId => reservationUsesRoom(other, roomId))
+                            && reservationTimeMinutes(other.startTime) < endMins
+                            && reservationTimeMinutes(other.endTime) > startMins
+                        })) throw new Error('BOOKING_CONFLICT')
+                        const heldReservationIds = [...new Set(currentSlots.map(slot => slot.data()?.reservationId).filter((id): id is string => typeof id === 'string'))]
+                        const heldReservations = await Promise.all(heldReservationIds.map(id => transaction.get(doc(db, 'reservations', id))))
+                        if (heldReservations.some(snapshot => snapshot.exists() && ['Pending', 'Approved'].includes(snapshot.data().status))) {
+                          throw new Error('BOOKING_CONFLICT')
                         }
 
-                        transaction.set(doc(collection(db, 'reservations')), {
+                        transaction.set(reservationRef, {
                           roomId: selectedRoomInfo.id,
+                          roomIds: bookedRoomIds,
+                          includeLinkedRoom: reservationData.includeLinkedRoom,
                           buildingId: building?.id || '',
                           userId: userId,
                           date: reservationData.date,
@@ -1673,17 +1773,35 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                           subjectCode: reservationData.subjectCode.trim().toUpperCase(),
                           classSection: reservationData.classSection.trim().toUpperCase(),
                           department,
-                          status: 'Pending',
-                          deanRecommend: false,
-                          registrarRecommend: false,
-                          universityAdministratorRecommend: false,
+                          status: isAutoApproved ? 'Approved' : 'Pending',
+                          deanRecommend: recommendationsComplete,
+                          registrarRecommend: recommendationsComplete,
+                          universityAdministratorRecommend: isAutoApproved,
+                          ...(recommendationsComplete ? {
+                            recommendedBy: userId,
+                            recommendedByRole: membership.role,
+                            recommendedAt: serverTimestamp(),
+                            registrarRecommendedBy: userId,
+                            registrarRecommendedAt: serverTimestamp(),
+                          } : {}),
+                          ...(isAutoApproved ? {
+                            autoApproved: true,
+                            approvedBy: userId,
+                            approvedByRole: autoApprovalRole,
+                            approvedAt: serverTimestamp(),
+                          } : {}),
                           createdAt: serverTimestamp(),
                           updatedAt: serverTimestamp()
                         })
+                        slotRefs.forEach(slotRef => transaction.set(slotRef, {
+                          reservationId: reservationRef.id, date: reservationData.date, updatedAt: serverTimestamp(),
+                        }))
+                        return { autoApprovedByRole: autoApprovalRole, registrarPreRecommended }
                       })
 
                       const submittedInfo = {
-                        roomName: selectedRoomInfo.name,
+                        roomName: reservationData.includeLinkedRoom && linkedRoom
+                          ? `${selectedRoomInfo.name} + ${linkedRoom.name}` : selectedRoomInfo.name,
                         roomType: selectedRoomInfo.type || 'Lecture Room',
                         buildingName: building?.name || 'Building',
                         floor: selectedRoomInfo.floor,
@@ -1693,7 +1811,9 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                         duration: reservationData.duration,
                         requestType: reservationData.requestType,
                         attendees: Number(reservationData.attendees),
-                        purpose: reservationData.purpose.trim()
+                        purpose: reservationData.purpose.trim(),
+                        autoApprovedByRole: submissionResult.autoApprovedByRole,
+                        registrarPreRecommended: submissionResult.registrarPreRecommended
                       }
 
                       setIsReservationModalOpen(false)
@@ -1705,11 +1825,15 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
                       } else if (error instanceof Error && error.message === 'MEMBERSHIP_DEPARTMENT_UNAVAILABLE') {
                         showNotification('Your department is unavailable. Please refresh the page or contact an administrator.', 'error', 'Department Unavailable')
                       } else if (error instanceof Error && error.message === 'RESERVATION_ROLE_UNAVAILABLE') {
-                        showNotification('Only Deans, Program Heads, and Instructors can reserve rooms.', 'error', 'Reservation Not Allowed')
+                        showNotification('Your role cannot reserve rooms.', 'error', 'Reservation Not Allowed')
                       } else if (error instanceof Error && error.message === 'ATTENDEE_NAMES_REQUIRED') {
                         showNotification('Enter the name of every attendee before submitting the reservation.', 'error', 'Attendee Names Required')
                       } else if (error instanceof Error && error.message === 'ROOM_AVAILABILITY_CHANGED') {
-                        showNotification('The room availability or capacity changed. Please review the room and choose a valid time.', 'warning', 'Room Availability Changed')
+                        showNotification('One of the selected rooms changed its availability or capacity. Please review the room setup and time.', 'warning', 'Room Availability Changed')
+                      } else if (error instanceof Error && error.message === 'LINKED_ROOM_CHANGED') {
+                        showNotification('These rooms are no longer linked. Please review the room setup.', 'warning', 'Linked Rooms Changed')
+                      } else if (error instanceof Error && error.message === 'BOOKING_CONFLICT') {
+                        showNotification('One of the selected rooms is already reserved at this time.', 'warning', 'Time Conflict')
                       } else {
                         console.error("Error creating reservation:", error)
                         alert("Failed to submit reservation. Please try again.")
@@ -1800,11 +1924,11 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
               </div>
               <div>
                 <h3 className="text-xl font-bold text-gray-900 leading-snug">
-                  Request Sent Successfully
+                  {successDetails.autoApprovedByRole ? 'Reservation Approved' : 'Request Sent Successfully'}
                 </h3>
-                <p className="text-xs font-semibold text-amber-700">{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}Pending Dean recommendation</p>
+                <p className={`text-xs font-semibold ${successDetails.autoApprovedByRole ? 'text-emerald-700' : 'text-amber-700'}`}>{successDetails.requestType === 'Extended' ? 'Extended reservation · ' : ''}{successDetails.autoApprovedByRole ? `Automatically approved by ${successDetails.autoApprovedByRole}` : successDetails.registrarPreRecommended ? 'Awaiting University Administrator approval' : 'Pending Dean recommendation'}</p>
                 <p className="text-sm text-gray-600 font-medium mt-0.5 whitespace-nowrap">
-                  Your reservation for <span className="font-bold text-gray-900">{successDetails.roomName}</span> has been submitted.
+                  Your reservation for <span className="font-bold text-gray-900">{successDetails.roomName}</span> has been {successDetails.autoApprovedByRole ? 'approved' : 'submitted'}.
                 </p>
               </div>
             </div>

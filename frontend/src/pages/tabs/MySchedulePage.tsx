@@ -26,6 +26,7 @@ function MySchedulePage() {
   const [userRole, setUserRole] = useState<string>('')
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<AcademicYearData | null>(null)
   const [selectedSemester, setSelectedSemester] = useState<string>('1st Semester')
+  const reservationsOnly = userRole === 'Admin' || userRole === 'Registrar' || userRole === 'University Administrator'
 
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'academicYears'), (snapshot) => {
@@ -109,7 +110,7 @@ function MySchedulePage() {
       <div className="space-y-6 [&>*:not(:first-child)]:animate-in [&>*:not(:first-child)]:fade-in [&>*:not(:first-child)]:zoom-in-95 [&>*:not(:first-child)]:duration-300">
         <SectionHeader
           title="My Schedule"
-          description={userRole === 'Dean'
+          description={userRole === 'Dean' || reservationsOnly
             ? 'View your weekly room reservations.'
             : `View and manage your assigned classes, weekly timetable, and room schedule for ${selectedAcademicYear?.academicYear || 'Academic Year'} • ${selectedSemester}.`}
         />
@@ -134,6 +135,7 @@ function MySchedulePage() {
           hideReservationIdentity={true}
           initialAcademicYear={selectedAcademicYear?.academicYear}
           initialSemester={selectedSemester}
+          reservationsOnly={reservationsOnly}
         />
       </div>
     </section>

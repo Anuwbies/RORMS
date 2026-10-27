@@ -44,24 +44,31 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
     const row = retainRegistrarRooms(sourceRow, previous, collectionName !== 'schedules')
     // Approval belongs to this saved row's authored content, not recalculated
     // directory links, validation warnings, row order or workbook presentation.
-    const keepPlot = collectionName === 'schedules' && statusOverride === 'Draft' && savedRow?.status === 'Plot'
+    const keepSavedStatuses = collectionName === 'schedules' && statusOverride === 'Draft' && savedRow !== undefined
       && sourceRow.rawValues.length === 21 && Array.isArray(savedRow.rawValues) && savedRow.rawValues.length === 21
       && sameValue(sourceRow.rawValues, savedRow.rawValues)
       && sourceRow.yearLevel === savedRow.yearLevel && sourceRow.course === savedRow.course
-    const savedMeetingStatuses = new Map<string, 'Draft' | 'Plot'>()
-    if (keepPlot && Array.isArray(savedRow?.meetings)) for (const value of savedRow.meetings) {
-      if (!value || typeof value !== 'object') continue
-      const meeting = value as Record<string, unknown>
-      savedMeetingStatuses.set(plotMeetingKey(meeting as Parameters<typeof plotMeetingKey>[0]), meeting.status === 'Plot' ? 'Plot'
-        : meeting.status === 'Draft' ? 'Draft' : savedRow.status === 'Plot' ? 'Plot' : 'Draft')
+    const previousMeetings: Record<string, unknown>[] = Array.isArray(savedRow?.meetings)
+      ? savedRow.meetings.filter((value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === 'object' && !Array.isArray(value))) : []
+    const previousFor = (meeting: WorkbookScheduleRow['meetings'][number]) => {
+      const exact = previousMeetings.filter(value => plotMeetingKey(value as Parameters<typeof plotMeetingKey>[0]) === plotMeetingKey(meeting))
+      if (exact.length === 1) return exact[0]
+      if (meeting.days.length !== 1) return
+      // Older saves kept two workbook days in one meeting. Match each new day to that source meeting.
+      const splitSource = previousMeetings.filter(value => Array.isArray(value.days) && value.days.length > 1
+        && value.days.includes(meeting.days[0]) && value.format === meeting.format
+        && value.faculty === meeting.faculty && value.time === meeting.time && value.modality === meeting.modality)
+      return splitSource.length === 1 ? splitSource[0] : undefined
     }
-    const previousMeetings = Array.isArray(savedRow?.meetings) ? savedRow.meetings : []
     const meetings = collectionName === 'schedules' ? row.meetings.map((meeting, meetingIndex) => {
-      const previousMeeting = previousMeetings.length === row.meetings.length ? previousMeetings[meetingIndex] : undefined
-      const previousStatus = previousMeeting && typeof previousMeeting === 'object' ? (previousMeeting as Record<string, unknown>).status : undefined
-      return { ...meeting, status: keepPlot
-        ? savedMeetingStatuses.get(plotMeetingKey(meeting))
-          ?? (previousStatus === 'Plot' || previousStatus === 'Draft' ? previousStatus : savedRow?.status === 'Plot' ? 'Plot' as const : 'Draft' as const)
+      const previousMeeting = keepSavedStatuses ? previousFor(meeting)
+        ?? (previousMeetings.length === row.meetings.length ? previousMeetings[meetingIndex] : undefined) : undefined
+      const savedDays = previousMeeting?.statusByDay && typeof previousMeeting.statusByDay === 'object'
+        ? previousMeeting.statusByDay as Record<string, unknown> : undefined
+      const dayStatus = meeting.days.length === 1 ? savedDays?.[meeting.days[0]] : undefined
+      const previousStatus = dayStatus === 'Plot' || dayStatus === 'Draft' ? dayStatus : previousMeeting?.status
+      return { ...meeting, status: keepSavedStatuses
+        ? previousStatus === 'Plot' || previousStatus === 'Draft' ? previousStatus : savedRow?.status === 'Plot' ? 'Plot' as const : 'Draft' as const
         : 'Draft' as const }
     }) : row.meetings
     const first = meetings[0]
@@ -72,7 +79,7 @@ export async function prepareWorkbookScheduleWrites(term: DepartmentWorkbookTerm
         providedRoomKeys: [...new Set(sourceRow.meetings.filter(meeting => meeting.room.trim()).map(plotMeetingKey))] } : {}),
       departmentId: term.departmentId, department: term.departmentCode, academicYearId: term.academicYearId,
       academicYear: term.academicYear, semester: term.semester === 'sem1' ? '1st Semester' : '2nd Semester', semesterKey: term.semester,
-      orderIndex: index, status: keepPlot && meetings.some(meeting => meeting.status === 'Plot') ? 'Plot' as const : statusOverride ?? row.status,
+      orderIndex: index, status: keepSavedStatuses && meetings.every(meeting => meeting.status === 'Plot') ? 'Plot' as const : statusOverride ?? row.status,
       type: row.sourceKey ? first?.format === 'Flexible' ? 'open lab' : 'normal' : row.parallelSourceRow !== null ? 'parallel' : row.college.toLowerCase() || 'normal',
       groupId: row.parallelSourceRow !== null ? rowId(row.sourceSheet, row.parallelSourceRow) : '',
       isSplitSession: meetings.length > 1, parentId: '',

@@ -3,9 +3,10 @@ import { auth, db } from '../firebase'
 import { canPlotDepartmentSchedules } from '../utils/departmentWorkbookPermissions'
 import { semesterKey } from '../utils/departmentWorkbookPaths'
 import type { WorkbookScheduleMeeting } from '../utils/excelScheduleRows'
-import { scheduleMatchesTerm } from '../utils/roomSchedule'
-import { scheduleMeetingRecords } from '../utils/scheduleMeetings'
-import { assertPlotRoom, hasPendingRoomAllocation, plotMeetingKey, plotMeetingsOverlap, plotScheduleCollege, plottedScheduleFields, plotScheduleRevision, readProvidedRoomKeys, readRegistrarPlot, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
+import { scheduleMatchesDepartment, scheduleMatchesTerm, scheduleSectionLabel } from '../utils/roomSchedule'
+import { scheduleMeetingRecords, type ScheduleMeetingRecord } from '../utils/scheduleMeetings'
+import { assertPlotRoom, hasPendingRoomAllocation, plotMeetingKey, plotMeetingsOverlap, plotScheduleCollege, plottedScheduleFields, plotScheduleRevision, readProvidedRoomKeys, readRegistrarPlot, schedulePlotSelectionKey, type PlotAssignment, type PlotRoom } from '../utils/schedulePlotting'
+import type { SchedulePlotSectionScope } from '../hooks/useScheduleRoomPlotting'
 import { prepareScheduleRoomWorkbookSync } from './scheduleRoomWorkbookSync'
 import type { ScheduleRoomWorkbookRow } from '../utils/scheduleRoomWorkbookCells'
 import { plotParallelGroup, plotParallelRoomMessages } from '../utils/plotParallelRooms'
@@ -19,6 +20,18 @@ interface PlotRequest {
   instructorIds: string[]
   assignments: PlotAssignment[]
   scheduleCollection?: 'schedule' | 'schedules'
+  sectionScope?: SchedulePlotSectionScope
+}
+
+function sectionPlotKeys(meetings: ScheduleMeetingRecord[], departmentCode: string, scope: SchedulePlotSectionScope): Set<string> {
+  const selected = meetings.filter(meeting => meeting.departmentId === scope.departmentId
+    && scheduleMatchesDepartment(meeting, departmentCode) && meeting.yearLevel === scope.yearLevel
+    && scheduleSectionLabel(meeting).trim().toUpperCase() === scope.label.trim().toUpperCase())
+  const allowed = new Set(selected.map(meeting => schedulePlotSelectionKey(meeting)))
+  for (const meeting of selected) {
+    for (const peer of plotParallelGroup(meetings, [], meeting)) allowed.add(schedulePlotSelectionKey(peer))
+  }
+  return allowed
 }
 
 export function readPlotRoom(id: string, data: Record<string, unknown>): PlotRoom {
@@ -53,22 +66,36 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
   const assignments = request.assignments.map(assignment => ({ ...assignment }))
   const candidateMeetings = scheduleMeetingRecords(candidates.docs).filter(meeting => scheduleMatchesTerm(meeting,
     { id: request.academicYearId, academicYear: request.academicYear }, request.semester))
+  if (request.sectionScope) {
+    const allowed = sectionPlotKeys(candidateMeetings, request.departmentCode, request.sectionScope)
+    if (request.assignments.some(assignment => !candidateMeetings.some(meeting => schedulePlotSelectionKey(meeting) === JSON.stringify([assignment.scheduleId, assignment.meetingKey])
+      && allowed.has(schedulePlotSelectionKey(meeting))))) {
+      throw new Error('A selected meeting is outside this section or its parallel group. Reopen the section schedule.')
+    }
+  }
   for (const assignment of request.assignments) {
+    if (!assignment.targetStatus && request.assignments.some(other => other.scheduleId === assignment.scheduleId
+      && other.meetingKey === assignment.meetingKey && other.day && other.targetStatus)) continue
     const target = candidateMeetings.find(meeting => String(meeting.sourceScheduleId || meeting.id) === assignment.scheduleId
       && plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>) === assignment.meetingKey)
     if (!target || !target.groupId && target.type !== 'parallel') continue
     const group = plotParallelGroup(candidateMeetings, [], target)
     if (!group.length) continue
     const groupRows = new Set(group.map(meeting => String(meeting.sourceScheduleId || meeting.id)))
-    const statuses = new Set(request.assignments.filter(item => groupRows.has(item.scheduleId)).map(item => item.targetStatus).filter(Boolean))
+    const statuses = new Set(request.assignments.filter(item => groupRows.has(item.scheduleId) && item.day === assignment.day).map(item => item.targetStatus).filter(Boolean))
     if (statuses.size > 1) throw new Error('Choose one status for the entire parallel group before saving.')
     if (!statuses.size) throw new Error('Check the completed parallel group checkbox before clicking Plot.')
     const targetStatus = [...statuses][0]!
     for (const meeting of group) {
       const scheduleId = String(meeting.sourceScheduleId || meeting.id), meetingKey = plotMeetingKey(meeting as Partial<WorkbookScheduleMeeting>)
-      const selected = assignments.find(item => item.scheduleId === scheduleId && item.meetingKey === meetingKey)
+      const selected = assignments.find(item => item.scheduleId === scheduleId && item.meetingKey === meetingKey && item.day === assignment.day)
       if (selected) selected.targetStatus = targetStatus
-      else assignments.push({ scheduleId, meetingKey, targetStatus, roomId: meeting.roomId ?? '', expectedRoomId: meeting.roomId ?? '', expectedRevision: plotScheduleRevision(meeting) })
+      else {
+        const roomChoice = assignments.find(item => item.scheduleId === scheduleId && item.meetingKey === meetingKey)
+        assignments.push({ scheduleId, meetingKey, targetStatus, roomId: roomChoice?.roomId ?? meeting.roomId ?? '',
+          expectedRoomId: roomChoice?.expectedRoomId ?? meeting.roomId ?? '', expectedRevision: plotScheduleRevision(meeting),
+        ...(assignment.day ? { day: assignment.day } : {}) })
+      }
     }
   }
   const ids = [...new Set([...candidates.docs.map(item => item.id), ...assignments.map(item => item.scheduleId)])]
@@ -105,6 +132,10 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
     if (!profile.exists() || profile.data()?.isActive === false || !['Registrar', 'Admin'].includes(String(member?.role))
       || !canPlotDepartmentSchedules(member, user.uid, year.data()?.[semester]?.phase ?? 'Closed')) throw new Error('This semester is read only for your membership or role.')
     const current = new Map(rows.filter(row => row.exists()).map(row => [row.id, row.data()!]))
+    const freshSectionKeys = request.sectionScope ? sectionPlotKeys(scheduleMeetingRecords([...current]
+      .filter(([id, data]) => scheduleMatchesTerm({ ...data, id },
+        { id: request.academicYearId, academicYear: request.academicYear }, request.semester))
+      .map(([id, data]) => ({ id, data: () => data }))), request.departmentCode, request.sectionScope) : null
     const roomMap = new Map(rooms.filter(room => room.exists()).map(room => [room.id, readPlotRoom(room.id, room.data()!)]))
     // Read peer rooms from the fresh schedule snapshots so concurrent changes are checked too.
     const parallelRoomIds = [...new Set(scheduleMeetingRecords([...current].filter(([id, data]) =>
@@ -126,23 +157,34 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
         ? { ...meeting, status: meeting.status === 'Draft' || meeting.status === 'Plot' ? meeting.status
           : data.status === 'Plot' ? 'Plot' as const : 'Draft' as const }
         : meeting)
+      const savedMeetings = meetings.map(meeting => ({ ...meeting }))
       const sourceProvidedRoomKeys = readProvidedRoomKeys(data)
       const providedRoomKeys = sourceProvidedRoomKeys ?? meetings.filter(meeting => meeting.room.trim()).map(plotMeetingKey)
       const legacyProvidedRoomKeys = readRegistrarPlot(data.registrarPlot)?.providedRoomKeys
       const requestedStatuses = new Set(rowAssignments.map(assignment => assignment.targetStatus).filter(Boolean))
-      if (requestedStatuses.size > 1) throw new Error('Choose one status for this schedule before saving.')
-      if (scheduleCollection === 'schedules' && rowAssignments.some(assignment => assignment.roomId && !assignment.targetStatus)) {
+      if (scheduleCollection !== 'schedules' && requestedStatuses.size > 1) throw new Error('Choose one status for this schedule before saving.')
+      if (scheduleCollection === 'schedules' && rowAssignments.some(assignment => assignment.roomId && !assignment.targetStatus
+        && !rowAssignments.some(other => other.meetingKey === assignment.meetingKey && other.targetStatus))) {
         throw new Error('Check each schedule checkbox before clicking Plot.')
       }
       const parallel = Boolean((data.groupId || data.type === 'parallel') && candidateMeetings.some(candidate => candidate.sourceScheduleId === id
         && plotParallelGroup(candidateMeetings, [], candidate).length > 0))
       for (const assignment of rowAssignments) {
-        if (keys.has(assignment.meetingKey)) throw new Error('The same meeting was selected more than once.')
-        keys.add(assignment.meetingKey)
+        if (freshSectionKeys && !freshSectionKeys.has(JSON.stringify([assignment.scheduleId, assignment.meetingKey]))) {
+          throw new Error('This meeting moved outside the selected section or parallel group. Reopen the section schedule.')
+        }
+        const assignmentKey = JSON.stringify([assignment.meetingKey, assignment.day ?? ''])
+        if (keys.has(assignmentKey)) throw new Error('The same meeting day was selected more than once.')
+        keys.add(assignmentKey)
         const index = meetings.findIndex(meeting => plotMeetingKey(meeting) === assignment.meetingKey)
         const meeting = meetings[index]
-        if (!meeting || !request.instructorIds.includes(meeting.instructorId) || meeting.roomId !== assignment.expectedRoomId
+        const savedMeeting = savedMeetings[index]
+        if (!meeting || !request.instructorIds.includes(meeting.instructorId) || savedMeeting.roomId !== assignment.expectedRoomId
           || plotScheduleRevision(data) !== assignment.expectedRevision) throw new Error('This meeting changed while you were choosing rooms. Reopen the schedule and try again.')
+        if (assignment.day && (!meeting.days.includes(assignment.day) || meeting.days.length < 2)) throw new Error('This meeting day changed. Reopen the schedule and try again.')
+        if (rowAssignments.some(other => other.meetingKey === assignment.meetingKey && other.roomId !== assignment.roomId)) {
+          throw new Error('A meeting must use the same room on each of its days.')
+        }
         const provided = scheduleCollection === 'schedules' && providedRoomKeys.includes(assignment.meetingKey)
         if (provided && assignment.roomId !== meeting.roomId) {
           throw new Error('A schedule with a provided room uses a checkbox. Its room cannot be changed here.')
@@ -152,7 +194,15 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
         }
         if (assignment.targetStatus !== undefined && (!parallel && assignment.targetStatus === 'Plot' && !assignment.roomId
           || !['Draft', 'Plot'].includes(assignment.targetStatus))) throw new Error('Assign a room before changing status using a checkbox.')
-        if (scheduleCollection === 'schedules' && assignment.targetStatus) meetings[index] = { ...meetings[index], status: assignment.targetStatus }
+        if (scheduleCollection === 'schedules' && assignment.targetStatus) {
+          if (assignment.day) {
+            const fallback = savedMeeting.status === 'Plot' ? 'Plot' : 'Draft'
+            const statusByDay = Object.fromEntries(meeting.days.map(day => [day, meeting.statusByDay?.[day] ?? fallback])) as Record<string, 'Draft' | 'Plot'>
+            statusByDay[assignment.day] = assignment.targetStatus
+            meetings[index] = { ...meeting, statusByDay, status: Object.values(statusByDay).every(status => status === 'Plot') ? 'Plot' : 'Draft' }
+          } else meetings[index] = { ...meeting, status: assignment.targetStatus,
+            ...(meeting.statusByDay ? { statusByDay: Object.fromEntries(meeting.days.map(day => [day, assignment.targetStatus!])) as Record<string, 'Draft' | 'Plot'> } : {}) }
+        }
         if (assignment.targetStatus === 'Draft' && assignment.roomId === meeting.roomId) continue
         if (assignment.roomId) {
           const room = roomMap.get(assignment.roomId)
@@ -164,9 +214,9 @@ export async function plotScheduleRooms(request: PlotRequest): Promise<void> {
       }
       const plottedFields = plottedScheduleFields(meetings)
       const fields = { ...plottedFields, status: scheduleCollection === 'schedules'
-        ? meetings.some(meeting => meeting.status === 'Plot') ? 'Plot' as const : 'Draft' as const
+        ? meetings.every(meeting => meeting.status === 'Plot') ? 'Plot' as const : 'Draft' as const
         : requestedStatuses.has('Draft') ? 'Draft' as const : plottedFields.status }
-      if (requestedStatuses.has('Draft') && rowAssignments.every(assignment => assignment.roomId === assignment.expectedRoomId)) statusOnlyDraftIds.add(id)
+      if (requestedStatuses.size === 1 && requestedStatuses.has('Draft') && rowAssignments.every(assignment => assignment.roomId === assignment.expectedRoomId)) statusOnlyDraftIds.add(id)
       changed.set(id, { ...data, ...fields, registrarPlot: { version: 1, revisionId, savedBy: user.uid,
         ...(legacyProvidedRoomKeys !== undefined ? { providedRoomKeys: legacyProvidedRoomKeys } : {}),
         assignments: meetings.filter(meeting => meeting.roomId).map(meeting => ({ key: plotMeetingKey(meeting), roomId: meeting.roomId, room: meeting.room, buildingId: meeting.buildingId })) },

@@ -25,7 +25,7 @@ export function scheduleRoomWorkbookLocation(editorState: string, row: ScheduleR
   return { workbookRow: index + 3, sheetName: sheet.name, values }
 }
 
-/** Keep slash-separated room positions aligned with Faculty/Time, including blank slots. */
+/** Keep slash-separated room positions aligned with Faculty/Time/Days, including blank slots. */
 export function scheduleRoomWorkbookTexts(before: readonly WorkbookScheduleMeeting[], after: readonly WorkbookScheduleMeeting[], values: readonly string[]) {
   const result = [values[19] ?? '', values[20] ?? '']
   for (const [offset, format] of ['Lec', 'Lab'].entries()) {

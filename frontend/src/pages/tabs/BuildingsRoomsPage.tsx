@@ -32,7 +32,9 @@ import {
   query,
   orderBy,
   where,
-  limit
+  limit,
+  runTransaction,
+  serverTimestamp
 } from 'firebase/firestore'
 import { CropModal } from '../../components/CropModal'
 import { resolveCurrentSemester, type AcademicYearData } from '../../utils/academicSemester'
@@ -84,6 +86,14 @@ const DEFAULT_ROOM_IMAGE = createRoomImage()
 const BOOKING_MINUTES_OPTIONS = ['30', '60', '90'] as const;
 const ROOM_TYPE_OPTIONS = ['Lecture', 'Laboratory'] as const;
 
+function adjacentRoomCodes(firstCode: string, secondCode: string): boolean {
+  const first = firstCode.trim().match(/^(.*?)(\d+)$/)
+  const second = secondCode.trim().match(/^(.*?)(\d+)$/)
+  return Boolean(first && second
+    && first[1].toUpperCase() === second[1].toUpperCase()
+    && Math.abs(Number(first[2]) - Number(second[2])) === 1)
+}
+
 const LIQUID_OPTIONS = ['Water', 'Coffee', 'Blood', 'Mud', 'Slime', 'Random'] as const;
 type DropdownLiquidType = typeof LIQUID_OPTIONS[number];
 const LIQUID_ICONS: Record<DropdownLiquidType, string> = {
@@ -98,6 +108,9 @@ type LiquidType = Exclude<DropdownLiquidType, 'Random'>;
 
 interface Room {
   id: string
+  buildingId?: string
+  isCollapsible?: boolean
+  collapsibleWithRoomId?: string
   image: string
   code: string
   name: string
@@ -112,6 +125,66 @@ interface Room {
   endTime: string
   minBookingMins: number
   maxBookingMins: number
+}
+
+async function saveCollapsiblePair(roomId: string, partnerId: string): Promise<void> {
+  await runTransaction(db, async transaction => {
+    const sourceRef = doc(db, 'rooms', roomId)
+    const source = await transaction.get(sourceRef)
+    if (!source.exists()) throw new Error('The room no longer exists. Refresh and try again.')
+
+    const previousPartnerId = String(source.data().collapsibleWithRoomId || '')
+    const partnerIds = [...new Set([previousPartnerId, partnerId].filter(Boolean))]
+    const partners = await Promise.all(partnerIds.map(id => transaction.get(doc(db, 'rooms', id))))
+    const partnerById = new Map(partners.map(snapshot => [snapshot.id, snapshot]))
+    const nextPartner = partnerById.get(partnerId)
+    if (partnerId) {
+      if (partnerId === roomId || !nextPartner?.exists()
+        || source.data().buildingId !== nextPartner.data().buildingId
+        || source.data().floor !== nextPartner.data().floor
+        || !adjacentRoomCodes(String(source.data().code || ''), String(nextPartner.data().code || ''))) {
+        throw new Error('Choose room numbers immediately beside this room in the same building and floor.')
+      }
+      const occupiedBy = String(nextPartner.data().collapsibleWithRoomId || '')
+      if (occupiedBy && occupiedBy !== roomId) throw new Error('That room is already paired with another room.')
+    }
+
+    if (previousPartnerId && previousPartnerId !== partnerId) {
+      const previousPartner = partnerById.get(previousPartnerId)
+      if (previousPartner?.exists() && previousPartner.data().collapsibleWithRoomId === roomId) {
+        transaction.update(previousPartner.ref, {
+          isCollapsible: false, collapsibleWithRoomId: '', updatedAt: serverTimestamp(),
+        })
+      }
+    }
+    if (source.data().isCollapsible !== Boolean(partnerId) || previousPartnerId !== partnerId) {
+      transaction.update(sourceRef, {
+        isCollapsible: Boolean(partnerId), collapsibleWithRoomId: partnerId, updatedAt: serverTimestamp(),
+      })
+    }
+    if (nextPartner?.exists() && (nextPartner.data().isCollapsible !== true
+      || nextPartner.data().collapsibleWithRoomId !== roomId)) {
+      transaction.update(nextPartner.ref, {
+        isCollapsible: true, collapsibleWithRoomId: roomId, updatedAt: serverTimestamp(),
+      })
+    }
+  })
+}
+
+async function clearDeletedRoomPairs(deletedIds: Set<string>, knownRooms: Room[]): Promise<void> {
+  const survivingPartners = knownRooms.filter(room => !deletedIds.has(room.id)
+    && Boolean(room.collapsibleWithRoomId && deletedIds.has(room.collapsibleWithRoomId)))
+  if (!survivingPartners.length) return
+  await runTransaction(db, async transaction => {
+    const snapshots = await Promise.all(survivingPartners.map(room => transaction.get(doc(db, 'rooms', room.id))))
+    snapshots.forEach(snapshot => {
+      if (snapshot.exists() && deletedIds.has(String(snapshot.data().collapsibleWithRoomId || ''))) {
+        transaction.update(snapshot.ref, {
+          isCollapsible: false, collapsibleWithRoomId: '', updatedAt: serverTimestamp(),
+        })
+      }
+    })
+  })
 }
 
 interface Building {
@@ -164,6 +237,10 @@ function BuildingsRoomsPage() {
 
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [filterBuildingId, setFilterBuildingId] = useState('all')
+  const [filterFloor, setFilterFloor] = useState('all')
+  const [filterType, setFilterType] = useState('all')
+  const [filterStatus, setFilterStatus] = useState('all')
   const [academicYears, setAcademicYears] = useState<AcademicYearData[]>([])
   const [academicYearsLoaded, setAcademicYearsLoaded] = useState(false)
   const [scheduleRows, setScheduleRows] = useState<ScheduleReportRecord[]>([])
@@ -556,6 +633,8 @@ function BuildingsRoomsPage() {
   const [newRoomType, setNewRoomType] = useState('Lecture')
   const [newRoomFloor, setNewRoomFloor] = useState<string>('1')
   const [newRoomCapacity, setNewRoomCapacity] = useState<string>('50')
+  const [newRoomIsCollapsible, setNewRoomIsCollapsible] = useState(false)
+  const [newRoomPartnerId, setNewRoomPartnerId] = useState('')
   const [newRoomStatus, setNewRoomStatus] = useState<RoomStatus>('Available')
   const [newRoomImage, setNewRoomImage] = useState(DEFAULT_ROOM_IMAGE)
   const [newRoomDescription, setNewRoomDescription] = useState('')
@@ -720,6 +799,8 @@ function BuildingsRoomsPage() {
       setNewRoomType(ROOM_TYPE_OPTIONS.some(type => type === room.type) ? room.type : '')
       setNewRoomFloor(String(room.floor))
       setNewRoomCapacity(String(room.capacity))
+      setNewRoomIsCollapsible(Boolean(room.collapsibleWithRoomId))
+      setNewRoomPartnerId(room.collapsibleWithRoomId || '')
       setNewRoomStatus(room.status)
       setNewRoomImage(room.image)
       setNewRoomDescription(room.description || '')
@@ -743,6 +824,8 @@ function BuildingsRoomsPage() {
       setNewRoomType('Lecture')
       setNewRoomFloor('1')
       setNewRoomCapacity('50')
+      setNewRoomIsCollapsible(false)
+      setNewRoomPartnerId('')
       setNewRoomStatus('Available')
       setNewRoomImage(DEFAULT_ROOM_IMAGE)
       setNewRoomDescription('')
@@ -800,11 +883,20 @@ function BuildingsRoomsPage() {
     try {
       const roomName = roomToDelete.name
       const result = await manageFacility({ action: 'delete_room', targetId: roomToDelete.id })
+      let pairCleanupFailed = false
+      try {
+        await clearDeletedRoomPairs(new Set(result.deletedRooms.map(room => room.id)), rooms)
+      } catch (pairError) {
+        console.error('Error clearing deleted room pair:', pairError)
+        pairCleanupFailed = true
+      }
       await Promise.all(result.deletedRooms
         .filter(deleted => !rooms.some(room => room.id !== deleted.id && room.image === deleted.image))
         .map(deleted => deleteImageFromStorage(deleted.image)))
       handleCloseDeleteRoomModal()
-      showNotification(`Room "${roomName}" deleted successfully.`, 'success', 'Room Deleted')
+      showNotification(pairCleanupFailed
+        ? `Room "${roomName}" was deleted, but its partner link could not be cleared.`
+        : `Room "${roomName}" deleted successfully.`, pairCleanupFailed ? 'error' : 'success', pairCleanupFailed ? 'Partner Link Not Cleared' : 'Room Deleted')
     } catch (error) {
       console.error('Error deleting room:', error)
       showNotification(facilityActionError(error, 'Failed to delete room. Please try again.'), 'error', 'Error Deleting Room')
@@ -920,6 +1012,14 @@ function BuildingsRoomsPage() {
     }
   }
 
+  const eligibleCollapsibleRooms = rooms.filter(room => room.buildingId === activeBuildingId
+    && room.floor === (parseInt(newRoomFloor) || 0)
+    && room.id !== editingRoom?.id
+    && adjacentRoomCodes(newRoomCode, room.code)
+    && (!room.collapsibleWithRoomId || room.collapsibleWithRoomId === editingRoom?.id)
+    && !rooms.some(other => other.id !== editingRoom?.id && other.id !== room.id
+      && other.collapsibleWithRoomId === room.id))
+
   const handleRoomSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -1013,6 +1113,11 @@ function BuildingsRoomsPage() {
       return
     }
 
+    if (!isMultipleRooms && newRoomIsCollapsible && !eligibleCollapsibleRooms.some(room => room.id === newRoomPartnerId)) {
+      showNotification('Select an unpaired room number immediately before or after this room.', 'error', 'Adjacent Room Required')
+      return
+    }
+
     if (roomModalStep < 3) {
       setRoomModalStep(prev => prev + 1)
       return
@@ -1060,6 +1165,8 @@ function BuildingsRoomsPage() {
         amenities: newRoomAmenities, availableDays: newRoomAvailableDays,
         startTime: newRoomStartTime, endTime: newRoomEndTime,
         minBookingMins: min, maxBookingMins: max,
+        isCollapsible: !isMultipleRooms && newRoomIsCollapsible,
+        collapsibleWithRoomId: !isMultipleRooms && newRoomIsCollapsible ? newRoomPartnerId : '',
       }
 
       if (editingRoom) {
@@ -1072,8 +1179,16 @@ function BuildingsRoomsPage() {
         if (isNewUpload && editingRoom.image !== imageUrl && !rooms.some(room => room.id !== editingRoom.id && room.image === editingRoom.image)) {
           await deleteImageFromStorage(editingRoom.image)
         }
+        try {
+          await saveCollapsiblePair(editingRoom.id, newRoomIsCollapsible ? newRoomPartnerId : '')
+        } catch (pairError) {
+          console.error('Error saving collapsible room pair:', pairError)
+          showNotification(`Room details saved, but the collapsible pairing was not saved. ${pairError instanceof Error ? pairError.message : 'Please try again.'}`, 'error', 'Pairing Not Saved')
+          return
+        }
         handleCloseModals()
-        showNotification(result.changed ? `Room "${newRoomName}" updated successfully.` : 'No room details changed.', result.changed ? 'success' : 'info', result.changed ? 'Room Updated' : 'No Changes')
+        const changed = result.changed || (editingRoom.collapsibleWithRoomId || '') !== (newRoomIsCollapsible ? newRoomPartnerId : '')
+        showNotification(changed ? `Room "${newRoomName}" updated successfully.` : 'No room details changed.', changed ? 'success' : 'info', changed ? 'Room Updated' : 'No Changes')
       } else {
         const savedRoomName = newRoomName
         const startNum = parseInt(roomStartNumber) || 0
@@ -1092,6 +1207,16 @@ function BuildingsRoomsPage() {
               code: isMultipleRooms ? `${roomCodePrefix}${currentNum}` : newRoomCode,
             },
           })
+          if (!isMultipleRooms) {
+            try {
+              await saveCollapsiblePair(roomRef.id, newRoomIsCollapsible ? newRoomPartnerId : '')
+            } catch (pairError) {
+              console.error('Error saving collapsible room pair:', pairError)
+              handleCloseModals()
+              showNotification(`Room "${newRoomName}" was created, but its collapsible pairing was not saved. Edit the room to retry. ${pairError instanceof Error ? pairError.message : ''}`, 'error', 'Pairing Not Saved')
+              return
+            }
+          }
         }
         handleCloseModals()
         showNotification(isMultipleRooms ? `Successfully added ${count} rooms.` : `Room "${savedRoomName}" added successfully.`, 'success', isMultipleRooms ? 'Rooms Added' : 'Room Added')
@@ -1127,11 +1252,18 @@ function BuildingsRoomsPage() {
 
     setIsDeletingRooms(true)
     const deletedRooms: Array<{ id: string; image: string }> = []
+    let pairCleanupFailed = false
     try {
       for (let offset = 0; offset < selectedRoomsToDelete.length; offset += 200) {
         const chunk = selectedRoomsToDelete.slice(offset, offset + 200)
         const result = await manageFacility({ action: 'delete_rooms', buildingId: bulkDeleteBuilding.id, roomIds: chunk.map(room => room.id) })
         deletedRooms.push(...result.deletedRooms)
+        try {
+          await clearDeletedRoomPairs(new Set(result.deletedRooms.map(room => room.id)), rooms)
+        } catch (pairError) {
+          console.error('Error clearing deleted room pairs:', pairError)
+          pairCleanupFailed = true
+        }
         setSelectedRoomIdsToDelete(prev => {
           const remaining = new Set(prev)
           chunk.forEach(room => remaining.delete(room.id))
@@ -1140,7 +1272,9 @@ function BuildingsRoomsPage() {
       }
 
       handleCloseBulkDeleteRooms()
-      showNotification(`${deletedRooms.length} rooms deleted from "${bulkDeleteBuilding.name}".`, 'success', 'Rooms Deleted')
+      showNotification(pairCleanupFailed
+        ? `${deletedRooms.length} rooms deleted from "${bulkDeleteBuilding.name}", but some partner links could not be cleared.`
+        : `${deletedRooms.length} rooms deleted from "${bulkDeleteBuilding.name}".`, pairCleanupFailed ? 'error' : 'success', pairCleanupFailed ? 'Partner Links Not Cleared' : 'Rooms Deleted')
     } catch (error) {
       console.error('Error deleting rooms:', error)
       setIsBulkDeleteConfirmation(false)
@@ -1163,6 +1297,37 @@ function BuildingsRoomsPage() {
   }
 
   const canManageBuildings = currentUserRole === 'Admin' || currentUserRole === 'Registrar' || currentUserRole === 'University Administrator'
+  const buildingFilterOptions = useMemo(() => [
+    'all',
+    ...buildings.slice().sort((a, b) => a.code.localeCompare(b.code)).map(building => building.id),
+  ], [buildings])
+  const floorFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => String(room.floor)))).sort((a, b) => Number(a) - Number(b)),
+  ], [rooms])
+  const typeFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => room.type).filter(Boolean))).sort(),
+  ], [rooms])
+  const statusFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => room.status).filter(Boolean))).sort(),
+  ], [rooms])
+  const filteredBuildings = useMemo(() => {
+    const hasRoomFilter = filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
+    return buildings
+      .filter(building => filterBuildingId === 'all' || building.id === filterBuildingId)
+      .map(building => ({
+        ...building,
+        rooms: building.rooms.filter(room =>
+          (filterFloor === 'all' || String(room.floor) === filterFloor)
+          && (filterType === 'all' || room.type === filterType)
+          && (filterStatus === 'all' || room.status === filterStatus)
+        ),
+      }))
+      .filter(building => !hasRoomFilter || building.rooms.length > 0)
+  }, [buildings, filterBuildingId, filterFloor, filterType, filterStatus])
+  const hasActiveFilters = filterBuildingId !== 'all' || filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
   const roomAvailability = rooms.reduce<Record<RoomStatus, number>>((counts, room) => {
     if (room.status === 'Available' || room.status === 'Unavailable' || room.status === 'Maintenance') {
       counts[room.status] += 1
@@ -1172,6 +1337,8 @@ function BuildingsRoomsPage() {
   const roomsWithNewComments = rooms.filter(room => unreadRoomIds.has(room.id))
 
 
+
+  const currentRoomInfo = rooms.find(room => room.id === selectedRoomInfo?.id) || selectedRoomInfo
 
   return (
     <section
@@ -1347,6 +1514,8 @@ function BuildingsRoomsPage() {
                           maxLength={8}
                           onChange={(val) => {
                             setNewRoomCode(val)
+                            const partner = rooms.find(room => room.id === newRoomPartnerId)
+                            if (partner && !adjacentRoomCodes(val, partner.code)) setNewRoomPartnerId('')
                             if (errors.code) setErrors(prev => ({ ...prev, code: false }))
                           }}
                           placeholder="e.g. ADM-101"
@@ -1474,7 +1643,12 @@ function BuildingsRoomsPage() {
                       <NumberInput
                         id="room-floor"
                         value={newRoomFloor}
-                        onChange={setNewRoomFloor}
+                        onChange={value => {
+                          setNewRoomFloor(value)
+                          if (rooms.find(room => room.id === newRoomPartnerId)?.floor !== (parseInt(value) || 0)) {
+                            setNewRoomPartnerId('')
+                          }
+                        }}
                       />
                     </div>
                     <div className="overflow-visible">
@@ -1516,6 +1690,43 @@ function BuildingsRoomsPage() {
                       />
                     </div>
                   </div>
+                  {!isMultipleRooms && (
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-3 text-sm font-semibold text-gray-700">
+                        <input
+                          type="checkbox"
+                          checked={newRoomIsCollapsible}
+                          onChange={event => {
+                            setNewRoomIsCollapsible(event.target.checked)
+                            if (!event.target.checked) setNewRoomPartnerId('')
+                          }}
+                          className="h-4 w-4 shrink-0 accent-[var(--brand-color)]"
+                        />
+                        Collapsible room (combines with another room)
+                      </label>
+                      {newRoomIsCollapsible && (
+                        <div>
+                          <label className="block text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+                            Combines with <span className="text-rose-500">*</span>
+                          </label>
+                          <SingleSelectDropdown
+                            options={eligibleCollapsibleRooms.map(room => room.id)}
+                            value={newRoomPartnerId}
+                            onChange={setNewRoomPartnerId}
+                            getOptionLabel={id => {
+                              const room = rooms.find(candidate => candidate.id === id)
+                              return room ? `${room.code} — ${room.name}` : 'Select a room'
+                            }}
+                            placeholder="Select a room"
+                            searchable
+                            ariaLabel="Room to combine with"
+                            className="w-full"
+                          />
+                          <p className="mt-1 text-xs text-gray-500">Only the immediately previous or next room number in the same building and floor can be selected.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1648,7 +1859,7 @@ function BuildingsRoomsPage() {
                             const sMins = (sh || 0) * 60 + (sm || 0)
                             const eMins = (eh || 0) * 60 + (em || 0)
                             if (sMins >= eMins) {
-                              const nextEndMins = Math.min(1080, sMins + 30)
+                              const nextEndMins = Math.min(1410, sMins + 30)
                               const endHour = Math.floor(nextEndMins / 60).toString().padStart(2, '0')
                               const endMin = (nextEndMins % 60).toString().padStart(2, '0')
                               setNewRoomEndTime(`${endHour}:${endMin}`)
@@ -1658,11 +1869,12 @@ function BuildingsRoomsPage() {
                         onToggle={handleDropdownToggle}
                         minuteStep={30}
                         hideClear
-                        minTime="07:30"
+                        hourOrder="ascending"
+                        minTime="00:00"
                         maxTime={(() => {
-                          if (!newRoomEndTime) return '17:30'
+                          if (!newRoomEndTime) return '23:00'
                           const [eh, em] = newRoomEndTime.split(':').map(Number)
-                          const maxStartMins = Math.max(450, ((eh || 0) * 60 + (em || 0)) - 30)
+                          const maxStartMins = Math.max(0, ((eh || 0) * 60 + (em || 0)) - 30)
                           const h = Math.floor(maxStartMins / 60).toString().padStart(2, '0')
                           const m = (maxStartMins % 60).toString().padStart(2, '0')
                           return `${h}:${m}`
@@ -1683,7 +1895,7 @@ function BuildingsRoomsPage() {
                             const sMins = (sh || 0) * 60 + (sm || 0)
                             const eMins = (eh || 0) * 60 + (em || 0)
                             if (eMins <= sMins) {
-                              const nextStartMins = Math.max(450, eMins - 30)
+                              const nextStartMins = Math.max(0, eMins - 30)
                               const startHour = Math.floor(nextStartMins / 60).toString().padStart(2, '0')
                               const startMin = (nextStartMins % 60).toString().padStart(2, '0')
                               setNewRoomStartTime(`${startHour}:${startMin}`)
@@ -1693,16 +1905,17 @@ function BuildingsRoomsPage() {
                         onToggle={handleDropdownToggle}
                         minuteStep={30}
                         hideClear
+                        hourOrder="ascending"
                         defaultPlacement="latest"
                         minTime={(() => {
-                          if (!newRoomStartTime) return '08:00'
+                          if (!newRoomStartTime) return '00:30'
                           const [sh, sm] = newRoomStartTime.split(':').map(Number)
-                          const minEndMins = Math.min(1080, ((sh || 0) * 60 + (sm || 0)) + 30)
+                          const minEndMins = Math.min(1410, ((sh || 0) * 60 + (sm || 0)) + 30)
                           const h = Math.floor(minEndMins / 60).toString().padStart(2, '0')
                           const m = (minEndMins % 60).toString().padStart(2, '0')
                           return `${h}:${m}`
                         })()}
-                        maxTime="18:00"
+                        maxTime="23:30"
                       />
                     </div>
                   </div>
@@ -1792,7 +2005,7 @@ function BuildingsRoomsPage() {
       {/* Room Information Modal */}
       <RoomInfoModal
         isOpen={isRoomInfoModalOpen}
-        room={selectedRoomInfo}
+        room={currentRoomInfo}
         onClose={handleCloseModals}
         hasUnreadComments={selectedRoomInfo ? unreadRoomIds.has(selectedRoomInfo.id) : false}
         comments={selectedRoomInfo ? (isVisible, isAnonymous) => <RoomComments key={selectedRoomInfo.id} roomId={selectedRoomInfo.id} isVisible={isVisible} isAnonymous={isAnonymous} onCommentsSeen={markCommentsSeen} onCommentSeen={markCommentSeen} isCommentUnread={isCommentUnread} canModerateComments={currentUserRole === 'Admin' || currentUserRole === 'Registrar' || currentUserRole === 'University Administrator'} /> : undefined}
@@ -2113,8 +2326,87 @@ function BuildingsRoomsPage() {
           description="Manage campus facilities, view room capacities, and track utilization."
         />
 
-
-
+        <section aria-label="Filter buildings and rooms" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Filter Buildings & Rooms</h2>
+              <p className="text-sm text-slate-500">Narrow the buildings and rooms shown below.</p>
+            </div>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterBuildingId('all')
+                  setFilterFloor('all')
+                  setFilterType('all')
+                  setFilterStatus('all')
+                }}
+                className="text-sm font-semibold text-[var(--brand-color)] hover:text-[var(--brand-color-hover)]"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Building</label>
+              <SingleSelectDropdown
+                options={buildingFilterOptions}
+                value={filterBuildingId}
+                onChange={setFilterBuildingId}
+                getOptionLabel={value => value === 'all' ? 'All buildings' : buildings.find(building => building.id === value)?.code ?? value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by building"
+                portal
+                matchTriggerWidth
+                searchable
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Floor</label>
+              <SingleSelectDropdown
+                options={floorFilterOptions}
+                value={filterFloor}
+                onChange={setFilterFloor}
+                getOptionLabel={value => value === 'all' ? 'All floors' : `Floor ${value}`}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by floor"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Room Type</label>
+              <SingleSelectDropdown
+                options={typeFilterOptions}
+                value={filterType}
+                onChange={setFilterType}
+                getOptionLabel={value => value === 'all' ? 'All types' : value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by room type"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Status</label>
+              <SingleSelectDropdown
+                options={statusFilterOptions}
+                value={filterStatus}
+                onChange={setFilterStatus}
+                getOptionLabel={value => value === 'all' ? 'All statuses' : value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by status"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+          </div>
+        </section>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
           <section aria-label="Room availability" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
@@ -2180,7 +2472,7 @@ function BuildingsRoomsPage() {
         </div>
 
         <BuildingBrowser
-          buildings={buildings}
+          buildings={filteredBuildings}
           renderBuildingScheduleUsage={building => (
             <BuildingScheduleUsage
               usage={buildingUsage.buildings[building.id]}
@@ -2321,10 +2613,10 @@ function BuildingsRoomsPage() {
                   </button>
                   <button
                     type="button"
-                    disabled={building.rooms.length === 0}
+                    disabled={!buildings.some(source => source.id === building.id && source.rooms.length > 0)}
                     className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 disabled:cursor-default"
                     onClick={() => {
-                      handleOpenBulkDeleteRooms(building)
+                      handleOpenBulkDeleteRooms(buildings.find(source => source.id === building.id) ?? building)
                       setOpenMenuId(null)
                     }}
                   >

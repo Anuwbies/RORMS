@@ -9,6 +9,7 @@ import { ReservationInfoModal } from '../../components/ReservationInfoModal'
 import { ReservationEvidenceGallery, forgetEvidenceUrl, type EvidenceGalleryItem } from '../../components/ReservationEvidenceGallery'
 import { ReservationReviewIndicators } from '../../components/ReservationReviewIndicators'
 import { reservationReviewStep, RESERVATION_REVIEW_STEPS } from '../../utils/reservationReviewStep'
+import { reservationRoomIds } from '../../utils/reservationRooms'
 import { ConfirmModal } from '../../components/ConfirmModal'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
 import { useSnackbar } from '../../components/Snackbar'
@@ -33,6 +34,7 @@ type ReservationStatus = 'Pending' | 'Approved' | 'Declined' | 'Cancelled' | 'Co
 interface Reservation {
   id: string
   roomId: string
+  roomIds?: string[]
   buildingId: string
   userId: string
   date: string
@@ -50,6 +52,8 @@ interface Reservation {
   deanRecommend?: boolean
   registrarRecommend?: boolean
   universityAdministratorRecommend?: boolean
+  autoApproved?: boolean
+  approvedByRole?: string
   declinedByRole?: string
   autoProcessed?: boolean
   evidencePath?: string
@@ -470,8 +474,7 @@ function MyReservationsPage(_props: { userRole: string }) {
       if (!normalizedSearch) return true
 
       return [
-        room?.name || '',
-        room?.code || '',
+        ...reservationRoomIds(res).flatMap(id => [rooms[id]?.name || '', rooms[id]?.code || '']),
         building?.name || '',
         building?.code || '',
         res.purpose,
@@ -497,7 +500,7 @@ function MyReservationsPage(_props: { userRole: string }) {
             />
             <div className="flex flex-col">
               <span className="text-sm font-bold text-slate-900 group-hover:text-[var(--brand-color)] transition-colors">
-                {room?.name || 'Unknown Room'}
+                {reservationRoomIds(res).map(id => rooms[id]?.name || 'Unknown Room').join(' + ')}
               </span>
               <span className="text-xs font-medium text-slate-500">
                 {room?.type || 'Unknown Room Type'}
@@ -1003,7 +1006,7 @@ function MyReservationsPage(_props: { userRole: string }) {
         removingEvidence={isRemovingEvidence}
         evidenceOpenRequest={evidenceOpenRequest}
         showReviewIndicators
-        roomName={selectedReservation && rooms[selectedReservation.roomId] ? rooms[selectedReservation.roomId].name : 'Unknown Room'}
+        roomName={selectedReservation ? reservationRoomIds(selectedReservation).map(id => rooms[id]?.name || 'Unknown Room').join(' + ') : 'Unknown Room'}
         roomType={(selectedReservation && rooms[selectedReservation.roomId]?.type) || 'Unknown Room Type'}
       />
 
@@ -1045,7 +1048,7 @@ function MyReservationsPage(_props: { userRole: string }) {
                       <span className="text-xs font-bold text-[#41572a]">{formatReservationDate(reservation.date)}</span>
                       <span className={`shrink-0 rounded-lg px-2 py-0.5 text-[0.625rem] font-bold ${inProgress ? 'bg-sky-100 text-sky-700' : 'bg-emerald-100 text-emerald-700'}`}>{inProgress ? 'In progress' : 'Approved'}</span>
                     </div>
-                    <p className="mt-2 truncate text-sm font-bold text-slate-900">{room?.name || room?.code || 'Unknown room'}</p>
+                    <p className="mt-2 truncate text-sm font-bold text-slate-900">{reservationRoomIds(reservation).map(id => rooms[id]?.name || rooms[id]?.code || 'Unknown room').join(' + ')}</p>
                     <p className="mt-0.5 truncate text-xs text-slate-500">{building?.name || 'Unknown building'}</p>
                     <p className="mt-3 flex items-center gap-1.5 text-xs font-semibold text-slate-700"><ClockIcon className="h-3.5 w-3.5 shrink-0" />{reservation.startTime} – {reservation.endTime}{reservation.requestType === 'Extended' && <span className="ml-1 text-[0.625rem] font-bold text-sky-700" title="Extended reservation">EXTD</span>}</p>
                     <p className="mt-1 truncate text-xs text-slate-500" title={reservation.purpose}>{reservation.purpose || 'No purpose provided'}</p>

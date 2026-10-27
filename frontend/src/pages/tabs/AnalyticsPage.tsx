@@ -256,13 +256,11 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
   const { reservations, rooms, buildings, memberships, invitations, users, departments, schedules, errors, isLoading } = useReportingData()
   const { records: currentScheduleRecords, isLoading: isCurrentSchedulesLoading, error: currentSchedulesError } = useFacilityScheduleRecords()
   const { activeAcademicYear, currentSemester, isLoading: isAcademicYearLoading } = useAcademicSemester()
-  const isRegistrar = userRole.trim().toLowerCase() === 'registrar'
   const isUniversityAdministrator = userRole.trim().toLowerCase() === 'university administrator'
   const isDepartmentLeader = ['dean', 'program head'].includes(userRole.trim().toLowerCase())
   const [analyticsKind, setAnalyticsKind] = useState<AnalyticsKind>(() => {
     const storedAnalyticsKind = getStoredAnalyticsKind()
     return (isUniversityAdministrator && storedAnalyticsKind !== 'reservations' && storedAnalyticsKind !== 'rooms')
-      || (isRegistrar && storedAnalyticsKind === 'members')
       || (isDepartmentLeader && storedAnalyticsKind !== 'reservations' && storedAnalyticsKind !== 'schedules') ? 'reservations' : storedAnalyticsKind
   })
   const [searchQuery, setSearchQuery] = useState('')
@@ -273,17 +271,14 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
     ? ANALYTICS_OPTIONS.filter(option => option.id === 'reservations' || option.id === 'rooms')
     : isDepartmentLeader
     ? ANALYTICS_OPTIONS.filter(option => option.id === 'reservations' || option.id === 'schedules')
-    : isRegistrar
-    ? ANALYTICS_OPTIONS.filter(option => option.id !== 'members')
     : ANALYTICS_OPTIONS
 
   useEffect(() => {
     if ((isUniversityAdministrator && analyticsKind !== 'reservations' && analyticsKind !== 'rooms')
-      || (isRegistrar && analyticsKind === 'members')
       || (isDepartmentLeader && analyticsKind !== 'reservations' && analyticsKind !== 'schedules')) {
       setAnalyticsKind('reservations')
     }
-  }, [analyticsKind, isRegistrar, isUniversityAdministrator, isDepartmentLeader])
+  }, [analyticsKind, isUniversityAdministrator, isDepartmentLeader])
 
   const selectAnalyticsKind = (nextAnalyticsKind: AnalyticsKind) => {
     setAnalyticsKind(nextAnalyticsKind)
@@ -834,18 +829,15 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
       })
 
       const capacityBuckets = [
-        { label: 'Not set', minimum: 0, maximum: 0 },
-        { label: '1–20 seats', minimum: 1, maximum: 20 },
-        { label: '21–40 seats', minimum: 21, maximum: 40 },
-        { label: '41–60 seats', minimum: 41, maximum: 60 },
-        { label: '61–100 seats', minimum: 61, maximum: 100 },
-        { label: '100+ seats', minimum: 101, maximum: Number.POSITIVE_INFINITY },
+        { label: '50–75 seats', minimum: 50, maximum: 75 },
+        { label: '75–100 seats', minimum: 75, maximum: 100 },
+        { label: '100+ seats', minimum: 100, maximum: Number.POSITIVE_INFINITY },
       ]
       secondaryData = capacityBuckets.map(bucket => ({
         label: bucket.label,
         value: matchingRooms.filter(room => {
           const capacity = Number(room.capacity) || 0
-          return capacity >= bucket.minimum && capacity <= bucket.maximum
+          return capacity >= bucket.minimum && capacity < bucket.maximum
         }).length,
       }))
 
@@ -1211,10 +1203,10 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                         <CartesianGrid stroke="#e2e8f0" strokeDasharray="4 4" vertical={false} />
                         <XAxis dataKey="label" axisLine={false} tickLine={false} minTickGap={14} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 700 }} />
                         <YAxis yAxisId="primary" width={28} allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                        <YAxis yAxisId="secondary" width={28} orientation="right" allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />
-                        <Tooltip contentStyle={tooltipContentStyle} cursor={{ fill: '#f8fafc' }} />
+                        {analyticsKind !== 'members' && <YAxis yAxisId="secondary" width={28} orientation="right" allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 10 }} />}
+                        <Tooltip contentStyle={tooltipContentStyle} cursor={{ fill: '#f8fafc' }} itemSorter={analyticsKind === 'members' ? item => item.dataKey === 'value' ? 0 : 1 : 'name'} />
                         <Bar yAxisId="primary" dataKey="value" name={detailedAnalytics.primaryValueLabel} fill="#62853e" radius={[6, 6, 0, 0]} maxBarSize={34} />
-                        <Bar yAxisId="secondary" dataKey="secondary" name={detailedAnalytics.primarySecondaryLabel} fill="#a3c48b" radius={[6, 6, 0, 0]} maxBarSize={34} />
+                        <Bar yAxisId={analyticsKind === 'members' ? 'primary' : 'secondary'} dataKey="secondary" name={detailedAnalytics.primarySecondaryLabel} fill="#a3c48b" radius={[6, 6, 0, 0]} maxBarSize={34} />
                       </BarChart>
                     )}
                   </ResponsiveContainer>
@@ -1404,7 +1396,7 @@ function AnalyticsPage({ userRole }: AnalyticsPageProps) {
                     <div className="h-2 overflow-hidden rounded-full bg-slate-100">
                       <span
                         className="block h-full rounded-full bg-gradient-to-r from-[#62853e] to-[#a3c48b] transition-all"
-                        style={{ width: `${rankedMaximum > 0 ? Math.max(3, item.value / rankedMaximum * 100) : 0}%` }}
+                        style={{ width: `${analyticsKind === 'rooms' ? Math.max(0, Math.min(100, item.value)) : rankedMaximum > 0 ? Math.max(3, item.value / rankedMaximum * 100) : 0}%` }}
                       />
                     </div>
                   </div>

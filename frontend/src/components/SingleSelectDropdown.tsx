@@ -23,6 +23,7 @@ export interface SingleSelectDropdownProps<T extends string> {
   recommendedOptions?: readonly T[]
   clearValue?: T
   fitMenuToOptions?: boolean
+  matchTriggerWidth?: boolean
 }
 
 export function SingleSelectDropdown<T extends string>({ 
@@ -43,7 +44,8 @@ export function SingleSelectDropdown<T extends string>({
   retainValueOnOpen = false,
   recommendedOptions = [],
   clearValue,
-  fitMenuToOptions = false
+  fitMenuToOptions = false,
+  matchTriggerWidth = false
 }: SingleSelectDropdownProps<T>) {
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
@@ -87,9 +89,11 @@ export function SingleSelectDropdown<T extends string>({
   useLayoutEffect(() => {
     if (!portal || !isOpen || !dropdownRef.current) return
     const anchor = menuAnchorSelector ? dropdownRef.current.closest(menuAnchorSelector) : null
-    const rect = (anchor ?? dropdownRef.current).getBoundingClientRect()
+    const rect = (anchor ?? (matchTriggerWidth ? dropdownRef.current.querySelector('button, input') : null) ?? dropdownRef.current).getBoundingClientRect()
     const baseWidth = anchor ? rect.width : Math.max(rect.width, 220)
-    const width = Math.min(Math.max(baseWidth, fitMenuToOptions ? (menuOptionWidthRef.current?.offsetWidth ?? 0) + 64 : 0), window.innerWidth - 16)
+    const width = matchTriggerWidth && !anchor
+      ? Math.min(rect.width, window.innerWidth - 16)
+      : Math.min(Math.max(baseWidth, fitMenuToOptions ? (menuOptionWidthRef.current?.offsetWidth ?? 0) + 64 : 0), window.innerWidth - 16)
     const top = anchor ? rect.bottom + 4 : Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 260))
     setMenuPosition({ left: Math.max(8, Math.min(rect.left, window.innerWidth - width - 8)),
       top, width, ...(anchor ? { maxHeight: Math.max(32, Math.min(220, window.innerHeight - top - 20)) } : {}) })
@@ -99,7 +103,7 @@ export function SingleSelectDropdown<T extends string>({
     window.addEventListener('resize', close)
     document.addEventListener('keydown', key, true)
     return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); document.removeEventListener('keydown', key, true) }
-  }, [isOpen, portal, menuAnchorSelector, fitMenuToOptions, longestOption])
+  }, [isOpen, portal, menuAnchorSelector, fitMenuToOptions, matchTriggerWidth, longestOption])
 
   const handleSelect = (option: T) => {
     onChange(option)
@@ -124,7 +128,7 @@ export function SingleSelectDropdown<T extends string>({
       )
 
   const menu = (
-    <div ref={menuRef} style={portal && menuPosition ? { position: 'fixed', left: menuPosition.left, top: menuPosition.top, width: menuPosition.width } : undefined}
+    <div ref={menuRef} style={portal && menuPosition ? { position: 'fixed', left: menuPosition.left, top: menuPosition.top, width: menuPosition.width, boxSizing: 'border-box' } : undefined}
       className={`${portal ? 'z-[300]' : 'absolute left-0 top-full z-20 mt-2 w-full'} ${meetingVariant ? 'rounded shadow-none' : 'rounded-2xl shadow-xl ring-1 ring-black/5'} border border-gray-200 bg-white p-2 animate-in fade-in zoom-in-95 duration-200 overflow-visible`}>
       <div id={listId} role={searchable ? 'listbox' : undefined} aria-label={searchable ? ariaLabel : undefined}
         style={portal && menuPosition?.maxHeight ? { maxHeight: menuPosition.maxHeight } : undefined}

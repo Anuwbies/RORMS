@@ -34,6 +34,8 @@ export interface Room {
   endTime: string
   minBookingMins: number
   maxBookingMins: number
+  isCollapsible?: boolean
+  collapsibleWithRoomId?: string
 }
 
 export interface Building {

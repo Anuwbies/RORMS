@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { Fragment, useState, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { formatUserName } from '../utils/userName'
 import { CalendarIcon, SpinnerIcon, DownloadIcon, ChevronLeftIcon, ChevronRightIcon } from './Icons'
 import { db, auth } from '../firebase'
-import { roomScheduleLabel, scheduleSectionLabel, scheduleMatchesTerm } from '../utils/roomSchedule'
+import { roomScheduleInstructor, roomScheduleLabel, scheduleSectionLabel, scheduleMatchesTerm } from '../utils/roomSchedule'
 import { subscribeRoomTimetable } from '../services/roomTimetable'
 import { collection, onSnapshot } from 'firebase/firestore'
 import type { Room } from '../types/room'
@@ -410,18 +410,19 @@ export function RoomScheduleModal({
     })
   }, [schedules, selectedAcademicYear?.id, selectedAcademicYear?.academicYear, selectedSemester, hideReturnedSchedules, scheduleStatuses])
 
-  const getMeetingStatus = (meeting: { status?: string }) => meeting.status || 'Draft'
+  const getMeetingStatus = (meeting: { status?: string; statusByDay?: Record<string, 'Draft' | 'Plot'> }, day?: string) =>
+    day && meeting.statusByDay?.[day] || meeting.status || 'Draft'
 
-  const getScheduleStatusClasses = (meeting: Parameters<typeof getMeetingStatus>[0]) => {
-    const s = getMeetingStatus(meeting)
+  const getScheduleStatusClasses = (meeting: Parameters<typeof getMeetingStatus>[0], day: string) => {
+    const s = getMeetingStatus(meeting, day)
     if (s === 'Plot') return 'bg-[var(--brand-color)]/15 border-[var(--brand-color)]/50'
     if (s === 'Revise' || s === 'Revised') return 'bg-amber-50 border-amber-300'
     if (s === 'Return' || s === 'Returned') return 'bg-rose-50 border-rose-300'
     return 'bg-slate-100 border-slate-300' // Draft
   }
 
-  const getPdfStatusStyles = (meeting: Parameters<typeof getMeetingStatus>[0]) => {
-    const s = getMeetingStatus(meeting)
+  const getPdfStatusStyles = (meeting: Parameters<typeof getMeetingStatus>[0], day: string) => {
+    const s = getMeetingStatus(meeting, day)
     if (s === 'Plot') return { backgroundColor: '#e7f0df', borderColor: '#a3c48b' }
     if (s === 'Revise' || s === 'Revised') return { backgroundColor: '#fffbeb', borderColor: '#fcd34d' }
     if (s === 'Return' || s === 'Returned') return { backgroundColor: '#fff1f2', borderColor: '#fda4af' }
@@ -548,6 +549,45 @@ export function RoomScheduleModal({
     return grid
   }, [timeSlots, filteredSchedules, activeWeekReservations, showWeekCalendar, weekInfo.weekDays])
 
+  // Keep the room's time rows while rendering meetings that cross rows once.
+  const slotGroupsByDay = useMemo(() => {
+    const groups: Record<string, Array<{ endIndex: number; schedules: typeof scheduleGrid[string][string] } | null>> = {}
+
+    DAYS.forEach(day => {
+      const dayGroups = Array.from({ length: timeSlots.length }, () => null as { endIndex: number; schedules: typeof scheduleGrid[string][string] } | null)
+
+      for (let startIndex = 0; startIndex < timeSlots.length;) {
+        let endIndex = startIndex
+
+        for (let index = startIndex; index <= endIndex; index++) {
+          const schedules = scheduleGrid[timeSlots[index]]?.[day] || []
+          schedules.forEach(schedule => {
+            for (let nextIndex = endIndex + 1; nextIndex < timeSlots.length && isScheduleInSlot(schedule, timeSlots[nextIndex]); nextIndex++) {
+              endIndex = nextIndex
+            }
+          })
+        }
+
+        const uniqueSchedules = new Map<string, typeof scheduleGrid[string][string][number]>()
+        for (let index = startIndex; index <= endIndex; index++) {
+          const schedules = scheduleGrid[timeSlots[index]]?.[day] || []
+          schedules.forEach(schedule => {
+            const identity = schedule.id ?? schedule.docId ?? `${schedule.subjectCode}-${schedule.startTime}-${schedule.endTime}-${scheduleSectionLabel(schedule)}`
+            const key = `${schedule._itemType}:${identity}`
+            if (!uniqueSchedules.has(key)) uniqueSchedules.set(key, schedule)
+          })
+        }
+
+        dayGroups[startIndex] = { endIndex, schedules: Array.from(uniqueSchedules.values()) }
+        startIndex = endIndex + 1
+      }
+
+      groups[day] = dayGroups
+    })
+
+    return groups
+  }, [timeSlots, scheduleGrid])
+
   const busyIntervalsByDay = useMemo(() => {
     const intervals: Record<string, { start: number; end: number }[]> = {}
     DAYS.forEach(day => {
@@ -613,15 +653,20 @@ export function RoomScheduleModal({
       const imgWidth = img.width
       const imgHeight = img.height
 
-      // Dynamically create the PDF to exactly match the image dimensions
-      // This prevents the schedule from shrinking if it has many rows.
       const pdf = new jsPDF({
-        orientation: imgWidth > imgHeight ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [imgWidth, imgHeight]
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
       })
 
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+      const margin = 20
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const scale = Math.min((pageWidth - margin * 2) / imgWidth, (pageHeight - margin * 2) / imgHeight)
+      const printWidth = imgWidth * scale
+      const printHeight = imgHeight * scale
+
+      pdf.addImage(imgData, 'PNG', (pageWidth - printWidth) / 2, (pageHeight - printHeight) / 2, printWidth, printHeight)
 
       const targetName = room?.code || room?.name || 'Room'
       const safeName = targetName.trim().replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '')
@@ -704,7 +749,7 @@ export function RoomScheduleModal({
                 </tr>
               </thead>
               <tbody>
-                {timeSlots.map(slot => {
+                {timeSlots.map((slot, slotIndex) => {
                   const [start, end] = slot.split('-')
                   return (
                     <tr key={slot}>
@@ -715,11 +760,14 @@ export function RoomScheduleModal({
                         </div>
                       </td>
                       {DAYS.map(day => {
-                        const daySchedules = scheduleGrid[slot]?.[day] || []
+                        const slotGroup = slotGroupsByDay[day][slotIndex]
+                        if (!slotGroup) return null
+                        const daySchedules = slotGroup.schedules
+                        const span = slotGroup.endIndex - slotIndex + 1
                         const isSelected = false
                         if (daySchedules.length === 0) {
                           return (
-                            <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
+                            <td key={day} rowSpan={span} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top', height: '103px' }}>
                               <div style={{ height: '100%' }} />
                             </td>
                           )
@@ -727,10 +775,10 @@ export function RoomScheduleModal({
 
                         
                         const slotStartMins = timeToMins(start)
-                        const slotEndMins = timeToMins(end)
+                        const slotEndMins = timeToMins(timeSlots[slotGroup.endIndex].split('-')[1])
                         const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
                         return (
-                          <td key={day} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top' }}>
+                          <td key={day} rowSpan={span} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top' }}>
                             <div style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
                               {daySchedules.map((item, idx) => {
                                 const itemStartMins = Math.max(slotStartMins, timeToMins(item.startTime))
@@ -771,7 +819,8 @@ export function RoomScheduleModal({
                                   )
                                 }
 
-                                const pdfStyles = getPdfStatusStyles(item)
+                                const pdfStyles = getPdfStatusStyles(item, day)
+                                const instructorName = roomScheduleInstructor(item, instructorsMap)
                                 return (
                                   <div key={item.id || idx} style={{ gridRow: gridRowStyle, backgroundColor: pdfStyles.backgroundColor, border: `1px solid ${pdfStyles.borderColor}`, borderRadius: '6px', padding: '6px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: '6px', marginBottom: '3px' }}>
@@ -783,6 +832,7 @@ export function RoomScheduleModal({
                                     <div style={{ marginTop: '4px', borderTop: `1px solid ${pdfStyles.borderColor}`, paddingTop: '4px', fontSize: '10px', color: '#4b5563', display: 'flex', flexDirection: 'column', gap: '2px' }}>
                                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Time: <span style={{ color: '#1f2937', fontWeight: 500 }}>{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></div>
                                       <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Sec: <span style={{ color: '#1f2937', fontWeight: 500 }}>{scheduleSectionLabel(item)}</span></div>
+                                      <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Inst: <span style={{ color: '#1f2937', fontWeight: 500 }}>{instructorName}</span></div>
                                       {item.department && (
                                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Dept: <span style={{ color: '#4b5563', fontWeight: 500 }}>{item.department}</span></div>
                                       )}
@@ -958,22 +1008,27 @@ export function RoomScheduleModal({
                 </tr>
               </thead>
               <tbody className="contents">
-                {timeSlots.map(slot => {
+                {timeSlots.map((slot, slotIndex) => {
                   const [start, end] = slot.split('-')
                   return (
                     <tr key={slot} className="contents group">
-                      <td className="px-3 py-2 text-xs font-bold text-gray-700 border-b border-r border-gray-300 align-middle whitespace-nowrap bg-gray-50/60 group-hover:bg-gray-100/70 transition-colors h-full flex items-center justify-center">
+                      <td className="px-3 py-2 text-xs font-bold text-gray-700 border-b border-r border-gray-300 align-middle whitespace-nowrap bg-gray-50/60 group-hover:bg-gray-100/70 transition-colors h-full flex items-center justify-center" style={{ gridColumn: 1, gridRow: slotIndex + 2 }}>
                         <div className="flex flex-col items-center justify-center gap-1">
                           <span className="text-gray-900 font-bold text-xs">{formatTime(start)}</span>
                           <span className="text-gray-900 font-bold text-xs">{formatTime(end)}</span>
                         </div>
                       </td>
-                      {DAYS.map(day => {
-                        const daySchedules = scheduleGrid[slot]?.[day] || []
+                      {DAYS.map((day, dayIndex) => {
+                        const slotGroup = slotGroupsByDay[day][slotIndex]
+                        if (!slotGroup) return null
+                        const daySchedules = slotGroup.schedules
+                        const spansRows = slotGroup.endIndex > slotIndex
+                        const cellPosition = { gridColumn: dayIndex + 2, gridRow: `${slotIndex + 2} / span ${slotGroup.endIndex - slotIndex + 1}` }
+                        const columnBorder = dayIndex === DAYS.length - 1 ? 'border-r-0' : 'border-r'
                         const weekDay = weekInfo.weekDays.find(candidate => candidate.dayName === day)
                         const slotDate = weekDay?.isoString || ''
                         const slotStartMins = timeToMins(start)
-                        const slotEndMins = timeToMins(end)
+                        const slotEndMins = timeToMins(timeSlots[slotGroup.endIndex].split('-')[1])
                         const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
                         const minBookingMins = Math.max(30, room.minBookingMins || 30)
                         const now = new Date()
@@ -1001,10 +1056,11 @@ export function RoomScheduleModal({
                           return (
                             <td
                               key={day}
-                              className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors h-full flex flex-col min-w-0 ${isSelected
+                              className={`px-2.5 py-2 border-b ${columnBorder} border-gray-300 align-top transition-colors h-full flex flex-col min-w-0 ${isSelected
                                   ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
                                   : 'bg-white group-hover:bg-gray-50/50'
                                 }`}
+                              style={cellPosition}
                             >
                               {freeStarts.length > 0
                                 ? renderFreeSlotButton(slotDate, freeStarts[0].time, weekDay?.formattedShort || slotDate)
@@ -1027,13 +1083,26 @@ export function RoomScheduleModal({
                           : 'auto';
 
                         return (
+                          <Fragment key={day}>
+                          {spansRows && (
+                            <td
+                              key={`${day}-grid`}
+                              className={`px-2.5 py-2 border-b ${columnBorder} border-gray-300 align-top transition-colors h-full flex flex-col min-w-0 ${isSelected
+                                  ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
+                                  : 'bg-white group-hover:bg-gray-50/50'
+                                }`}
+                              style={cellPosition}
+                            >
+                              <div className="flex-1 h-full" />
+                            </td>
+                          )}
                           <td
                             key={day}
-                            className={`px-2.5 py-2 border-b border-r border-gray-300 last:border-r-0 align-top transition-colors min-w-0 h-full grid gap-1 ${isSelected
+                            className={`px-2.5 py-2 align-top transition-colors min-w-0 h-full grid gap-1 ${spansRows ? 'relative z-10' : `border-b ${columnBorder} border-gray-300`} ${isSelected && !spansRows
                                 ? 'bg-[#f3f7ee]/90 group-hover:bg-[#e3edda]/60'
-                                : 'bg-white group-hover:bg-gray-50/50'
+                                : spansRows ? '' : 'bg-white group-hover:bg-gray-50/50'
                               }`}
-                            style={{ gridTemplateRows: gridRowsStyle }}
+                            style={{ ...cellPosition, gridTemplateRows: gridRowsStyle }}
                           >
                             {freeStarts.map(candidate => renderFreeSlotButton(slotDate, candidate.time, weekDay?.formattedShort || slotDate, candidate.row))}
                             {daySchedules.map((item, idx) => {
@@ -1079,8 +1148,9 @@ export function RoomScheduleModal({
                                 )
                               }
 
+                              const instructorName = roomScheduleInstructor(item, instructorsMap)
                               return (
-                                <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 ${item.type === 'parallel' ? 'min-h-max' : 'min-h-0'} overflow-hidden ${getScheduleStatusClasses(item)}`}>
+                                <div key={item.id || idx} style={{ gridRow: gridRowStyle }} className={`flex flex-col p-2 border rounded text-sm shadow-sm hover:shadow transition-shadow min-w-0 ${item.type === 'parallel' ? 'min-h-max' : 'min-h-0'} overflow-hidden ${getScheduleStatusClasses(item, day)}`}>
                                   <div className="flex flex-row items-center gap-1.5 min-w-0">
                                     <span className="font-bold text-gray-900 uppercase truncate" title={item.subjectTitle}>{item.subjectCode || 'TBA'}</span>
                                     <span className="font-bold text-gray-600 uppercase tracking-wider text-xs shrink-0">
@@ -1089,7 +1159,8 @@ export function RoomScheduleModal({
                                   </div>
                                   <div className="mt-1.5 flex flex-col gap-0.5 text-xs text-gray-500 min-w-0 border-t border-[var(--brand-color)]/20 pt-1.5">
                                     <span className="truncate" title={`${formatTime(item.startTime)} - ${formatTime(item.endTime)}`}>Time: <span className="font-medium text-gray-700">{formatTime(item.startTime)} - {formatTime(item.endTime)}</span></span>
-                                    <span className="truncate" title={scheduleSectionLabel(item)}>Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>                                    {item.department && (
+                                    <span className="truncate" title={scheduleSectionLabel(item)}>Sec: <span className="font-medium text-gray-700 uppercase">{scheduleSectionLabel(item)}</span></span>                                    <span className="truncate" title={instructorName}>Inst: <span className="font-medium text-gray-700">{instructorName}</span></span>
+                                    {item.department && (
                                       <span className="truncate">Dept: <span className="font-medium text-gray-600 truncate">{item.department}</span></span>
                                     )}
                                   </div>
@@ -1097,6 +1168,7 @@ export function RoomScheduleModal({
                               )
                             })}
                           </td>
+                          </Fragment>
                         )
                       
                       })}
