@@ -10,6 +10,7 @@ import { SingleSelectDropdown } from './SingleSelectDropdown'
 import { DatePicker } from './DatePicker'
 import { toPng } from 'html-to-image'
 import jsPDF from 'jspdf'
+import { sizeSchedulePdfGrids } from '../utils/schedulePdfLayout'
 
 import type { ScheduleMemberInfo } from '../types/scheduleMember'
 
@@ -604,12 +605,14 @@ export function PersonalScheduleModal({
   const handleDownloadPdf = async () => {
     if (!printRef.current) return
     setIsGeneratingPdf(true)
+    let restorePdfGridHeights = () => {}
 
     // Yield control to let React flush the state and paint the "Exporting PDF..." button immediately
     await new Promise(resolve => setTimeout(resolve, 50))
 
     try {
       const element = printRef.current
+      restorePdfGridHeights = sizeSchedulePdfGrids(element)
 
       // html-to-image captures the element exactly as the browser computes it.
       // Because the element is wrapped in an overflow:hidden container, 
@@ -660,6 +663,7 @@ export function PersonalScheduleModal({
       console.error('Error generating PDF:', error)
       alert('Failed to generate PDF. Please try again.')
     } finally {
+      restorePdfGridHeights()
       setIsGeneratingPdf(false)
     }
   }
@@ -786,7 +790,7 @@ export function PersonalScheduleModal({
 
                         return (
                           <td key={day} rowSpan={span} style={{ border: '1px solid #d1d5db', backgroundColor: '#ffffff', padding: '6px', verticalAlign: 'top' }}>
-                            <div style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
+                            <div data-pdf-schedule-grid style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
                               {grouped.map((group, idx) => {
                                 const itemStartMins = Math.max(slotStartMins, timeToMins(group.parent.startTime))
                                 const itemEndMins = Math.min(slotEndMins, timeToMins(group.parent.endTime))

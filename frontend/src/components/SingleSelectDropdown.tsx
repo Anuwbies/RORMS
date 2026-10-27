@@ -16,6 +16,10 @@ export interface SingleSelectDropdownProps<T extends string> {
   portal?: boolean
   ariaLabel?: string
   searchable?: boolean
+  allowCustomValue?: boolean
+  maxLength?: number
+  showSearchChevron?: boolean
+  neutralFocus?: boolean
   getOptionLabel?: (value: T) => string
   variant?: 'default' | 'meeting'
   menuAnchorSelector?: string
@@ -38,6 +42,10 @@ export function SingleSelectDropdown<T extends string>({
   portal = false,
   ariaLabel,
   searchable = false,
+  allowCustomValue = false,
+  maxLength,
+  showSearchChevron = false,
+  neutralFocus = false,
   getOptionLabel = (option: T) => option,
   variant = 'default',
   menuAnchorSelector,
@@ -146,7 +154,7 @@ export function SingleSelectDropdown<T extends string>({
             {selected && <CheckIcon className="ml-auto h-4 w-4 text-[var(--brand-color)] shrink-0" strokeWidth={3} />}
           </button>
         })}
-        {!filteredOptions.length && <p className="px-3 py-2 text-sm text-gray-500">No matching rooms.</p>}
+        {!filteredOptions.length && <p className="px-3 py-2 text-sm text-gray-500">{allowCustomValue ? 'Use the entered custom type.' : 'No matching rooms.'}</p>}
       </div>
     </div>
   )
@@ -169,22 +177,24 @@ export function SingleSelectDropdown<T extends string>({
       {fitMenuToOptions && <span ref={menuOptionWidthRef} aria-hidden="true"
         className="pointer-events-none absolute invisible w-max whitespace-nowrap px-3 py-2 text-sm font-medium">{longestOption}</span>}
 
-      {searchable ? <input
+      {searchable ? <><input
         type="text" role="combobox" autoComplete="off" aria-label={ariaLabel} aria-autocomplete="list" aria-expanded={isOpen}
         size={meetingVariant ? 1 : undefined}
         aria-controls={isOpen ? listId : undefined} aria-activedescendant={isOpen && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
-        disabled={isDisabled} value={isOpen && (!retainValueOnOpen || searchStarted) ? search : getOptionLabel(value)} placeholder={isOpen && (!retainValueOnOpen || searchStarted) ? 'search...' : placeholder}
+        disabled={isDisabled} maxLength={maxLength} value={allowCustomValue ? value : isOpen && (!retainValueOnOpen || searchStarted) ? search : getOptionLabel(value)} placeholder={allowCustomValue ? placeholder : isOpen && (!retainValueOnOpen || searchStarted) ? 'search...' : placeholder}
         onFocus={event => { setSearch(''); setSearchStarted(false); setActiveIndex(-1); setIsOpen(true); if (retainValueOnOpen) event.currentTarget.select() }}
         onClick={() => setIsOpen(true)}
         onChange={event => {
           const text = event.target.value
           setSearch(text); setSearchStarted(true); setActiveIndex(-1); setIsOpen(true)
-          if (!text && clearValue !== undefined && value !== clearValue) onChange(clearValue)
+          if (allowCustomValue) onChange(text as T)
+          else if (!text && clearValue !== undefined && value !== clearValue) onChange(clearValue)
         }}
         onKeyDown={event => {
           if (!isOpen && !event.ctrlKey && !event.metaKey && !event.altKey && (event.key.length === 1 || event.key === 'Backspace' || event.key === 'Delete')) {
             event.preventDefault(); setSearch(event.key.length === 1 ? event.key : ''); setSearchStarted(true); setActiveIndex(-1); setIsOpen(true)
-            if ((event.key === 'Backspace' || event.key === 'Delete') && clearValue !== undefined && value !== clearValue) onChange(clearValue)
+            if (allowCustomValue) onChange((event.key.length === 1 ? `${value}${event.key}` : '') as T)
+            else if ((event.key === 'Backspace' || event.key === 'Delete') && clearValue !== undefined && value !== clearValue) onChange(clearValue)
           } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
             event.preventDefault(); setIsOpen(true)
             setActiveIndex(index => filteredOptions.length ? event.key === 'ArrowDown' ? (index + 1) % filteredOptions.length : index <= 0 ? filteredOptions.length - 1 : index - 1 : -1)
@@ -194,8 +204,10 @@ export function SingleSelectDropdown<T extends string>({
             else if (filteredOptions.length === 1) handleSelect(filteredOptions[0])
           } else if (event.key === 'Escape' || event.key === 'Tab') setIsOpen(false)
         }}
-        className={`relative h-12 w-full min-w-0 border border-gray-200 bg-white px-4 text-sm font-medium text-gray-900 outline-none transition-colors hover:border-gray-300 focus:border-[var(--brand-color)] disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400 ${meetingVariant ? 'rounded shadow-none' : 'rounded-xl shadow-sm'}`}
-      /> : <button
+        className={`relative h-12 w-full min-w-0 border border-gray-200 bg-white ${showSearchChevron ? 'pl-4 pr-11' : 'px-4'} text-sm font-medium text-gray-900 outline-none transition-colors hover:border-gray-300 ${neutralFocus ? 'focus:border-gray-300' : 'focus:border-[var(--brand-color)]'} disabled:bg-gray-50 disabled:cursor-not-allowed disabled:text-gray-400 ${meetingVariant ? 'rounded shadow-none' : 'rounded-xl shadow-sm'}`}
+      />
+      {showSearchChevron && <ChevronDownIcon aria-hidden="true" className={`pointer-events-none absolute right-4 top-1/2 h-4.5 w-4.5 -translate-y-1/2 text-gray-400 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />}
+      </> : <button
         type="button"
         disabled={isDisabled}
         aria-label={ariaLabel}

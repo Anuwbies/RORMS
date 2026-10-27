@@ -136,6 +136,26 @@ Manages campus buildings and infrastructure metadata.
   - `createdAt`: timestamp | **Default: serverTimestamp()**
   - `updatedAt`: timestamp | **Default: serverTimestamp()**
 
+## `facilities`
+Stores building facilities separately from schedulable rooms. Buildings & Rooms displays these as green cards on their floor. Admins, Registrars, and University Administrators add them through the audited `manageFacility` callable. Deleting a building removes its facilities in the same transaction.
+
+- **Document ID**: Auto-generated ID
+- **Fields**:
+  - `buildingId`: string (Reference to the parent building)
+  - `name`: string (Facility name)
+  - `code`: string (Unique facility code)
+  - `type`: string (Editable type; suggestions include `AVR`, `Crime Lab`, and `Auditorium`)
+  - `floor`: number (Nonnegative whole number)
+  - `capacity`: number (Nonnegative whole number)
+  - `status`: string (`"Available"`, `"Unavailable"`, or `"Maintenance"`)
+  - `image`: string (URL to the facility photo, or the default image)
+  - `description`: string (Facility and equipment details)
+  - `amenities`: array of strings
+  - `availableDays`: array of weekday names
+  - `startTime`, `endTime`: strings (Daily availability in `HH:mm` format)
+  - `minBookingMins`, `maxBookingMins`: numbers (Booking duration limits)
+  - `createdAt`, `updatedAt`: timestamps set by the server
+
 ## `rooms`
 Centralized inventory of all campus rooms and their real-time status.
 

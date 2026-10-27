@@ -141,6 +141,10 @@ const RESERVATION_CREATOR_ROLES = ['Admin', 'Registrar', 'University Administrat
 function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [buildings, setBuildings] = useState<Building[]>([])
+  const [filterBuildingId, setFilterBuildingId] = useState('all')
+  const [filterFloor, setFilterFloor] = useState('all')
+  const [filterType, setFilterType] = useState('all')
+  const [filterStatus, setFilterStatus] = useState('all')
   const [reservations, setReservations] = useState<any[]>([])
   const [schedules, setSchedules] = useState<any[]>([])
   const [reservationMembership, setReservationMembership] = useState<ReservationMembership | null>(null)
@@ -184,6 +188,37 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
   }, [reservationAvailabilityRef])
 
   const buildingOptions = useMemo(() => Array.from(new Set(buildings.map(b => b.code).filter(Boolean))).sort(), [buildings])
+  const buildingFilterOptions = useMemo(() => [
+    'all',
+    ...buildings.slice().sort((a, b) => a.code.localeCompare(b.code)).map(building => building.id),
+  ], [buildings])
+  const floorFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => String(room.floor)))).sort((a, b) => Number(a) - Number(b)),
+  ], [rooms])
+  const typeFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => room.type).filter(Boolean))).sort(),
+  ], [rooms])
+  const statusFilterOptions = useMemo(() => [
+    'all',
+    ...Array.from(new Set(rooms.map(room => room.status).filter(Boolean))).sort(),
+  ], [rooms])
+  const filteredBuildings = useMemo(() => {
+    const hasRoomFilter = filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
+    return buildings
+      .filter(building => filterBuildingId === 'all' || building.id === filterBuildingId)
+      .map(building => ({
+        ...building,
+        rooms: building.rooms.filter(room =>
+          (filterFloor === 'all' || String(room.floor) === filterFloor)
+          && (filterType === 'all' || room.type === filterType)
+          && (filterStatus === 'all' || room.status === filterStatus)
+        ),
+      }))
+      .filter(building => !hasRoomFilter || building.rooms.length > 0)
+  }, [buildings, filterBuildingId, filterFloor, filterType, filterStatus])
+  const hasActiveFilters = filterBuildingId !== 'all' || filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
 
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
@@ -1906,9 +1941,91 @@ function ReserveRoomPage({ userRole }: ReserveRoomPageProps) {
           </div>
         )}
 
+        <section aria-label="Filter buildings and rooms" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">Filter Buildings & Rooms</h2>
+              <p className="text-sm text-slate-500">Narrow the buildings and rooms shown below.</p>
+            </div>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterBuildingId('all')
+                  setFilterFloor('all')
+                  setFilterType('all')
+                  setFilterStatus('all')
+                }}
+                className="text-sm font-semibold text-[var(--brand-color)] hover:text-[var(--brand-color-hover)]"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Building</label>
+              <SingleSelectDropdown
+                options={buildingFilterOptions}
+                value={filterBuildingId}
+                onChange={setFilterBuildingId}
+                getOptionLabel={value => value === 'all' ? 'All buildings' : buildings.find(building => building.id === value)?.code ?? value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by building"
+                portal
+                matchTriggerWidth
+                searchable
+                showSearchChevron
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Floor</label>
+              <SingleSelectDropdown
+                options={floorFilterOptions}
+                value={filterFloor}
+                onChange={setFilterFloor}
+                getOptionLabel={value => value === 'all' ? 'All floors' : `Floor ${value}`}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by floor"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Room Type</label>
+              <SingleSelectDropdown
+                options={typeFilterOptions}
+                value={filterType}
+                onChange={setFilterType}
+                getOptionLabel={value => value === 'all' ? 'All types' : value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by room type"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+            <div className="min-w-0 space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Status</label>
+              <SingleSelectDropdown
+                options={statusFilterOptions}
+                value={filterStatus}
+                onChange={setFilterStatus}
+                getOptionLabel={value => value === 'all' ? 'All statuses' : value}
+                isPlaceholder={value => value === 'all'}
+                ariaLabel="Filter by status"
+                portal
+                matchTriggerWidth
+                className="w-full"
+              />
+            </div>
+          </div>
+        </section>
 
         <BuildingBrowser
-          buildings={buildings}
+          buildings={filteredBuildings}
           buildingOptions={buildingOptions}
           expandedBuildingIds={expandedBuildingIds}
           onToggleBuilding={toggleBuilding}

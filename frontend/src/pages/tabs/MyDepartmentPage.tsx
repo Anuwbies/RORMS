@@ -766,7 +766,7 @@ function MyDepartmentPage() {
 
       {/* Instructor Schedule Modal */}
       <PersonalScheduleModal
-        isOpen={isScheduleModalOpen}
+        isOpen={!isOfficeRole && isScheduleModalOpen}
         schedulesOnly
         member={selectedMember ? { ...selectedMember, departmentName: departmentInfo?.name || selectedMember.department } : null}
         initialAcademicYear={selectedAcademicYear?.academicYear}
@@ -1105,7 +1105,7 @@ function MyDepartmentPage() {
           <DataTable<Member>
             data={filteredMembers}
             columns={memberColumns}
-            onRowClick={handleRowClick}
+            onRowClick={isOfficeRole ? undefined : handleRowClick}
             searchPlaceholder="Search members..."
             searchValue={searchTerm}
             onSearchChange={setSearchTerm}

@@ -36,6 +36,25 @@ export interface Room {
   maxBookingMins: number
 }
 
+export interface Facility {
+  id: string
+  buildingId: string
+  name: string
+  code: string
+  type: string
+  floor: number
+  capacity: number
+  status: RoomStatus
+  image: string
+  description: string
+  amenities: string[]
+  availableDays: string[]
+  startTime: string
+  endTime: string
+  minBookingMins: number
+  maxBookingMins: number
+}
+
 export interface Building {
   id: string
   code: string
@@ -43,6 +62,7 @@ export interface Building {
   floor: number
   capacity: number
   rooms: Room[]
+  facilities?: Facility[]
 }
 
 export const roomStatusClasses: Record<RoomStatus, string> = {

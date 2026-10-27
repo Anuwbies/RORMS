@@ -5,8 +5,9 @@ import { HttpsError } from "firebase-functions/v2/https";
 type Value = string | number | boolean | null | string[];
 type Fields = Record<string, Value>;
 type Change = { before: Value; after: Value };
-const ACTIONS = ["create_building", "update_building", "delete_building", "create_room", "update_room", "delete_room", "delete_rooms", "delete_comment"];
+const ACTIONS = ["create_building", "update_building", "delete_building", "create_room", "update_room", "delete_room", "delete_rooms", "create_facility", "delete_comment"];
 const ROOM_FIELDS = ["buildingId", "name", "code", "type", "floor", "capacity", "status", "image", "description", "amenities", "availableDays", "startTime", "endTime", "minBookingMins", "maxBookingMins"];
+const FACILITY_FIELDS = ["buildingId", "name", "code", "type", "floor", "capacity", "status", "image", "description", "amenities", "availableDays", "startTime", "endTime", "minBookingMins", "maxBookingMins"];
 const text = (value: unknown): string => typeof value === "string" ? value.trim() : "";
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const validId = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
@@ -20,9 +21,9 @@ function snapshotFields(data: Record<string, unknown>, fields: string[]): Fields
   }));
 }
 
-function inputFields(value: unknown, room: boolean): Fields {
+function inputFields(value: unknown, room: boolean, facility: boolean): Fields {
   const data = record(value);
-  const fields = room ? ROOM_FIELDS : ["name", "code"];
+  const fields = room ? ROOM_FIELDS : facility ? FACILITY_FIELDS : ["name", "code"];
   const output: Fields = {};
   for (const field of fields) {
     const input = data[field];
@@ -38,7 +39,10 @@ function inputFields(value: unknown, room: boolean): Fields {
     }
   }
   if (!output.name || !output.code) throw new HttpsError("invalid-argument", "Name and code are required.");
-  if (room) {
+  if (facility && (!validId(text(output.buildingId)) || !text(output.type) || !["Available", "Unavailable", "Maintenance"].includes(text(output.status)))) {
+    throw new HttpsError("invalid-argument", "Invalid facility building, type, or status.");
+  }
+  if (room || facility) {
     const clock = (value: Value) => typeof value === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
     if (!validId(text(output.buildingId)) || !["Available", "Unavailable", "Maintenance"].includes(text(output.status))
       || !clock(output.startTime) || !clock(output.endTime) || String(output.startTime) >= String(output.endTime)
@@ -70,7 +74,8 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
   if (action === "delete_rooms" && (!validId(buildingId) || !roomIds.length || roomIds.length > 200 || roomIds.some(id => !validId(id)) || new Set(roomIds).size !== roomIds.length)) throw new HttpsError("invalid-argument", "Select between 1 and 200 distinct rooms.");
   const saving = action.startsWith("create_") || action.startsWith("update_");
   const room = action.endsWith("room");
-  const values = saving ? inputFields(request.data, room) : {};
+  const facility = action.endsWith("facility");
+  const values = saving ? inputFields(request.data, room, facility) : {};
   const fingerprint = createHash("sha256").update(JSON.stringify({ action, targetId, buildingId, roomIds, values })).digest("hex");
   const logRef = db.collection("logs").doc(`facility_${operationId}`);
   return db.runTransaction(async transaction => {
@@ -124,7 +129,7 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
         deleteRoom(document.ref, data, building.data() || {});
       }
     } else {
-      const collectionName = action === "delete_comment" ? "comments" : room ? "rooms" : "buildings";
+      const collectionName = action === "delete_comment" ? "comments" : room ? "rooms" : facility ? "facilities" : "buildings";
       const source = db.collection(collectionName).doc(targetId);
       const document = await transaction.get(source);
       const before = document.data() || {};
@@ -134,7 +139,7 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
       }
       let building: Record<string, unknown> = {};
       const parentId = text(saving ? values.buildingId : before.buildingId);
-      if (room && validId(parentId)) {
+      if ((room || facility) && validId(parentId)) {
         const parent = await transaction.get(db.collection("buildings").doc(parentId));
         if (saving && !parent.exists) throw new HttpsError("failed-precondition", "This building no longer exists.");
         building = parent.data() || {};
@@ -142,7 +147,7 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
       if (saving) {
         if (action === "update_room" && before.buildingId !== values.buildingId) throw new HttpsError("failed-precondition", "The room's building changed. Reload and try again.");
         const catalog = await transaction.get(db.collection(collectionName));
-        if (catalog.docs.some(candidate => candidate.id !== targetId && ["name", "code"].some(field => text(candidate.data()[field]).toLowerCase() === text(values[field]).toLowerCase()))) throw new HttpsError("already-exists", `A ${room ? "room" : "building"} with this name or code already exists.`);
+        if (catalog.docs.some(candidate => candidate.id !== targetId && ["name", "code"].some(field => text(candidate.data()[field]).toLowerCase() === text(values[field]).toLowerCase()))) throw new HttpsError("already-exists", `A ${room ? "room" : facility ? "facility" : "building"} with this name or code already exists.`);
         const changes: Record<string, Change> = {};
         const oldFields = snapshotFields(before, Object.keys(values));
         for (const [field, value] of Object.entries(values)) if (JSON.stringify(oldFields[field]) !== JSON.stringify(value)) changes[field] = { before: oldFields[field], after: value };
@@ -150,21 +155,23 @@ export async function manageFacilityRecords(db: Firestore, uid: string | undefin
         mutations.push(() => action.startsWith("create_")
           ? transaction.create(source, { ...values, createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() })
           : transaction.update(source, { ...values, updatedAt: FieldValue.serverTimestamp() }));
-        addEvent(source, `facility.${room ? "room" : "building"}_${action.startsWith("create_") ? "created" : "updated"}`, values,
-          action.startsWith("create_") ? {} : changes, { buildingId: room ? parentId : targetId, buildingName: room ? text(building.name) : text(values.name), buildingCode: room ? text(building.code) : text(values.code), roomId: room ? targetId : "" });
+        addEvent(source, `facility.${room ? "room" : facility ? "facility" : "building"}_${action.startsWith("create_") ? "created" : "updated"}`, values,
+          action.startsWith("create_") ? {} : changes, { buildingId: room || facility ? parentId : targetId, buildingName: room || facility ? text(building.name) : text(values.name), buildingCode: room || facility ? text(building.code) : text(values.code), roomId: room ? targetId : "" });
       } else if (action === "delete_room") {
         deleteRoom(source, before, building);
       } else if (action === "delete_building") {
         const rooms = await transaction.get(db.collection("rooms").where("buildingId", "==", targetId));
-        if (rooms.docs.length > 498) throw new HttpsError("resource-exhausted", "Delete rooms in batches before deleting this building.");
+        const facilities = await transaction.get(db.collection("facilities").where("buildingId", "==", targetId));
+        if (rooms.docs.length + facilities.docs.length > 498) throw new HttpsError("resource-exhausted", "Delete rooms in batches before deleting this building.");
         const deletedRoomRecords = rooms.docs.map(snapshot => ({ id: snapshot.id, name: text(snapshot.data().name), code: text(snapshot.data().code) }));
         for (const child of rooms.docs) {
           mutations.push(() => transaction.delete(child.ref));
           deletedRooms.push({ id: child.id, image: text(child.data().image) });
         }
+        for (const child of facilities.docs) mutations.push(() => transaction.delete(child.ref));
         mutations.push(() => transaction.delete(source));
         addEvent(source, "facility.building_deleted", snapshotFields(before, ["name", "code"]), {
-          record: { before: "Exists", after: "Deleted" }, rooms: { before: rooms.docs.length, after: 0 },
+          record: { before: "Exists", after: "Deleted" }, rooms: { before: rooms.docs.length, after: 0 }, facilities: { before: facilities.docs.length, after: 0 },
         }, { buildingId: targetId, buildingName: text(before.name), buildingCode: text(before.code), deletedRooms: deletedRoomRecords });
       } else {
         if (!manager && before.authorId !== uid) throw new HttpsError("permission-denied", "You can only delete your own comments.");

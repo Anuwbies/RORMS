@@ -12,6 +12,7 @@ import { SingleSelectDropdown } from './SingleSelectDropdown'
 import { DatePicker } from './DatePicker'
 import { toPng } from 'html-to-image'
 import jsPDF from 'jspdf'
+import { sizeSchedulePdfGrids } from '../utils/schedulePdfLayout'
 
 export interface RoomScheduleModalProps {
   isOpen: boolean
@@ -626,12 +627,14 @@ export function RoomScheduleModal({
   const handleDownloadPdf = async () => {
     if (!printRef.current) return
     setIsGeneratingPdf(true)
+    let restorePdfGridHeights = () => {}
 
     // Yield control to let React flush the state and paint the "Exporting PDF..." button immediately
     await new Promise(resolve => setTimeout(resolve, 50))
 
     try {
       const element = printRef.current
+      restorePdfGridHeights = sizeSchedulePdfGrids(element)
 
       // html-to-image captures the element exactly as the browser computes it.
       // Because the element is wrapped in an overflow:hidden container, 
@@ -682,6 +685,7 @@ export function RoomScheduleModal({
       console.error('Error generating PDF:', error)
       alert('Failed to generate PDF. Please try again.')
     } finally {
+      restorePdfGridHeights()
       setIsGeneratingPdf(false)
     }
   }
@@ -779,7 +783,7 @@ export function RoomScheduleModal({
                         const numSubRows = Math.max(1, Math.round((slotEndMins - slotStartMins) / 30))
                         return (
                           <td key={day} rowSpan={span} style={{ border: '1px solid #d1d5db', backgroundColor: isSelected ? '#f3f7ee' : '#ffffff', padding: '6px', verticalAlign: 'top' }}>
-                            <div style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
+                            <div data-pdf-schedule-grid style={{ display: 'grid', gridTemplateRows: `repeat(${numSubRows}, minmax(0, 1fr))`, gap: '4px', width: '100%', height: '100%' }}>
                               {daySchedules.map((item, idx) => {
                                 const itemStartMins = Math.max(slotStartMins, timeToMins(item.startTime))
                                 const itemEndMins = Math.min(slotEndMins, timeToMins(item.endTime))

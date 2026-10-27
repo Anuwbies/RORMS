@@ -94,6 +94,18 @@ test("room creation includes final image, full room settings and building contex
   assert.deepEqual(log.changes, {});
 });
 
+test("facility creation accepts a custom type and records its building context", async () => {
+  const fake = fixture();
+  const data = { buildingId: "building", name: "Main Hall", code: "HALL-01", type: "Event Hall", floor: 1, capacity: 200, status: "Available", image: "https://example.com/hall.jpg", description: "Events and presentations", amenities: ["Projector"], availableDays: ["Monday", "Tuesday"], startTime: "07:30", endTime: "18:00", minBookingMins: 30, maxBookingMins: 90 };
+  await manageFacilityRecords(fake.db, "actor", request("create_facility", { targetId: "new-facility", data }));
+  assert.equal(fake.documents.get("facilities/new-facility").type, "Event Hall");
+  assert.deepEqual(fake.documents.get("facilities/new-facility").amenities, ["Projector"]);
+  assert.equal(fake.logs()[0].action, "facility.facility_created");
+  assert.equal(fake.logs()[0].targetCollection, "facilities");
+  assert.equal(fake.logs()[0].buildingName, "PTC Building");
+  await assert.rejects(manageFacilityRecords(fake.db, "actor", request("create_facility", { targetId: "duplicate", data })), { code: "already-exists" });
+});
+
 test("room edits log every changed property with server-read before values", async () => {
   const fake = fixture();
   const data = { ...room, name: "Room Updated", capacity: 100, status: "Maintenance", amenities: ["WiFi", "Projector"], startTime: "08:00", image: "https://example.com/new.jpg" };
@@ -122,16 +134,19 @@ test("building deletion discovers all current rooms and records their names even
   const fake = fixture();
   fake.documents.set("rooms/second", { ...room, name: "PTC 202", code: "PTC-202" });
   fake.documents.set("rooms/unrelated", { ...room, buildingId: "other" });
+  fake.documents.set("facilities/hall", { buildingId: "building", name: "Main Hall", code: "HALL-01", type: "Auditorium", floor: 1, capacity: 200, status: "Available", image: "", description: "", amenities: [], availableDays: [], startTime: "07:30", endTime: "18:00", minBookingMins: 30, maxBookingMins: 90 });
   const result = await manageFacilityRecords(fake.db, "actor", request("delete_building", { targetId: "building" }));
   assert.equal(fake.documents.has("buildings/building"), false);
   assert.equal(fake.documents.has("rooms/room"), false);
   assert.equal(fake.documents.has("rooms/second"), false);
   assert(fake.documents.has("rooms/unrelated"));
+  assert.equal(fake.documents.has("facilities/hall"), false);
   assert(fake.documents.has("comments/comment"));
   assert.equal(result.deletedRooms.length, 2);
   const [log] = fake.logs();
   assert.equal(log.action, "facility.building_deleted");
   assert.deepEqual(log.changes.rooms, { before: 2, after: 0 });
+  assert.deepEqual(log.changes.facilities, { before: 1, after: 0 });
   assert.deepEqual(log.deletedRooms.map(room => room.name), ["PTC 201", "PTC 202"]);
 });
 

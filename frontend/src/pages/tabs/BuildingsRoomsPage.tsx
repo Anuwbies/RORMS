@@ -9,6 +9,7 @@ import { RoomInfoModal } from '../../components/RoomInfoModal'
 import { RoomComments } from '../../components/RoomComments'
 import { useRoomCommentNotices } from '../../hooks/useRoomCommentNotices'
 import { RoomScheduleModal } from '../../components/RoomScheduleModal'
+import { AddFacilityModal } from '../../components/AddFacilityModal'
 import { Button } from '../../components/Button'
 import { IconOnlyButton } from '../../components/IconOnlyButton'
 import { SingleSelectDropdown } from '../../components/SingleSelectDropdown'
@@ -40,6 +41,7 @@ import { buildingScheduleUsage } from '../../utils/buildingScheduleUsage'
 import { scheduleMeetingRecords } from '../../utils/scheduleMeetings'
 import { reportingScheduleMeetings } from '../../utils/scheduleReporting'
 import type { ScheduleReportRecord } from '../../utils/reportingData'
+import type { Facility } from '../../types/room'
 
 type EntranceSide = 'top' | 'bottom' | 'left' | 'right'
 
@@ -121,6 +123,7 @@ interface Building {
   floor: number
   capacity: number
   rooms: Room[]
+  facilities?: Facility[]
 }
 
 const roomStatusClasses: Record<RoomStatus, string> = {
@@ -451,21 +454,26 @@ function BuildingsRoomsPage() {
   useEffect(() => {
     const buildingsQuery = query(collection(db, 'buildings'), orderBy('createdAt', 'desc'))
     const roomsQuery = query(collection(db, 'rooms'), orderBy('createdAt', 'desc'))
+    const facilitiesQuery = query(collection(db, 'facilities'), orderBy('createdAt', 'desc'))
 
     let buildingsList: any[] = []
     let roomsList: any[] = []
+    let facilitiesList: Facility[] = []
 
     const updateState = () => {
       const mergedBuildings = buildingsList.map(building => {
         const buildingRooms = roomsList.filter(room => room.buildingId === building.id)
-        const capacity = buildingRooms.reduce((sum, room) => sum + (room.capacity || 0), 0)
-        const floor = buildingRooms.length > 0
-          ? Math.max(...buildingRooms.map(room => room.floor || 0))
+        const buildingFacilities = facilitiesList.filter(facility => facility.buildingId === building.id)
+        const spaces = [...buildingRooms, ...buildingFacilities]
+        const capacity = spaces.reduce((sum, space) => sum + (space.capacity || 0), 0)
+        const floor = spaces.length > 0
+          ? Math.max(...spaces.map(space => space.floor || 0))
           : 0
 
         return {
           ...building,
           rooms: buildingRooms,
+          facilities: buildingFacilities,
           floor,
           capacity,
         }
@@ -500,9 +508,15 @@ function BuildingsRoomsPage() {
       updateState()
     })
 
+    const unsubscribeFacilities = onSnapshot(facilitiesQuery, (snapshot) => {
+      facilitiesList = snapshot.docs.map(document => ({ id: document.id, ...document.data() } as Facility))
+      updateState()
+    })
+
     return () => {
       unsubscribeBuildings()
       unsubscribeRooms()
+      unsubscribeFacilities()
     }
   }, [])
 
@@ -541,6 +555,7 @@ function BuildingsRoomsPage() {
   const [newBuildingCode, setNewBuildingCode] = useState('')
 
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false)
+  const [isFacilityModalOpen, setIsFacilityModalOpen] = useState(false)
   const [isRoomInfoModalOpen, setIsRoomInfoModalOpen] = useState(false)
   const [isRoomScheduleModalOpen, setIsRoomScheduleModalOpen] = useState(false)
   const [selectedRoomInfo, setSelectedRoomInfo] = useState<Room | null>(null)
@@ -761,9 +776,15 @@ function BuildingsRoomsPage() {
     setIsRoomModalOpen(true)
   }
 
+  const handleOpenFacilityModal = (buildingId: string) => {
+    setActiveBuildingId(buildingId)
+    setIsFacilityModalOpen(true)
+  }
+
   const handleCloseModals = () => {
     setIsBuildingModalOpen(false)
     setIsRoomModalOpen(false)
+    setIsFacilityModalOpen(false)
     setIsRoomInfoModalOpen(false)
     setIsRoomScheduleModalOpen(false)
     setEditingBuilding(null)
@@ -842,7 +863,7 @@ function BuildingsRoomsPage() {
         .filter(image => !rooms.some(room => !deletedIds.has(room.id) && room.image === image))
         .map(deleteImageFromStorage))
       handleCloseDeleteBuildingModal()
-      showNotification(`Building "${buildingName}" and its rooms deleted successfully.`, 'success', 'Building Deleted')
+      showNotification(`Building "${buildingName}" and its rooms and facilities deleted successfully.`, 'success', 'Building Deleted')
     } catch (error) {
       console.error('Error deleting building:', error)
       showNotification(facilityActionError(error, 'Failed to delete building. Please try again.'), 'error', 'Error Deleting Building')
@@ -1173,18 +1194,18 @@ function BuildingsRoomsPage() {
   ], [buildings])
   const floorFilterOptions = useMemo(() => [
     'all',
-    ...Array.from(new Set(rooms.map(room => String(room.floor)))).sort((a, b) => Number(a) - Number(b)),
-  ], [rooms])
+    ...Array.from(new Set(buildings.flatMap(building => [...building.rooms, ...(building.facilities ?? [])].map(space => String(space.floor))))).sort((a, b) => Number(a) - Number(b)),
+  ], [buildings])
   const typeFilterOptions = useMemo(() => [
     'all',
-    ...Array.from(new Set(rooms.map(room => room.type).filter(Boolean))).sort(),
-  ], [rooms])
+    ...Array.from(new Set(buildings.flatMap(building => [...building.rooms, ...(building.facilities ?? [])].map(space => space.type).filter(Boolean)))).sort(),
+  ], [buildings])
   const statusFilterOptions = useMemo(() => [
     'all',
-    ...Array.from(new Set(rooms.map(room => room.status).filter(Boolean))).sort(),
-  ], [rooms])
+    ...Array.from(new Set(buildings.flatMap(building => [...building.rooms, ...(building.facilities ?? [])].map(space => space.status).filter(Boolean)))).sort(),
+  ], [buildings])
   const filteredBuildings = useMemo(() => {
-    const hasRoomFilter = filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
+    const hasSpaceFilter = filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
     return buildings
       .filter(building => filterBuildingId === 'all' || building.id === filterBuildingId)
       .map(building => ({
@@ -1194,8 +1215,13 @@ function BuildingsRoomsPage() {
           && (filterType === 'all' || room.type === filterType)
           && (filterStatus === 'all' || room.status === filterStatus)
         ),
+        facilities: (building.facilities ?? []).filter(facility =>
+          (filterFloor === 'all' || String(facility.floor) === filterFloor)
+          && (filterType === 'all' || facility.type === filterType)
+          && (filterStatus === 'all' || facility.status === filterStatus)
+        ),
       }))
-      .filter(building => !hasRoomFilter || building.rooms.length > 0)
+      .filter(building => !hasSpaceFilter || building.rooms.length > 0 || building.facilities.length > 0)
   }, [buildings, filterBuildingId, filterFloor, filterType, filterStatus])
   const hasActiveFilters = filterBuildingId !== 'all' || filterFloor !== 'all' || filterType !== 'all' || filterStatus !== 'all'
   const roomAvailability = rooms.reduce<Record<RoomStatus, number>>((counts, room) => {
@@ -1294,6 +1320,17 @@ function BuildingsRoomsPage() {
           />
         </div>
       )}
+
+      {isFacilityModalOpen && activeBuildingId && <AddFacilityModal
+        buildingId={activeBuildingId}
+        facilities={buildings.flatMap(building => building.facilities ?? [])}
+        onClose={handleCloseModals}
+        onSaved={name => {
+          handleCloseModals()
+          showNotification(`Facility "${name}" added successfully.`, 'success', 'Facility Added')
+        }}
+        onNotify={showNotification}
+      />}
 
       {/* Create/Edit Room Modal */}
       {isRoomModalOpen && (
@@ -2085,13 +2122,13 @@ function BuildingsRoomsPage() {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-gray-900 truncate">{buildingToDelete.name}</p>
-                  <p className="text-xs font-medium text-gray-500">{buildingToDelete.code} • {buildingToDelete.rooms.length} Rooms</p>
+                  <p className="text-xs font-medium text-gray-500">{buildingToDelete.code} • {buildingToDelete.rooms.length} Rooms • {buildingToDelete.facilities?.length ?? 0} Facilities</p>
                 </div>
               </div>
 
               <div className="rounded-xl bg-rose-50 p-4 border border-rose-100">
                 <p className="text-xs leading-relaxed text-rose-700">
-                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this building and all rooms associated with it. This action cannot be undone.
+                  <span className="font-bold uppercase tracking-wider">Warning:</span> This action will permanently delete this building and all rooms and facilities associated with it. This action cannot be undone.
                 </p>
               </div>
 
@@ -2184,6 +2221,7 @@ function BuildingsRoomsPage() {
                 portal
                 matchTriggerWidth
                 searchable
+                showSearchChevron
                 className="w-full"
               />
             </div>
@@ -2202,14 +2240,14 @@ function BuildingsRoomsPage() {
               />
             </div>
             <div className="min-w-0 space-y-2">
-              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Room Type</label>
+              <label className="block text-xs font-bold uppercase tracking-wide text-slate-600">Type</label>
               <SingleSelectDropdown
                 options={typeFilterOptions}
                 value={filterType}
                 onChange={setFilterType}
                 getOptionLabel={value => value === 'all' ? 'All types' : value}
                 isPlaceholder={value => value === 'all'}
-                ariaLabel="Filter by room type"
+                ariaLabel="Filter by room or facility type"
                 portal
                 matchTriggerWidth
                 className="w-full"
@@ -2423,6 +2461,17 @@ function BuildingsRoomsPage() {
                   >
                     <PlusIcon className="h-4 w-4 text-gray-400" />
                     Add Room
+                  </button>
+                  <button
+                    type="button"
+                    className="flex w-full items-center gap-2 border-t border-gray-50 px-4 py-3 text-left text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+                    onClick={() => {
+                      handleOpenFacilityModal(building.id)
+                      setOpenMenuId(null)
+                    }}
+                  >
+                    <PlusIcon className="h-4 w-4 text-gray-400" />
+                    Add Facility
                   </button>
                   <button
                     type="button"

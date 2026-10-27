@@ -250,7 +250,7 @@ function facilityLogEntry(id: string, data: Record<string, unknown>): LogEntry {
     return { id: logText(room.id), name: logText(room.name), code: logText(room.code) }
   }) : []
   const comment = data.action === 'facility.comment_deleted'
-  const roomSource = comment || data.targetCollection === 'rooms'
+  const roomSource = comment || data.targetCollection === 'rooms' || data.targetCollection === 'facilities'
   const roomName = comment ? logText(data.roomName) || logText(data.roomCode) : logText(snapshot.name) || logText(snapshot.code)
   return {
     id, createdAt, category: 'Facilities', outcome: 'Success',
@@ -261,10 +261,10 @@ function facilityLogEntry(id: string, data: Record<string, unknown>): LogEntry {
     ...facilityActivity(logText(data.action), logRecord(data.changes), snapshot, deletedRooms.length),
     target: comment ? logText(data.roomName) || logText(data.roomCode) || 'Room comment' : logText(snapshot.name) || logText(snapshot.code) || 'Record unavailable',
     targetDetail: comment ? [logText(data.buildingName), logText(data.roomType)].filter(Boolean).join(' · ')
-      : (data.targetCollection === 'rooms' ? [logText(data.buildingName), logText(snapshot.type)] : [logText(snapshot.code), 'Building']).filter(Boolean).join(' · '),
+      : (roomSource ? [logText(data.buildingName), logText(snapshot.type)] : [logText(snapshot.code), 'Building']).filter(Boolean).join(' · '),
     sourcePath: [logText(data.targetCollection), logText(data.targetId)].filter(Boolean).join('/'),
     sourceTitle: roomSource ? logText(data.buildingName) || logText(data.buildingCode) || 'Building unavailable' : undefined,
-    sourceDetail: roomSource ? [roomName || 'Room unavailable', comment ? logText(data.roomType) : logText(snapshot.type)].filter(Boolean).join(' · ') : undefined,
+    sourceDetail: roomSource ? [roomName || 'Space unavailable', comment ? logText(data.roomType) : logText(snapshot.type)].filter(Boolean).join(' · ') : undefined,
     facilitySnapshot: snapshot, facilityChanges: logRecord(data.changes), buildingName: logText(data.buildingName), deletedRooms,
   }
 }

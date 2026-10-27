@@ -12,7 +12,7 @@ import {
   UserIcon,
   SpinnerIcon
 } from './Icons'
-import type { Building, Room, RoomStatus } from '../types/room'
+import type { Building, Facility, Room, RoomStatus } from '../types/room'
 import { roomStatusClasses, DEFAULT_ROOM_IMAGE } from '../types/room'
 
 interface BuildingBrowserProps {
@@ -64,12 +64,17 @@ export function BuildingBrowser({
           (selectedStatuses.length === 0 || selectedStatuses.includes(room.status))
           && (selectedRoomTypes.length === 0 || selectedRoomTypes.includes(room.type))
         )
+        const matchingFacilities = (building.facilities ?? []).filter(facility =>
+          (selectedStatuses.length === 0 || selectedStatuses.includes(facility.status))
+          && (selectedRoomTypes.length === 0 || selectedRoomTypes.includes(facility.type))
+        )
 
         // 3. If no search term, return building with filtered rooms
         if (!normalizedSearch) {
           return {
             ...building,
             rooms: matchingRooms,
+            facilities: matchingFacilities,
           }
         }
 
@@ -79,6 +84,7 @@ export function BuildingBrowser({
           building.code,
           String(building.floor),
           String(building.rooms.length),
+          String(building.facilities?.length ?? 0),
           String(building.capacity),
         ].some((value) => value.toLowerCase().includes(normalizedSearch))
 
@@ -86,6 +92,7 @@ export function BuildingBrowser({
           return {
             ...building,
             rooms: matchingRooms,
+            facilities: matchingFacilities,
           }
         }
 
@@ -99,17 +106,22 @@ export function BuildingBrowser({
             room.status,
           ].some((value) => value.toLowerCase().includes(normalizedSearch)),
         )
+        const fullyMatchingFacilities = matchingFacilities.filter(facility =>
+          [facility.name, facility.code, facility.type, String(facility.capacity), facility.status]
+            .some(value => value.toLowerCase().includes(normalizedSearch)),
+        )
 
-        if (fullyMatchingRooms.length === 0) {
+        if (fullyMatchingRooms.length === 0 && fullyMatchingFacilities.length === 0) {
           return null
         }
 
         return {
           ...building,
           rooms: fullyMatchingRooms,
+          facilities: fullyMatchingFacilities,
         }
       })
-      .filter((building): building is Building => building !== null)
+      .filter((building): building is NonNullable<typeof building> => building !== null)
   }, [buildings, searchTerm, selectedStatuses, selectedRoomTypes, selectedBuildings])
 
   return (
@@ -120,7 +132,7 @@ export function BuildingBrowser({
             <SearchInput
               value={searchTerm}
               onChange={setSearchTerm}
-              placeholder="Search by building name, room code, status, capacity..."
+              placeholder="Search by building, room, facility, status, capacity..."
               className="w-full"
             />
           </div>
@@ -144,8 +156,8 @@ export function BuildingBrowser({
                 },
                 {
                   id: 'roomType',
-                  title: 'Room Type',
-                  options: ['Lecture', 'Laboratory'],
+                  title: 'Type',
+                  options: [...new Set(buildings.flatMap(building => [...building.rooms, ...(building.facilities ?? [])].map(space => space.type)))].sort(),
                   selectedValues: selectedRoomTypes,
                   onChange: setSelectedRoomTypes
                 }
@@ -174,10 +186,10 @@ export function BuildingBrowser({
         ) : filteredBuildings.length === 0 ? (
           <div className="p-16 text-center bg-gray-50/50 rounded-b-2xl">
             <p className="text-lg font-semibold text-[var(--brand-color)]">
-              No matching buildings or rooms
+              No matching buildings, rooms, or facilities
             </p>
             <p className="mt-3 text-sm leading-7 text-gray-500">
-              Try a different building name, room code, status, or capacity.
+              Try a different building or space name, code, status, or capacity.
             </p>
           </div>
         ) : (
@@ -189,8 +201,13 @@ export function BuildingBrowser({
               acc[room.floor].push(room)
               return acc
             }, {} as Record<number, Room[]>)
+            const facilitiesByFloor = (building.facilities ?? []).reduce((acc, facility) => {
+              if (!acc[facility.floor]) acc[facility.floor] = []
+              acc[facility.floor].push(facility)
+              return acc
+            }, {} as Record<number, Facility[]>)
 
-            const sortedFloors = Object.keys(roomsByFloor)
+            const sortedFloors = [...new Set([...Object.keys(roomsByFloor), ...Object.keys(facilitiesByFloor)])]
               .map(Number)
               .sort((a, b) => a - b)
 
@@ -278,11 +295,11 @@ export function BuildingBrowser({
                 <div className={`grid transition-all duration-500 ease-in-out ${isExpanded ? 'grid-rows-[1fr] mt-10 opacity-100' : 'grid-rows-[0fr] mt-0 opacity-0'}`}>
                   <div className={`${isExpanded ? 'overflow-visible' : 'overflow-hidden'} px-4 -mx-4`}>
                     <div className="space-y-12 pb-4">
-                      {building.rooms.length === 0 ? (
+                      {building.rooms.length === 0 && (building.facilities?.length ?? 0) === 0 ? (
                         <div className="rounded-2xl border border-dashed border-gray-200 bg-gray-50/50 p-10 text-center">
                           <DoorIcon className="mx-auto h-12 w-12 text-gray-300" />
                           <p className="mt-4 text-sm font-bold uppercase tracking-widest text-gray-400">
-                            No rooms registered yet
+                            No rooms or facilities registered yet
                           </p>
                         </div>
                       ) : (
@@ -351,6 +368,44 @@ export function BuildingBrowser({
                                   {renderRoomScheduleUsage?.(room)}
                                 </div>
                               ))}
+                              {facilitiesByFloor[floor]
+                                ?.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+                                .map(facility => (
+                                  <article key={facility.id} className="relative flex flex-wrap rounded-2xl border border-gray-100 bg-white shadow-md transition-transform hover:scale-[1.02] hover:z-50 focus-within:z-50">
+                                    <div className="relative shrink-0">
+                                      <img
+                                        src={facility.image || DEFAULT_ROOM_IMAGE}
+                                        alt={facility.name}
+                                        className="aspect-square w-28 h-28 shrink-0 object-cover grayscale-[0.2] rounded-tl-2xl sm:w-32 sm:h-32"
+                                        onError={event => { event.currentTarget.src = DEFAULT_ROOM_IMAGE }}
+                                      />
+                                    </div>
+                                    <div className="flex flex-1 flex-col justify-between p-3.5 min-w-0">
+                                      <div>
+                                        <h5 className="text-base font-bold leading-tight text-gray-900 truncate mt-1" title={facility.name}>
+                                          {facility.name}
+                                        </h5>
+                                        <p className="-mt-1 text-xs font-bold uppercase tracking-wider text-gray-400" title={facility.type}>
+                                          {facility.type}
+                                        </p>
+                                      </div>
+                                      <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-gray-200 shrink-0">
+                                            <UserIcon className="h-4 w-4 text-gray-500" />
+                                          </div>
+                                          <span className="text-sm font-bold text-gray-700">
+                                            {facility.capacity} people
+                                          </span>
+                                        </div>
+                                        <span className={`rounded-full px-2 py-0.5 text-[0.5625rem] font-black uppercase tracking-widest ${roomStatusClasses[facility.status]}`}>
+                                          {facility.status}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <p className="w-full border-t border-gray-200 px-3.5 pb-3.5 pt-2.5 text-xs font-semibold text-gray-500">Facility code: {facility.code}</p>
+                                  </article>
+                                ))}
                             </div>
                           </div>
                         ))

@@ -50,11 +50,12 @@ export function FacilityLogDetailsModal({ event, onClose }: { event: FacilityLog
   const [collectionName, sourceId] = (event.sourcePath || '').split('/')
   const isComment = collectionName === 'comments'
   const isRoom = collectionName === 'rooms'
-  const kind = isComment ? 'Comment' : isRoom ? 'Room' : 'Building'
+  const isFacility = collectionName === 'facilities'
+  const kind = isComment ? 'Comment' : isRoom ? 'Room' : isFacility ? 'Facility' : 'Building'
   const operation = event.action.startsWith('Deleted') ? 'Deleted' : event.action.startsWith('Added') ? 'Added' : 'Edited'
   const operationClass = operation === 'Deleted' ? 'bg-rose-100 text-rose-700'
     : operation === 'Added' ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'
-  const changes = Object.entries(event.facilityChanges || {}).filter(([field]) => !['record', 'rooms'].includes(field))
+  const changes = Object.entries(event.facilityChanges || {}).filter(([field]) => !['record', 'rooms', 'facilities'].includes(field))
   const days = Array.isArray(snapshot.availableDays) ? snapshot.availableDays.filter((day): day is string => typeof day === 'string') : []
   const amenities = Array.isArray(snapshot.amenities) ? snapshot.amenities.filter((item): item is string => typeof item === 'string') : []
 
@@ -71,7 +72,7 @@ export function FacilityLogDetailsModal({ event, onClose }: { event: FacilityLog
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h4 className="break-words text-xl font-bold leading-tight text-slate-900">{text(snapshot.name) || event.target}</h4>
-                <p className="mt-0.5 break-words text-sm font-semibold text-slate-500">{isComment ? 'Room comment' : isRoom ? text(snapshot.type) || 'Room' : 'Building'}{(isRoom || isComment) && event.buildingName ? ` · ${event.buildingName}` : ''}</p>
+                <p className="mt-0.5 break-words text-sm font-semibold text-slate-500">{isComment ? 'Room comment' : isRoom || isFacility ? text(snapshot.type) || kind : 'Building'}{(isRoom || isFacility || isComment) && event.buildingName ? ` · ${event.buildingName}` : ''}</p>
               </div>
               <span className={`inline-flex shrink-0 items-center rounded-md px-2.5 py-1 text-xs font-black uppercase tracking-widest ${operationClass}`}>{operation}</span>
             </div>
@@ -110,16 +111,18 @@ export function FacilityLogDetailsModal({ event, onClose }: { event: FacilityLog
 
             <section aria-labelledby="facility-snapshot-title" className="space-y-3">
               <h5 id="facility-snapshot-title" className={label}>Details at the time of this event</h5>
-              {!isComment && <dl className={`grid gap-3 ${isRoom ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1'}`}>
+              {!isComment && <dl className={`grid gap-3 ${isRoom || isFacility ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-1'}`}>
                 {[
                   ['Code', facilityValue(snapshot.code)],
-                  ...(isRoom ? [['Floor', facilityValue(snapshot.floor)], ['Capacity', typeof snapshot.capacity === 'number' ? `${snapshot.capacity} pax` : 'Not set']] : []),
+                  ...(isRoom || isFacility ? [['Floor', facilityValue(snapshot.floor)], ['Capacity', typeof snapshot.capacity === 'number' ? `${snapshot.capacity} pax` : 'Not set']] : []),
                 ].map(([title, value]) => <div key={title} className="min-w-0 space-y-1.5 rounded-xl border border-slate-200/80 bg-slate-50/80 p-2.5"><dt className={label}>{title}</dt><dd className="break-words text-sm font-bold text-slate-700">{value}</dd></div>)}
               </dl>}
 
-              {isRoom && <>
+              {isFacility && <div className={panel}><h6 className={label}>Status</h6><p className="mt-1 text-sm font-bold text-slate-700">{facilityValue(snapshot.status)}</p></div>}
+
+              {(isRoom || isFacility) && <>
                 <div className={panel}>
-                  <div className="flex flex-wrap items-center justify-between gap-2"><h6 className={label}>Room availability</h6><span className={`rounded-md px-2 py-1 text-[0.65rem] font-bold ${snapshot.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : snapshot.status === 'Maintenance' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{facilityValue(snapshot.status)}</span></div>
+                  <div className="flex flex-wrap items-center justify-between gap-2"><h6 className={label}>Availability</h6><span className={`rounded-md px-2 py-1 text-[0.65rem] font-bold ${snapshot.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : snapshot.status === 'Maintenance' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>{facilityValue(snapshot.status)}</span></div>
                   <p className="mt-2 flex items-center gap-2 text-sm font-bold text-slate-700"><ClockIcon className="h-4 w-4 shrink-0 text-[var(--brand-color)]" />{facilityValue(snapshot.startTime)} – {facilityValue(snapshot.endTime)}</p>
                   <p className="mt-2 border-t border-slate-200/80 pt-2.5 text-xs font-medium leading-relaxed text-slate-500">{days.length ? days.join(', ') : 'No available days'}</p>
                 </div>
